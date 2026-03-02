@@ -92,6 +92,10 @@
                       <button class="btn btn-sm btn-outline-success">Restore</button>
                     </form>
                   {% else %}
+                    <button type="button" class="btn btn-sm btn-outline-primary editPartBtn" data-part-id="{{ p._id }}"
+                            data-bs-toggle="modal" data-bs-target="#createPartModal">
+                      Edit
+                    </button>
                     <form method="post" action="{{ url_for('parts.parts_deactivate', part_id=p._id) }}" class="d-inline">
                       <button class="btn btn-sm btn-outline-danger"
                               onclick="return confirm('Deactivate this part?');">
@@ -133,6 +137,7 @@
       <form method="post" action="{{ url_for('parts.parts_create') }}">
         <div class="modal-header">
           <h5 class="modal-title" id="createPartModalLabel">Create new part</h5>
+          <input type="hidden" id="editingPartId" value="">
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
         </div>
 

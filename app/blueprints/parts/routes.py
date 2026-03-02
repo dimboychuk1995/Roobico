@@ -725,6 +725,149 @@ def parts_api_orders_receive(order_id: str):
     return jsonify({"ok": True, "updated_parts": updated})
 
 
+@parts_bp.get("/api/<part_id>")
+@login_required
+@permission_required("parts.view")
+def parts_api_get(part_id: str):
+    """
+    AJAX get part data for edit modal.
+    Returns JSON with full part info.
+    """
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop not configured"}), 400
+
+    pid = _oid(part_id)
+    if not pid:
+        return jsonify({"ok": False, "error": "Invalid part id"}), 400
+
+    part = parts_coll.find_one({"_id": pid})
+    if not part:
+        return jsonify({"ok": False, "error": "Part not found"}), 404
+
+    # Convert ObjectIds to strings for JSON
+    return jsonify({
+        "ok": True,
+        "item": {
+            "_id": str(part["_id"]),
+            "part_number": part.get("part_number") or "",
+            "description": part.get("description") or "",
+            "reference": part.get("reference") or "",
+            "vendor_id": str(part["vendor_id"]) if part.get("vendor_id") else "",
+            "category_id": str(part["category_id"]) if part.get("category_id") else "",
+            "location_id": str(part["location_id"]) if part.get("location_id") else "",
+            "in_stock": int(part.get("in_stock") or 0),
+            "average_cost": float(part.get("average_cost") or 0.0),
+            "core_has_charge": bool(part.get("core_has_charge", False)),
+            "core_cost": float(part.get("core_cost") or 0.0),
+            "misc_has_charge": bool(part.get("misc_has_charge", False)),
+            "misc_charges": part.get("misc_charges") or [],
+        }
+    })
+
+
+@parts_bp.post("/api/<part_id>/update")
+@login_required
+@permission_required("parts.edit")
+def parts_api_update(part_id: str):
+    """
+    AJAX update part.
+    Accepts JSON with part data.
+    Returns JSON { ok: true/false, ... }
+    """
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop not configured"}), 400
+
+    pid = _oid(part_id)
+    if not pid:
+        return jsonify({"ok": False, "error": "Invalid part id"}), 400
+
+    part = parts_coll.find_one({"_id": pid})
+    if not part:
+        return jsonify({"ok": False, "error": "Part not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+
+    # Validate and extract fields
+    part_number = (data.get("part_number") or "").strip()
+    if not part_number:
+        return jsonify({"ok": False, "error": "Part number is required"}), 400
+
+    description = (data.get("description") or "").strip()
+    reference = (data.get("reference") or "").strip()
+
+    in_stock = _parse_int(data.get("in_stock", 0), default=0)
+    if in_stock < 0:
+        return jsonify({"ok": False, "error": "In stock cannot be negative"}), 400
+
+    average_cost = _parse_float(data.get("average_cost", 0.0), default=0.0)
+    if average_cost < 0:
+        return jsonify({"ok": False, "error": "Average cost cannot be negative"}), 400
+
+    core_has_charge = data.get("core_has_charge", False)
+    core_cost = _parse_float(data.get("core_cost", 0.0), default=0.0)
+    if core_has_charge and core_cost < 0:
+        return jsonify({"ok": False, "error": "Core cost cannot be negative"}), 400
+
+    misc_has_charge = data.get("misc_has_charge", False)
+    misc_charges = data.get("misc_charges", []) or []
+    if misc_has_charge and not isinstance(misc_charges, list):
+        return jsonify({"ok": False, "error": "Invalid misc charges"}), 400
+
+    # Validate references
+    vendor_oid, err = (
+        _validate_ref(vendors_coll, data.get("vendor_id", ""), "Vendor")
+        if vendors_coll is not None
+        else (None, None)
+    )
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+
+    category_oid, err = (
+        _validate_ref(cats_coll, data.get("category_id", ""), "Category")
+        if cats_coll is not None
+        else (None, None)
+    )
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+
+    location_oid, err = (
+        _validate_ref(locs_coll, data.get("location_id", ""), "Location")
+        if locs_coll is not None
+        else (None, None)
+    )
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+
+    # Update document
+    now = utcnow()
+    user_oid = _oid(session.get(SESSION_USER_ID))
+
+    parts_coll.update_one(
+        {"_id": pid},
+        {"$set": {
+            "part_number": part_number,
+            "description": description or None,
+            "reference": reference or None,
+            "search_terms": build_parts_search_terms(part_number, description, reference),
+            "vendor_id": vendor_oid,
+            "category_id": category_oid,
+            "location_id": location_oid,
+            "in_stock": in_stock,
+            "average_cost": float(average_cost),
+            "core_has_charge": bool(core_has_charge),
+            "core_cost": float(core_cost) if core_has_charge else None,
+            "misc_has_charge": bool(misc_has_charge),
+            "misc_charges": misc_charges if misc_has_charge else [],
+            "updated_at": now,
+            "updated_by": user_oid,
+        }}
+    )
+
+    return jsonify({"ok": True, "message": "Part updated successfully"})
+
+
 @parts_bp.post("/<part_id>/deactivate")
 @login_required
 @permission_required("parts.edit")

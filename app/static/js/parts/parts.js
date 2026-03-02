@@ -371,5 +371,176 @@
 				</tr>
 			`;
 		});
+
+	// ---- Edit Part Modal Logic ----
+	const createPartModal = document.getElementById('createPartModal');
+	if (createPartModal) {
+		const editingPartId = document.getElementById('editingPartId');
+		const modalTitle = document.getElementById('createPartModalLabel');
+		const partNumberInput = document.querySelector('input[name="part_number"]');
+		const descriptionInput = document.querySelector('input[name="description"]');
+		const referenceInput = document.querySelector('input[name="reference"]');
+		const vendorSelectParts = document.querySelector('select[name="vendor_id"]');
+		const categorySelect = document.querySelector('select[name="category_id"]');
+		const locationSelect = document.querySelector('select[name="location_id"]');
+		const inStockInput = document.querySelector('input[name="in_stock"]');
+		const averageCostInput = document.querySelector('input[name="average_cost"]');
+		const coreCheckbox = document.getElementById('coreChargeToggle');
+		const coreCostInput = document.querySelector('input[name="core_cost"]');
+		const miscCheckbox = document.getElementById('miscChargeToggle');
+		const miscBodyParts = document.getElementById('miscChargesBody');
+		const form = document.querySelector('form[action*="/parts/create"]');
+
+		// Handle Edit Part buttons
+		document.addEventListener('click', function(e) {
+			const btn = e.target.closest('.editPartBtn');
+			if (!btn) return;
+
+			const partId = btn.getAttribute('data-part-id');
+			if (!partId) return;
+
+			// Fetch part data
+			fetch(`/parts/api/${encodeURIComponent(partId)}`, {
+				method: 'GET',
+				headers: { 'Accept': 'application/json' }
+			})
+			.then(res => res.json())
+			.then(data => {
+				if (!data.ok || !data.item) {
+					alert('Failed to load part data');
+					return;
+				}
+
+				const item = data.item;
+
+				// Set editing mode
+				editingPartId.value = partId;
+				modalTitle.textContent = 'Edit part: ' + item.part_number;
+
+				// Fill form with data
+				partNumberInput.value = item.part_number;
+				descriptionInput.value = item.description;
+				referenceInput.value = item.reference;
+				vendorSelectParts.value = item.vendor_id;
+				categorySelect.value = item.category_id;
+				locationSelect.value = item.location_id;
+				inStockInput.value = item.in_stock;
+				averageCostInput.value = item.average_cost;
+
+				// Core charge
+				coreCheckbox.checked = item.core_has_charge;
+				coreCostInput.value = item.core_cost;
+				document.getElementById('coreCostGroup').style.display = item.core_has_charge ? '' : 'none';
+
+				// Misc charges
+				miscCheckbox.checked = item.misc_has_charge;
+				if (miscBodyParts) {
+					miscBodyParts.innerHTML = '';
+					if (item.misc_charges && item.misc_charges.length > 0) {
+						item.misc_charges.forEach((charge, idx) => {
+							const tr = document.createElement('tr');
+							tr.dataset.index = String(idx);
+							tr.innerHTML = `
+								<td>
+									<input class="form-control form-control-sm misc-desc" name="misc_charges[${idx}][description]" value="${charge.description || ''}" maxlength="200" />
+								</td>
+								<td class="text-end">
+									<input class="form-control form-control-sm text-end misc-price" name="misc_charges[${idx}][price]" type="number" min="0" step="0.01" value="${charge.price || ''}" />
+								</td>
+								<td class="text-end">
+									<button type="button" class="btn btn-sm btn-outline-danger remove-misc-btn">Remove</button>
+								</td>
+							`;
+							miscBodyParts.appendChild(tr);
+						});
+					}
+				}
+
+				document.getElementById('miscChargesGroup').style.display = item.misc_has_charge ? '' : 'none';
+			})
+			.catch(err => {
+				console.error('Error loading part:', err);
+				alert('Error loading part data');
+			});
+		});
+
+		// Handle form submission (both create and edit)
+		if (form) {
+			form.addEventListener('submit', async function(e) {
+				// If we're in edit mode, use AJAX instead of form submission
+				if (editingPartId && editingPartId.value) {
+					e.preventDefault();
+
+					// Gather form data
+					const partId = editingPartId.value;
+					const formData = {
+						part_number: partNumberInput.value.trim(),
+						description: descriptionInput.value.trim(),
+						reference: referenceInput.value.trim(),
+						vendor_id: vendorSelectParts.value,
+						category_id: categorySelect.value,
+						location_id: locationSelect.value,
+						in_stock: parseInt(inStockInput.value || '0'),
+						average_cost: parseFloat(averageCostInput.value || '0'),
+						core_has_charge: coreCheckbox.checked,
+						core_cost: parseFloat(coreCostInput.value || '0'),
+						misc_has_charge: miscCheckbox.checked,
+						misc_charges: []
+					};
+
+					// Gather misc charges
+					if (miscBodyParts) {
+						const rows = miscBodyParts.querySelectorAll('tr');
+						rows.forEach(tr => {
+							const desc = tr.querySelector('.misc-desc').value.trim();
+							const price = parseFloat(tr.querySelector('.misc-price').value || '0');
+							if (desc && price >= 0) {
+								formData.misc_charges.push({ description: desc, price: price });
+							}
+						});
+					}
+
+					// Send AJAX request
+					try {
+						const res = await fetch(`/parts/api/${encodeURIComponent(partId)}/update`, {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify(formData)
+						});
+						const result = await res.json();
+
+						if (result.ok) {
+							// Close modal and reload page
+							const modal = bootstrap.Modal.getInstance(createPartModal);
+							if (modal) modal.hide();
+							location.reload();
+						} else {
+							alert('Update failed: ' + (result.error || 'Unknown error'));
+						}
+					} catch (err) {
+						console.error('Error updating part:', err);
+						alert('Network error while updating part');
+					}
+
+					return false;
+				}
+				// Otherwise, use default form submission for create
+			});
+		}
+
+		// Reset form when modal is hidden
+		createPartModal.addEventListener('hidden.bs.modal', function() {
+			editingPartId.value = '';
+			modalTitle.textContent = 'Create new part';
+			form.reset();
+			if (document.getElementById('coreCostGroup')) {
+				document.getElementById('coreCostGroup').style.display = 'none';
+			}
+			if (document.getElementById('miscChargesGroup')) {
+				document.getElementById('miscChargesGroup').style.display = 'none';
+			}
+		});
+	}
+
 	});
 })();
