@@ -661,6 +661,236 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
     return _render_app_page("public/work_orders/work_order_details.html", **ctx)
 
 
+# -------------------- INVENTORY MANAGEMENT --------------------
+
+def deduct_parts_from_inventory(shop_db, labors: list, user_id: ObjectId) -> dict:
+    """
+    Deduct parts used in a work order from inventory.
+    Returns: {success: bool, deducted: [{part_id, part_number, qty_used}], errors: []}
+    """
+    if not isinstance(labors, list):
+        return {"success": True, "deducted": [], "errors": []}
+
+    deducted = []
+    errors = []
+    now = utcnow()
+
+    for labor_block in labors:
+        if not isinstance(labor_block, dict):
+            continue
+
+        parts = labor_block.get("parts") or []
+        if not isinstance(parts, list):
+            continue
+
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+
+            part_number = str(part.get("part_number") or "").strip()
+            qty = i32(part.get("qty"))
+
+            # Skip if no part_number or qty
+            if not part_number or qty is None or qty <= 0:
+                continue
+
+            # Find part by number
+            part_doc = shop_db.parts.find_one({"part_number": part_number, "is_active": True})
+            if not part_doc:
+                errors.append(f"Part '{part_number}' not found in inventory")
+                continue
+
+            part_id = part_doc.get("_id")
+            current_stock = int(part_doc.get("in_stock") or 0)
+
+            if current_stock < qty:
+                errors.append(
+                    f"Insufficient stock for '{part_number}': "
+                    f"need {qty}, have {current_stock}"
+                )
+                continue
+
+            # Deduct from inventory
+            new_stock = current_stock - qty
+            shop_db.parts.update_one(
+                {"_id": part_id},
+                {
+                    "$set": {
+                        "in_stock": new_stock,
+                        "updated_at": now,
+                        "updated_by": user_id,
+                    }
+                }
+            )
+
+            deducted.append({
+                "part_id": str(part_id),
+                "part_number": part_number,
+                "qty_used": qty,
+                "previous_stock": current_stock,
+                "new_stock": new_stock,
+            })
+
+    return {
+        "success": len(errors) == 0,
+        "deducted": deducted,
+        "errors": errors,
+    }
+
+
+def restore_parts_to_inventory(shop_db, labors: list, user_id: ObjectId) -> dict:
+    """
+    Restore parts back to inventory (when work order is updated or deleted).
+    Returns inventory updates in reverse.
+    """
+    if not isinstance(labors, list):
+        return {"success": True, "restored": [], "errors": []}
+
+    restored = []
+    errors = []
+    now = utcnow()
+
+    for labor_block in labors:
+        if not isinstance(labor_block, dict):
+            continue
+
+        parts = labor_block.get("parts") or []
+        if not isinstance(parts, list):
+            continue
+
+        for part in parts:
+            if not isinstance(part, dict):
+                continue
+
+            part_number = str(part.get("part_number") or "").strip()
+            qty = i32(part.get("qty"))
+
+            if not part_number or qty is None or qty <= 0:
+                continue
+
+            part_doc = shop_db.parts.find_one({"part_number": part_number, "is_active": True})
+            if not part_doc:
+                errors.append(f"Part '{part_number}' not found when restoring")
+                continue
+
+            part_id = part_doc.get("_id")
+            current_stock = int(part_doc.get("in_stock") or 0)
+
+            # Restore to inventory
+            new_stock = current_stock + qty
+            shop_db.parts.update_one(
+                {"_id": part_id},
+                {
+                    "$set": {
+                        "in_stock": new_stock,
+                        "updated_at": now,
+                        "updated_by": user_id,
+                    }
+                }
+            )
+
+            restored.append({
+                "part_id": str(part_id),
+                "part_number": part_number,
+                "qty_restored": qty,
+            })
+
+    return {
+        "success": True,
+        "restored": restored,
+        "errors": errors,
+    }
+
+
+def adjust_inventory_for_part_changes(shop_db, old_labors: list, new_labors: list, user_id: ObjectId) -> dict:
+    """
+    When updating a work order, adjust inventory based on part quantity changes.
+    Compares old vs new parts and makes adjustments.
+    """
+    if not isinstance(old_labors, list) or not isinstance(new_labors, list):
+        return {"success": True, "adjusted": [], "errors": []}
+
+    errors = []
+    adjusted = []
+    now = utcnow()
+
+    # Build part maps for old and new
+    old_parts_map = {}  # part_number -> qty
+    for labor_block in old_labors:
+        parts = labor_block.get("parts") or []
+        for part in parts:
+            pn = str(part.get("part_number") or "").strip()
+            qty = i32(part.get("qty")) or 0
+            if pn:
+                old_parts_map[pn] = old_parts_map.get(pn, 0) + qty
+
+    new_parts_map = {}  # part_number -> qty
+    for labor_block in new_labors:
+        parts = labor_block.get("parts") or []
+        for part in parts:
+            pn = str(part.get("part_number") or "").strip()
+            qty = i32(part.get("qty")) or 0
+            if pn:
+                new_parts_map[pn] = new_parts_map.get(pn, 0) + qty
+
+    # Find all changed part numbers
+    all_part_numbers = set(old_parts_map.keys()) | set(new_parts_map.keys())
+
+    for part_number in all_part_numbers:
+        old_qty = old_parts_map.get(part_number, 0)
+        new_qty = new_parts_map.get(part_number, 0)
+        qty_diff = new_qty - old_qty
+
+        if qty_diff == 0:
+            continue
+
+        part_doc = shop_db.parts.find_one({"part_number": part_number, "is_active": True})
+        if not part_doc:
+            errors.append(f"Part '{part_number}' not found when adjusting")
+            continue
+
+        part_id = part_doc.get("_id")
+        current_stock = int(part_doc.get("in_stock") or 0)
+
+        # qty_diff > 0: more parts needed, deduct from stock
+        # qty_diff < 0: fewer parts needed, add back to stock
+        new_stock = current_stock - qty_diff
+
+        if qty_diff > 0 and current_stock < qty_diff:
+            errors.append(
+                f"Insufficient stock for '{part_number}': "
+                f"need {qty_diff} more, have {current_stock}"
+            )
+            continue
+
+        shop_db.parts.update_one(
+            {"_id": part_id},
+            {
+                "$set": {
+                    "in_stock": new_stock,
+                    "updated_at": now,
+                    "updated_by": user_id,
+                }
+            }
+        )
+
+        adjusted.append({
+            "part_id": str(part_id),
+            "part_number": part_number,
+            "old_qty": old_qty,
+            "new_qty": new_qty,
+            "qty_change": qty_diff,
+            "previous_stock": current_stock,
+            "new_stock": new_stock,
+        })
+
+    return {
+        "success": len(errors) == 0,
+        "adjusted": adjusted,
+        "errors": errors,
+    }
+
+
 @work_orders_bp.get("/work_orders")
 @login_required
 @permission_required("work_orders.view")
@@ -907,6 +1137,15 @@ def create_work_order():
     now = utcnow()
     user_id = current_user_id()
 
+    # ✅ Deduct parts from inventory before creating work order
+    inventory_result = deduct_parts_from_inventory(shop_db, labors, user_id)
+    if not inventory_result["success"] and inventory_result["errors"]:
+        for error in inventory_result["errors"]:
+            flash(f"Inventory error: {error}", "warning")
+        # Still proceed with creating work order, but flag it
+        # If you prefer to cancel, uncomment the redirect below
+        # return redirect(url_for("work_orders.work_order_details_page", customer_id=str(customer_id), unit_id=str(unit_id)))
+
     doc = {
         "shop_id": shop["_id"],
         "tenant_id": shop.get("tenant_id"),
@@ -918,6 +1157,10 @@ def create_work_order():
         # ✅ store totals from UI
         "totals": totals,
 
+        # ✅ track inventory deductions
+        "inventory_deducted": len(inventory_result["deducted"]) > 0,
+        "inventory_deductions": inventory_result["deducted"],
+
         "is_active": True,
         "created_at": now,
         "updated_at": now,
@@ -927,6 +1170,10 @@ def create_work_order():
 
     res = shop_db.work_orders.insert_one(doc)
     flash("Work order created.", "success")
+
+    if inventory_result["deducted"]:
+        deducted_info = ", ".join([f"{d['part_number']} (qty: {d['qty_used']})" for d in inventory_result["deducted"]])
+        flash(f"Inventory deducted: {deducted_info}", "info")
 
     return redirect(url_for("work_orders.work_order_details_page", work_order_id=str(res.inserted_id)))
 
@@ -1179,12 +1426,25 @@ def api_work_order_update(work_order_id):
     now = utcnow()
     user_id = current_user_id()
 
+    # ✅ Adjust inventory for part changes
+    old_labors = wo.get("labors") or []
+    inventory_adjustment = adjust_inventory_for_part_changes(shop_db, old_labors, labors, user_id)
+    if not inventory_adjustment["success"] and inventory_adjustment["errors"]:
+        return jsonify({
+            "ok": False,
+            "error": "inventory_adjustment_failed",
+            "details": inventory_adjustment["errors"]
+        }), 200
+
     shop_db.work_orders.update_one(
         {"_id": wo_id},
         {
             "$set": {
                 "labors": labors,
                 "totals": totals,  # ✅ сохраняем totals от фронта
+                # ✅ update inventory tracking
+                "inventory_adjusted_at": now,
+                "inventory_adjustment_count": (wo.get("inventory_adjustment_count", 0) or 0) + len(inventory_adjustment["adjusted"]),
                 "updated_at": now,
                 "updated_by": user_id,
             },
@@ -1197,7 +1457,11 @@ def api_work_order_update(work_order_id):
         }
     )
 
-    return jsonify({"ok": True}), 200
+    return jsonify({
+        "ok": True,
+        "inventory_adjusted": len(inventory_adjustment["adjusted"]) > 0,
+        "inventory_changes": inventory_adjustment["adjusted"],
+    }), 200
 
 
 
@@ -1495,3 +1759,52 @@ def api_work_order_set_status(work_order_id):
     )
 
     return jsonify({"ok": True, "status": status}), 200
+
+@work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/delete")
+@login_required
+@permission_required("work_orders.create")
+def api_work_order_delete(work_order_id):
+    """
+    Delete a work order and restore parts to inventory.
+    """
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return jsonify({"ok": False, "error": "invalid_work_order_id"}), 200
+
+    wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True})
+    if not wo:
+        return jsonify({"ok": False, "error": "work_order_not_found"}), 200
+
+    now = utcnow()
+    user_id = current_user_id()
+
+    # ✅ Restore parts to inventory before deleting
+    labors = wo.get("labors") or []
+    restore_result = restore_parts_to_inventory(shop_db, labors, user_id)
+
+    # Delete all payments associated with this work order
+    shop_db.work_order_payments.delete_many({"work_order_id": wo_id})
+
+    # Mark work order as inactive (soft delete)
+    shop_db.work_orders.update_one(
+        {"_id": wo_id},
+        {
+            "$set": {
+                "is_active": False,
+                "deleted_at": now,
+                "deleted_by": user_id,
+                "updated_at": now,
+                "updated_by": user_id,
+            }
+        }
+    )
+
+    return jsonify({
+        "ok": True,
+        "inventory_restored": len(restore_result["restored"]) > 0,
+        "inventory_changes": restore_result["restored"],
+    }), 200
