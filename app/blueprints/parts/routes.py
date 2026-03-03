@@ -152,6 +152,15 @@ def _name_from_doc(doc: dict) -> str:
     ).strip()
 
 
+def _fmt_dt_iso(dt) -> str:
+    if isinstance(dt, datetime):
+        try:
+            return dt.astimezone().isoformat()
+        except Exception:
+            return dt.isoformat()
+    return ""
+
+
 @parts_bp.get("/")
 @login_required
 @permission_required("parts.view")
@@ -763,6 +772,155 @@ def parts_api_get(part_id: str):
             "misc_has_charge": bool(part.get("misc_has_charge", False)),
             "misc_charges": part.get("misc_charges") or [],
         }
+    })
+
+
+@parts_bp.get("/api/<part_id>/history")
+@login_required
+@permission_required("parts.view")
+def parts_api_history(part_id: str):
+    """
+    Return part usage history from:
+      - parts_orders (ordered/received)
+      - work_orders (used in jobs)
+    """
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or orders_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop not configured"}), 400
+
+    pid = _oid(part_id)
+    if not pid:
+        return jsonify({"ok": False, "error": "Invalid part id"}), 400
+
+    part = parts_coll.find_one({"_id": pid, "shop_id": shop["_id"]})
+    if not part:
+        return jsonify({"ok": False, "error": "Part not found"}), 404
+
+    part_number = str(part.get("part_number") or "").strip()
+
+    # Orders history
+    orders_rows = list(
+        orders_coll.find(
+            {
+                "shop_id": shop["_id"],
+                "is_active": {"$ne": False},
+                "items.part_id": pid,
+            }
+        ).sort([("created_at", -1)]).limit(200)
+    )
+
+    vendor_map = {}
+    if vendors_coll is not None:
+        vendor_ids = [r.get("vendor_id") for r in orders_rows if r.get("vendor_id")]
+        if vendor_ids:
+            for v in vendors_coll.find({"_id": {"$in": vendor_ids}}):
+                vendor_map[v.get("_id")] = _name_from_doc(v)
+
+    orders_out = []
+    for row in orders_rows:
+        qty = 0
+        latest_price = None
+        for it in (row.get("items") or []):
+            if not isinstance(it, dict):
+                continue
+            if it.get("part_id") != pid:
+                continue
+            item_qty = _parse_int(it.get("quantity"), default=0)
+            qty += max(0, item_qty)
+            latest_price = _parse_float(it.get("price"), default=0.0)
+
+        if qty <= 0:
+            continue
+
+        orders_out.append({
+            "order_id": str(row.get("_id")),
+            "status": str(row.get("status") or ""),
+            "vendor": vendor_map.get(row.get("vendor_id")) or "-",
+            "quantity": qty,
+            "price": float(latest_price or 0.0),
+            "created_at": _fmt_dt_iso(row.get("created_at")),
+            "received_at": _fmt_dt_iso(row.get("received_at")),
+        })
+
+    # Work order history (prefer part_id match, fallback by part_number for legacy docs)
+    db, _ = _get_shop_db(master)
+    if db is None:
+        return jsonify({"ok": True, "part": {"id": str(pid), "part_number": part_number}, "orders": orders_out, "work_orders": []})
+
+    work_orders_coll = db.work_orders
+    wo_filter = {
+        "shop_id": shop["_id"],
+        "is_active": {"$ne": False},
+        "$or": [
+            {"labors.parts.part_id": pid},
+            {"labors.parts.part_number": part_number},
+        ],
+    }
+    wo_rows = list(work_orders_coll.find(wo_filter).sort([("created_at", -1)]).limit(300))
+
+    customer_ids = [w.get("customer_id") for w in wo_rows if w.get("customer_id")]
+    unit_ids = [w.get("unit_id") for w in wo_rows if w.get("unit_id")]
+
+    customers_map = {}
+    if customer_ids:
+        for c in db.customers.find({"_id": {"$in": customer_ids}}):
+            company = str(c.get("company_name") or "").strip()
+            full = (str(c.get("first_name") or "").strip() + " " + str(c.get("last_name") or "").strip()).strip()
+            customers_map[c.get("_id")] = company or full or "-"
+
+    units_map = {}
+    if unit_ids:
+        for u in db.units.find({"_id": {"$in": unit_ids}}):
+            bits = []
+            if u.get("unit_number"):
+                bits.append(str(u.get("unit_number")))
+            if u.get("year"):
+                bits.append(str(u.get("year")))
+            if u.get("make"):
+                bits.append(str(u.get("make")))
+            if u.get("model"):
+                bits.append(str(u.get("model")))
+            units_map[u.get("_id")] = " ".join([x for x in bits if x]).strip() or "-"
+
+    work_orders_out = []
+    for w in wo_rows:
+        used_qty = 0
+        for labor in (w.get("labors") or []):
+            if not isinstance(labor, dict):
+                continue
+            for p in (labor.get("parts") or []):
+                if not isinstance(p, dict):
+                    continue
+                p_pid = p.get("part_id")
+                p_num = str(p.get("part_number") or "").strip()
+                if p_pid == pid or (not p_pid and part_number and p_num == part_number):
+                    used_qty += max(0, _parse_int(p.get("qty"), default=0))
+
+        if used_qty <= 0:
+            continue
+
+        totals = w.get("totals") if isinstance(w.get("totals"), dict) else {}
+        grand_total = totals.get("grand_total") if totals.get("grand_total") is not None else w.get("grand_total")
+
+        work_orders_out.append({
+            "work_order_id": str(w.get("_id")),
+            "status": str(w.get("status") or "open"),
+            "customer": customers_map.get(w.get("customer_id")) or "-",
+            "unit": units_map.get(w.get("unit_id")) or "-",
+            "used_qty": used_qty,
+            "grand_total": float(_parse_float(grand_total, default=0.0)),
+            "created_at": _fmt_dt_iso(w.get("created_at")),
+        })
+
+    return jsonify({
+        "ok": True,
+        "part": {
+            "id": str(pid),
+            "part_number": part_number,
+            "description": str(part.get("description") or ""),
+        },
+        "orders": orders_out,
+        "work_orders": work_orders_out,
     })
 
 

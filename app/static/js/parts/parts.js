@@ -348,6 +348,102 @@
 		createOrderBtn.addEventListener("click", createOrderAjax);
 		receiveBtn.addEventListener("click", receiveOrderAjax);
 
+		const partHistoryModal = document.getElementById("partHistoryModal");
+		const partHistoryMeta = document.getElementById("partHistoryMeta");
+		const partHistoryOrdersBody = document.getElementById("partHistoryOrdersBody");
+		const partHistoryWorkOrdersBody = document.getElementById("partHistoryWorkOrdersBody");
+
+		function formatDateTime(v) {
+			if (!v) return "-";
+			const d = new Date(v);
+			if (Number.isNaN(d.getTime())) return "-";
+			return d.toLocaleString();
+		}
+
+		function money(n) {
+			const x = Number(n || 0);
+			return Number.isFinite(x) ? x.toFixed(2) : "0.00";
+		}
+
+		async function loadPartHistory(partId) {
+			if (!partHistoryMeta || !partHistoryOrdersBody || !partHistoryWorkOrdersBody) return;
+
+			partHistoryMeta.textContent = "Loading...";
+			partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">Loading...</td></tr>`;
+			partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">Loading...</td></tr>`;
+
+			try {
+				const res = await fetch(`/parts/api/${encodeURIComponent(partId)}/history`, {
+					method: "GET",
+					headers: { "Accept": "application/json" }
+				});
+				const data = await res.json();
+
+				if (!res.ok || !data.ok) {
+					partHistoryMeta.textContent = data?.error || "Failed to load part history";
+					partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
+					partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
+					return;
+				}
+
+				const part = data.part || {};
+				const orders = Array.isArray(data.orders) ? data.orders : [];
+				const workOrders = Array.isArray(data.work_orders) ? data.work_orders : [];
+
+				partHistoryMeta.textContent = `${part.part_number || ""}${part.description ? ` — ${part.description}` : ""} | Orders: ${orders.length}, Work Orders: ${workOrders.length}`;
+
+				if (orders.length === 0) {
+					partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No orders found for this part.</td></tr>`;
+				} else {
+					partHistoryOrdersBody.innerHTML = orders.map((row) => `
+						<tr>
+							<td class="small">${escapeHtml(row.order_id || "-")}</td>
+							<td>${escapeHtml(row.status || "-")}</td>
+							<td>${escapeHtml(row.vendor || "-")}</td>
+							<td class="text-end">${Number(row.quantity || 0)}</td>
+							<td class="text-end">$${money(row.price)}</td>
+							<td class="small">${escapeHtml(formatDateTime(row.created_at))}</td>
+							<td class="small">${escapeHtml(formatDateTime(row.received_at))}</td>
+						</tr>
+					`).join("");
+				}
+
+				if (workOrders.length === 0) {
+					partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No work orders found for this part.</td></tr>`;
+				} else {
+					partHistoryWorkOrdersBody.innerHTML = workOrders.map((row) => `
+						<tr>
+							<td class="small">${escapeHtml(row.work_order_id || "-")}</td>
+							<td>${escapeHtml(row.status || "-")}</td>
+							<td>${escapeHtml(row.customer || "-")}</td>
+							<td>${escapeHtml(row.unit || "-")}</td>
+							<td class="text-end">${Number(row.used_qty || 0)}</td>
+							<td class="text-end">$${money(row.grand_total)}</td>
+							<td class="small">${escapeHtml(formatDateTime(row.created_at))}</td>
+						</tr>
+					`).join("");
+				}
+			} catch (err) {
+				partHistoryMeta.textContent = "Network error while loading history";
+				partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
+				partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
+			}
+		}
+
+		document.addEventListener("click", function (e) {
+			const btn = e.target.closest(".partHistoryBtn");
+			if (!btn) return;
+			const partId = btn.getAttribute("data-part-id");
+			if (!partId) return;
+			loadPartHistory(partId);
+		});
+
+		partHistoryModal?.addEventListener("hidden.bs.modal", function () {
+			if (partHistoryMeta) partHistoryMeta.textContent = "Loading...";
+			if (partHistoryOrdersBody) partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
+			if (partHistoryWorkOrdersBody) partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
+		});
+
 		document.addEventListener("show.bs.modal", function (e) {
 			if (!e.target || e.target.id !== "orderModal") return;
 

@@ -92,6 +92,11 @@
                       <button class="btn btn-sm btn-outline-success">Restore</button>
                     </form>
                   {% else %}
+                    <button type="button" class="btn btn-sm btn-outline-secondary partHistoryBtn"
+                            data-part-id="{{ p._id }}" data-part-number="{{ p.part_number }}"
+                            data-bs-toggle="modal" data-bs-target="#partHistoryModal">
+                      History
+                    </button>
                     <button type="button" class="btn btn-sm btn-outline-primary editPartBtn" data-part-id="{{ p._id }}"
                             data-bs-toggle="modal" data-bs-target="#createPartModal">
                       Edit
@@ -348,6 +353,64 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
         <button type="button" class="btn btn-primary" id="createOrderBtn">Create order</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Part History Modal -->
+<div class="modal fade" id="partHistoryModal" tabindex="-1" aria-labelledby="partHistoryModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="partHistoryModalLabel">Part history</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="partHistoryMeta" class="text-muted small mb-3">Loading...</div>
+
+        <h6 class="mb-2">Orders</h6>
+        <div class="table-responsive mb-3">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Order ID</th>
+                <th>Status</th>
+                <th>Vendor</th>
+                <th class="text-end">Qty</th>
+                <th class="text-end">Price</th>
+                <th>Created</th>
+                <th>Received</th>
+              </tr>
+            </thead>
+            <tbody id="partHistoryOrdersBody">
+              <tr><td colspan="7" class="text-muted">No data.</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h6 class="mb-2">Work Orders</h6>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Work Order ID</th>
+                <th>Status</th>
+                <th>Customer</th>
+                <th>Unit</th>
+                <th class="text-end">Used Qty</th>
+                <th class="text-end">Grand Total</th>
+                <th>Created</th>
+              </tr>
+            </thead>
+            <tbody id="partHistoryWorkOrdersBody">
+              <tr><td colspan="7" class="text-muted">No data.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
   </div>
