@@ -369,44 +369,50 @@
       <div class="modal-body">
         <div id="partHistoryMeta" class="text-muted small mb-3">Loading...</div>
 
-        <h6 class="mb-2">Orders</h6>
-        <div class="table-responsive mb-3">
-          <table class="table table-sm align-middle mb-0">
-            <thead>
-              <tr>
-                <th>Order ID</th>
-                <th>Status</th>
-                <th>Vendor</th>
-                <th class="text-end">Qty</th>
-                <th class="text-end">Price</th>
-                <th>Created</th>
-                <th>Received</th>
-              </tr>
-            </thead>
-            <tbody id="partHistoryOrdersBody">
-              <tr><td colspan="7" class="text-muted">No data.</td></tr>
-            </tbody>
-          </table>
-        </div>
+        <div class="row g-3">
+          <div class="col-12 col-lg-6">
+            <h6 class="mb-2">Orders</h6>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Order ID</th>
+                    <th>Status</th>
+                    <th>Vendor</th>
+                    <th class="text-end">Qty</th>
+                    <th class="text-end">Price</th>
+                    <th>Created</th>
+                    <th>Received</th>
+                  </tr>
+                </thead>
+                <tbody id="partHistoryOrdersBody">
+                  <tr><td colspan="7" class="text-muted">No data.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-        <h6 class="mb-2">Work Orders</h6>
-        <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0">
-            <thead>
-              <tr>
-                <th>Work Order ID</th>
-                <th>Status</th>
-                <th>Customer</th>
-                <th>Unit</th>
-                <th class="text-end">Used Qty</th>
-                <th class="text-end">Grand Total</th>
-                <th>Created</th>
-              </tr>
-            </thead>
-            <tbody id="partHistoryWorkOrdersBody">
-              <tr><td colspan="7" class="text-muted">No data.</td></tr>
-            </tbody>
-          </table>
+          <div class="col-12 col-lg-6">
+            <h6 class="mb-2">Work Orders</h6>
+            <div class="table-responsive">
+              <table class="table table-sm align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th>Work Order ID</th>
+                    <th>Status</th>
+                    <th>Customer</th>
+                    <th>Unit</th>
+                    <th class="text-end">Used Qty</th>
+                    <th class="text-end">Grand Total</th>
+                    <th>Created</th>
+                  </tr>
+                </thead>
+                <tbody id="partHistoryWorkOrdersBody">
+                  <tr><td colspan="7" class="text-muted">No data.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
