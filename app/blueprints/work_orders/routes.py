@@ -64,6 +64,7 @@ def normalize_parts_payload(raw_parts):
             continue
 
         part_number = str(p.get("part_number") or "").strip()
+        part_id = oid(p.get("part_id"))
         description = str(p.get("description") or "").strip()
         misc_charge_description = str(
             p.get("misc_charge_description") if p.get("misc_charge_description") is not None else ""
@@ -91,18 +92,20 @@ def normalize_parts_payload(raw_parts):
         if not has_any:
             continue
 
-        out.append(
-            {
-                "part_number": part_number,
-                "description": description,
-                "qty": int(qty_raw if qty_raw is not None else 0),
-                "cost": round2(cost_raw if cost_raw is not None else 0),
-                "price": round2(price_raw if price_raw is not None else 0),
-                "core_charge": round2(core_raw if core_raw is not None else 0),
-                "misc_charge": round2(misc_raw if misc_raw is not None else 0),
-                "misc_charge_description": misc_charge_description,
-            }
-        )
+        item = {
+            "part_number": part_number,
+            "description": description,
+            "qty": int(qty_raw if qty_raw is not None else 0),
+            "cost": round2(cost_raw if cost_raw is not None else 0),
+            "price": round2(price_raw if price_raw is not None else 0),
+            "core_charge": round2(core_raw if core_raw is not None else 0),
+            "misc_charge": round2(misc_raw if misc_raw is not None else 0),
+            "misc_charge_description": misc_charge_description,
+        }
+        if part_id:
+            item["part_id"] = part_id
+
+        out.append(item)
 
     return out
 
@@ -225,6 +228,7 @@ def normalize_saved_labors(raw):
         for p in normalize_parts_payload(block.get("parts") or []):
             parts_out.append(
                 {
+                    "part_id": str(p.get("part_id")) if p.get("part_id") else "",
                     "part_number": str(p.get("part_number") or "").strip(),
                     "description": str(p.get("description") or "").strip(),
                     "qty": str(p.get("qty") if p.get("qty") is not None else ""),
@@ -1044,7 +1048,7 @@ def create_work_order():
     labor_re = re.compile(r"^(?:labors|blocks)\[(\d+)\]\[(labor_description|labor_hours|labor_rate_code|labor_total_ui|labor_full_total|assigned_mechanics_json)\]$")
     # parts
     parts_re = re.compile(
-        r"^(?:labors|blocks)\[(\d+)\]\[parts\]\[(\d+)\]\[(part_number|description|qty|cost|price|core_charge|misc_charge|misc_charge_description)\]$"
+        r"^(?:labors|blocks)\[(\d+)\]\[parts\]\[(\d+)\]\[(part_id|part_number|description|qty|cost|price|core_charge|misc_charge|misc_charge_description)\]$"
     )
 
     for key, val in request.form.items():
@@ -1076,7 +1080,7 @@ def create_work_order():
             while len(b["parts"]) <= ridx:
                 b["parts"].append({})
 
-            if field in ("part_number", "description"):
+            if field in ("part_id", "part_number", "description"):
                 b["parts"][ridx][field] = (val or "").strip()
             elif field == "qty":
                 b["parts"][ridx]["qty"] = (val or "").strip()

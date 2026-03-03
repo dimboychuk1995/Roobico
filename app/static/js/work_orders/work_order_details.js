@@ -256,6 +256,7 @@
     tr.innerHTML = `
       <td>
         <input class="form-control form-control-sm part-number" name="labors[${laborIndex}][parts][${rowIndex}][part_number]" maxlength="64" autocomplete="off">
+        <input type="hidden" class="part-id" name="labors[${laborIndex}][parts][${rowIndex}][part_id]" value="">
         <input type="hidden" class="part-core-charge" name="labors[${laborIndex}][parts][${rowIndex}][core_charge]" value="0">
         <input type="hidden" class="part-misc-charge" name="labors[${laborIndex}][parts][${rowIndex}][misc_charge]" value="0">
         <input type="hidden" class="part-misc-charge-description" name="labors[${laborIndex}][parts][${rowIndex}][misc_charge_description]" value="">
@@ -1018,6 +1019,7 @@
 
   function fillRowFromPart(tr, part) {
     const pn = tr.querySelector(".part-number");
+    const partIdInput = tr.querySelector(".part-id");
     const ds = tr.querySelector(".part-description");
     const cost = tr.querySelector(".part-cost");
     const coreInput = tr.querySelector(".part-core-charge");
@@ -1025,6 +1027,7 @@
     const miscDescriptionInput = tr.querySelector(".part-misc-charge-description");
 
     if (pn) pn.value = part.part_number || "";
+    if (partIdInput) partIdInput.value = String(part?.id || "").trim();
     if (ds) {
       const d = (part.description || "").trim();
       const ref = (part.reference || "").trim();
@@ -1161,6 +1164,7 @@
     rows.forEach((tr, rIdx) => {
       tr.dataset.index = String(rIdx);
       tr.querySelector(".part-number").name = `labors[${idx}][parts][${rIdx}][part_number]`;
+      tr.querySelector(".part-id").name = `labors[${idx}][parts][${rIdx}][part_id]`;
       tr.querySelector(".part-core-charge").name = `labors[${idx}][parts][${rIdx}][core_charge]`;
       tr.querySelector(".part-misc-charge").name = `labors[${idx}][parts][${rIdx}][misc_charge]`;
       tr.querySelector(".part-misc-charge-description").name = `labors[${idx}][parts][${rIdx}][misc_charge_description]`;
@@ -1225,10 +1229,12 @@
       if (t.classList?.contains("part-number") || t.classList?.contains("part-description")) {
         const tr = t.closest("tr.parts-row");
         if (tr) {
+          const partIdInput = tr.querySelector(".part-id");
           const coreInput = tr.querySelector(".part-core-charge");
           const miscInput = tr.querySelector(".part-misc-charge");
           const miscDescriptionInput = tr.querySelector(".part-misc-charge-description");
           const toggle = tr.querySelector(".part-core-toggle");
+          if (partIdInput) partIdInput.value = "";
           if (coreInput) coreInput.value = "0";
           if (miscInput) miscInput.value = "0";
           if (miscDescriptionInput) miscDescriptionInput.value = "";
@@ -1442,6 +1448,7 @@
       parts.forEach((p, rIdx) => {
         const tr = makePartsRow(bIdx, rIdx);
         tr.querySelector(".part-number").value = String(p?.part_number ?? "");
+        tr.querySelector(".part-id").value = String(p?.part_id ?? "");
         tr.querySelector(".part-description").value = String(p?.description ?? "");
         tr.querySelector(".part-qty").value = String(p?.qty ?? "");
         tr.querySelector(".part-cost").value = String(p?.cost ?? "");
@@ -1494,6 +1501,7 @@
       const rows = Array.from(bEl.querySelectorAll("tbody.partsTbody tr.parts-row"));
       rows.forEach((tr) => {
         const part_number = String(tr.querySelector(".part-number")?.value || "").trim();
+        const part_id = String(tr.querySelector(".part-id")?.value || "").trim();
         const description = String(tr.querySelector(".part-description")?.value || "").trim();
         const qty = String(tr.querySelector(".part-qty")?.value || "").trim();
         const cost = String(tr.querySelector(".part-cost")?.value || "").trim();
@@ -1501,8 +1509,9 @@
         const coreCharge = String(tr.querySelector(".part-core-charge")?.value || "").trim();
         const miscCharge = String(tr.querySelector(".part-misc-charge")?.value || "").trim();
         const miscChargeDescription = String(tr.querySelector(".part-misc-charge-description")?.value || "").trim();
-        if (!(part_number || description || qty || cost || price || coreCharge || miscCharge || miscChargeDescription)) return;
+        if (!(part_number || part_id || description || qty || cost || price || coreCharge || miscCharge || miscChargeDescription)) return;
         parts.push({
+          part_id,
           part_number,
           description,
           qty: qty === "" ? 0 : Number(qty),
