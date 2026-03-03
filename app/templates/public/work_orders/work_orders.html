@@ -52,6 +52,7 @@
             <table class="table table-sm align-middle">
               <thead>
                 <tr>
+                  <th>WO #</th>
                   <th>Customer</th>
                   <th>Date</th>
                   <th>Unit</th>
@@ -65,6 +66,7 @@
               <tbody>
                 {% for w in work_orders %}
                   <tr>
+                    <td><span class="badge bg-secondary">{{ w.wo_number or '-' }}</span></td>
                     <td>{{ w.customer }}</td>
                     <td>{{ w.date }}</td>
                     <td>{{ w.unit }}</td>

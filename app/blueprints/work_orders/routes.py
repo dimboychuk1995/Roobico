@@ -54,6 +54,31 @@ def round2(v):
     return round(n + 1e-12, 2)
 
 
+def get_next_wo_number(shop_db, shop_id):
+    """
+    Get next work order number using atomic counter.
+    Returns integer starting from 1000.
+    """
+    from pymongo import ReturnDocument
+    
+    result = shop_db.counters.find_one_and_update(
+        {"_id": f"wo_number_{shop_id}"},
+        {
+            "$inc": {"seq": 1},
+            "$setOnInsert": {"initial_value": 1000}
+        },
+        upsert=True,
+        return_document=ReturnDocument.AFTER
+    )
+    
+    seq = result.get("seq", 1)
+    initial = result.get("initial_value", 1000)
+    
+    # First call: seq=1, return 1000
+    # Second call: seq=2, return 1001, etc
+    return initial + seq - 1
+
+
 def normalize_parts_payload(raw_parts):
     if not isinstance(raw_parts, list):
         return []
@@ -301,6 +326,7 @@ def get_work_orders_list(shop_db, shop_id: ObjectId, page: int, per_page: int):
         items.append(
             {
                 "id": str(x.get("_id")),
+                "wo_number": x.get("wo_number"),
                 "customer": customers_map.get(x.get("customer_id")) or "-",
                 "date": format_dt_label(x.get("created_at")),
                 "unit": units_map.get(x.get("unit_id")) or "-",
@@ -656,6 +682,7 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
         # NEW: флаг, чтобы после create UI стал неактивным
         "work_order_created": bool((form_state or {}).get("work_order_created")),
         "created_work_order_id": (form_state or {}).get("created_work_order_id") or "",
+        "wo_number": (form_state or {}).get("wo_number"),
 
         "initial_labors": (form_state or {}).get("initial_labors") or [],
         "initial_totals": normalize_totals_payload((form_state or {}).get("initial_totals") or {}),
@@ -947,6 +974,7 @@ def work_order_details_page():
             form_state={
                 "work_order_created": True,
                 "created_work_order_id": str(wo.get("_id")),
+                "wo_number": wo.get("wo_number"),
                 "initial_labors": normalize_saved_labors(wo.get("labors") or wo.get("blocks") or []),
                 "initial_totals": wo.get("totals")
                 or {
@@ -1167,9 +1195,13 @@ def create_work_order():
         except Exception:
             pass  # Silently ignore mileage update errors
 
+    # Get next work order number
+    wo_number = get_next_wo_number(shop_db, shop["_id"])
+
     doc = {
         "shop_id": shop["_id"],
         "tenant_id": shop.get("tenant_id"),
+        "wo_number": wo_number,
         "customer_id": customer_id,
         "unit_id": unit_id,
         "status": "open",

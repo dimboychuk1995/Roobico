@@ -6,7 +6,9 @@
   <div class="card-body">
 
     <div class="d-flex align-items-center justify-content-between mb-3">
-      <h1 class="h4 mb-0">Create Work Order</h1>
+      <div>
+        <h1 class="h4 mb-0">{% if wo_number %}Work Order #{{ wo_number }}{% else %}Create Work Order{% endif %}</h1>
+      </div>
       <a class="btn btn-outline-secondary" href="{{ url_for('work_orders.work_orders_page') }}">Back</a>
     </div>
 

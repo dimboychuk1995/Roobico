@@ -395,33 +395,39 @@
 				if (orders.length === 0) {
 					partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No orders found for this part.</td></tr>`;
 				} else {
-					partHistoryOrdersBody.innerHTML = orders.map((row) => `
-						<tr>
-							<td class="small">${escapeHtml(row.order_id || "-")}</td>
-							<td>${escapeHtml(row.status || "-")}</td>
-							<td>${escapeHtml(row.vendor || "-")}</td>
-							<td class="text-end">${Number(row.quantity || 0)}</td>
-							<td class="text-end">$${money(row.price)}</td>
-							<td class="small">${escapeHtml(formatDateTime(row.created_at))}</td>
-							<td class="small">${escapeHtml(formatDateTime(row.received_at))}</td>
-						</tr>
-					`).join("");
+				partHistoryOrdersBody.innerHTML = orders.map((row) => {
+					const orderNum = row.order_number || (row.order_id ? `#${row.order_id.slice(-6)}` : "-");
+					return `
+					<tr>
+						<td><span class="badge bg-secondary">${orderNum}</span></td>
+						<td>${escapeHtml(row.status || "-")}</td>
+						<td>${escapeHtml(row.vendor || "-")}</td>
+						<td class="text-end">${Number(row.quantity || 0)}</td>
+						<td class="text-end">$${money(row.price)}</td>
+						<td class="small">${escapeHtml(formatDateTime(row.created_at))}</td>
+						<td class="small">${escapeHtml(formatDateTime(row.received_at))}</td>
+					</tr>
+				`;
+				}).join("");
 				}
 
 				if (workOrders.length === 0) {
 					partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No work orders found for this part.</td></tr>`;
 				} else {
-					partHistoryWorkOrdersBody.innerHTML = workOrders.map((row) => `
-						<tr>
-							<td class="small">${escapeHtml(row.work_order_id || "-")}</td>
-							<td>${escapeHtml(row.status || "-")}</td>
-							<td>${escapeHtml(row.customer || "-")}</td>
-							<td>${escapeHtml(row.unit || "-")}</td>
-							<td class="text-end">${Number(row.used_qty || 0)}</td>
-							<td class="text-end">$${money(row.grand_total)}</td>
-							<td class="small">${escapeHtml(formatDateTime(row.created_at))}</td>
-						</tr>
-					`).join("");
+				partHistoryWorkOrdersBody.innerHTML = workOrders.map((row) => {
+					const woNum = row.wo_number || (row.work_order_id ? `#${row.work_order_id.slice(-6)}` : "-");
+					return `
+					<tr>
+						<td><span class="badge bg-secondary">${woNum}</span></td>
+						<td>${escapeHtml(row.status || "-")}</td>
+						<td>${escapeHtml(row.customer || "-")}</td>
+						<td>${escapeHtml(row.unit || "-")}</td>
+						<td class="text-end">${Number(row.used_qty || 0)}</td>
+						<td class="text-end">$${money(row.grand_total)}</td>
+						<td class="small">${escapeHtml(formatDateTime(row.created_at))}</td>
+					</tr>
+				`;
+				}).join("");
 				}
 			} catch (err) {
 				partHistoryMeta.textContent = "Network error while loading history";

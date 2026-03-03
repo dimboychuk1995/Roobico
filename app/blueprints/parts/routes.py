@@ -161,6 +161,29 @@ def _fmt_dt_iso(dt) -> str:
     return ""
 
 
+def _get_next_order_number(shop_db, shop_id):
+    """
+    Get next parts order number using atomic counter.
+    Returns integer starting from 1000.
+    """
+    from pymongo import ReturnDocument
+    
+    result = shop_db.counters.find_one_and_update(
+        {"_id": f"order_number_{shop_id}"},
+        {
+            "$inc": {"seq": 1},
+            "$setOnInsert": {"initial_value": 1000}
+        },
+        upsert=True,
+        return_document=ReturnDocument.AFTER
+    )
+    
+    seq = result.get("seq", 1)
+    initial = result.get("initial_value", 1000)
+    
+    return initial + seq - 1
+
+
 @parts_bp.get("/")
 @login_required
 @permission_required("parts.view")
@@ -615,8 +638,13 @@ def parts_api_orders_create():
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
 
+    # Get next order number
+    shop_db = orders_coll.database
+    order_number = _get_next_order_number(shop_db, shop["_id"])
+
     order_doc = {
         "vendor_id": vendor_oid,
+        "order_number": order_number,
         "items": items,
         "status": "ordered",
         "is_active": True,
@@ -834,6 +862,7 @@ def parts_api_history(part_id: str):
 
         orders_out.append({
             "order_id": str(row.get("_id")),
+            "order_number": row.get("order_number"),
             "status": str(row.get("status") or ""),
             "vendor": vendor_map.get(row.get("vendor_id")) or "-",
             "quantity": qty,
@@ -904,6 +933,7 @@ def parts_api_history(part_id: str):
 
         work_orders_out.append({
             "work_order_id": str(w.get("_id")),
+            "wo_number": w.get("wo_number"),
             "status": str(w.get("status") or "open"),
             "customer": customers_map.get(w.get("customer_id")) or "-",
             "unit": units_map.get(w.get("unit_id")) or "-",
