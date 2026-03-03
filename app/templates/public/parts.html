@@ -3,27 +3,51 @@
 {% block page_title %}Parts{% endblock %}
 
 {% block app_content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <div>
-    <h1 class="h4 mb-1">Parts</h1>
-    <div class="text-muted small">In stock parts (active only).</div>
-  </div>
+<div class="card">
+  <div class="card-body d-flex align-items-start justify-content-between gap-3">
+    <div>
+      <h1 class="h4 mb-2">Management</h1>
+      <p class="text-muted mb-0">Parts inventory and orders.</p>
+    </div>
 
-  <div class="d-flex gap-2">
-    <button type="button" class="btn btn-outline-primary"
-        data-bs-toggle="modal" data-bs-target="#orderModal">
-      <i class="bi bi-cart-plus me-1"></i> Order
-    </button>
+    <div class="d-flex gap-2">
+      <button type="button" class="btn btn-outline-primary"
+          data-bs-toggle="modal" data-bs-target="#orderModal">
+        <i class="bi bi-cart-plus me-1"></i> Order
+      </button>
 
-    <button type="button" class="btn btn-primary"
-            data-bs-toggle="modal" data-bs-target="#createPartModal">
-      <i class="bi bi-plus-lg me-1"></i> Add Part
-    </button>
+      <button type="button" class="btn btn-primary"
+              data-bs-toggle="modal" data-bs-target="#createPartModal">
+        <i class="bi bi-plus-lg me-1"></i> Add Part
+      </button>
+    </div>
   </div>
 </div>
 
-<div class="card">
+<!-- Navigation Tabs -->
+<div class="card mt-3">
   <div class="card-body">
+    <ul class="nav nav-tabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="tab-parts" data-bs-toggle="tab" data-bs-target="#content-parts" type="button" role="tab" aria-controls="content-parts" aria-selected="true">
+          Parts
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="tab-orders" data-bs-toggle="tab" data-bs-target="#content-orders" type="button" role="tab" aria-controls="content-orders" aria-selected="false">
+          Parts Orders
+        </button>
+      </li>
+    </ul>
+  </div>
+</div>
+
+<!-- Tab Content -->
+<div class="tab-content mt-3">
+  <!-- Parts Tab -->
+  <div class="tab-pane fade show active" id="content-parts" role="tabpanel" aria-labelledby="tab-parts">
+    <div class="card">
+      <div class="card-body">
 
     {% if parts and parts|length > 0 %}
       <div class="table-responsive">
@@ -132,6 +156,52 @@
       <div class="text-muted">No parts in stock.</div>
     {% endif %}
 
+      </div>
+    </div>
+  </div>
+
+  <!-- Parts Orders Tab -->
+  <div class="tab-pane fade" id="content-orders" role="tabpanel" aria-labelledby="tab-orders">
+    <div class="card">
+      <div class="card-body">
+        {% if orders and orders|length > 0 %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>Order #</th>
+                  <th>Vendor</th>
+                  <th class="text-end">Items</th>
+                  <th>Status</th>
+                  <th>Created</th>
+                  <th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for o in orders %}
+                  <tr>
+                    <td><span class="badge bg-secondary">{{ o.order_number or '-' }}</span></td>
+                    <td>{{ o.vendor }}</td>
+                    <td class="text-end">{{ o.items_count }}</td>
+                    <td>{{ o.status }}</td>
+                    <td>{{ o.created_at }}</td>
+                    <td class="text-end">
+                      <button type="button" class="btn btn-sm btn-outline-primary editOrderBtn" 
+                              data-order-id="{{ o.id }}"
+                              data-bs-toggle="modal" data-bs-target="#orderModal">
+                        Edit
+                      </button>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% else %}
+          <div class="text-muted">No parts orders found.</div>
+        {% endif %}
+      </div>
+    </div>
   </div>
 </div>
 

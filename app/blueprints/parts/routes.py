@@ -161,6 +161,15 @@ def _fmt_dt_iso(dt) -> str:
     return ""
 
 
+def _fmt_dt_label(dt) -> str:
+    if isinstance(dt, datetime):
+        try:
+            return dt.astimezone().strftime("%Y-%m-%d %H:%M")
+        except Exception:
+            return dt.strftime("%Y-%m-%d %H:%M")
+    return "-"
+
+
 def _get_next_order_number(shop_db, shop_id):
     """
     Get next parts order number using atomic counter.
@@ -256,6 +265,32 @@ def parts_page():
 
     last_order_id = session.get("last_parts_order_id")
 
+    # Get orders list for Orders tab
+    orders_list = []
+    if orders_coll is not None:
+        orders_rows = list(
+            orders_coll.find({"shop_id": shop["_id"], "is_active": {"$ne": False}})
+            .sort([("created_at", -1)])
+            .limit(100)
+        )
+        
+        # Get vendor names for orders
+        vendor_ids = [o.get("vendor_id") for o in orders_rows if o.get("vendor_id")]
+        vendors_map = {}
+        if vendor_ids and vendors_coll is not None:
+            for v in vendors_coll.find({"_id": {"$in": vendor_ids}}):
+                vendors_map[v.get("_id")] = _name_from_doc(v)
+        
+        for order in orders_rows:
+            orders_list.append({
+                "id": str(order.get("_id")),
+                "order_number": order.get("order_number"),
+                "vendor": vendors_map.get(order.get("vendor_id")) or "-",
+                "status": order.get("status") or "ordered",
+                "items_count": len(order.get("items") or []),
+                "created_at": _fmt_dt_label(order.get("created_at")),
+            })
+
     return _render_app_page(
         "public/parts.html",
         active_page="parts",
@@ -265,6 +300,7 @@ def parts_page():
         categories=categories,
         locations=locations,
         last_order_id=last_order_id,
+        orders=orders_list,
     )
 
 
@@ -677,6 +713,138 @@ def _recalc_weighted_avg(old_qty: int, old_avg: float, add_qty: int, add_price: 
         return 0.0
 
     return (old_avg * old_qty + add_price * add_qty) / denom
+
+
+@parts_bp.get("/api/orders/<order_id>")
+@login_required
+@permission_required("parts.view")
+def parts_api_orders_get(order_id: str):
+    """
+    Get order details for editing.
+    Returns JSON with order data.
+    """
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if orders_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop database not configured for this shop."}), 400
+
+    oid = _oid(order_id)
+    if not oid:
+        return jsonify({"ok": False, "error": "Invalid order id"}), 400
+
+    order = orders_coll.find_one({"_id": oid, "shop_id": shop["_id"], "is_active": {"$ne": False}})
+    if not order:
+        return jsonify({"ok": False, "error": "Order not found"}), 404
+
+    # Convert items for JSON serialization
+    items = []
+    for item in (order.get("items") or []):
+        if isinstance(item, dict):
+            items.append({
+                "part_id": str(item.get("part_id")) if item.get("part_id") else "",
+                "part_number": item.get("part_number") or "",
+                "description": item.get("description") or "",
+                "quantity": item.get("quantity") or 0,
+                "price": float(item.get("price") or 0),
+            })
+
+    return jsonify({
+        "ok": True,
+        "order": {
+            "id": str(order.get("_id")),
+            "vendor_id": str(order.get("vendor_id")) if order.get("vendor_id") else "",
+            "status": order.get("status") or "ordered",
+            "items": items,
+            "created_at": _fmt_dt_iso(order.get("created_at")),
+        }
+    })
+
+
+@parts_bp.route("/api/orders/<order_id>/update", methods=["POST", "PUT"])
+@login_required
+@permission_required("parts.edit")
+def parts_api_orders_update(order_id: str):
+    """
+    AJAX update order.
+    Accepts JSON: { "vendor_id": "<oid str>", "items": [...] }
+    Returns JSON: { "ok": true }
+    """
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or vendors_coll is None or orders_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop database not configured for this shop."}), 400
+
+    oid = _oid(order_id)
+    if not oid:
+        return jsonify({"ok": False, "error": "Invalid order id"}), 400
+
+    # Get existing order
+    order = orders_coll.find_one({"_id": oid, "shop_id": shop["_id"], "is_active": {"$ne": False}})
+    if not order:
+        return jsonify({"ok": False, "error": "Order not found"}), 404
+
+    # Don't allow updating received orders
+    if order.get("status") == "received":
+        return jsonify({"ok": False, "error": "Cannot update received orders"}), 400
+
+    data = request.get_json(silent=True) or {}
+
+    vendor_id_raw = (data.get("vendor_id") or "").strip()
+    if not vendor_id_raw:
+        return jsonify({"ok": False, "error": "Vendor is required."}), 400
+
+    vendor_oid, err = _validate_ref(vendors_coll, vendor_id_raw, "Vendor")
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+
+    items_in = data.get("items") or []
+    if not isinstance(items_in, list) or len(items_in) == 0:
+        return jsonify({"ok": False, "error": "Add at least one item."}), 400
+
+    items = []
+    for it in items_in:
+        pid = _oid((it.get("part_id") or "").strip())
+        if not pid:
+            continue
+
+        qty = _parse_int(it.get("quantity"), default=0)
+        price = _parse_float(it.get("price"), default=-1.0)
+
+        if qty <= 0:
+            continue
+        if price < 0:
+            return jsonify({"ok": False, "error": "Price cannot be negative."}), 400
+
+        part = parts_coll.find_one({"_id": pid, "is_active": True})
+        if not part:
+            continue
+
+        items.append({
+            "part_id": pid,
+            "part_number": part.get("part_number"),
+            "description": part.get("description"),
+            "price": float(price),
+            "quantity": int(qty),
+        })
+
+    if not items:
+        return jsonify({"ok": False, "error": "No valid items in order."}), 400
+
+    now = utcnow()
+    user_oid = _oid(session.get(SESSION_USER_ID))
+
+    # Update order
+    orders_coll.update_one(
+        {"_id": oid},
+        {
+            "$set": {
+                "vendor_id": vendor_oid,
+                "items": items,
+                "updated_at": now,
+                "updated_by": user_oid,
+            }
+        }
+    )
+
+    return jsonify({"ok": True})
 
 
 @parts_bp.post("/api/orders/<order_id>/receive")

@@ -94,6 +94,8 @@
 		const orderCreatedBox = document.getElementById("orderCreatedBox");
 		const orderAlert = document.getElementById("orderAlert");
 
+		let orderItems = [];
+
 			if (!vendorSelect || !partSearch || !dropdown || !itemsBody || !createOrderBtn || !receiveBtn || !createdOrderId || !orderCreatedBox || !orderAlert) {
 			return;
 		}
@@ -198,6 +200,33 @@
 			partSearch.focus();
 		}
 
+		function renderOrderItems() {
+			itemsBody.innerHTML = "";
+			if (orderItems.length === 0) {
+				ensureEmptyRowShown();
+				return;
+			}
+			ensureEmptyRowRemoved();
+			orderItems.forEach(item => {
+				const tr = document.createElement("tr");
+				tr.setAttribute("data-part-id", item.part_id);
+				tr.innerHTML = `
+					<td class="fw-semibold">${escapeHtml(item.part_number)}</td>
+					<td class="text-muted">${escapeHtml(item.description) || "-"}</td>
+					<td class="text-end">
+						<input class="form-control form-control-sm text-end qty-input" type="number" min="1" step="1" value="${item.quantity}" required>
+					</td>
+					<td class="text-end">
+						<input class="form-control form-control-sm text-end price-input" type="number" min="0" step="0.01" value="${item.price}" required>
+					</td>
+					<td class="text-end">
+						<button type="button" class="btn btn-sm btn-outline-danger remove-item-btn">Remove</button>
+					</td>
+				`;
+				itemsBody.appendChild(tr);
+			});
+		}
+
 		vendorSelect.addEventListener("change", function () {
 			clearError();
 			partSearch.disabled = !vendorSelect.value;
@@ -280,20 +309,28 @@
 			createOrderBtn.disabled = true;
 
 			try {
-				const res = await fetch("/parts/api/orders/create", {
-					method: "POST",
+				const isEdit = createdOrderId.value !== "";
+				const endpoint = isEdit 
+					? `/parts/api/orders/${createdOrderId.value}/update`
+					: "/parts/api/orders/create";
+				const method = isEdit ? "PUT" : "POST";
+
+				const res = await fetch(endpoint, {
+					method: method,
 					headers: { "Content-Type": "application/json" },
 					body: JSON.stringify({ vendor_id: vendorId, items }),
 				});
 				const data = await res.json();
 
 				if (!data.ok) {
-					showError(data.error || "Create order failed.");
+					showError(data.error || (isEdit ? "Update order failed." : "Create order failed."));
 					createOrderBtn.disabled = false;
 					return;
 				}
 
-				createdOrderId.value = data.order_id;
+				if (!isEdit) {
+					createdOrderId.value = data.order_id;
+				}
 				orderCreatedBox.classList.remove("d-none");
 
 				vendorSelect.disabled = true;
@@ -309,7 +346,7 @@
 				});
 
 			} catch (e) {
-				showError("Network error while creating order.");
+				showError("Network error while " + (createdOrderId.value ? "updating" : "creating") + " order.");
 				createOrderBtn.disabled = false;
 			}
 		}
@@ -347,6 +384,68 @@
 
 		createOrderBtn.addEventListener("click", createOrderAjax);
 		receiveBtn.addEventListener("click", receiveOrderAjax);
+
+		// Load order data when Edit button clicked
+		document.addEventListener("click", async function (e) {
+			const btn = e.target.closest(".editOrderBtn");
+			if (!btn) return;
+			
+			const orderId = btn.getAttribute("data-order-id");
+			if (!orderId) return;
+
+			try {
+				const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}`);
+				if (!res.ok) {
+					showError("Failed to load order");
+					return;
+				}
+
+				const data = await res.json();
+				if (!data.ok || !data.order) {
+					showError("Order not found");
+					return;
+				}
+
+				const order = data.order;
+				// Set vendor
+				vendorSelect.value = order.vendor_id || "";
+				// Clear current items
+				orderItems = [];
+				// Load items from order
+				if (Array.isArray(order.items)) {
+					orderItems = order.items.map(item => ({
+						part_id: item.part_id,
+						part_number: item.part_number,
+						description: item.description,
+						quantity: item.quantity,
+						price: item.price
+					}));
+				}
+				// Render items
+				renderOrderItems();
+				// Mark as editing
+				createdOrderId.value = orderId;
+				orderCreatedBox.classList.add("d-none");
+				createOrderBtn.textContent = "Update order";
+			} catch (err) {
+				showError("Network error while loading order");
+			}
+		});
+
+		// Reset form when modal is closed
+		const orderModal = document.getElementById("orderModal");
+		orderModal?.addEventListener("hidden.bs.modal", function () {
+			vendorSelect.value = "";
+			partSearch.value = "";
+			partSearch.disabled = true;
+			dropdown.style.display = "none";
+			orderItems = [];
+			renderOrderItems();
+			createdOrderId.value = "";
+			orderCreatedBox.classList.add("d-none");
+			orderAlert.classList.add("d-none");
+			createOrderBtn.textContent = "Create order";
+		});
 
 		const partHistoryModal = document.getElementById("partHistoryModal");
 		const partHistoryMeta = document.getElementById("partHistoryMeta");
