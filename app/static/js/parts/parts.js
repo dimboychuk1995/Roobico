@@ -93,10 +93,11 @@
 		const createdOrderId = document.getElementById("createdOrderId");
 		const orderCreatedBox = document.getElementById("orderCreatedBox");
 		const orderAlert = document.getElementById("orderAlert");
+		const orderTotalAmount = document.getElementById("orderTotalAmount");
 
 		let orderItems = [];
 
-			if (!vendorSelect || !partSearch || !dropdown || !itemsBody || !createOrderBtn || !receiveBtn || !createdOrderId || !orderCreatedBox || !orderAlert) {
+			if (!vendorSelect || !partSearch || !dropdown || !itemsBody || !createOrderBtn || !receiveBtn || !createdOrderId || !orderCreatedBox || !orderAlert || !orderTotalAmount) {
 			return;
 		}
 
@@ -120,6 +121,30 @@
 		function clearError() {
 			orderAlert.textContent = "";
 			orderAlert.classList.add("d-none");
+		}
+
+		function calculateOrderTotal() {
+			let total = 0;
+			const rows = Array.from(itemsBody.querySelectorAll("tr[data-part-id]"));
+			
+			rows.forEach(tr => {
+				const qty = parseInt((tr.querySelector(".qty-input")?.value || "0"), 10);
+				const price = parseFloat((tr.querySelector(".price-input")?.value || "0"));
+				const coreHasCharge = tr.getAttribute("data-core-has-charge") === "true";
+				const coreCost = parseFloat(tr.getAttribute("data-core-cost") || "0");
+				
+				if (qty > 0 && price >= 0) {
+					// Base price * quantity
+					total += price * qty;
+					
+					// Add core charge per unit if applicable
+					if (coreHasCharge && coreCost > 0) {
+						total += coreCost * qty;
+					}
+				}
+			});
+			
+			orderTotalAmount.textContent = "$" + total.toFixed(2);
 		}
 
 		function hideDropdown() {
@@ -166,6 +191,7 @@
 					const cur = parseInt(qtyInput.value || "0", 10);
 					qtyInput.value = String((cur || 0) + 1);
 				}
+				calculateOrderTotal();
 				hideDropdown();
 				partSearch.value = "";
 				partSearch.focus();
@@ -177,11 +203,19 @@
 			const pn = item.part_number || "";
 			const desc = item.description || "";
 			const price = Number(item.average_cost || 0).toFixed(2);
+			const coreHasCharge = item.core_has_charge || false;
+			const coreCost = Number(item.core_cost || 0).toFixed(2);
+			
+			const coreIndicator = coreHasCharge && coreCost > 0
+				? `<span class="badge bg-warning text-dark ms-1" title="Core charge: $${coreCost} per unit">Core</span>`
+				: '';
 
 			const tr = document.createElement("tr");
 			tr.setAttribute("data-part-id", pid);
+			tr.setAttribute("data-core-has-charge", coreHasCharge ? "true" : "false");
+			tr.setAttribute("data-core-cost", coreCost);
 			tr.innerHTML = `
-				<td class="fw-semibold">${escapeHtml(pn)}</td>
+				<td class="fw-semibold">${escapeHtml(pn)}${coreIndicator}</td>
 				<td class="text-muted">${escapeHtml(desc) || "-"}</td>
 				<td class="text-end">
 					<input class="form-control form-control-sm text-end qty-input" type="number" min="1" step="1" value="1" required>
@@ -195,6 +229,7 @@
 			`;
 			itemsBody.appendChild(tr);
 
+			calculateOrderTotal();
 			hideDropdown();
 			partSearch.value = "";
 			partSearch.focus();
@@ -204,14 +239,21 @@
 			itemsBody.innerHTML = "";
 			if (orderItems.length === 0) {
 				ensureEmptyRowShown();
+				calculateOrderTotal();
 				return;
 			}
 			ensureEmptyRowRemoved();
 			orderItems.forEach(item => {
+				const coreIndicator = item.core_has_charge && item.core_cost > 0
+					? `<span class="badge bg-warning text-dark ms-1" title="Core charge: $${Number(item.core_cost).toFixed(2)} per unit">Core</span>`
+					: '';
+				
 				const tr = document.createElement("tr");
 				tr.setAttribute("data-part-id", item.part_id);
+				tr.setAttribute("data-core-has-charge", item.core_has_charge ? "true" : "false");
+				tr.setAttribute("data-core-cost", item.core_cost || "0");
 				tr.innerHTML = `
-					<td class="fw-semibold">${escapeHtml(item.part_number)}</td>
+					<td class="fw-semibold">${escapeHtml(item.part_number)}${coreIndicator}</td>
 					<td class="text-muted">${escapeHtml(item.description) || "-"}</td>
 					<td class="text-end">
 						<input class="form-control form-control-sm text-end qty-input" type="number" min="1" step="1" value="${item.quantity}" required>
@@ -225,6 +267,7 @@
 				`;
 				itemsBody.appendChild(tr);
 			});
+			calculateOrderTotal();
 		}
 
 		vendorSelect.addEventListener("change", function () {
@@ -255,10 +298,16 @@
 					const el = document.createElement("button");
 					el.type = "button";
 					el.className = "list-group-item list-group-item-action";
+					
+					const priceDisplay = Number(item.average_cost || 0).toFixed(2);
+					const coreInfo = item.core_has_charge && item.core_cost > 0 
+						? `<span class="badge bg-warning text-dark ms-1" title="Core charge included">+Core $${Number(item.core_cost).toFixed(2)}</span>`
+						: '';
+					
 					el.innerHTML = `
 						<div class="d-flex justify-content-between">
 							<div class="fw-semibold">${escapeHtml(item.part_number)}</div>
-							<div class="text-muted small">$${Number(item.average_cost || 0).toFixed(2)}</div>
+							<div class="text-muted small">$${priceDisplay}${coreInfo}</div>
 						</div>
 						<div class="text-muted small">${escapeHtml(item.description)}</div>
 					`;
@@ -282,6 +331,14 @@
 			const tr = btn.closest("tr");
 			if (tr) tr.remove();
 			ensureEmptyRowShown();
+			calculateOrderTotal();
+		});
+
+		// Recalculate total when quantity or price changes
+		itemsBody.addEventListener("input", function (e) {
+			if (e.target.classList.contains("qty-input") || e.target.classList.contains("price-input")) {
+				calculateOrderTotal();
+			}
 		});
 
 		async function createOrderAjax() {
@@ -406,8 +463,13 @@
 					return;
 				}
 
-				const order = data.order;
-				// Set vendor
+				const order = data.order;			
+			// Prevent editing received orders
+			if (order.status === "received") {
+				showError("Cannot edit received orders. Click 'Unreceive' first to modify or delete.");
+				return;
+			}
+							// Set vendor
 				vendorSelect.value = order.vendor_id || "";
 				// Clear current items
 				orderItems = [];
@@ -418,7 +480,9 @@
 						part_number: item.part_number,
 						description: item.description,
 						quantity: item.quantity,
-						price: item.price
+						price: item.price,
+						core_has_charge: item.core_has_charge || false,
+						core_cost: item.core_cost || 0
 					}));
 				}
 				// Render items
@@ -571,6 +635,89 @@
 					<td colspan="5" class="text-muted">No items added.</td>
 				</tr>
 			`;
+			
+			orderTotalAmount.textContent = "$0.00";
+		});
+
+		// ---- Order List Management (Receive, Unreceive, Delete from Orders tab) ----
+		document.addEventListener("click", async function (e) {
+			// Receive order button
+			const receiveBtn = e.target.closest(".receiveOrderBtn");
+			if (receiveBtn) {
+				const orderId = receiveBtn.getAttribute("data-order-id");
+				if (!orderId) return;
+
+				if (confirm("Mark this order as received?")) {
+					try {
+						const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/receive`, {
+							method: "POST"
+						});
+						const data = await res.json();
+
+						if (data.ok) {
+							alert(`Order received! ${data.updated_parts} parts updated.`);
+							location.reload();
+						} else {
+							alert("Error: " + (data.error || "Failed to receive order"));
+						}
+					} catch (err) {
+						alert("Network error while receiving order");
+					}
+				}
+				return;
+			}
+
+			// Unreceive order button
+			const unreceiveBtn = e.target.closest(".unreceiveOrderBtn");
+			if (unreceiveBtn) {
+				const orderId = unreceiveBtn.getAttribute("data-order-id");
+				if (!orderId) return;
+
+				if (confirm("Unreceive this order? Items will be removed from inventory.")) {
+					try {
+						const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/unreceive`, {
+							method: "POST"
+						});
+						const data = await res.json();
+
+						if (data.ok) {
+							alert(`Order unreceived! ${data.updated_parts} parts removed from inventory.`);
+							location.reload();
+						} else {
+							alert("Error: " + (data.error || "Failed to unreceive order"));
+						}
+					} catch (err) {
+						alert("Network error while unreceiving order");
+					}
+				}
+				return;
+			}
+
+			// Delete order button
+			const deleteBtn = e.target.closest(".deleteOrderBtn");
+			if (deleteBtn) {
+				const orderId = deleteBtn.getAttribute("data-order-id");
+				if (!orderId) return;
+
+				if (confirm("Delete this order? If received, items will be removed from inventory.")) {
+					try {
+						const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}`, {
+							method: "DELETE"
+						});
+						const data = await res.json();
+
+						if (data.ok) {
+							alert("Order deleted successfully");
+							location.reload();
+						} else {
+							alert("Error: " + (data.error || "Failed to delete order"));
+						}
+					} catch (err) {
+						alert("Network error while deleting order");
+					}
+				}
+				return;
+			}
 		});
 
 	// ---- Edit Part Modal Logic ----

@@ -183,13 +183,39 @@
                     <td><span class="badge bg-secondary">{{ o.order_number or '-' }}</span></td>
                     <td>{{ o.vendor }}</td>
                     <td class="text-end">{{ o.items_count }}</td>
-                    <td>{{ o.status }}</td>
+                    <td>
+                      <span class="badge {% if o.status == 'received' %}bg-success{% else %}bg-warning text-dark{% endif %}">
+                        {{ o.status or 'ordered' }}
+                      </span>
+                    </td>
                     <td>{{ o.created_at }}</td>
                     <td class="text-end">
-                      <button type="button" class="btn btn-sm btn-outline-primary editOrderBtn" 
+                      {% if o.status == 'received' %}
+                        <button type="button" class="btn btn-sm btn-outline-success receiveOrderBtn" 
+                                data-order-id="{{ o.id }}" title="Already received" disabled>
+                          <i class="bi bi-check-circle me-1"></i> Received
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-warning unreceiveOrderBtn" 
+                                data-order-id="{{ o.id }}" 
+                                title="Unreceive to edit or delete">
+                          <i class="bi bi-arrow-counterclockwise me-1"></i> Unreceive
+                        </button>
+                      {% else %}
+                        <button type="button" class="btn btn-sm btn-outline-success receiveOrderBtn" 
+                                data-order-id="{{ o.id }}" 
+                                title="Mark as received">
+                          <i class="bi bi-check-circle me-1"></i> Receive
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-primary editOrderBtn" 
+                                data-order-id="{{ o.id }}"
+                                data-bs-toggle="modal" data-bs-target="#orderModal">
+                          <i class="bi bi-pencil me-1"></i> Edit
+                        </button>
+                      {% endif %}
+                      <button type="button" class="btn btn-sm btn-outline-danger deleteOrderBtn" 
                               data-order-id="{{ o.id }}"
-                              data-bs-toggle="modal" data-bs-target="#orderModal">
-                        Edit
+                              title="Delete order">
+                        <i class="bi bi-trash me-1"></i> Delete
                       </button>
                     </td>
                   </tr>
@@ -401,6 +427,13 @@
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div class="d-flex justify-content-end align-items-center mt-3 pt-3 border-top">
+          <div class="h5 mb-0">
+            <span class="text-muted">Order Total:</span> 
+            <span id="orderTotalAmount" class="fw-bold">$0.00</span>
+          </div>
         </div>
 
         <div id="orderAlert" class="alert alert-danger mt-3 d-none"></div>

@@ -518,6 +518,8 @@ def parts_api_search():
         "reference": 1,
         "average_cost": 1,
         "vendor_id": 1,
+        "core_has_charge": 1,
+        "core_cost": 1,
     }
 
     fetch_limit = min(300, max(50, limit * 6))
@@ -549,6 +551,8 @@ def parts_api_search():
             "description": p.get("description") or "",
             "average_cost": float(p.get("average_cost") or 0.0),
             "vendor_id": str(p["vendor_id"]) if p.get("vendor_id") else "",
+            "core_has_charge": bool(p.get("core_has_charge", False)),
+            "core_cost": float(p.get("core_cost") or 0.0),
         })
 
         if len(items) >= limit:
@@ -593,6 +597,8 @@ def parts_api_search():
                 "description": p.get("description") or "",
                 "average_cost": float(p.get("average_cost") or 0.0),
                 "vendor_id": str(p["vendor_id"]) if p.get("vendor_id") else "",
+                "core_has_charge": bool(p.get("core_has_charge", False)),
+                "core_cost": float(p.get("core_cost") or 0.0),
             })
 
             if len(items) >= limit:
@@ -737,14 +743,30 @@ def parts_api_orders_get(order_id: str):
 
     # Convert items for JSON serialization
     items = []
+    part_ids = [item.get("part_id") for item in (order.get("items") or []) if item.get("part_id")]
+    
+    # Fetch parts data to get core charge info
+    parts_map = {}
+    if part_ids and parts_coll is not None:
+        parts_cursor = parts_coll.find(
+            {"_id": {"$in": part_ids}},
+            {"core_has_charge": 1, "core_cost": 1}
+        )
+        parts_map = {p["_id"]: p for p in parts_cursor}
+    
     for item in (order.get("items") or []):
         if isinstance(item, dict):
+            part_id = item.get("part_id")
+            part_data = parts_map.get(part_id, {}) if part_id else {}
+            
             items.append({
-                "part_id": str(item.get("part_id")) if item.get("part_id") else "",
+                "part_id": str(part_id) if part_id else "",
                 "part_number": item.get("part_number") or "",
                 "description": item.get("description") or "",
                 "quantity": item.get("quantity") or 0,
                 "price": float(item.get("price") or 0),
+                "core_has_charge": bool(part_data.get("core_has_charge", False)),
+                "core_cost": float(part_data.get("core_cost") or 0.0),
             })
 
     return jsonify({
@@ -928,6 +950,149 @@ def parts_api_orders_receive(order_id: str):
     )
 
     return jsonify({"ok": True, "updated_parts": updated})
+
+
+@parts_bp.post("/api/orders/<order_id>/unreceive")
+@login_required
+@permission_required("parts.edit")
+def parts_api_orders_unreceive(order_id: str):
+    """
+    AJAX unreceive order (reverse the receive).
+    Removes items from inventory and changes status back to 'ordered'.
+    Returns JSON { ok: true, updated_parts: N }
+    """
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or orders_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop database not configured for this shop."}), 400
+
+    oid = _oid(order_id)
+    if not oid:
+        return jsonify({"ok": False, "error": "Invalid order id."}), 400
+
+    order = orders_coll.find_one({"_id": oid})
+    if not order:
+        return jsonify({"ok": False, "error": "Order not found."}), 404
+
+    if order.get("status") != "received":
+        return jsonify({"ok": True, "updated_parts": 0, "message": "Order not received."})
+
+    items = order.get("items") or []
+    if not isinstance(items, list) or len(items) == 0:
+        return jsonify({"ok": False, "error": "Order has no items."}), 400
+
+    now = utcnow()
+    user_oid = _oid(session.get(SESSION_USER_ID))
+
+    updated = 0
+    for it in items:
+        pid = it.get("part_id")
+        if not pid:
+            continue
+
+        recv_qty = int(it.get("quantity") or 0)
+        if recv_qty <= 0:
+            continue
+
+        part = parts_coll.find_one({"_id": pid})
+        if not part or part.get("is_active") is False:
+            continue
+
+        old_qty = int(part.get("in_stock") or 0)
+        new_qty = max(0, old_qty - recv_qty)
+
+        parts_coll.update_one(
+            {"_id": pid},
+            {"$set": {
+                "in_stock": int(new_qty),
+                "updated_at": now,
+                "updated_by": user_oid,
+            }},
+        )
+
+        updated += 1
+
+    orders_coll.update_one(
+        {"_id": oid},
+        {"$set": {
+            "status": "ordered",
+            "received_at": None,
+            "received_by": None,
+            "updated_at": now,
+            "updated_by": user_oid,
+        }},
+    )
+
+    return jsonify({"ok": True, "updated_parts": updated, "message": "Order unreceived and items removed from inventory."})
+
+
+@parts_bp.delete("/api/orders/<order_id>")
+@login_required
+@permission_required("parts.edit")
+def parts_api_orders_delete(order_id: str):
+    """
+    AJAX delete order.
+    If order is received, first unreceive it (remove from inventory).
+    Then deactivate the order (soft delete).
+    """
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or orders_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop database not configured for this shop."}), 400
+
+    oid = _oid(order_id)
+    if not oid:
+        return jsonify({"ok": False, "error": "Invalid order id."}), 400
+
+    order = orders_coll.find_one({"_id": oid})
+    if not order:
+        return jsonify({"ok": False, "error": "Order not found."}), 404
+
+    if order.get("is_active") is False:
+        return jsonify({"ok": False, "error": "Order already deleted."}), 400
+
+    now = utcnow()
+    user_oid = _oid(session.get(SESSION_USER_ID))
+
+    # If order is received, remove items from inventory first
+    if order.get("status") == "received":
+        items = order.get("items") or []
+        for it in items:
+            pid = it.get("part_id")
+            if not pid:
+                continue
+
+            recv_qty = int(it.get("quantity") or 0)
+            if recv_qty <= 0:
+                continue
+
+            part = parts_coll.find_one({"_id": pid})
+            if not part or part.get("is_active") is False:
+                continue
+
+            old_qty = int(part.get("in_stock") or 0)
+            new_qty = max(0, old_qty - recv_qty)
+
+            parts_coll.update_one(
+                {"_id": pid},
+                {"$set": {
+                    "in_stock": int(new_qty),
+                    "updated_at": now,
+                    "updated_by": user_oid,
+                }},
+            )
+
+    # Deactivate the order (soft delete)
+    orders_coll.update_one(
+        {"_id": oid},
+        {"$set": {
+            "is_active": False,
+            "updated_at": now,
+            "updated_by": user_oid,
+            "deactivated_at": now,
+            "deactivated_by": user_oid,
+        }},
+    )
+
+    return jsonify({"ok": True, "message": "Order deleted successfully."})
 
 
 @parts_bp.get("/api/<part_id>")
