@@ -37,7 +37,6 @@ main {
 
 .app-shell {
   position: relative;
-  z-index: 1;
 }
 
 h1,
@@ -165,9 +164,9 @@ textarea.form-control:focus {
 }
 
 .table-responsive {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: #ffffff;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
 .table {
@@ -176,8 +175,7 @@ textarea.form-control:focus {
 
 .table > :not(caption) > * > * {
   border-bottom-color: #e1e8e3;
-  padding-top: 0.64rem;
-  padding-bottom: 0.64rem;
+  padding: 0 !important;
   vertical-align: middle;
 }
 
@@ -192,11 +190,55 @@ textarea.form-control:focus {
 }
 
 .table > tbody > tr {
-  transition: background-color 0.15s ease;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.table > tbody > tr:nth-child(odd) {
+  background-color: #f3f8f3;
+}
+
+.table > tbody > tr:nth-child(even) {
+  background-color: #edf4ee;
 }
 
 .table > tbody > tr:hover {
-  background-color: #edf4ee;
+  box-shadow: none;
+}
+
+.table > tbody > tr:focus-within {
+  box-shadow: none;
+}
+
+.table > tbody > tr:hover > td {
+  background-color: #cfe5d4 !important;
+}
+
+.table > tbody > tr:focus-within > td {
+  background-color: #c5dfcb !important;
+}
+
+/* Show row actions only for the hovered/focused row. */
+.table > tbody > tr > td.text-end:has(.btn, button, form, a) .btn,
+.table > tbody > tr > td.text-end:has(.btn, button, form, a) button,
+.table > tbody > tr > td.text-end:has(.btn, button, form, a) form,
+.table > tbody > tr > td.text-end:has(.btn, button, form, a) a {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.table > tbody > tr:hover > td.text-end:has(.btn, button, form, a) .btn,
+.table > tbody > tr:hover > td.text-end:has(.btn, button, form, a) button,
+.table > tbody > tr:hover > td.text-end:has(.btn, button, form, a) form,
+.table > tbody > tr:hover > td.text-end:has(.btn, button, form, a) a,
+.table > tbody > tr:focus-within > td.text-end:has(.btn, button, form, a) .btn,
+.table > tbody > tr:focus-within > td.text-end:has(.btn, button, form, a) button,
+.table > tbody > tr:focus-within > td.text-end:has(.btn, button, form, a) form,
+.table > tbody > tr:focus-within > td.text-end:has(.btn, button, form, a) a {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 
 .badge {
@@ -292,7 +334,6 @@ a:hover {
   }
 
   .table > :not(caption) > * > * {
-    padding-top: 0.56rem;
-    padding-bottom: 0.56rem;
+    padding: 0 !important;
   }
 }
