@@ -3,24 +3,22 @@
 {% block page_title %}Parts{% endblock %}
 
 {% block app_content %}
-<div class="card">
-  <div class="card-body d-flex align-items-start justify-content-between gap-3">
-    <div>
-      <h1 class="h4 mb-2">Management</h1>
-      <p class="text-muted mb-0">Parts inventory and orders.</p>
-    </div>
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h1 class="h4 mb-1">Parts</h1>
+    <p class="text-muted mb-0">Manage parts inventory and vendor orders for the active shop.</p>
+  </div>
 
-    <div class="d-flex gap-2">
-      <button type="button" class="btn btn-outline-primary"
-          data-bs-toggle="modal" data-bs-target="#orderModal">
-        <i class="bi bi-cart-plus me-1"></i> Order
-      </button>
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-outline-primary btn-sm"
+        data-bs-toggle="modal" data-bs-target="#orderModal">
+      <i class="bi bi-cart-plus me-1"></i> Order
+    </button>
 
-      <button type="button" class="btn btn-primary"
-              data-bs-toggle="modal" data-bs-target="#createPartModal">
-        <i class="bi bi-plus-lg me-1"></i> Add Part
-      </button>
-    </div>
+    <button type="button" class="btn btn-primary btn-sm"
+            data-bs-toggle="modal" data-bs-target="#createPartModal">
+      <i class="bi bi-plus-lg me-1"></i> Add Part
+    </button>
   </div>
 </div>
 

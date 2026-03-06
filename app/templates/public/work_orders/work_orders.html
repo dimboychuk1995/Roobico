@@ -3,18 +3,16 @@
 {% block page_title %}Work Orders{% endblock %}
 
 {% block app_content %}
-<div class="card">
-  <div class="card-body d-flex align-items-start justify-content-between gap-3">
-    <div>
-      <h1 class="h4 mb-2">Management</h1>
-      <p class="text-muted mb-0">Work orders, payments, and estimates.</p>
-    </div>
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h1 class="h4 mb-1">Work Orders</h1>
+    <p class="text-muted mb-0">Manage work orders, payments, and estimates for the active shop.</p>
+  </div>
 
-    <div class="d-flex gap-2">
-      <a class="btn btn-primary" href="{{ url_for('work_orders.work_order_details_page') }}">
-        + Create Work Order
-      </a>
-    </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-primary btn-sm" href="{{ url_for('work_orders.work_order_details_page') }}">
+      Create Work Order
+    </a>
   </div>
 </div>
 
