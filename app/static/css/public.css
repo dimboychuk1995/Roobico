@@ -270,7 +270,7 @@ textarea.form-control:focus {
 }
 
 .nav-tabs {
-  border-bottom-color: #cdd9d0;
+  border-bottom: 0;
   display: flex;
   justify-content: center;
   align-items: center;
