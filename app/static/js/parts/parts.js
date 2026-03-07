@@ -1,6 +1,7 @@
 
 (function () {
 	"use strict";
+	const APP_TIMEZONE = document.body?.dataset?.appTimezone || "UTC";
 
 	document.addEventListener("DOMContentLoaded", function () {
 		const toggle = document.getElementById("coreChargeToggle");
@@ -704,7 +705,12 @@
 			if (!v) return "-";
 			const d = new Date(v);
 			if (Number.isNaN(d.getTime())) return "-";
-			return d.toLocaleString();
+			return new Intl.DateTimeFormat("en-US", {
+				timeZone: APP_TIMEZONE,
+				month: "2-digit",
+				day: "2-digit",
+				year: "numeric",
+			}).format(d);
 		}
 
 		function money(n) {

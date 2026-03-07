@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="{{ url_for('static', filename='css/public.css', v='20260306-sidebar-toggle') }}">
 
 </head>
-<body class="public-shell">
+<body class="public-shell" data-app-timezone="{{ app_timezone or 'UTC' }}">
   <main>
     {% block content %}{% endblock %}
   </main>

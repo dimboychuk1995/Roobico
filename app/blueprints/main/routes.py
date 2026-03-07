@@ -4,6 +4,7 @@ from bson import ObjectId
 from app.utils.auth import login_required, SESSION_USER_ID, SESSION_TENANT_ID
 from app.utils.permissions import permission_required
 from app.extensions import get_master_db
+from app.utils.display_datetime import get_active_shop_timezone_name
 from . import main_bp
 
 
@@ -152,6 +153,7 @@ def _render_app_page(template_name: str, active_page: str, **ctx):
         user_permissions=user_permissions,          # список
         user_permissions_list=user_permissions,     # алиас под твой DEBUG блок
         user_permissions_set=perms_set,             # удобно: {% if 'x' in user_permissions_set %}
+        app_timezone=get_active_shop_timezone_name(),
     )
 
     payload.update(ctx)

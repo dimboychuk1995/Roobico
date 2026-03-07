@@ -13,6 +13,7 @@ from app.utils.pagination import get_pagination_params, paginate_find
 from app.utils.mongo_search import build_regex_search_filter
 from app.utils.parts_search import build_parts_search_terms, build_query_tokens, part_matches_query
 from app.utils.permissions import permission_required
+from app.utils.display_datetime import format_date_mmddyyyy
 
 from . import parts_bp
 
@@ -163,12 +164,7 @@ def _fmt_dt_iso(dt) -> str:
 
 
 def _fmt_dt_label(dt) -> str:
-    if isinstance(dt, datetime):
-        try:
-            return dt.astimezone().strftime("%Y-%m-%d %H:%M")
-        except Exception:
-            return dt.strftime("%Y-%m-%d %H:%M")
-    return "-"
+    return format_date_mmddyyyy(dt)
 
 
 def _get_next_order_number(shop_db, shop_id):

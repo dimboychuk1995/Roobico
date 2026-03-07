@@ -2,6 +2,19 @@
   "use strict";
 
   const WORK_ORDERS_ACTIVE_TAB_KEY = "workOrders.activeTab";
+  const APP_TIMEZONE = document.body?.dataset?.appTimezone || "UTC";
+
+  function formatDateMMDDYYYY(value) {
+    if (!value) return "-";
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return "-";
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: APP_TIMEZONE,
+      month: "2-digit",
+      day: "2-digit",
+      year: "numeric",
+    }).format(dt);
+  }
 
   function safeGetLocalStorage(key) {
     try {
@@ -208,14 +221,7 @@
 
       allPaymentsData.forEach(payment => {
         try {
-          const dt = new Date(payment.created_at);
-          const createdAt = dt.toLocaleString("en-US", {
-            year: "numeric",
-            month: "short",
-            day: "2-digit",
-            hour: "2-digit",
-            minute: "2-digit"
-          });
+          const createdAt = formatDateMMDDYYYY(payment.created_at);
 
           const woId = String(payment.work_order_id || "").substring(0, 8) || "—";
           const customer = String(payment.customer || "").trim() || "—";

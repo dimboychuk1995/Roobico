@@ -16,6 +16,7 @@ from app.utils.auth import (
 from app.utils.pagination import get_pagination_params, paginate_find
 from app.utils.permissions import permission_required
 from app.utils.mongo_search import build_regex_search_filter
+from app.utils.display_datetime import format_date_mmddyyyy
 
 
 def utcnow():
@@ -23,12 +24,7 @@ def utcnow():
 
 
 def _fmt_dt_label(dt):
-    if isinstance(dt, datetime):
-        try:
-            return dt.astimezone().strftime("%Y-%m-%d %H:%M")
-        except Exception:
-            return dt.strftime("%Y-%m-%d %H:%M")
-    return "-"
+    return format_date_mmddyyyy(dt)
 
 
 def _oid(value):

@@ -4,6 +4,7 @@ from bson import ObjectId
 from flask import render_template, session, flash, redirect, url_for
 
 from app.extensions import get_master_db
+from app.utils.display_datetime import get_active_shop_timezone_name
 
 
 def _oid(value):
@@ -131,6 +132,7 @@ def build_app_layout_context(nav_items, active_page: str):
         "active_shop_id": active_shop_id,
         "nav_items": nav_items,
         "active_page": active_page,
+        "app_timezone": get_active_shop_timezone_name(),
         "_current_user": user,
         "_current_tenant": tenant,
     }

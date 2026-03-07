@@ -621,7 +621,7 @@ def locations_index():
         if sid == active_shop_raw:
             active_shop = s
 
-    current_timezone = "UTC"
+    current_timezone = "America/Chicago"
 
     def _extract_timezone_from_doc(doc):
         if not isinstance(doc, dict):
