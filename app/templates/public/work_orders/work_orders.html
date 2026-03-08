@@ -43,22 +43,48 @@
   <div class="tab-pane fade show active" id="content-work-orders" role="tabpanel" aria-labelledby="tab-work-orders">
     <div class="card">
       <div class="card-body">
-        <form method="get" class="row g-2 align-items-center mb-3">
-          <div class="col-12 col-md-8 col-lg-6">
+        <form method="get" class="row g-2 align-items-center mb-3 wo-filter-form">
+          <input type="hidden" name="tab" value="work_orders" />
+          <div class="col-12 col-md-6 col-lg-4">
             <input type="text" name="q" class="form-control form-control-sm" placeholder="Search work orders by any field..." value="{{ q or '' }}" />
           </div>
-          <div class="col-12 col-md-4 col-lg-3">
+          <div class="col-12 col-md-3 col-lg-2">
             <select name="paid_status" class="form-select form-select-sm" aria-label="Paid status filter">
               <option value="all" {% if (paid_status or 'all') == 'all' %}selected{% endif %}>All</option>
               <option value="paid" {% if paid_status == 'paid' %}selected{% endif %}>Paid</option>
               <option value="unpaid" {% if paid_status == 'unpaid' %}selected{% endif %}>Unpaid</option>
             </select>
           </div>
-          {% if q or (paid_status and paid_status != 'all') %}
-            <div class="col-auto">
-              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('work_orders.work_orders_page') }}">Reset</a>
+          <div class="col-12">
+            <div class="row g-2 align-items-center wo-date-row">
+              <div class="col-12 col-md-4 col-lg-3">
+                <select name="date_preset" class="form-select form-select-sm date-preset-select" aria-label="Date range preset">
+                  <option value="today" {% if date_preset == 'today' %}selected{% endif %}>Today</option>
+                  <option value="yesterday" {% if date_preset == 'yesterday' %}selected{% endif %}>Yesterday</option>
+                  <option value="this_week" {% if (date_preset or 'this_week') == 'this_week' %}selected{% endif %}>This Week</option>
+                  <option value="last_week" {% if date_preset == 'last_week' %}selected{% endif %}>Last Week</option>
+                  <option value="this_month" {% if date_preset == 'this_month' %}selected{% endif %}>This Month</option>
+                  <option value="last_month" {% if date_preset == 'last_month' %}selected{% endif %}>Last Month</option>
+                  <option value="this_quarter" {% if date_preset == 'this_quarter' %}selected{% endif %}>This Quarter</option>
+                  <option value="last_quarter" {% if date_preset == 'last_quarter' %}selected{% endif %}>Last Quarter</option>
+                  <option value="this_year" {% if date_preset == 'this_year' %}selected{% endif %}>This Year</option>
+                  <option value="last_year" {% if date_preset == 'last_year' %}selected{% endif %}>Last Year</option>
+                  <option value="custom" {% if date_preset == 'custom' %}selected{% endif %}>Custom Range</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-6 col-lg-5">
+                <div class="input-group input-group-sm date-range-group" aria-label="Date range">
+                  <span class="input-group-text">From</span>
+                  <input type="date" name="date_from" class="form-control date-filter-input" value="{{ date_from or '' }}" aria-label="Start date" />
+                  <span class="input-group-text">To</span>
+                  <input type="date" name="date_to" class="form-control date-filter-input" value="{{ date_to or '' }}" aria-label="End date" />
+                </div>
+              </div>
+              <div class="col-12 col-md-2 col-lg d-flex align-items-center justify-content-lg-end justify-content-center wo-reset-wrap">
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('work_orders.work_orders_page') }}">Reset</a>
+              </div>
             </div>
-          {% endif %}
+          </div>
         </form>
 
         {% if work_orders and work_orders|length > 0 %}
@@ -113,17 +139,28 @@
             </table>
           </div>
 
-          {% if pagination and pagination.pages > 1 %}
-            <div class="d-flex align-items-center justify-content-between mt-3">
-              <div class="small text-muted">
+          {% if pagination %}
+            <div class="wo-pagination-row mt-3">
+              <div class="small text-muted wo-pagination-meta">
                 Page {{ pagination.page }} of {{ pagination.pages }} · {{ pagination.total }} total
               </div>
-              <div class="btn-group btn-group-sm" role="group" aria-label="Work orders pagination">
-                <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-                   href="{{ url_for('work_orders.work_orders_page', page=pagination.prev_page, per_page=pagination.per_page, q=q, paid_status=paid_status) }}">Prev</a>
-                <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-                   href="{{ url_for('work_orders.work_orders_page', page=pagination.next_page, per_page=pagination.per_page, q=q, paid_status=paid_status) }}">Next</a>
+              <div class="wo-totals-center wo-pagination-totals">
+                <div class="wo-totals-box">
+                  <span>Labor: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('labor_total', 0)) }}</strong></span>
+                  <span>Parts: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('parts_total', 0)) }}</strong></span>
+                  <span>Total: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('grand_total', 0)) }}</strong></span>
+                </div>
               </div>
+              {% if pagination.pages > 1 %}
+                <div class="btn-group btn-group-sm wo-pagination-actions" role="group" aria-label="Work orders pagination">
+                  <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
+                    href="{{ url_for('work_orders.work_orders_page', page=pagination.prev_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}">Prev</a>
+                  <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
+                    href="{{ url_for('work_orders.work_orders_page', page=pagination.next_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}">Next</a>
+                </div>
+              {% else %}
+                <div class="wo-pagination-actions"></div>
+              {% endif %}
             </div>
           {% endif %}
         {% else %}
@@ -137,15 +174,42 @@
   <div class="tab-pane fade" id="content-payments" role="tabpanel" aria-labelledby="tab-payments">
     <div class="card">
       <div class="card-body">
-        <form method="get" class="row g-2 align-items-center mb-3">
-          <div class="col-12 col-md-8 col-lg-6">
+        <form method="get" class="row g-2 align-items-center mb-3 wo-filter-form">
+          <input type="hidden" name="tab" value="payments" />
+          <input type="hidden" name="paid_status" value="{{ paid_status or 'all' }}" />
+          <div class="col-12 col-md-6 col-lg-4">
             <input type="text" name="q" class="form-control form-control-sm" placeholder="Search payments by any field..." value="{{ q or '' }}" />
           </div>
-          {% if q %}
-            <div class="col-auto">
-              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('work_orders.work_orders_page') }}">Reset</a>
+          <div class="col-12">
+            <div class="row g-2 align-items-center wo-date-row">
+              <div class="col-12 col-md-4 col-lg-3">
+                <select name="date_preset" class="form-select form-select-sm date-preset-select" aria-label="Payments date range preset">
+                  <option value="today" {% if date_preset == 'today' %}selected{% endif %}>Today</option>
+                  <option value="yesterday" {% if date_preset == 'yesterday' %}selected{% endif %}>Yesterday</option>
+                  <option value="this_week" {% if (date_preset or 'this_week') == 'this_week' %}selected{% endif %}>This Week</option>
+                  <option value="last_week" {% if date_preset == 'last_week' %}selected{% endif %}>Last Week</option>
+                  <option value="this_month" {% if date_preset == 'this_month' %}selected{% endif %}>This Month</option>
+                  <option value="last_month" {% if date_preset == 'last_month' %}selected{% endif %}>Last Month</option>
+                  <option value="this_quarter" {% if date_preset == 'this_quarter' %}selected{% endif %}>This Quarter</option>
+                  <option value="last_quarter" {% if date_preset == 'last_quarter' %}selected{% endif %}>Last Quarter</option>
+                  <option value="this_year" {% if date_preset == 'this_year' %}selected{% endif %}>This Year</option>
+                  <option value="last_year" {% if date_preset == 'last_year' %}selected{% endif %}>Last Year</option>
+                  <option value="custom" {% if date_preset == 'custom' %}selected{% endif %}>Custom Range</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-6 col-lg-5">
+                <div class="input-group input-group-sm date-range-group" aria-label="Payments date range">
+                  <span class="input-group-text">From</span>
+                  <input type="date" name="date_from" class="form-control date-filter-input" value="{{ date_from or '' }}" aria-label="Payments start date" />
+                  <span class="input-group-text">To</span>
+                  <input type="date" name="date_to" class="form-control date-filter-input" value="{{ date_to or '' }}" aria-label="Payments end date" />
+                </div>
+              </div>
+              <div class="col-12 col-md-2 col-lg d-flex align-items-center justify-content-lg-end justify-content-center wo-reset-wrap">
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('work_orders.work_orders_page') }}">Reset</a>
+              </div>
             </div>
-          {% endif %}
+          </div>
         </form>
 
         <div id="payments-loading" class="text-muted d-none">
@@ -162,7 +226,98 @@
   <div class="tab-pane fade" id="content-estimates" role="tabpanel" aria-labelledby="tab-estimates">
     <div class="card">
       <div class="card-body">
-        <div class="text-muted">Estimates feature coming soon.</div>
+        <form method="get" class="row g-2 align-items-center mb-3 wo-filter-form">
+          <input type="hidden" name="tab" value="estimates" />
+          <input type="hidden" name="paid_status" value="{{ paid_status or 'all' }}" />
+          <div class="col-12 col-md-6 col-lg-4">
+            <input type="text" name="q" class="form-control form-control-sm" placeholder="Search estimates by any field..." value="{{ q or '' }}" />
+          </div>
+          <div class="col-12">
+            <div class="row g-2 align-items-center wo-date-row">
+              <div class="col-12 col-md-4 col-lg-3">
+                <select name="date_preset" class="form-select form-select-sm date-preset-select" aria-label="Estimates date range preset">
+                  <option value="today" {% if date_preset == 'today' %}selected{% endif %}>Today</option>
+                  <option value="yesterday" {% if date_preset == 'yesterday' %}selected{% endif %}>Yesterday</option>
+                  <option value="this_week" {% if (date_preset or 'this_week') == 'this_week' %}selected{% endif %}>This Week</option>
+                  <option value="last_week" {% if date_preset == 'last_week' %}selected{% endif %}>Last Week</option>
+                  <option value="this_month" {% if date_preset == 'this_month' %}selected{% endif %}>This Month</option>
+                  <option value="last_month" {% if date_preset == 'last_month' %}selected{% endif %}>Last Month</option>
+                  <option value="this_quarter" {% if date_preset == 'this_quarter' %}selected{% endif %}>This Quarter</option>
+                  <option value="last_quarter" {% if date_preset == 'last_quarter' %}selected{% endif %}>Last Quarter</option>
+                  <option value="this_year" {% if date_preset == 'this_year' %}selected{% endif %}>This Year</option>
+                  <option value="last_year" {% if date_preset == 'last_year' %}selected{% endif %}>Last Year</option>
+                  <option value="custom" {% if date_preset == 'custom' %}selected{% endif %}>Custom Range</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-6 col-lg-5">
+                <div class="input-group input-group-sm date-range-group" aria-label="Estimates date range">
+                  <span class="input-group-text">From</span>
+                  <input type="date" name="date_from" class="form-control date-filter-input" value="{{ date_from or '' }}" aria-label="Estimates start date" />
+                  <span class="input-group-text">To</span>
+                  <input type="date" name="date_to" class="form-control date-filter-input" value="{{ date_to or '' }}" aria-label="Estimates end date" />
+                </div>
+              </div>
+              <div class="col-12 col-md-2 col-lg d-flex align-items-center justify-content-lg-end justify-content-center wo-reset-wrap">
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('work_orders.work_orders_page') }}">Reset</a>
+              </div>
+            </div>
+          </div>
+        </form>
+
+        {% if estimates and estimates|length > 0 %}
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>Estimate #</th>
+                  <th>Customer</th>
+                  <th>Date</th>
+                  <th>Unit</th>
+                  <th>Status</th>
+                  <th class="text-end">Labor</th>
+                  <th class="text-end">Parts</th>
+                  <th class="text-end">Total</th>
+                  <th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for e in estimates %}
+                  <tr>
+                    <td><span class="badge bg-secondary">{{ e.wo_number or '-' }}</span></td>
+                    <td>{{ e.customer }}</td>
+                    <td>{{ e.date }}</td>
+                    <td>{{ e.unit }}</td>
+                    <td><span class="badge bg-info text-dark">{{ (e.status or 'estimate')|capitalize }}</span></td>
+                    <td class="text-end">${{ "%.2f"|format(e.labor_total) }}</td>
+                    <td class="text-end">${{ "%.2f"|format(e.parts_total) }}</td>
+                    <td class="text-end fw-semibold">${{ "%.2f"|format(e.grand_total) }}</td>
+                    <td class="text-end">
+                      <a class="btn btn-outline-primary btn-sm" href="{{ url_for('work_orders.work_order_details_page', work_order_id=e.id) }}" target="_blank" rel="noopener noreferrer">
+                        Edit
+                      </a>
+                    </td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+
+          {% if estimates_pagination and estimates_pagination.pages > 1 %}
+            <div class="d-flex align-items-center justify-content-between mt-3">
+              <div class="small text-muted">
+                Page {{ estimates_pagination.page }} of {{ estimates_pagination.pages }} · {{ estimates_pagination.total }} total
+              </div>
+              <div class="btn-group btn-group-sm" role="group" aria-label="Estimates pagination">
+                <a class="btn btn-outline-secondary {% if not estimates_pagination.has_prev %}disabled{% endif %}"
+                   href="{{ url_for('work_orders.work_orders_page', estimates_page=estimates_pagination.prev_page, estimates_per_page=estimates_pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}#content-estimates">Prev</a>
+                <a class="btn btn-outline-secondary {% if not estimates_pagination.has_next %}disabled{% endif %}"
+                   href="{{ url_for('work_orders.work_orders_page', estimates_page=estimates_pagination.next_page, estimates_per_page=estimates_pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}#content-estimates">Next</a>
+              </div>
+            </div>
+          {% endif %}
+        {% else %}
+          <div class="text-muted">No estimates found.</div>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -215,5 +370,5 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/work_orders/work_orders.js', v='20260224b') }}"></script>
+<script src="{{ url_for('static', filename='js/work_orders/work_orders.js', v='20260307b') }}"></script>
 {% endblock %}

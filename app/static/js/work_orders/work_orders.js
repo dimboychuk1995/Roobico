@@ -173,8 +173,16 @@
     try {
       const params = new URLSearchParams(window.location.search || "");
       const q = String(params.get("q") || "").trim();
-      const endpoint = q
-        ? `/work_orders/api/work_orders/all-payments?q=${encodeURIComponent(q)}`
+      const datePreset = String(params.get("date_preset") || "").trim();
+      const dateFrom = String(params.get("date_from") || "").trim();
+      const dateTo = String(params.get("date_to") || "").trim();
+      const apiParams = new URLSearchParams();
+      if (q) apiParams.set("q", q);
+      if (datePreset) apiParams.set("date_preset", datePreset);
+      if (dateFrom) apiParams.set("date_from", dateFrom);
+      if (dateTo) apiParams.set("date_to", dateTo);
+      const endpoint = apiParams.toString()
+        ? `/work_orders/api/work_orders/all-payments?${apiParams.toString()}`
         : "/work_orders/api/work_orders/all-payments";
 
       const response = await fetch(endpoint, {

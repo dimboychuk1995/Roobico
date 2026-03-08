@@ -9,6 +9,8 @@
 		"orders_per_page",
 		"cores_page",
 		"cores_per_page",
+		"estimates_page",
+		"estimates_per_page",
 	];
 	var activeSearchController = null;
 
@@ -229,6 +231,22 @@
 			}
 			if (target.name === "q") {
 				return;
+			}
+			if (target.name === "date_preset") {
+				var dateFromInput = form.querySelector('input[name="date_from"]');
+				var dateToInput = form.querySelector('input[name="date_to"]');
+				if (dateFromInput) {
+					dateFromInput.value = "";
+				}
+				if (dateToInput) {
+					dateToInput.value = "";
+				}
+			}
+			if (target.name === "date_from" || target.name === "date_to") {
+				var presetSelect = form.querySelector('select[name="date_preset"]');
+				if (presetSelect && presetSelect.value !== "custom") {
+					presetSelect.value = "custom";
+				}
 			}
 			submitIfChanged();
 		});

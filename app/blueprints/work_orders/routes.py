@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 from flask import request, session, redirect, url_for, flash, jsonify
 
@@ -288,6 +288,175 @@ def format_dt_label(dt):
     return format_date_mmddyyyy(dt)
 
 
+def _parse_iso_date_utc(value: str):
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.strptime(raw, "%Y-%m-%d")
+        return parsed.replace(tzinfo=timezone.utc)
+    except Exception:
+        return None
+
+
+def _to_iso_date(value):
+    if not value:
+        return ""
+    return value.strftime("%Y-%m-%d")
+
+
+def _start_of_week_monday(value):
+    return value - timedelta(days=value.weekday())
+
+
+def _start_of_month(value):
+    return value.replace(day=1)
+
+
+def _start_of_quarter(value):
+    quarter_start_month = ((value.month - 1) // 3) * 3 + 1
+    return value.replace(month=quarter_start_month, day=1)
+
+
+def _start_of_year(value):
+    return value.replace(month=1, day=1)
+
+
+def _date_range_for_preset(preset: str, today):
+    if preset == "today":
+        return today, today
+    if preset == "yesterday":
+        y = today - timedelta(days=1)
+        return y, y
+    if preset == "this_week":
+        return _start_of_week_monday(today), today
+    if preset == "last_week":
+        this_week_start = _start_of_week_monday(today)
+        last_week_start = this_week_start - timedelta(days=7)
+        return last_week_start, this_week_start - timedelta(days=1)
+    if preset == "this_month":
+        return _start_of_month(today), today
+    if preset == "last_month":
+        this_month_start = _start_of_month(today)
+        last_month_end = this_month_start - timedelta(days=1)
+        return _start_of_month(last_month_end), last_month_end
+    if preset == "this_quarter":
+        return _start_of_quarter(today), today
+    if preset == "last_quarter":
+        this_quarter_start = _start_of_quarter(today)
+        last_quarter_end = this_quarter_start - timedelta(days=1)
+        return _start_of_quarter(last_quarter_end), last_quarter_end
+    if preset == "this_year":
+        return _start_of_year(today), today
+    if preset == "last_year":
+        this_year_start = _start_of_year(today)
+        last_year_end = this_year_start - timedelta(days=1)
+        return _start_of_year(last_year_end), last_year_end
+    return None, None
+
+
+def get_date_range_filters(args, from_key: str = "date_from", to_key: str = "date_to", preset_key: str = "date_preset"):
+    allowed_presets = {
+        "custom",
+        "today",
+        "yesterday",
+        "this_week",
+        "last_week",
+        "this_month",
+        "last_month",
+        "this_quarter",
+        "last_quarter",
+        "this_year",
+        "last_year",
+    }
+
+    date_from_raw = (args.get(from_key) or "").strip()
+    date_to_raw = (args.get(to_key) or "").strip()
+    preset_raw = (args.get(preset_key) or "").strip().lower()
+
+    if preset_raw not in allowed_presets:
+        preset_raw = "this_week"
+
+    # Preset mode is authoritative. Manual date inputs are used only for explicit custom range.
+    if preset_raw == "custom":
+        date_from = date_from_raw
+        date_to = date_to_raw
+        if not date_from and not date_to:
+            preset_raw = "this_week"
+            start_date, end_date = _date_range_for_preset(preset_raw, datetime.now(timezone.utc).date())
+            date_from = _to_iso_date(start_date)
+            date_to = _to_iso_date(end_date)
+    else:
+        start_date, end_date = _date_range_for_preset(preset_raw, datetime.now(timezone.utc).date())
+        date_from = _to_iso_date(start_date)
+        date_to = _to_iso_date(end_date)
+
+    date_preset = preset_raw
+
+    created_from = _parse_iso_date_utc(date_from)
+    created_to_raw = _parse_iso_date_utc(date_to)
+
+    if created_from and created_to_raw and created_from > created_to_raw:
+        created_from, created_to_raw = created_to_raw, created_from
+        date_from, date_to = date_to, date_from
+
+    created_to_exclusive = created_to_raw + timedelta(days=1) if created_to_raw else None
+
+    return {
+        "date_from": date_from,
+        "date_to": date_to,
+        "date_preset": date_preset,
+        "created_from": created_from,
+        "created_to_exclusive": created_to_exclusive,
+    }
+
+
+def append_and_filter(query: dict, extra_filter: dict):
+    if not extra_filter:
+        return query
+    return {"$and": [query, extra_filter]}
+
+
+def build_created_at_range_filter(created_from=None, created_to_exclusive=None):
+    created_filter = {}
+    if created_from:
+        created_filter["$gte"] = created_from
+    if created_to_exclusive:
+        created_filter["$lt"] = created_to_exclusive
+    if not created_filter:
+        return None
+    return {"created_at": created_filter}
+
+
+def get_work_orders_totals(shop_db, query: dict):
+    pipeline = [
+        {"$match": query},
+        {
+            "$group": {
+                "_id": None,
+                "labor_total": {"$sum": {"$ifNull": ["$totals.labor_total", {"$ifNull": ["$labor_total", 0]}]}},
+                "parts_total": {"$sum": {"$ifNull": ["$totals.parts_total", {"$ifNull": ["$parts_total", 0]}]}},
+                "grand_total": {"$sum": {"$ifNull": ["$totals.grand_total", {"$ifNull": ["$grand_total", 0]}]}},
+            }
+        },
+    ]
+
+    rows = list(shop_db.work_orders.aggregate(pipeline))
+    if not rows:
+        return {
+            "labor_total": 0.0,
+            "parts_total": 0.0,
+            "grand_total": 0.0,
+        }
+
+    row = rows[0] if isinstance(rows[0], dict) else {}
+    return {
+        "labor_total": round2(row.get("labor_total") or 0),
+        "parts_total": round2(row.get("parts_total") or 0),
+        "grand_total": round2(row.get("grand_total") or 0),
+    }
+
+
 def get_work_orders_list(
     shop_db,
     shop_id: ObjectId,
@@ -295,6 +464,8 @@ def get_work_orders_list(
     per_page: int,
     q: str = "",
     paid_status: str = "all",
+    created_from=None,
+    created_to_exclusive=None,
 ):
     query = {"shop_id": shop_id}
 
@@ -361,6 +532,12 @@ def get_work_orders_list(
     elif search_filter:
         query = {"$and": [query, search_filter]}
 
+    created_at_filter = build_created_at_range_filter(created_from, created_to_exclusive)
+    if created_at_filter:
+        query = append_and_filter(query, created_at_filter)
+
+    totals_summary = get_work_orders_totals(shop_db, query)
+
     rows, pagination = paginate_find(
         shop_db.work_orders,
         query,
@@ -403,6 +580,128 @@ def get_work_orders_list(
                 "parts_total": parts_total,
                 "grand_total": grand_total,
                 "is_paid": status == "paid",
+            }
+        )
+
+    return items, pagination, totals_summary
+
+
+def get_estimates_list(
+    shop_db,
+    shop_id: ObjectId,
+    page: int,
+    per_page: int,
+    q: str = "",
+    created_from=None,
+    created_to_exclusive=None,
+):
+    estimate_statuses = ["estimate", "estimated", "quote", "quoted"]
+    query = {"shop_id": shop_id, "status": {"$in": estimate_statuses}}
+
+    search_filter = build_regex_search_filter(
+        q,
+        text_fields=["status"],
+        numeric_fields=["wo_number", "grand_total", "totals.grand_total", "totals.parts_total", "totals.labor_total"],
+        object_id_fields=["_id", "customer_id", "unit_id", "shop_id", "tenant_id"],
+    )
+
+    if q:
+        customer_ids = [
+            c.get("_id")
+            for c in shop_db.customers.find(
+                {
+                    "$or": [
+                        {"company_name": {"$regex": q, "$options": "i"}},
+                        {"first_name": {"$regex": q, "$options": "i"}},
+                        {"last_name": {"$regex": q, "$options": "i"}},
+                        {"phone": {"$regex": q, "$options": "i"}},
+                        {"email": {"$regex": q, "$options": "i"}},
+                        {"address": {"$regex": q, "$options": "i"}},
+                    ]
+                },
+                {"_id": 1},
+            )
+            if c.get("_id")
+        ]
+
+        unit_ids = [
+            u.get("_id")
+            for u in shop_db.units.find(
+                {
+                    "$or": [
+                        {"unit_number": {"$regex": q, "$options": "i"}},
+                        {"vin": {"$regex": q, "$options": "i"}},
+                        {"make": {"$regex": q, "$options": "i"}},
+                        {"model": {"$regex": q, "$options": "i"}},
+                        {"type": {"$regex": q, "$options": "i"}},
+                    ]
+                },
+                {"_id": 1},
+            )
+            if u.get("_id")
+        ]
+
+        extra = []
+        if customer_ids:
+            extra.append({"customer_id": {"$in": customer_ids}})
+        if unit_ids:
+            extra.append({"unit_id": {"$in": unit_ids}})
+
+        if search_filter and extra:
+            query = {"$and": [query, {"$or": [search_filter, *extra]}]}
+        elif search_filter:
+            query = {"$and": [query, search_filter]}
+        elif extra:
+            query = {"$and": [query, {"$or": extra}]}
+    elif search_filter:
+        query = {"$and": [query, search_filter]}
+
+    created_at_filter = build_created_at_range_filter(created_from, created_to_exclusive)
+    if created_at_filter:
+        query = append_and_filter(query, created_at_filter)
+
+    rows, pagination = paginate_find(
+        shop_db.work_orders,
+        query,
+        [("created_at", -1)],
+        page,
+        per_page,
+    )
+
+    customer_ids = [x.get("customer_id") for x in rows if x.get("customer_id")]
+    unit_ids = [x.get("unit_id") for x in rows if x.get("unit_id")]
+
+    customers_map = {}
+    if customer_ids:
+        for c in shop_db.customers.find({"_id": {"$in": customer_ids}}):
+            customers_map[c.get("_id")] = customer_label(c)
+
+    units_map = {}
+    if unit_ids:
+        for u in shop_db.units.find({"_id": {"$in": unit_ids}}):
+            units_map[u.get("_id")] = unit_label(u)
+
+    items = []
+    for x in rows:
+        totals = x.get("totals") if isinstance(x.get("totals"), dict) else {}
+
+        labor_total = round2(totals.get("labor_total") if totals.get("labor_total") is not None else x.get("labor_total"))
+        parts_total = round2(totals.get("parts_total") if totals.get("parts_total") is not None else x.get("parts_total"))
+        grand_total = round2(totals.get("grand_total") if totals.get("grand_total") is not None else x.get("grand_total"))
+
+        status = (x.get("status") or "estimate").strip().lower()
+
+        items.append(
+            {
+                "id": str(x.get("_id")),
+                "wo_number": x.get("wo_number"),
+                "customer": customers_map.get(x.get("customer_id")) or "-",
+                "date": format_dt_label(x.get("created_at")),
+                "unit": units_map.get(x.get("unit_id")) or "-",
+                "labor_total": labor_total,
+                "parts_total": parts_total,
+                "grand_total": grand_total,
+                "status": status,
             }
         )
 
@@ -1238,22 +1537,55 @@ def work_orders_page():
     if paid_status not in ("all", "paid", "unpaid"):
         paid_status = "all"
 
+    date_filters = get_date_range_filters(request.args)
+    date_from = date_filters["date_from"]
+    date_to = date_filters["date_to"]
+    date_preset = date_filters["date_preset"]
+    created_from = date_filters["created_from"]
+    created_to_exclusive = date_filters["created_to_exclusive"]
+
     page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
-    work_orders, pagination = get_work_orders_list(
+    work_orders, pagination, work_orders_totals = get_work_orders_list(
         shop_db,
         shop["_id"],
         page,
         per_page,
         q=q,
         paid_status=paid_status,
+        created_from=created_from,
+        created_to_exclusive=created_to_exclusive,
     )
+
+    estimates_page, estimates_per_page = get_pagination_params(
+        request.args,
+        default_per_page=20,
+        max_per_page=100,
+        page_key="estimates_page",
+        per_page_key="estimates_per_page",
+    )
+    estimates, estimates_pagination = get_estimates_list(
+        shop_db,
+        shop["_id"],
+        estimates_page,
+        estimates_per_page,
+        q=q,
+        created_from=created_from,
+        created_to_exclusive=created_to_exclusive,
+    )
+
     return _render_app_page(
         "public/work_orders/work_orders.html",
         active_page="work_orders",
         work_orders=work_orders,
         pagination=pagination,
+        work_orders_totals=work_orders_totals,
+        estimates=estimates,
+        estimates_pagination=estimates_pagination,
         q=q,
         paid_status=paid_status,
+        date_from=date_from,
+        date_to=date_to,
+        date_preset=date_preset,
     )
 
 
@@ -2028,6 +2360,10 @@ def api_get_all_payments():
     shop_id = shop["_id"]
     q = (request.args.get("q") or "").strip()
 
+    date_filters = get_date_range_filters(request.args)
+    created_from = date_filters["created_from"]
+    created_to_exclusive = date_filters["created_to_exclusive"]
+
     payments_query = {"shop_id": shop_id, "is_active": True}
 
     payments_search = build_regex_search_filter(
@@ -2083,6 +2419,10 @@ def api_get_all_payments():
             payments_query = {"$and": [payments_query, {"$or": extra}]}
     elif payments_search:
         payments_query = {"$and": [payments_query, payments_search]}
+
+    created_at_filter = build_created_at_range_filter(created_from, created_to_exclusive)
+    if created_at_filter:
+        payments_query = append_and_filter(payments_query, created_at_filter)
 
     payments = list(
         shop_db.work_order_payments.find(payments_query)

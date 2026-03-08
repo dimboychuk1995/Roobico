@@ -324,6 +324,130 @@ textarea.form-control:focus {
   box-shadow: 0 0 0 0.2rem rgba(31, 107, 67, 0.16);
 }
 
+.wo-filter-form {
+  position: relative;
+  margin-left: 0;
+  margin-right: 0;
+  padding: 0.6rem;
+  border: 1px solid #cddacd;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #f9fcf9 0%, #eff6f0 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.wo-filter-form .wo-date-row {
+  margin-top: 0.15rem;
+  padding: 0.1rem 0;
+}
+
+@media (min-width: 768px) {
+  .wo-filter-form {
+    padding-right: 6.5rem;
+  }
+
+  .wo-filter-form .wo-reset-wrap {
+    position: absolute;
+    right: 0.6rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: auto;
+  }
+}
+
+.wo-filter-form .date-preset-select {
+  border-color: #b7c9bc;
+  background-color: #ffffff;
+  font-weight: 600;
+  color: #2b4a37;
+}
+
+.wo-filter-form .date-range-group {
+  border: 1px solid #b7c9bc;
+  border-radius: 9px;
+  background: #ffffff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+}
+
+.wo-filter-form .date-range-group .input-group-text {
+  border: 0;
+  background: #e9f2eb;
+  color: #2d5840;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.wo-filter-form .date-range-group .date-filter-input {
+  border: 0;
+  background: #ffffff;
+  color: #1f3c2c;
+  font-weight: 600;
+}
+
+.wo-filter-form .date-range-group .date-filter-input:focus {
+  box-shadow: inset 0 0 0 2px rgba(31, 107, 67, 0.18);
+}
+
+.wo-filter-form .date-filter-input::-webkit-calendar-picker-indicator {
+  opacity: 0.95;
+  border-radius: 6px;
+  padding: 2px;
+  background-color: rgba(31, 107, 67, 0.14);
+}
+
+.wo-totals-center {
+  display: flex;
+  justify-content: center;
+}
+
+.wo-pagination-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.wo-pagination-meta {
+  white-space: nowrap;
+}
+
+.wo-pagination-totals {
+  flex: 1 1 auto;
+}
+
+.wo-pagination-actions {
+  flex: 0 0 auto;
+}
+
+.wo-totals-box {
+  display: inline-flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid #cddacd;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f9fcf9 0%, #eff6f0 100%);
+  color: #2b4a37;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.wo-totals-box strong {
+  color: #1f6b43;
+}
+
+@media (max-width: 767.98px) {
+  .wo-pagination-row {
+    flex-wrap: wrap;
+  }
+
+  .wo-pagination-meta,
+  .wo-pagination-totals,
+  .wo-pagination-actions {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+}
+
 .table-responsive {
   border: 0;
   border-radius: 0;
