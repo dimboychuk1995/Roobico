@@ -43,16 +43,16 @@
       <a class="nav-link {% if active_tab == 'work_orders' %}active{% endif %}" href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='work_orders', q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}">Work Orders</a>
     </li>
     <li class="nav-item" role="presentation">
-      <a class="nav-link {% if active_tab == 'units' %}active{% endif %}" href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='units', q=q) }}">Units</a>
+      <a class="nav-link {% if active_tab == 'units' %}active{% endif %}" href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='units', q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}">Units</a>
     </li>
     <li class="nav-item" role="presentation">
-      <a class="nav-link {% if active_tab == 'payments' %}active{% endif %}" href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='payments', q=q) }}">Payments</a>
+      <a class="nav-link {% if active_tab == 'payments' %}active{% endif %}" href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='payments', q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}">Payments</a>
     </li>
     <li class="nav-item" role="presentation">
-      <a class="nav-link {% if active_tab == 'estimates' %}active{% endif %}" href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='estimates', q=q) }}">Estimates</a>
+      <a class="nav-link {% if active_tab == 'estimates' %}active{% endif %}" href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='estimates', q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}">Estimates</a>
     </li>
     <li class="nav-item" role="presentation">
-      <a class="nav-link {% if active_tab == 'details' %}active{% endif %}" href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='details', q=q) }}">Details</a>
+      <a class="nav-link {% if active_tab == 'details' %}active{% endif %}" href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='details', q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}">Details</a>
     </li>
   </ul>
 </div>

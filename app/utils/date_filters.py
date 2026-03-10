@@ -111,6 +111,13 @@ def build_date_range_filters(args, from_key: str = "date_from", to_key: str = "d
     date_from_raw = (args.get(from_key) or "").strip()
     date_to_raw = (args.get(to_key) or "").strip()
     preset_raw = (args.get(preset_key) or "").strip().lower()
+    search_raw = (args.get("q") or "").strip()
+
+    # If user is searching and did not explicitly touch date controls,
+    # default to all-time to avoid unintentionally narrowing search to this week.
+    explicit_date_filters = bool((args.get(preset_key) or "").strip() or date_from_raw or date_to_raw)
+    if search_raw and not explicit_date_filters:
+        preset_raw = "all_time"
 
     if preset_raw not in _ALLOWED_PRESETS:
         preset_raw = default_preset
