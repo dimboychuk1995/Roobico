@@ -172,4 +172,116 @@
     });
   })();
 </script>
+
+<script>
+  (function () {
+    var focusStateKey = "smallshop.searchFocusState";
+
+    function saveSearchFocusState(form, input) {
+      if (!form || !input) return;
+      try {
+        var payload = {
+          path: window.location.pathname,
+          formAction: form.getAttribute("action") || "",
+          inputName: input.getAttribute("name") || "q",
+          start: Number(input.selectionStart || 0),
+          end: Number(input.selectionEnd || 0),
+        };
+        window.sessionStorage.setItem(focusStateKey, JSON.stringify(payload));
+      } catch (e) {
+        // Ignore storage failures.
+      }
+    }
+
+    function restoreSearchFocusState() {
+      try {
+        var raw = window.sessionStorage.getItem(focusStateKey);
+        if (!raw) return;
+
+        var state = JSON.parse(raw);
+        window.sessionStorage.removeItem(focusStateKey);
+
+        if (!state || state.path !== window.location.pathname) return;
+
+        var forms = Array.prototype.slice.call(document.querySelectorAll('form[method="get" i]'));
+        var targetInput = null;
+
+        forms.forEach(function (form) {
+          if (targetInput) return;
+          var action = form.getAttribute("action") || "";
+          if (action !== state.formAction) return;
+          var candidate = form.querySelector('input[name="' + (state.inputName || "q") + '"]:not([type="hidden"]):not([disabled])');
+          if (candidate) targetInput = candidate;
+        });
+
+        if (!targetInput) {
+          targetInput = document.querySelector('input[name="q"]:not([type="hidden"]):not([disabled])');
+        }
+        if (!targetInput) return;
+
+        targetInput.focus({ preventScroll: true });
+        var maxLen = String(targetInput.value || "").length;
+        var start = Math.max(0, Math.min(Number(state.start || 0), maxLen));
+        var end = Math.max(start, Math.min(Number(state.end || start), maxLen));
+        if (typeof targetInput.setSelectionRange === "function") {
+          targetInput.setSelectionRange(start, end);
+        }
+      } catch (e) {
+        // Ignore parse/focus failures.
+      }
+    }
+
+    function submitForm(form) {
+      if (!form) return;
+      if (typeof form.requestSubmit === "function") {
+        form.requestSubmit();
+      } else {
+        form.submit();
+      }
+    }
+
+    var forms = Array.prototype.slice.call(document.querySelectorAll('form[method="get" i]'));
+    forms.forEach(function (form) {
+      var searchInput = form.querySelector('input[name="q"]:not([type="hidden"]):not([disabled])');
+      if (!searchInput) return;
+
+      var initialValue = String(searchInput.value || "");
+      var timer = null;
+
+      searchInput.addEventListener("input", function () {
+        if (timer) window.clearTimeout(timer);
+        timer = window.setTimeout(function () {
+          var currentValue = String(searchInput.value || "");
+          if (currentValue === initialValue) return;
+          saveSearchFocusState(form, searchInput);
+          submitForm(form);
+        }, 350);
+      });
+
+      form.addEventListener("submit", function () {
+        if (document.activeElement === searchInput) {
+          saveSearchFocusState(form, searchInput);
+        }
+      });
+
+      var instantSelectors = [
+        'select[name="paid_status"]',
+        'select[name="date_preset"]',
+        'input[name="date_from"]',
+        'input[name="date_to"]',
+      ];
+
+      instantSelectors.forEach(function (selector) {
+        var el = form.querySelector(selector);
+        if (!el) return;
+        el.addEventListener("change", function () {
+          saveSearchFocusState(form, searchInput);
+          submitForm(form);
+        });
+      });
+    });
+
+    restoreSearchFocusState();
+  })();
+</script>
 {% endblock %}

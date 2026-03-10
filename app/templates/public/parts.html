@@ -51,7 +51,7 @@
 <!-- Tab Content -->
 <div class="tab-content mt-3">
   <!-- Parts Tab -->
-  <div class="tab-pane fade {% if active_tab == 'parts' %}show active{% endif %}" id="content-parts" role="tabpanel" aria-labelledby="tab-parts">
+  <div class="tab-pane {% if active_tab == 'parts' %}show active{% endif %}" id="content-parts" role="tabpanel" aria-labelledby="tab-parts">
     <div class="card">
       <div class="card-body">
 
@@ -176,6 +176,13 @@
           </div>
         </div>
       {% endif %}
+
+      <div class="d-flex justify-content-end mt-3 pt-3 border-top">
+        <div class="small d-flex gap-3 flex-wrap">
+          <span>Total inventory cost: <strong>${{ "%.2f"|format((parts_totals or {}).get('inventory_cost', 0)) }}</strong></span>
+          <span>Total core cost: <strong>${{ "%.2f"|format((parts_totals or {}).get('core_cost', 0)) }}</strong></span>
+        </div>
+      </div>
     {% else %}
       <div class="text-muted">No parts in stock.</div>
     {% endif %}
@@ -185,7 +192,7 @@
   </div>
 
   <!-- Parts Orders Tab -->
-  <div class="tab-pane fade {% if active_tab == 'orders' %}show active{% endif %}" id="content-orders" role="tabpanel" aria-labelledby="tab-orders">
+  <div class="tab-pane {% if active_tab == 'orders' %}show active{% endif %}" id="content-orders" role="tabpanel" aria-labelledby="tab-orders">
     <div class="card">
       <div class="card-body">
         <form method="get" class="row g-2 align-items-center mb-3 wo-filter-form">
@@ -309,7 +316,7 @@
   </div>
 
   <!-- Cores Tab -->
-  <div class="tab-pane fade {% if active_tab == 'cores' %}show active{% endif %}" id="content-cores" role="tabpanel" aria-labelledby="tab-cores">
+  <div class="tab-pane {% if active_tab == 'cores' %}show active{% endif %}" id="content-cores" role="tabpanel" aria-labelledby="tab-cores">
     <div class="card">
       <div class="card-body">
         <form method="get" class="row g-2 align-items-center mb-3">
@@ -371,7 +378,7 @@
   </div>
 
   <!-- Cores Returns Tab -->
-  <div class="tab-pane fade {% if active_tab == 'cores_returns' %}show active{% endif %}" id="content-cores-returns" role="tabpanel" aria-labelledby="tab-cores-returns">
+  <div class="tab-pane {% if active_tab == 'cores_returns' %}show active{% endif %}" id="content-cores-returns" role="tabpanel" aria-labelledby="tab-cores-returns">
     <div class="card">
       <div class="card-body">
         <form method="get" class="row g-2 align-items-center mb-3 wo-filter-form">

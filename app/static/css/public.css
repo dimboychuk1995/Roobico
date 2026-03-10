@@ -94,7 +94,7 @@ small,
   font-weight: 600;
   color: #375343;
   background: transparent;
-  transition: all 0.16s ease;
+  transition: none;
 }
 
 .app-sidebar-link:last-child {
@@ -156,7 +156,7 @@ small,
   border-color: #bfd0c2 !important;
   background: rgba(255, 255, 255, 0.9) !important;
   color: #274635;
-  transform: translateX(2px);
+  transform: none;
 }
 
 .app-sidebar-link:focus-visible {
@@ -571,7 +571,13 @@ textarea.form-control:focus {
   color: #4b6155;
   font-weight: 600;
   padding: 0.45rem 0.95rem;
-  transition: all 0.15s ease;
+  transition: none;
+}
+
+.tab-content > .tab-pane {
+  transition: none !important;
+  animation: none !important;
+  transform: none !important;
 }
 
 .nav-tabs .nav-link:hover,

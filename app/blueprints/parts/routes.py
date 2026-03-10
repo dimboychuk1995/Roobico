@@ -222,6 +222,41 @@ def _get_parts_orders_totals(orders_coll, query: dict):
     }
 
 
+def _get_parts_inventory_totals(parts_coll, query: dict):
+    totals = {
+        "inventory_cost": 0.0,
+        "core_cost": 0.0,
+    }
+
+    cursor = parts_coll.find(
+        query,
+        {
+            "in_stock": 1,
+            "average_cost": 1,
+            "core_has_charge": 1,
+            "core_cost": 1,
+            "do_not_track_inventory": 1,
+        },
+    )
+
+    for part in cursor:
+        if bool(part.get("do_not_track_inventory")):
+            continue
+
+        qty = max(0, _parse_int(part.get("in_stock"), default=0))
+        avg_cost = max(0.0, _parse_float(part.get("average_cost"), default=0.0))
+        totals["inventory_cost"] += qty * avg_cost
+
+        if bool(part.get("core_has_charge")):
+            core_cost = max(0.0, _parse_float(part.get("core_cost"), default=0.0))
+            totals["core_cost"] += qty * core_cost
+
+    return {
+        "inventory_cost": float(totals["inventory_cost"]),
+        "core_cost": float(totals["core_cost"]),
+    }
+
+
 def _validate_ref(coll, ref_id_raw: str, label: str):
     """
     Универсальная валидация ссылок на документы (vendor/category/location) в SHOP DB.
@@ -492,7 +527,13 @@ def parts_page():
             if x.get("_id")
         ]
 
-    parts_query = {"is_active": True, "in_stock": {"$gt": 0}}
+    parts_query = {
+        "is_active": True,
+        "$or": [
+            {"in_stock": {"$gt": 0}},
+            {"do_not_track_inventory": True},
+        ],
+    }
     parts_search_filter = build_regex_search_filter(
         q,
         text_fields=["part_number", "description", "reference", "search_terms"],
@@ -515,7 +556,9 @@ def parts_page():
         elif extra:
             parts_query = {"$and": [parts_query, {"$or": extra}]}
 
-    # 1) Parts in stock
+    parts_totals = _get_parts_inventory_totals(parts_coll, parts_query)
+
+    # 1) Parts list
     parts_in_stock, pagination = paginate_find(
         parts_coll,
         parts_query,
@@ -690,6 +733,7 @@ def parts_page():
         orders=orders_list,
         cores=cores_list,
         cores_pagination=cores_pagination,
+        parts_totals=parts_totals,
         orders_totals=orders_totals,
         date_preset=date_preset,
         date_from=date_from,
