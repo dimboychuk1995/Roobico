@@ -13,6 +13,7 @@ from app.utils.mongo_search import build_regex_search_filter
 from app.utils.parts_search import build_query_tokens, part_matches_query
 from app.utils.permissions import permission_required
 from app.utils.display_datetime import format_date_mmddyyyy
+from app.utils.date_filters import build_date_range_filters
 
 
 def utcnow():
@@ -433,59 +434,7 @@ def _date_range_for_preset(preset: str, today):
 
 
 def get_date_range_filters(args, from_key: str = "date_from", to_key: str = "date_to", preset_key: str = "date_preset"):
-    allowed_presets = {
-        "custom",
-        "today",
-        "yesterday",
-        "this_week",
-        "last_week",
-        "this_month",
-        "last_month",
-        "this_quarter",
-        "last_quarter",
-        "this_year",
-        "last_year",
-    }
-
-    date_from_raw = (args.get(from_key) or "").strip()
-    date_to_raw = (args.get(to_key) or "").strip()
-    preset_raw = (args.get(preset_key) or "").strip().lower()
-
-    if preset_raw not in allowed_presets:
-        preset_raw = "this_week"
-
-    # Preset mode is authoritative. Manual date inputs are used only for explicit custom range.
-    if preset_raw == "custom":
-        date_from = date_from_raw
-        date_to = date_to_raw
-        if not date_from and not date_to:
-            preset_raw = "this_week"
-            start_date, end_date = _date_range_for_preset(preset_raw, datetime.now(timezone.utc).date())
-            date_from = _to_iso_date(start_date)
-            date_to = _to_iso_date(end_date)
-    else:
-        start_date, end_date = _date_range_for_preset(preset_raw, datetime.now(timezone.utc).date())
-        date_from = _to_iso_date(start_date)
-        date_to = _to_iso_date(end_date)
-
-    date_preset = preset_raw
-
-    created_from = _parse_iso_date_utc(date_from)
-    created_to_raw = _parse_iso_date_utc(date_to)
-
-    if created_from and created_to_raw and created_from > created_to_raw:
-        created_from, created_to_raw = created_to_raw, created_from
-        date_from, date_to = date_to, date_from
-
-    created_to_exclusive = created_to_raw + timedelta(days=1) if created_to_raw else None
-
-    return {
-        "date_from": date_from,
-        "date_to": date_to,
-        "date_preset": date_preset,
-        "created_from": created_from,
-        "created_to_exclusive": created_to_exclusive,
-    }
+    return build_date_range_filters(args, from_key=from_key, to_key=to_key, preset_key=preset_key)
 
 
 def append_and_filter(query: dict, extra_filter: dict):
@@ -544,7 +493,7 @@ def get_work_orders_list(
     created_from=None,
     created_to_exclusive=None,
 ):
-    query = {"shop_id": shop_id}
+    query = {"shop_id": shop_id, "is_active": True}
 
     if paid_status == "paid":
         query["status"] = "paid"
@@ -673,7 +622,7 @@ def get_estimates_list(
     created_to_exclusive=None,
 ):
     estimate_statuses = ["estimate", "estimated", "quote", "quoted"]
-    query = {"shop_id": shop_id, "status": {"$in": estimate_statuses}}
+    query = {"shop_id": shop_id, "status": {"$in": estimate_statuses}, "is_active": True}
 
     search_filter = build_regex_search_filter(
         q,
