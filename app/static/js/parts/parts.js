@@ -1183,6 +1183,7 @@
 		}
 
 		doNotTrackInventoryCheckbox?.addEventListener('change', syncInStockVisibility);
+		coreCheckbox?.addEventListener('change', syncInStockVisibility);
 
 		// Handle Edit Part buttons
 		document.addEventListener('click', function(e) {
@@ -1227,6 +1228,7 @@
 				// Core charge
 				if (coreCheckbox) coreCheckbox.checked = item.core_has_charge;
 				if (coreCostInput) coreCostInput.value = item.core_cost;
+				syncInStockVisibility();
 
 				// Misc charges
 				miscCheckbox.checked = item.misc_has_charge;
