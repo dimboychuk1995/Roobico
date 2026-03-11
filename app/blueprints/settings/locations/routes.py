@@ -695,10 +695,36 @@ def locations_index():
         timezone_options.append(current_timezone)
         timezone_options = sorted(set(timezone_options))
 
+    active_shop_info = None
+    if isinstance(active_shop, dict):
+        active_shop_info = {
+            "id": str(active_shop.get("_id") or ""),
+            "name": str(active_shop.get("name") or "").strip(),
+            "slug": str(active_shop.get("slug") or "").strip(),
+            "db_name": str(
+                active_shop.get("db_name")
+                or active_shop.get("database")
+                or active_shop.get("db")
+                or active_shop.get("mongo_db")
+                or active_shop.get("shop_db")
+                or ""
+            ).strip(),
+            "status": str(active_shop.get("status") or ("active" if active_shop.get("is_active", True) else "disabled")),
+            "is_active": bool(active_shop.get("is_active", True)),
+            "phone": str(active_shop.get("phone") or "").strip(),
+            "email": str(active_shop.get("email") or "").strip(),
+            "address_line": str(active_shop.get("address_line") or "").strip(),
+            "address": str(active_shop.get("address") or "").strip(),
+            "city": str(active_shop.get("city") or "").strip(),
+            "state": str(active_shop.get("state") or "").strip(),
+            "zip": str(active_shop.get("zip") or "").strip(),
+        }
+
     return _render_settings_page(
         "public/settings/locations.html",
         shops=shops,
         active_shop_id=active_shop_raw,
+        active_shop_info=active_shop_info,
         current_timezone=current_timezone,
         timezone_options=timezone_options,
     )
@@ -749,6 +775,7 @@ def api_locations_create():
     name = (data.get("name") or "").strip()
     address = (data.get("address") or "").strip()
     phone = (data.get("phone") or "").strip()
+    email = (data.get("email") or "").strip()
 
     if len(name) < 2:
         return jsonify({"ok": False, "errors": ["Shop name is required."]}), 400
@@ -768,6 +795,7 @@ def api_locations_create():
         "db_name": shop_db_name,
         "address": address or None,
         "phone": phone or None,
+        "email": email or None,
         "status": "active",
         "is_active": True,
         "is_primary": False,
@@ -785,6 +813,24 @@ def api_locations_create():
         # ✅ доступ выдаём только owners
         _grant_shop_to_owners(master, tenant["_id"], new_shop_id)
 
+        # Also grant access to the current user immediately.
+        # This prevents requiring re-login to see/select the new shop.
+        current_user_id = user.get("_id")
+        if current_user_id:
+            master.users.update_one(
+                {"_id": current_user_id},
+                {"$addToSet": {"shop_ids": new_shop_id}},
+            )
+
+        # Keep current session in sync right away.
+        shop_ids_in_session = session.get("shop_ids") if isinstance(session.get("shop_ids"), list) else []
+        new_shop_id_str = str(new_shop_id)
+        normalized = [str(x) for x in shop_ids_in_session]
+        if new_shop_id_str not in normalized:
+            normalized.append(new_shop_id_str)
+            session["shop_ids"] = normalized
+            session.modified = True
+
         # ✅ создать shop DB + seed parts_categories + pricing rules + labor rates
         init_shop_database(shop_db_name, tenant, shop_doc, actor_user_id=user.get("_id"))
 
@@ -795,10 +841,98 @@ def api_locations_create():
                 "name": name,
                 "slug": shop_slug,
                 "db_name": shop_db_name,
+                "address": address or "",
+                "phone": phone or "",
+                "email": email or "",
             }
         }), 201
 
     except Exception as e:
         return jsonify({"ok": False, "errors": [str(e)]}), 500
+
+
+@settings_bp.route("/api/locations/<shop_id>", methods=["PUT", "PATCH"])
+@login_required
+@permission_required("settings.manage_org")
+def api_locations_update(shop_id: str):
+    master = get_master_db()
+    user = _load_current_user(master)
+    tenant = _load_current_tenant(master)
+    if not user or not tenant:
+        return jsonify({"ok": False, "errors": ["Session mismatch"]}), 401
+
+    shop_oid = _maybe_object_id(shop_id)
+    if not shop_oid:
+        return jsonify({"ok": False, "errors": ["Invalid shop id"]}), 400
+
+    shop = master.shops.find_one({"_id": shop_oid, "tenant_id": tenant["_id"]})
+    if not shop:
+        return jsonify({"ok": False, "errors": ["Shop not found"]}), 404
+
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    address = (data.get("address") or "").strip()
+    phone = (data.get("phone") or "").strip()
+    email = (data.get("email") or "").strip()
+
+    if len(name) < 2:
+        return jsonify({"ok": False, "errors": ["Shop name is required."]}), 400
+
+    now = utcnow()
+    master.shops.update_one(
+        {"_id": shop_oid},
+        {
+            "$set": {
+                "name": name,
+                "address": address or None,
+                "phone": phone or None,
+                "email": email or None,
+                "updated_at": now,
+                "updated_by": user.get("_id"),
+            },
+            "$unset": {
+                "address_line": "",
+                "city": "",
+                "state": "",
+                "zip": "",
+            },
+        },
+    )
+
+    return jsonify({"ok": True})
+
+
+@settings_bp.post("/api/locations/<shop_id>/inactive")
+@login_required
+@permission_required("settings.manage_org")
+def api_locations_inactive(shop_id: str):
+    master = get_master_db()
+    user = _load_current_user(master)
+    tenant = _load_current_tenant(master)
+    if not user or not tenant:
+        return jsonify({"ok": False, "errors": ["Session mismatch"]}), 401
+
+    shop_oid = _maybe_object_id(shop_id)
+    if not shop_oid:
+        return jsonify({"ok": False, "errors": ["Invalid shop id"]}), 400
+
+    shop = master.shops.find_one({"_id": shop_oid, "tenant_id": tenant["_id"]})
+    if not shop:
+        return jsonify({"ok": False, "errors": ["Shop not found"]}), 404
+
+    now = utcnow()
+    master.shops.update_one(
+        {"_id": shop_oid},
+        {
+            "$set": {
+                "status": "disabled",
+                "is_active": False,
+                "updated_at": now,
+                "updated_by": user.get("_id"),
+            }
+        },
+    )
+
+    return jsonify({"ok": True})
 
 
