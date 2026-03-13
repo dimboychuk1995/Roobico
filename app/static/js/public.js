@@ -423,9 +423,148 @@
 		}
 	}
 
+	function countStepPrecision(step) {
+		if (!step || step === "any") return null;
+		var raw = String(step);
+		if (raw.indexOf(".") === -1) return 0;
+		return raw.split(".")[1].length;
+	}
+
+	function sanitizeNumericString(raw, allowNegative, allowDecimal) {
+		var value = String(raw || "").replace(/,/g, "").trim();
+		if (!value) return "";
+
+		var out = "";
+		var hasDot = false;
+		var hasSign = false;
+		for (var i = 0; i < value.length; i += 1) {
+			var ch = value.charAt(i);
+			if (ch >= "0" && ch <= "9") {
+				out += ch;
+				continue;
+			}
+			if (allowDecimal && ch === "." && !hasDot) {
+				out += ch;
+				hasDot = true;
+				continue;
+			}
+			if (allowNegative && ch === "-" && !hasSign && out.length === 0) {
+				out += ch;
+				hasSign = true;
+			}
+		}
+
+		if (out === "-" || out === "." || out === "-.") return "";
+		return out;
+	}
+
+	function clampAndFormatNumberInput(input) {
+		if (!input || input.type !== "number") return;
+		if (!input.value) return;
+
+		var parsed = Number(input.value);
+		if (!Number.isFinite(parsed)) {
+			input.value = "";
+			return;
+		}
+
+		var minAttr = input.getAttribute("min");
+		var maxAttr = input.getAttribute("max");
+		var min = minAttr !== null && minAttr !== "" ? Number(minAttr) : null;
+		var max = maxAttr !== null && maxAttr !== "" ? Number(maxAttr) : null;
+		if (Number.isFinite(min) && parsed < min) parsed = min;
+		if (Number.isFinite(max) && parsed > max) parsed = max;
+
+		var precision = countStepPrecision(input.getAttribute("step"));
+		if (precision === 0) {
+			parsed = Math.round(parsed);
+			input.value = String(parsed);
+			return;
+		}
+
+		if (typeof precision === "number" && precision > 0) {
+			var factor = Math.pow(10, precision);
+			parsed = Math.round(parsed * factor) / factor;
+			input.value = String(parsed);
+			return;
+		}
+
+		input.value = String(parsed);
+	}
+
+	function sanitizeNumericLikeInput(input) {
+		if (!input) return;
+
+		if (input.type === "number") {
+			var step = input.getAttribute("step");
+			var isInteger = step === "1" || step === "1.0" || step === "01";
+			var minAttr = input.getAttribute("min");
+			var min = minAttr !== null && minAttr !== "" ? Number(minAttr) : null;
+			var allowNegative = !Number.isFinite(min) || min < 0;
+			var sanitized = sanitizeNumericString(input.value, allowNegative, !isInteger);
+			if (sanitized !== input.value) {
+				input.value = sanitized;
+			}
+			return;
+		}
+
+		if (input.type === "tel" || /phone/i.test(input.name || "") || /phone/i.test(input.id || "")) {
+			var tel = String(input.value || "").replace(/[^0-9+()\-\s]/g, "");
+			if (tel !== input.value) input.value = tel;
+			return;
+		}
+
+		var mode = String(input.getAttribute("inputmode") || "").toLowerCase();
+		if (mode === "numeric") {
+			var numericOnly = sanitizeNumericString(input.value, false, false);
+			if (numericOnly !== input.value) input.value = numericOnly;
+			return;
+		}
+
+		if (mode === "decimal") {
+			var decimalOnly = sanitizeNumericString(input.value, false, true);
+			if (decimalOnly !== input.value) input.value = decimalOnly;
+		}
+	}
+
+	function bindGlobalInputConstraints() {
+		if (document.body.dataset.globalInputConstraintsBound === "1") {
+			return;
+		}
+		document.body.dataset.globalInputConstraintsBound = "1";
+
+		document.addEventListener("input", function (event) {
+			var target = event && event.target;
+			if (!(target instanceof HTMLInputElement)) return;
+			sanitizeNumericLikeInput(target);
+		});
+
+		document.addEventListener("blur", function (event) {
+			var target = event && event.target;
+			if (!(target instanceof HTMLInputElement)) return;
+			if (target.type === "number") {
+				clampAndFormatNumberInput(target);
+			}
+		}, true);
+
+		document.addEventListener("submit", function (event) {
+			var form = event && event.target;
+			if (!(form instanceof HTMLFormElement)) return;
+
+			var inputs = form.querySelectorAll("input");
+			for (var i = 0; i < inputs.length; i += 1) {
+				sanitizeNumericLikeInput(inputs[i]);
+				if (inputs[i].type === "number") {
+					clampAndFormatNumberInput(inputs[i]);
+				}
+			}
+		}, true);
+	}
+
 	document.addEventListener("DOMContentLoaded", function () {
 		bindAutoSearchForms();
 		bindSidebarNavigation();
+		bindGlobalInputConstraints();
 		updateSidebarActiveState(window.location.pathname);
 	});
 })();
