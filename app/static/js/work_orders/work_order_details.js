@@ -1586,12 +1586,16 @@
         updatePartCostEditableState(tr);
         tr.querySelector(".part-price").value = String(p?.price ?? "");
         const coreValue = toNum(p?.core_charge ?? p?.core_cost ?? 0) || 0;
+        const coreBaseValue = toNum(p?.core_charge_base);
+        const effectiveCoreBase = (Number.isFinite(coreBaseValue) && coreBaseValue > 0)
+          ? coreBaseValue
+          : coreValue;
         tr.querySelector(".part-core-charge").value = String(coreValue);
         tr.querySelector(".part-misc-charge").value = String(p?.misc_charge ?? 0);
         tr.querySelector(".part-misc-charge-description").value = String(p?.misc_charge_description ?? "");
-        tr.dataset.coreChargeBase = String(coreValue);
+        tr.dataset.coreChargeBase = String(Number.isFinite(effectiveCoreBase) ? effectiveCoreBase : 0);
         const toggle = tr.querySelector(".part-core-toggle");
-        if (toggle) toggle.checked = coreValue > 0 ? true : coreChargeDefaultEnabled;
+        if (toggle) toggle.checked = coreValue > 0;
         syncCoreChargeFromToggle(tr);
         setRowChargesMeta(tr);
         
@@ -1599,7 +1603,7 @@
         const lineCell = tr.querySelector(".part-line-total");
         if (lineCell) {
           const toggleWrapper = lineCell.querySelector(".part-core-toggle-wrapper");
-          if (toggleWrapper && Number.isFinite(coreValue) && coreValue > 0) {
+          if (toggleWrapper && Number.isFinite(effectiveCoreBase) && effectiveCoreBase > 0) {
             toggleWrapper.style.display = "flex";
           } else if (toggleWrapper) {
             toggleWrapper.style.display = "none";

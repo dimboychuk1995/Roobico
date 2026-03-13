@@ -439,9 +439,49 @@ def align_totals_with_labors(totals: dict, labors: list) -> dict:
     }
 
 
-def normalize_saved_labors(raw):
+def normalize_saved_labors(raw, shop_db=None):
     if not isinstance(raw, list):
         return []
+
+    part_id_values = []
+    part_numbers = []
+    for block in raw:
+        if not isinstance(block, dict):
+            continue
+        for p in normalize_parts_payload(block.get("parts") or []):
+            part_id = p.get("part_id")
+            if part_id:
+                part_id_values.append(part_id)
+            pn = str(p.get("part_number") or "").strip()
+            if pn:
+                part_numbers.append(pn)
+
+    core_base_by_id = {}
+    core_base_by_number = {}
+    if shop_db is not None and (part_id_values or part_numbers):
+        parts_query = {"is_active": True}
+        or_filters = []
+        if part_id_values:
+            or_filters.append({"_id": {"$in": list({x for x in part_id_values if x})}})
+        if part_numbers:
+            or_filters.append({"part_number": {"$in": list({x for x in part_numbers if x})}})
+        if or_filters:
+            parts_query["$or"] = or_filters
+
+        for doc in shop_db.parts.find(
+            parts_query,
+            {"_id": 1, "part_number": 1, "core_has_charge": 1, "core_cost": 1},
+        ):
+            has_core_charge = bool(doc.get("core_has_charge"))
+            core_cost = round2(doc.get("core_cost") or 0)
+            if not has_core_charge or core_cost <= 0:
+                continue
+            part_id = doc.get("_id")
+            if part_id:
+                core_base_by_id[str(part_id)] = core_cost
+            part_number = str(doc.get("part_number") or "").strip()
+            if part_number:
+                core_base_by_number[part_number] = core_cost
 
     out = []
     for block in raw:
@@ -493,16 +533,28 @@ def normalize_saved_labors(raw):
 
         parts_out = []
         for p in normalize_parts_payload(block.get("parts") or []):
+            part_id_str = str(p.get("part_id")) if p.get("part_id") else ""
+            part_number_str = str(p.get("part_number") or "").strip()
+            saved_core_charge = round2(p.get("core_charge") if p.get("core_charge") is not None else 0)
+            core_charge_base = saved_core_charge
+            if core_charge_base <= 0:
+                core_charge_base = round2(
+                    core_base_by_id.get(part_id_str)
+                    if part_id_str
+                    else core_base_by_number.get(part_number_str)
+                )
+
             parts_out.append(
                 {
-                    "part_id": str(p.get("part_id")) if p.get("part_id") else "",
+                    "part_id": part_id_str,
                     "one_time_part": as_bool(p.get("one_time_part")),
-                    "part_number": str(p.get("part_number") or "").strip(),
+                    "part_number": part_number_str,
                     "description": str(p.get("description") or "").strip(),
                     "qty": str(p.get("qty") if p.get("qty") is not None else ""),
                     "cost": str(p.get("cost") if p.get("cost") is not None else ""),
                     "price": str(p.get("price") if p.get("price") is not None else ""),
                     "core_charge": str(p.get("core_charge") if p.get("core_charge") is not None else ""),
+                    "core_charge_base": str(core_charge_base if core_charge_base > 0 else ""),
                     "misc_charge": str(p.get("misc_charge") if p.get("misc_charge") is not None else ""),
                     "misc_charge_description": str(
                         p.get("misc_charge_description") if p.get("misc_charge_description") is not None else ""
@@ -1783,7 +1835,7 @@ def work_order_details_page():
                 "work_order_created": True,
                 "created_work_order_id": str(wo.get("_id")),
                 "wo_number": wo.get("wo_number"),
-                "initial_labors": normalize_saved_labors(wo.get("labors") or wo.get("blocks") or []),
+                "initial_labors": normalize_saved_labors(wo.get("labors") or wo.get("blocks") or [], shop_db=shop_db),
                 "initial_totals": wo.get("totals")
                 or {
                     "labor": wo.get("labor_total") or 0,
