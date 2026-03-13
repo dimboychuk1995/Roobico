@@ -120,14 +120,15 @@ def normalize_parts_payload(raw_parts):
         misc_raw = f64(p.get("misc_charge"))
 
         has_any = bool(part_number or description or misc_charge_description)
-        if qty_raw is not None:
+        if qty_raw is not None and qty_raw > 0:
             has_any = True
-        if any((
-            cost_raw is not None,
-            price_raw is not None,
-            core_raw is not None,
-            misc_raw is not None,
-        )):
+        if cost_raw is not None and cost_raw > 0:
+            has_any = True
+        if price_raw is not None and price_raw > 0:
+            has_any = True
+        if core_raw is not None and core_raw > 0:
+            has_any = True
+        if misc_raw is not None and misc_raw > 0:
             has_any = True
 
         if not has_any:
@@ -418,7 +419,32 @@ def align_totals_with_labors(totals: dict, labors: list) -> dict:
         misc_sum += misc_total
 
     labor_base_sum = round2(sum(round2(b.get("labor") or 0) for b in out_blocks))
-    shop_supply_sum = round2(sum(round2(b.get("shop_supply_total") or 0) for b in out_blocks))
+    shop_supply_from_blocks = round2(sum(round2(b.get("shop_supply_total") or 0) for b in out_blocks))
+    requested_shop_supply = round2(src.get("shop_supply_total"))
+    shop_supply_sum = requested_shop_supply if requested_shop_supply > 0 else shop_supply_from_blocks
+
+    if out_blocks:
+        if shop_supply_sum > 0 and labor_base_sum > 0:
+            allocated = 0.0
+            for idx, block in enumerate(out_blocks):
+                labor_base = round2(block.get("labor") or 0)
+                if idx == len(out_blocks) - 1:
+                    block_supply = round2(shop_supply_sum - allocated)
+                else:
+                    block_supply = round2(shop_supply_sum * (labor_base / labor_base_sum))
+                    allocated = round2(allocated + block_supply)
+
+                block["shop_supply_total"] = block_supply
+                block["labor_total"] = round2(labor_base + block_supply)
+                block["labor_full_total"] = round2(block["labor_total"] + round2(block.get("parts_total") or 0))
+        else:
+            for block in out_blocks:
+                labor_base = round2(block.get("labor") or 0)
+                block["shop_supply_total"] = 0.0
+                block["labor_total"] = round2(labor_base)
+                block["labor_full_total"] = round2(block["labor_total"] + round2(block.get("parts_total") or 0))
+
+    shop_supply_sum = round2(sum(round2(b.get("shop_supply_total") or 0) for b in out_blocks)) if out_blocks else shop_supply_sum
     labor_total_sum = round2(labor_base_sum + shop_supply_sum)
     parts_base_sum = round2(parts_base_sum)
     core_sum = round2(core_sum)

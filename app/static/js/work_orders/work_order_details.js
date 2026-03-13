@@ -854,11 +854,14 @@
     const miscGrand = toNum(totals.misc_total);
     const grand = toNum(totals.grand_total);
     const supplyGrandStored = toNum(totals.shop_supply_total);
-    const supplyGrand = Number.isFinite(supplyGrandStored)
+    const supplyGrandCalculated = (
+      Number.isFinite(laborGrandBaseStored) && Number.isFinite(shopSupplyPct) && shopSupplyPct > 0
+    )
+      ? round2(laborGrandBaseStored * (shopSupplyPct / 100))
+      : 0;
+    const supplyGrand = (Number.isFinite(supplyGrandStored) && supplyGrandStored > 0)
       ? round2(supplyGrandStored)
-      : ((Number.isFinite(laborGrandBaseStored) && Number.isFinite(shopSupplyPct) && shopSupplyPct > 0)
-        ? round2(laborGrandBaseStored * (shopSupplyPct / 100))
-        : 0);
+      : supplyGrandCalculated;
 
     const laborGrandBase = Number.isFinite(laborGrandBaseStored)
       ? round2(laborGrandBaseStored)
@@ -1646,7 +1649,22 @@
         const coreCharge = String(tr.querySelector(".part-core-charge")?.value || "").trim();
         const miscCharge = String(tr.querySelector(".part-misc-charge")?.value || "").trim();
         const miscChargeDescription = String(tr.querySelector(".part-misc-charge-description")?.value || "").trim();
-        if (!(part_number || part_id || description || qty || cost || price || coreCharge || miscCharge || miscChargeDescription)) return;
+
+        const qtyNum = toNum(qty);
+        const costNum = toNum(cost);
+        const priceNum = toNum(price);
+        const coreNum = toNum(coreCharge);
+        const miscNum = toNum(miscCharge);
+        const hasManualFields = !!(part_number || part_id || description || miscChargeDescription);
+        const hasPositiveValues = (
+          (Number.isFinite(qtyNum) && qtyNum > 0)
+          || (Number.isFinite(costNum) && costNum > 0)
+          || (Number.isFinite(priceNum) && priceNum > 0)
+          || (Number.isFinite(coreNum) && coreNum > 0)
+          || (Number.isFinite(miscNum) && miscNum > 0)
+        );
+        if (!hasManualFields && !hasPositiveValues) return;
+
         parts.push({
           part_id,
           one_time_part,
