@@ -711,6 +711,33 @@ def parts_page():
             if lid:
                 p["location_name"] = location_map.get(lid) or ""
 
+            misc_charges_safe = []
+            for charge in (p.get("misc_charges") or []):
+                if not isinstance(charge, dict):
+                    continue
+                misc_charges_safe.append(
+                    {
+                        "description": str(charge.get("description") or ""),
+                        "price": float(_parse_float(charge.get("price"), default=0.0)),
+                    }
+                )
+
+            p["edit_payload"] = {
+                "part_number": str(p.get("part_number") or ""),
+                "description": str(p.get("description") or ""),
+                "reference": str(p.get("reference") or ""),
+                "vendor_id": str(p.get("vendor_id")) if p.get("vendor_id") else "",
+                "category_id": str(p.get("category_id")) if p.get("category_id") else "",
+                "location_id": str(p.get("location_id")) if p.get("location_id") else "",
+                "in_stock": int(_parse_int(p.get("in_stock"), default=0)),
+                "average_cost": float(_parse_float(p.get("average_cost"), default=0.0)),
+                "do_not_track_inventory": bool(p.get("do_not_track_inventory")),
+                "core_has_charge": bool(p.get("core_has_charge")),
+                "core_cost": float(_parse_float(p.get("core_cost"), default=0.0)),
+                "misc_has_charge": bool(p.get("misc_has_charge")),
+                "misc_charges": misc_charges_safe,
+            }
+
     last_order_id = session.get("last_parts_order_id")
 
     # Get orders list for Orders tab
@@ -787,11 +814,41 @@ def parts_page():
             payment_summary = _build_parts_order_payment_summary(order, paid_amount)
             amounts = _parts_order_amounts(order)
 
+            order_items_inline = []
+            for item in (order.get("items") or []):
+                if not isinstance(item, dict):
+                    continue
+                part_id = item.get("part_id")
+                order_items_inline.append(
+                    {
+                        "part_id": str(part_id) if part_id else "",
+                        "part_number": str(item.get("part_number") or ""),
+                        "description": str(item.get("description") or ""),
+                        "quantity": int(_parse_int(item.get("quantity"), default=0)),
+                        "price": float(_parse_float(item.get("price"), default=0.0)),
+                    }
+                )
+
+            non_inventory_inline = []
+            for line in (order.get("non_inventory_amounts") or []):
+                if not isinstance(line, dict):
+                    continue
+                non_inventory_inline.append(
+                    {
+                        "type": str(line.get("type") or "shop_supply").strip().lower(),
+                        "description": str(line.get("description") or "").strip(),
+                        "amount": float(_parse_float(line.get("amount"), default=0.0)),
+                    }
+                )
+
             orders_list.append({
                 "id": str(order.get("_id")),
                 "order_number": order.get("order_number"),
+                "vendor_id": str(order.get("vendor_id")) if order.get("vendor_id") else "",
                 "vendor": vendors_map.get(order.get("vendor_id")) or "-",
                 "status": order.get("status") or "ordered",
+                "items": order_items_inline,
+                "non_inventory_amounts": non_inventory_inline,
                 "payment_status": payment_summary.get("payment_status") or "unpaid",
                 "paid_amount": float(payment_summary.get("paid_amount") or 0.0),
                 "remaining_balance": float(payment_summary.get("remaining_balance") or 0.0),
@@ -1419,7 +1476,7 @@ def _recalc_weighted_avg(old_qty: int, old_avg: float, add_qty: int, add_price: 
 
 @parts_bp.get("/api/orders/<order_id>")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts.view")
 def parts_api_orders_get(order_id: str):
     """
     Get order details for editing.
@@ -1993,7 +2050,7 @@ def parts_api_orders_delete(order_id: str):
 
 @parts_bp.get("/api/<part_id>")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts.view")
 def parts_api_get(part_id: str):
     """
     AJAX get part data for edit modal.

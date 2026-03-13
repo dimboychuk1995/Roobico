@@ -112,8 +112,6 @@
 		if (canUseOrderComposer) {
 			try {
 
-			let pendingEditOrderId = "";
-
 			const vendorOptions = Array.from(vendorSelect.options)
 				.filter((opt) => opt.value)
 				.map((opt) => ({ id: String(opt.value), label: String(opt.textContent || "").trim() }));
@@ -275,6 +273,12 @@
 			return `$${Number.isFinite(x) ? x.toFixed(2) : "0.00"}`;
 		}
 
+		function getBootstrapModalClass() {
+			if (window.bootstrap && window.bootstrap.Modal) return window.bootstrap.Modal;
+			if (typeof bootstrap !== "undefined" && bootstrap.Modal) return bootstrap.Modal;
+			return null;
+		}
+
 		const partsOrderPaymentModalEl = document.getElementById("partsOrderPaymentModal");
 		const partsOrderPaymentOrderIdInput = document.getElementById("partsOrderPaymentOrderId");
 		const partsOrderPaymentOrderMeta = document.getElementById("partsOrderPaymentOrderMeta");
@@ -322,6 +326,22 @@
 			}
 
 			const order = data.order;
+			applyOrderToModal(order, orderId);
+		}
+
+		async function openOrderEditModal(orderId) {
+			if (!orderId) return;
+			clearError();
+			await loadOrderIntoModal(orderId);
+			const modalEl = document.getElementById("orderModal");
+			const ModalClass = getBootstrapModalClass();
+			if (modalEl && ModalClass) {
+				ModalClass.getOrCreateInstance(modalEl).show();
+			}
+		}
+
+		function applyOrderToModal(order, orderId) {
+			if (!order || typeof order !== "object") return;
 			currentOrderStatus = order.status;
 			const isReceived = order.status === "received";
 			if (receiveOrderModalBtn) receiveOrderModalBtn.style.display = isReceived ? "none" : "block";
@@ -365,6 +385,30 @@
 			createdOrderId.value = orderId;
 			orderCreatedBox.classList.add("d-none");
 			createOrderBtn.textContent = "Save";
+		}
+
+		function parseJsonAttr(raw) {
+			if (!raw) return null;
+			const decodeHtml = function (s) {
+				const el = document.createElement("textarea");
+				el.innerHTML = String(s || "");
+				return el.value;
+			};
+			try {
+				return JSON.parse(raw);
+			} catch (e) {
+				try {
+					const d1 = decodeHtml(raw);
+					return JSON.parse(d1);
+				} catch (e2) {
+					try {
+						const d2 = decodeHtml(decodeHtml(raw));
+						return JSON.parse(d2);
+					} catch (e3) {
+						return null;
+					}
+				}
+			}
 		}
 
 		document.addEventListener("click", async function (e) {
@@ -1054,55 +1098,21 @@
 			loadPartHistory(partId);
 		});
 
-		document.addEventListener("click", function (e) {
+		orderModal?.addEventListener("show.bs.modal", function (e) {
 			if (!isPartsPageAlive()) return;
-			const editBtn = e.target.closest(".editOrderBtn");
-			if (!editBtn) return;
-			pendingEditOrderId = String(editBtn.getAttribute("data-order-id") || "").trim();
-		});
-
-		document.addEventListener("show.bs.modal", function (e) {
-			if (!isPartsPageAlive()) return;
-			if (!e.target || e.target.id !== "orderModal") return;
-
 			const trigger = e.relatedTarget;
 			const editBtn = trigger ? trigger.closest(".editOrderBtn") : null;
-			const orderId = (editBtn ? String(editBtn.getAttribute("data-order-id") || "").trim() : "") || pendingEditOrderId || "";
-			pendingEditOrderId = "";
-			if (orderId) {
-				loadOrderIntoModal(orderId).catch(function () {
-					showError("Network error while loading order");
-				});
+			if (!editBtn) return;
+			const orderId = String(editBtn.getAttribute("data-order-id") || "").trim();
+			if (!orderId) return;
+			const inlineOrder = parseJsonAttr(editBtn.getAttribute("data-order-json"));
+			if (inlineOrder && typeof inlineOrder === "object") {
+				applyOrderToModal(inlineOrder, orderId);
 				return;
 			}
-
-			clearError();
-
-			vendorSelect.disabled = false;
-			vendorSelect.value = "";
-			vendorSearchInput.disabled = false;
-			vendorSearchInput.value = "";
-			hideVendorDropdown();
-			partSearch.disabled = true;
-			partSearch.value = "";
-			hideDropdown();
-
-			createdOrderId.value = "";
-			orderCreatedBox.classList.add("d-none");
-
-			createOrderBtn.disabled = false;
-			receiveBtn.disabled = false;
-
-			itemsBody.innerHTML = `
-				<tr id="emptyOrderRow">
-					<td colspan="5" class="text-muted">No items added.</td>
-				</tr>
-			`;
-			renderNonInventoryRows([], false);
-			
-			orderTotalAmount.textContent = "$0.00";
-			if (receiveOrderModalBtn) receiveOrderModalBtn.style.display = "none";
-			if (unreceiveOrderModalBtn) unreceiveOrderModalBtn.style.display = "none";
+			loadOrderIntoModal(orderId).catch(function () {
+				showError("Network error while loading order");
+			});
 		});
 
 		// ---- Order List Management (Receive from Status, Delete from Orders tab) ----
@@ -1187,42 +1197,55 @@
 		const miscCheckbox = document.getElementById('miscChargeToggle');
 		const miscBodyParts = document.getElementById('miscChargesBody');
 		const form = createPartModal.querySelector('form[action*="/parts/create"]');
-		let pendingEditPartId = '';
-
-		async function loadPartIntoEditModal(partId) {
-			if (!partId) return;
-
-			const res = await fetch(`/parts/api/${encodeURIComponent(partId)}`, {
-				method: 'GET',
-				headers: { 'Accept': 'application/json' }
-			});
-			const data = await res.json();
-			if (!res.ok || !data.ok || !data.item) {
-				throw new Error((data && (data.error || data.message)) || 'Failed to load part data');
+		function parsePartJsonAttr(raw) {
+			if (!raw) return null;
+			const decodeHtml = function (s) {
+				const el = document.createElement('textarea');
+				el.innerHTML = String(s || '');
+				return el.value;
+			};
+			try {
+				return JSON.parse(raw);
+			} catch (e) {
+				try {
+					return JSON.parse(decodeHtml(raw));
+				} catch (e2) {
+					try {
+						return JSON.parse(decodeHtml(decodeHtml(raw)));
+					} catch (e3) {
+						return null;
+					}
+				}
 			}
+		}
+		function boolFromAttr(v) {
+			return String(v || '').trim() === '1' || String(v || '').trim().toLowerCase() === 'true';
+		}
 
-			const item = data.item;
-			editingPartId.value = partId;
-			modalTitle.textContent = 'Edit part: ' + item.part_number;
+		function applyPartToModal(item, partId) {
+			if (!item || typeof item !== 'object') return;
+			editingPartId.value = partId || '';
+			modalTitle.textContent = 'Edit part: ' + (item.part_number || '');
 
-			partNumberInput.value = item.part_number;
-			descriptionInput.value = item.description;
-			referenceInput.value = item.reference;
-			vendorSelectParts.value = item.vendor_id;
-			categorySelect.value = item.category_id;
-			locationSelect.value = item.location_id;
-			inStockInput.value = item.in_stock;
-			averageCostInput.value = item.average_cost;
+			partNumberInput.value = item.part_number || '';
+			descriptionInput.value = item.description || '';
+			referenceInput.value = item.reference || '';
+			vendorSelectParts.value = item.vendor_id || '';
+			categorySelect.value = item.category_id || '';
+			locationSelect.value = item.location_id || '';
+			inStockInput.value = item.in_stock ?? 0;
+			averageCostInput.value = item.average_cost ?? 0;
+
 			if (doNotTrackInventoryCheckbox) {
 				doNotTrackInventoryCheckbox.checked = !!item.do_not_track_inventory;
 			}
 			syncInStockVisibility();
 
-			if (coreCheckbox) coreCheckbox.checked = item.core_has_charge;
-			if (coreCostInput) coreCostInput.value = item.core_cost;
+			if (coreCheckbox) coreCheckbox.checked = !!item.core_has_charge;
+			if (coreCostInput) coreCostInput.value = item.core_cost ?? 0;
 			syncInStockVisibility();
 
-			miscCheckbox.checked = item.misc_has_charge;
+			miscCheckbox.checked = !!item.misc_has_charge;
 			if (miscBodyParts) {
 				miscBodyParts.innerHTML = '';
 				if (item.misc_charges && item.misc_charges.length > 0) {
@@ -1246,6 +1269,35 @@
 			}
 
 			document.getElementById('miscChargesGroup').style.display = item.misc_has_charge ? '' : 'none';
+		}
+
+		async function loadPartIntoEditModal(partId) {
+			if (!partId) return;
+
+			const res = await fetch(`/parts/api/${encodeURIComponent(partId)}`, {
+				method: 'GET',
+				headers: { 'Accept': 'application/json' }
+			});
+			const data = await res.json();
+			if (!res.ok || !data.ok || !data.item) {
+				throw new Error((data && (data.error || data.message)) || 'Failed to load part data');
+			}
+
+			const item = data.item;
+			applyPartToModal(item, partId);
+		}
+
+		async function openPartEditModal(partId, inlineData) {
+			if (!partId) return;
+			if (inlineData && typeof inlineData === 'object') {
+				applyPartToModal(inlineData, partId);
+			} else {
+				await loadPartIntoEditModal(partId);
+			}
+			const ModalClass = getBootstrapModalClass();
+			if (ModalClass) {
+				ModalClass.getOrCreateInstance(createPartModal).show();
+			}
 		}
 
 		function syncInStockVisibility() {
@@ -1273,18 +1325,17 @@
 		doNotTrackInventoryCheckbox?.addEventListener('change', syncInStockVisibility);
 		coreCheckbox?.addEventListener('change', syncInStockVisibility);
 
-		document.addEventListener('click', function(e) {
-			const editBtn = e.target.closest('.editPartBtn');
-			if (!editBtn) return;
-			pendingEditPartId = String(editBtn.getAttribute('data-part-id') || '').trim();
-		});
-
-		createPartModal.addEventListener('show.bs.modal', function (e) {
+		createPartModal.addEventListener('show.bs.modal', function(e) {
 			const trigger = e.relatedTarget;
 			const editBtn = trigger ? trigger.closest('.editPartBtn') : null;
-			const partId = (editBtn ? String(editBtn.getAttribute('data-part-id') || '').trim() : '') || pendingEditPartId || '';
-			pendingEditPartId = '';
+			if (!editBtn) return;
+			const partId = String(editBtn.getAttribute('data-part-id') || '').trim();
 			if (!partId) return;
+			const inlineData = parsePartJsonAttr(editBtn.getAttribute('data-part-json'));
+			if (inlineData && typeof inlineData === 'object') {
+				applyPartToModal(inlineData, partId);
+				return;
+			}
 			loadPartIntoEditModal(partId).catch(err => {
 				console.error('Error loading part:', err);
 				alert('Error loading part data');
@@ -1370,11 +1421,11 @@
 
 		syncInStockVisibility();
 	}
+	}
 
 	if (document.readyState === "loading") {
 		document.addEventListener("DOMContentLoaded", initPartsPage, { once: true });
 	} else {
 		initPartsPage();
-	}
 	}
 })();
