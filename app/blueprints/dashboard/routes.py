@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from bson import ObjectId
-from flask import request, redirect, url_for, flash, session
+from flask import request, redirect, url_for, flash, session, jsonify
 
 from app.blueprints.dashboard import dashboard_bp
 from app.blueprints.main.routes import _render_app_page
@@ -156,6 +156,53 @@ def dashboard():
     created_from = date_filters["created_from"]
     created_to_exclusive = date_filters["created_to_exclusive"]
 
+    # Temporary dynamic goal source via query arg; replace with DB/settings source later.
+    goal_raw = str(request.args.get("goal") or "").strip()
+    try:
+        goal_count = int(goal_raw) if goal_raw else 120
+    except Exception:
+        goal_count = 120
+    if goal_count < 1:
+        goal_count = 1
+
+    return _render_app_page(
+        "public/dashboard.html",
+        active_page="dashboard",
+        date_from=date_from,
+        date_to=date_to,
+        date_preset=date_preset,
+        goal_count=goal_count,
+        period_paid_amount=0.0,
+        period_unpaid_amount=0.0,
+        period_labor_total=0.0,
+        period_parts_total=0.0,
+        period_grand_total=0.0,
+        mechanic_hours_rows=[],
+        period_money_total=0.0,
+        period_total=0,
+        paid_percent=0.0,
+        period_parts_orders_total=0,
+        period_parts_orders_received=0,
+        period_parts_orders_ordered=0,
+        period_parts_orders_paid_count=0,
+        period_parts_orders_unpaid_count=0,
+        period_parts_orders_paid_amount=0.0,
+        period_parts_orders_unpaid_amount=0.0,
+        parts_orders_paid_percent_by_amount=0.0,
+        parts_orders_received_percent=0.0,
+        parts_orders_paid_percent=0.0,
+        period_parts_orders_items_amount=0.0,
+        period_parts_orders_non_inventory_amount=0.0,
+        period_parts_orders_total_amount=0.0,
+        period_wo_total=0,
+        all_time_wo_total=0,
+        goal_percent=0.0,
+        outstanding_balance=0.0,
+        dashboard_metrics_api_url=url_for("dashboard.dashboard_metrics_api"),
+    )
+
+
+def _compute_dashboard_metrics(shop_db, shop, created_from, created_to_exclusive, goal_count: int):
     date_match = {"shop_id": shop["_id"], "is_active": True}
     created_filter = {}
     if created_from:
@@ -182,7 +229,6 @@ def dashboard():
     )
 
     period_total = len(period_wo_rows)
-
     period_labor_total = 0.0
     period_parts_total = 0.0
     period_grand_total = 0.0
@@ -224,20 +270,14 @@ def dashboard():
                 share_hours = hours_value * (share / 100.0)
 
                 mechanic_id = str(item.get("user_id") or "").strip()
-                mechanic_name = str(item.get("name") or "").strip()
-                if not mechanic_name:
-                    mechanic_name = str(item.get("email") or "").strip()
+                mechanic_name = str(item.get("name") or "").strip() or str(item.get("email") or "").strip()
                 if not mechanic_name:
                     mechanic_name = "Unknown mechanic"
 
                 mechanic_key = mechanic_id or mechanic_name.lower()
                 row = mechanic_hours_map.get(mechanic_key)
                 if row is None:
-                    row = {
-                        "user_id": mechanic_id,
-                        "name": mechanic_name,
-                        "hours": 0.0,
-                    }
+                    row = {"user_id": mechanic_id, "name": mechanic_name, "hours": 0.0}
                     mechanic_hours_map[mechanic_key] = row
 
                 row["hours"] = _round2(row["hours"] + share_hours)
@@ -266,9 +306,6 @@ def dashboard():
         grand_total = totals.get("grand_total") if totals.get("grand_total") is not None else wo.get("grand_total")
         grand_total = _round2(grand_total)
         paid_amount = _round2(period_paid_map.get(wo.get("_id"), 0))
-
-        # Backward-compatible fallback: some datasets mark status as paid without
-        # storing rows in work_order_payments.
         if status == "paid":
             paid_amount = _round2(max(paid_amount, grand_total))
 
@@ -336,11 +373,7 @@ def dashboard():
         paid_amount = _round2(parts_orders_paid_map.get(order.get("_id"), order.get("paid_amount") or 0))
         payment_status = str(order.get("payment_status") or "").strip().lower()
         is_paid = False
-        if payment_status == "paid":
-            is_paid = True
-        elif order_amount <= 0:
-            is_paid = True
-        elif paid_amount + 0.01 >= order_amount:
+        if payment_status == "paid" or order_amount <= 0 or paid_amount + 0.01 >= order_amount:
             is_paid = True
 
         if is_paid:
@@ -374,16 +407,6 @@ def dashboard():
 
     all_time_base = {"shop_id": shop["_id"], "is_active": True}
     all_time_wo_total = shop_db.work_orders.count_documents(all_time_base)
-
-    # Temporary dynamic goal source via query arg; replace with DB/settings source later.
-    goal_raw = str(request.args.get("goal") or "").strip()
-    try:
-        goal_count = int(goal_raw) if goal_raw else 120
-    except Exception:
-        goal_count = 120
-    if goal_count < 1:
-        goal_count = 1
-
     goal_percent = min(100.0, (period_total / goal_count) * 100.0)
 
     wo_rows = list(
@@ -418,37 +441,63 @@ def dashboard():
         if remaining > 0:
             outstanding_balance = _round2(outstanding_balance + remaining)
 
-    return _render_app_page(
-        "public/dashboard.html",
-        active_page="dashboard",
-        date_from=date_from,
-        date_to=date_to,
-        date_preset=date_preset,
-        period_paid_amount=period_paid_amount,
-        period_unpaid_amount=period_unpaid_amount,
-        period_labor_total=period_labor_total,
-        period_parts_total=period_parts_total,
-        period_grand_total=period_grand_total,
-        mechanic_hours_rows=mechanic_hours_rows,
-        period_money_total=period_money_total,
-        period_total=period_total,
-        paid_percent=paid_percent,
-        period_parts_orders_total=period_parts_orders_total,
-        period_parts_orders_received=period_parts_orders_received,
-        period_parts_orders_ordered=period_parts_orders_ordered,
-        period_parts_orders_paid_count=period_parts_orders_paid_count,
-        period_parts_orders_unpaid_count=period_parts_orders_unpaid_count,
-        period_parts_orders_paid_amount=period_parts_orders_paid_amount,
-        period_parts_orders_unpaid_amount=period_parts_orders_unpaid_amount,
-        parts_orders_paid_percent_by_amount=parts_orders_paid_percent_by_amount,
-        parts_orders_received_percent=parts_orders_received_percent,
-        parts_orders_paid_percent=parts_orders_paid_percent,
-        period_parts_orders_items_amount=period_parts_orders_items_amount,
-        period_parts_orders_non_inventory_amount=period_parts_orders_non_inventory_amount,
-        period_parts_orders_total_amount=period_parts_orders_total_amount,
+    return {
+        "period_paid_amount": period_paid_amount,
+        "period_unpaid_amount": period_unpaid_amount,
+        "period_labor_total": period_labor_total,
+        "period_parts_total": period_parts_total,
+        "period_grand_total": period_grand_total,
+        "mechanic_hours_rows": mechanic_hours_rows,
+        "period_money_total": period_money_total,
+        "period_total": period_total,
+        "paid_percent": paid_percent,
+        "period_parts_orders_total": period_parts_orders_total,
+        "period_parts_orders_received": period_parts_orders_received,
+        "period_parts_orders_ordered": period_parts_orders_ordered,
+        "period_parts_orders_paid_count": period_parts_orders_paid_count,
+        "period_parts_orders_unpaid_count": period_parts_orders_unpaid_count,
+        "period_parts_orders_paid_amount": period_parts_orders_paid_amount,
+        "period_parts_orders_unpaid_amount": period_parts_orders_unpaid_amount,
+        "parts_orders_paid_percent_by_amount": parts_orders_paid_percent_by_amount,
+        "parts_orders_received_percent": parts_orders_received_percent,
+        "parts_orders_paid_percent": parts_orders_paid_percent,
+        "period_parts_orders_items_amount": period_parts_orders_items_amount,
+        "period_parts_orders_non_inventory_amount": period_parts_orders_non_inventory_amount,
+        "period_parts_orders_total_amount": period_parts_orders_total_amount,
+        "goal_count": goal_count,
+        "period_wo_total": period_total,
+        "all_time_wo_total": all_time_wo_total,
+        "goal_percent": goal_percent,
+        "outstanding_balance": outstanding_balance,
+    }
+
+
+@dashboard_bp.get("/dashboard/api/metrics")
+@login_required
+@permission_required("dashboard.view")
+def dashboard_metrics_api():
+    shop_db, shop = _get_active_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "Shop database not configured for this shop."}), 400
+
+    date_filters = _get_date_range_filters(request.args)
+    created_from = date_filters["created_from"]
+    created_to_exclusive = date_filters["created_to_exclusive"]
+
+    goal_raw = str(request.args.get("goal") or "").strip()
+    try:
+        goal_count = int(goal_raw) if goal_raw else 120
+    except Exception:
+        goal_count = 120
+    if goal_count < 1:
+        goal_count = 1
+
+    metrics = _compute_dashboard_metrics(
+        shop_db=shop_db,
+        shop=shop,
+        created_from=created_from,
+        created_to_exclusive=created_to_exclusive,
         goal_count=goal_count,
-        period_wo_total=period_total,
-        all_time_wo_total=all_time_wo_total,
-        goal_percent=goal_percent,
-        outstanding_balance=outstanding_balance,
     )
+
+    return jsonify({"ok": True, **metrics})

@@ -36,6 +36,13 @@ def _oid(value):
         return None
 
 
+def _to_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return default
+
+
 def _tenant_id_variants():
     raw = session.get(SESSION_TENANT_ID)
     out = set()
@@ -126,6 +133,36 @@ def vendors_page():
         page,
         per_page,
     )
+
+    vendor_ids = [v.get("_id") for v in vendors if v.get("_id")]
+    balance_map = {}
+    if vendor_ids:
+        orders_coll = coll.database.parts_orders
+        pipeline = [
+            {
+                "$match": {
+                    "shop_id": shop["_id"],
+                    "vendor_id": {"$in": vendor_ids},
+                    "is_active": {"$ne": False},
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$vendor_id",
+                    "balance_total": {"$sum": {"$ifNull": ["$remaining_balance", 0]}},
+                }
+            },
+        ]
+        for row in orders_coll.aggregate(pipeline):
+            if not isinstance(row, dict):
+                continue
+            vid = row.get("_id")
+            if not vid:
+                continue
+            balance_map[vid] = round(_to_float(row.get("balance_total"), 0.0), 2)
+
+    for vendor in vendors:
+        vendor["balance"] = float(balance_map.get(vendor.get("_id"), 0.0))
 
     return _render_app_page(
         "public/vendors.html",

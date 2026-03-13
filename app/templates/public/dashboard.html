@@ -2,11 +2,6 @@
 
 {% block page_title %}Dashboard{% endblock %}
 
-{% block extra_styles %}
-  {{ super() }}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css', v='20260309-dashboard-dual-donut') }}">
-{% endblock %}
-
 {% block app_content %}
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div>
@@ -17,7 +12,7 @@
 
 <div class="card mb-3">
   <div class="card-body">
-    <form method="get" class="row g-2 align-items-center wo-filter-form">
+    <form method="get" class="row g-2 align-items-center wo-filter-form" id="dashboardFiltersForm">
       <input type="hidden" name="q" value="" />
       <div class="col-12">
         <div class="row g-2 align-items-center wo-date-row">
@@ -57,64 +52,66 @@
 <div class="row g-3">
   <div class="col-12 col-lg-4">
     <div class="card mb-3">
-      <div class="card-body">
+      <div class="card-body dashboard-async-card" data-block="wo-money">
+        <div class="dashboard-card-loader"><span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span></div>
         <div class="small text-muted mb-2">Work Orders Paid vs Unpaid (Money)</div>
         <div class="dashboard-donut-wrap">
           <div class="dashboard-donut-glow"></div>
-          <div class="dashboard-donut" style="--paid: {{ '%.2f'|format(paid_percent or 0) }}%"></div>
+          <div class="dashboard-donut" id="dashWoDonut" style="--paid: {{ '%.2f'|format(paid_percent or 0) }}%"></div>
           <div class="dashboard-donut-center">
             <div class="small text-muted">In Period</div>
-            <div class="fw-semibold">${{ "%.2f"|format(period_money_total or 0) }}</div>
-            <div class="small text-muted">WO Count: {{ period_total or 0 }}</div>
-            <div class="dashboard-donut-percent">{{ '%.1f'|format(paid_percent or 0) }}% paid</div>
+            <div class="fw-semibold" id="dashPeriodMoneyTotal">${{ "%.2f"|format(period_money_total or 0) }}</div>
+            <div class="small text-muted">WO Count: <span id="dashPeriodTotal">{{ period_total or 0 }}</span></div>
+            <div class="dashboard-donut-percent" id="dashPaidPercent">{{ '%.1f'|format(paid_percent or 0) }}% paid</div>
           </div>
         </div>
         <div class="d-flex justify-content-center gap-3 mt-3 small dashboard-legend-row">
-          <span><span class="dashboard-dot dashboard-dot-paid"></span> Paid: ${{ "%.2f"|format(period_paid_amount or 0) }}</span>
-          <span><span class="dashboard-dot dashboard-dot-unpaid"></span> Unpaid: ${{ "%.2f"|format(period_unpaid_amount or 0) }}</span>
+          <span><span class="dashboard-dot dashboard-dot-paid"></span> Paid: <span id="dashPeriodPaidAmount">${{ "%.2f"|format(period_paid_amount or 0) }}</span></span>
+          <span><span class="dashboard-dot dashboard-dot-unpaid"></span> Unpaid: <span id="dashPeriodUnpaidAmount">${{ "%.2f"|format(period_unpaid_amount or 0) }}</span></span>
         </div>
         <div class="wo-totals-center mt-2">
           <div class="wo-totals-box">
-            <span>Labor: <strong>${{ "%.2f"|format(period_labor_total or 0) }}</strong></span>
-            <span>Parts: <strong>${{ "%.2f"|format(period_parts_total or 0) }}</strong></span>
-            <span>Total: <strong>${{ "%.2f"|format(period_grand_total or 0) }}</strong></span>
+            <span>Labor: <strong id="dashPeriodLaborTotal">${{ "%.2f"|format(period_labor_total or 0) }}</strong></span>
+            <span>Parts: <strong id="dashPeriodPartsTotal">${{ "%.2f"|format(period_parts_total or 0) }}</strong></span>
+            <span>Total: <strong id="dashPeriodGrandTotal">${{ "%.2f"|format(period_grand_total or 0) }}</strong></span>
           </div>
         </div>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-body">
+      <div class="card-body dashboard-async-card" data-block="parts-orders">
+        <div class="dashboard-card-loader"><span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span></div>
         <div class="small text-muted mb-2">Parts Orders: Received vs Ordered</div>
         <div class="dashboard-donut-wrap dashboard-donut-dual-wrap">
           <div class="dashboard-donut-glow dashboard-donut-glow-po"></div>
-          <div class="dashboard-dual-ring dashboard-dual-ring-outer" style="--outer: {{ '%.2f'|format(parts_orders_received_percent or 0) }}%"></div>
+          <div class="dashboard-dual-ring dashboard-dual-ring-outer" id="dashPoOuterRing" style="--outer: {{ '%.2f'|format(parts_orders_received_percent or 0) }}%"></div>
           <div class="dashboard-dual-gap"></div>
-          <div class="dashboard-dual-ring dashboard-dual-ring-inner" style="--inner: {{ '%.2f'|format(parts_orders_paid_percent_by_amount or 0) }}%"></div>
+          <div class="dashboard-dual-ring dashboard-dual-ring-inner" id="dashPoInnerRing" style="--inner: {{ '%.2f'|format(parts_orders_paid_percent_by_amount or 0) }}%"></div>
           <div class="dashboard-donut-center">
             <div class="small text-muted">In Period</div>
-            <div class="fw-semibold">{{ period_parts_orders_total or 0 }}</div>
+            <div class="fw-semibold" id="dashPeriodPartsOrdersTotal">{{ period_parts_orders_total or 0 }}</div>
             <div class="small text-muted">Parts Orders</div>
           </div>
         </div>
         <div class="small text-muted text-center mt-2">
-          Outer ring: <strong>{{ '%.1f'|format(parts_orders_received_percent or 0) }}% received (count)</strong>
+          Outer ring: <strong id="dashPartsOrdersReceivedPercent">{{ '%.1f'|format(parts_orders_received_percent or 0) }}% received (count)</strong>
           &nbsp;|&nbsp;
-          Inner ring: <strong>{{ '%.1f'|format(parts_orders_paid_percent_by_amount or 0) }}% paid (amount)</strong>
+          Inner ring: <strong id="dashPartsOrdersPaidPercentByAmount">{{ '%.1f'|format(parts_orders_paid_percent_by_amount or 0) }}% paid (amount)</strong>
         </div>
         <div class="d-flex justify-content-center gap-3 mt-3 small dashboard-legend-row">
-          <span><span class="dashboard-dot dashboard-dot-received"></span> Received: {{ period_parts_orders_received or 0 }}</span>
-          <span><span class="dashboard-dot dashboard-dot-ordered"></span> Ordered: {{ period_parts_orders_ordered or 0 }}</span>
+          <span><span class="dashboard-dot dashboard-dot-received"></span> Received: <span id="dashPeriodPartsOrdersReceived">{{ period_parts_orders_received or 0 }}</span></span>
+          <span><span class="dashboard-dot dashboard-dot-ordered"></span> Ordered: <span id="dashPeriodPartsOrdersOrdered">{{ period_parts_orders_ordered or 0 }}</span></span>
         </div>
         <div class="d-flex justify-content-center gap-3 mt-2 small dashboard-legend-row">
-          <span><span class="dashboard-dot dashboard-dot-paid"></span> Paid: {{ period_parts_orders_paid_count or 0 }} ({{ "%.2f"|format(period_parts_orders_paid_amount or 0) }}$)</span>
-          <span><span class="dashboard-dot dashboard-dot-unpaid"></span> Unpaid: {{ period_parts_orders_unpaid_count or 0 }} ({{ "%.2f"|format(period_parts_orders_unpaid_amount or 0) }}$)</span>
+          <span><span class="dashboard-dot dashboard-dot-paid"></span> Paid: <span id="dashPeriodPartsOrdersPaidCount">{{ period_parts_orders_paid_count or 0 }}</span> (<span id="dashPeriodPartsOrdersPaidAmount">{{ "%.2f"|format(period_parts_orders_paid_amount or 0) }}$</span>)</span>
+          <span><span class="dashboard-dot dashboard-dot-unpaid"></span> Unpaid: <span id="dashPeriodPartsOrdersUnpaidCount">{{ period_parts_orders_unpaid_count or 0 }}</span> (<span id="dashPeriodPartsOrdersUnpaidAmount">{{ "%.2f"|format(period_parts_orders_unpaid_amount or 0) }}$</span>)</span>
         </div>
         <div class="wo-totals-center mt-2">
           <div class="wo-totals-box">
-            <span>Items: <strong>${{ "%.2f"|format(period_parts_orders_items_amount or 0) }}</strong></span>
-            <span>Non-inventory: <strong>${{ "%.2f"|format(period_parts_orders_non_inventory_amount or 0) }}</strong></span>
-            <span>Spend: <strong>${{ "%.2f"|format(period_parts_orders_total_amount or 0) }}</strong></span>
+            <span>Items: <strong id="dashPeriodPartsOrdersItemsAmount">${{ "%.2f"|format(period_parts_orders_items_amount or 0) }}</strong></span>
+            <span>Non-inventory: <strong id="dashPeriodPartsOrdersNonInventoryAmount">${{ "%.2f"|format(period_parts_orders_non_inventory_amount or 0) }}</strong></span>
+            <span>Spend: <strong id="dashPeriodPartsOrdersTotalAmount">${{ "%.2f"|format(period_parts_orders_total_amount or 0) }}</strong></span>
           </div>
         </div>
       </div>
@@ -123,15 +120,16 @@
 
   <div class="col-12 col-lg-8">
     <div class="card mb-3">
-      <div class="card-body">
+      <div class="card-body dashboard-async-card" data-block="goal-progress">
+        <div class="dashboard-card-loader"><span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span></div>
         <div class="d-flex justify-content-between align-items-center mb-2">
           <div class="small text-muted">Goal Progress (Selected Period)</div>
-          <div class="small text-muted">Goal: {{ goal_count or 0 }}</div>
+          <div class="small text-muted">Goal: <span id="dashGoalCount">{{ goal_count or 0 }}</span></div>
         </div>
-        <div class="progress dashboard-goal-progress mb-2" role="progressbar" aria-label="Goal progress" aria-valuenow="{{ '%.0f'|format(goal_percent or 0) }}" aria-valuemin="0" aria-valuemax="100">
-          <div class="progress-bar" style="width: {{ '%.2f'|format(goal_percent or 0) }}%"></div>
+        <div class="progress dashboard-goal-progress mb-2" id="dashGoalProgress" role="progressbar" aria-label="Goal progress" aria-valuenow="{{ '%.0f'|format(goal_percent or 0) }}" aria-valuemin="0" aria-valuemax="100">
+          <div class="progress-bar" id="dashGoalProgressBar" style="width: {{ '%.2f'|format(goal_percent or 0) }}%"></div>
         </div>
-        <div class="small text-muted">
+        <div class="small text-muted" id="dashGoalSummary">
           Current: <strong>{{ period_wo_total or 0 }}</strong> / {{ goal_count or 0 }}
           ({{ '%.1f'|format(goal_percent or 0) }}%)
         </div>
@@ -139,39 +137,49 @@
     </div>
 
     <div class="card mb-3">
-      <div class="card-body">
+      <div class="card-body dashboard-async-card" data-block="outstanding-balance">
+        <div class="dashboard-card-loader"><span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span></div>
         <div class="small text-muted">Outstanding Balance (All Time)</div>
-        <div class="h4 mb-0 mt-1">${{ "%.2f"|format(outstanding_balance or 0) }}</div>
+        <div class="h4 mb-0 mt-1" id="dashOutstandingBalance">${{ "%.2f"|format(outstanding_balance or 0) }}</div>
       </div>
     </div>
 
     <div class="card">
-      <div class="card-body">
+      <div class="card-body dashboard-async-card" data-block="mechanic-hours">
+        <div class="dashboard-card-loader"><span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span></div>
         <div class="small text-muted mb-2">Labor Hours By Mechanic (Selected Period)</div>
-        {% if mechanic_hours_rows %}
-          <div class="table-responsive">
-            <table class="table table-sm align-middle mb-0">
-              <thead>
-                <tr>
-                  <th>Mechanic</th>
-                  <th class="text-end">Hours</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for row in mechanic_hours_rows %}
-                  <tr>
-                    <td>{{ row.name }}</td>
-                    <td class="text-end">{{ "%.2f"|format(row.hours or 0) }} h</td>
-                  </tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        {% else %}
-          <div class="small text-muted">No assigned mechanic hours for selected period.</div>
-        {% endif %}
+        <div class="table-responsive" id="dashMechanicHoursTableWrap" style="display:none;">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr>
+                <th>Mechanic</th>
+                <th class="text-end">Hours</th>
+              </tr>
+            </thead>
+            <tbody id="dashMechanicHoursBody"></tbody>
+          </table>
+        </div>
+        <div class="small text-muted" id="dashMechanicHoursEmpty">No assigned mechanic hours for selected period.</div>
       </div>
     </div>
   </div>
 </div>
+
+<script>
+  window.DASHBOARD_METRICS_API_URL = "{{ dashboard_metrics_api_url }}";
+  (function bootDashboardMetricsInit() {
+    var attempts = 0;
+    function run() {
+      attempts += 1;
+      if (typeof window.smallshopInitDashboardMetrics === "function") {
+        window.smallshopInitDashboardMetrics();
+        return;
+      }
+      if (attempts < 20) {
+        window.setTimeout(run, 60);
+      }
+    }
+    run();
+  })();
+</script>
 {% endblock %}

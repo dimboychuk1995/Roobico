@@ -2,6 +2,11 @@
 
 {% block title %}{% block page_title %}App{% endblock %}{% endblock %}
 
+{% block extra_styles %}
+  {{ super() }}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css', v='20260312-dashboard-async-stable') }}">
+{% endblock %}
+
 {% block content %}
 <div class="container-fluid py-3 app-shell sidebar-collapsed">
 
@@ -284,4 +289,6 @@
     restoreSearchFocusState();
   })();
 </script>
+
+<script src="{{ url_for('static', filename='js/dashboard/dashboard.js') }}"></script>
 {% endblock %}

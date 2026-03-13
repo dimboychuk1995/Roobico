@@ -48,6 +48,7 @@
               <th style="width: 14%;">Website</th>
               <th style="width: 14%;">Primary contact</th>
               <th style="width: 16%;">Address</th>
+              <th style="width: 10%;" class="text-end">Balance</th>
               <th style="width: 6%;" class="text-end">Status</th>
               <th style="width: 4%;" class="text-end">Actions</th>
             </tr>
@@ -87,6 +88,8 @@
               </td>
 
               <td>{{ v.get('address') or '—' }}</td>
+
+              <td class="text-end">${{ "%.2f"|format(v.get('balance') or 0) }}</td>
 
               <td class="text-end">
                 {% if v.get('is_active', True) %}

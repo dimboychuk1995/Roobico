@@ -211,6 +211,35 @@ def _sum_active_order_payments(payments_coll, order_id: ObjectId) -> float:
     return float(_parse_float(row.get("amount_total"), default=0.0))
 
 
+def _build_parts_order_paid_map(payments_coll, order_ids: list[ObjectId]) -> dict[ObjectId, float]:
+    if payments_coll is None or not order_ids:
+        return {}
+
+    pipeline = [
+        {
+            "$match": {
+                "parts_order_id": {"$in": order_ids},
+                "is_active": True,
+            }
+        },
+        {
+            "$group": {
+                "_id": "$parts_order_id",
+                "amount_total": {"$sum": {"$ifNull": ["$amount", 0]}},
+            }
+        },
+    ]
+
+    out: dict[ObjectId, float] = {}
+    for row in payments_coll.aggregate(pipeline):
+        if not isinstance(row, dict):
+            continue
+        oid = row.get("_id")
+        if oid:
+            out[oid] = float(_parse_float(row.get("amount_total"), default=0.0))
+    return out
+
+
 def _payment_status_from_amounts(total_amount: float, paid_amount: float) -> str:
     total = float(_parse_float(total_amount, default=0.0))
     paid = float(_parse_float(paid_amount, default=0.0))
@@ -594,45 +623,52 @@ def parts_page():
             if x.get("_id")
         ]
 
-    parts_query = {
-        "is_active": True,
-        "$or": [
-            {"in_stock": {"$gt": 0}},
-            {"do_not_track_inventory": True},
-        ],
+    parts_in_stock = []
+    pagination = None
+    parts_totals = {
+        "inventory_cost": 0.0,
+        "core_cost": 0.0,
     }
-    parts_search_filter = build_regex_search_filter(
-        q,
-        text_fields=["part_number", "description", "reference", "search_terms"],
-        numeric_fields=["in_stock", "average_cost"],
-        object_id_fields=["_id", "vendor_id", "category_id", "location_id", "shop_id", "tenant_id"],
-    )
-    if q:
-        extra = []
-        if vendor_ids_by_name:
-            extra.append({"vendor_id": {"$in": vendor_ids_by_name}})
-        if category_ids_by_name:
-            extra.append({"category_id": {"$in": category_ids_by_name}})
-        if location_ids_by_name:
-            extra.append({"location_id": {"$in": location_ids_by_name}})
 
-        if parts_search_filter and extra:
-            parts_query = {"$and": [parts_query, {"$or": [parts_search_filter, *extra]}]}
-        elif parts_search_filter:
-            parts_query = {"$and": [parts_query, parts_search_filter]}
-        elif extra:
-            parts_query = {"$and": [parts_query, {"$or": extra}]}
+    if active_tab == "parts":
+        parts_query = {
+            "is_active": True,
+            "$or": [
+                {"in_stock": {"$gt": 0}},
+                {"do_not_track_inventory": True},
+            ],
+        }
+        parts_search_filter = build_regex_search_filter(
+            q,
+            text_fields=["part_number", "description", "reference", "search_terms"],
+            numeric_fields=["in_stock", "average_cost"],
+            object_id_fields=["_id", "vendor_id", "category_id", "location_id", "shop_id", "tenant_id"],
+        )
+        if q:
+            extra = []
+            if vendor_ids_by_name:
+                extra.append({"vendor_id": {"$in": vendor_ids_by_name}})
+            if category_ids_by_name:
+                extra.append({"category_id": {"$in": category_ids_by_name}})
+            if location_ids_by_name:
+                extra.append({"location_id": {"$in": location_ids_by_name}})
 
-    parts_totals = _get_parts_inventory_totals(parts_coll, parts_query)
+            if parts_search_filter and extra:
+                parts_query = {"$and": [parts_query, {"$or": [parts_search_filter, *extra]}]}
+            elif parts_search_filter:
+                parts_query = {"$and": [parts_query, parts_search_filter]}
+            elif extra:
+                parts_query = {"$and": [parts_query, {"$or": extra}]}
 
-    # 1) Parts list
-    parts_in_stock, pagination = paginate_find(
-        parts_coll,
-        parts_query,
-        [("part_number", 1), ("description", 1), ("created_at", -1)],
-        parts_page_num,
-        parts_per_page,
-    )
+        parts_totals = _get_parts_inventory_totals(parts_coll, parts_query)
+
+        parts_in_stock, pagination = paginate_find(
+            parts_coll,
+            parts_query,
+            [("part_number", 1), ("description", 1), ("created_at", -1)],
+            parts_page_num,
+            parts_per_page,
+        )
 
     # 2) Reference lists for modal selects
     vendors = []
@@ -662,17 +698,18 @@ def parts_page():
     category_map = {c["_id"]: _name_from_doc(c) for c in categories if c.get("_id")}
     location_map = {l["_id"]: _name_from_doc(l) for l in locations if l.get("_id")}
 
-    for p in parts_in_stock:
-        vid = p.get("vendor_id")
-        cid = p.get("category_id")
-        lid = p.get("location_id")
+    if active_tab == "parts":
+        for p in parts_in_stock:
+            vid = p.get("vendor_id")
+            cid = p.get("category_id")
+            lid = p.get("location_id")
 
-        if vid:
-            p["vendor_name"] = vendor_map.get(vid) or ""
-        if cid:
-            p["category_name"] = category_map.get(cid) or ""
-        if lid:
-            p["location_name"] = location_map.get(lid) or ""
+            if vid:
+                p["vendor_name"] = vendor_map.get(vid) or ""
+            if cid:
+                p["category_name"] = category_map.get(cid) or ""
+            if lid:
+                p["location_name"] = location_map.get(lid) or ""
 
     last_order_id = session.get("last_parts_order_id")
 
@@ -686,7 +723,7 @@ def parts_page():
         "utilities": 0.0,
         "another_service": 0.0,
     }
-    if orders_coll is not None:
+    if orders_coll is not None and active_tab == "orders":
         orders_query = {"shop_id": shop["_id"], "is_active": {"$ne": False}}
 
         created_filter = {}
@@ -724,6 +761,15 @@ def parts_page():
             [("created_at", -1)],
             orders_page_num,
             orders_per_page,
+            projection={
+                "_id": 1,
+                "vendor_id": 1,
+                "order_number": 1,
+                "status": 1,
+                "created_at": 1,
+                "items": 1,
+                "non_inventory_amounts": 1,
+            },
         )
         
         # Get vendor names for orders
@@ -733,10 +779,14 @@ def parts_page():
             for v in vendors_coll.find({"_id": {"$in": vendor_ids}}):
                 vendors_map[v.get("_id")] = _name_from_doc(v)
         
+        order_ids = [o.get("_id") for o in orders_rows if o.get("_id")]
+        paid_map = _build_parts_order_paid_map(payments_coll, order_ids) if payments_coll is not None else {}
+
         for order in orders_rows:
-            paid_amount = _sum_active_order_payments(payments_coll, order.get("_id")) if payments_coll is not None else 0.0
+            paid_amount = paid_map.get(order.get("_id"), 0.0)
             payment_summary = _build_parts_order_payment_summary(order, paid_amount)
             amounts = _parts_order_amounts(order)
+
             orders_list.append({
                 "id": str(order.get("_id")),
                 "order_number": order.get("order_number"),
@@ -754,7 +804,7 @@ def parts_page():
     payments_list = []
     payments_pagination = None
     payments_totals = {"payments_total": 0.0, "payments_count": 0}
-    if payments_coll is not None and orders_coll is not None:
+    if payments_coll is not None and orders_coll is not None and active_tab == "payments":
         payments_query = {"shop_id": shop["_id"], "is_active": True}
 
         created_filter = {}
@@ -862,7 +912,7 @@ def parts_page():
     cores_list = []
     cores_pagination = None
     cores_coll = parts_coll.database.cores if parts_coll is not None else None
-    if cores_coll is not None:
+    if cores_coll is not None and active_tab == "cores":
         cores_query = {
             "shop_id": shop["_id"],
             "is_active": {"$ne": False},
