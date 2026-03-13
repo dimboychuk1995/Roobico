@@ -254,23 +254,27 @@
     tr.dataset.index = String(rowIndex);
 
     tr.innerHTML = `
-      <td>
-        <input class="form-control form-control-sm part-number" name="labors[${laborIndex}][parts][${rowIndex}][part_number]" maxlength="64" autocomplete="off">
+      <td class="p-1 align-middle">
+        <div class="p-1">
+        <input class="form-control form-control-sm part-number" name="labors[${laborIndex}][parts][${rowIndex}][part_number]" maxlength="64" autocomplete="off" style="width: 92%;">
         <input type="hidden" class="part-id" name="labors[${laborIndex}][parts][${rowIndex}][part_id]" value="">
         <input type="hidden" class="part-one-time" name="labors[${laborIndex}][parts][${rowIndex}][one_time_part]" value="0">
         <input type="hidden" class="part-core-charge" name="labors[${laborIndex}][parts][${rowIndex}][core_charge]" value="0">
         <input type="hidden" class="part-misc-charge" name="labors[${laborIndex}][parts][${rowIndex}][misc_charge]" value="0">
         <input type="hidden" class="part-misc-charge-description" name="labors[${laborIndex}][parts][${rowIndex}][misc_charge_description]" value="">
+        </div>
       </td>
-      <td><input class="form-control form-control-sm part-description" name="labors[${laborIndex}][parts][${rowIndex}][description]" maxlength="200" autocomplete="off"></td>
-      <td><input class="form-control form-control-sm part-qty" name="labors[${laborIndex}][parts][${rowIndex}][qty]" inputmode="numeric"></td>
-      <td>
-        <input class="form-control form-control-sm part-cost" name="labors[${laborIndex}][parts][${rowIndex}][cost]" inputmode="decimal" readonly tabindex="-1">
-        <div class="small text-muted mt-1 part-charges-meta"></div>
+      <td class="p-1 align-middle"><div class="p-1"><input class="form-control form-control-sm part-description" name="labors[${laborIndex}][parts][${rowIndex}][description]" maxlength="200" autocomplete="off" style="width: 96%;"></div></td>
+      <td class="p-1 align-middle"><div class="p-1"><input class="form-control form-control-sm part-qty" name="labors[${laborIndex}][parts][${rowIndex}][qty]" inputmode="numeric" style="width: 86%;"></div></td>
+      <td class="p-1 align-middle">
+        <div class="p-1">
+          <input class="form-control form-control-sm part-cost" name="labors[${laborIndex}][parts][${rowIndex}][cost]" inputmode="decimal" readonly tabindex="-1" style="width: 88%;">
+          <div class="small text-muted mt-1 part-charges-meta"></div>
+        </div>
       </td>
-      <td><input class="form-control form-control-sm part-price" name="labors[${laborIndex}][parts][${rowIndex}][price]" value="" inputmode="decimal"></td>
-      <td class="part-line-total">
-        <div class="d-flex align-items-center gap-2">
+      <td class="p-1 align-middle"><div class="p-1"><input class="form-control form-control-sm part-price" name="labors[${laborIndex}][parts][${rowIndex}][price]" value="" inputmode="decimal" style="width: 88%;"></div></td>
+      <td class="part-line-total p-1 align-middle">
+        <div class="d-flex align-items-center gap-2 p-1">
           <div class="part-line-total-value"><span class="text-muted">—</span></div>
           <div class="form-check form-switch part-core-toggle-wrapper" style="display: none; margin: 0;">
             <input class="form-check-input part-core-toggle" type="checkbox">
@@ -278,8 +282,10 @@
           </div>
         </div>
       </td>
-      <td class="text-center">
-        <button type="button" class="btn btn-sm btn-outline-danger delete-part-row" title="Delete this part">×</button>
+      <td class="text-center p-1 align-middle">
+        <div class="p-1">
+          <button type="button" class="btn btn-sm btn-outline-danger delete-part-row" title="Delete this part">×</button>
+        </div>
       </td>
     `;
     return tr;

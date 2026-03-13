@@ -2,54 +2,61 @@
 {% block page_title %}Work Order Details{% endblock %}
 
 {% block app_content %}
-<div class="card">
+<div class="card shadow border-0">
   <div class="card-body">
 
-    <div class="d-flex align-items-center justify-content-between mb-3">
+    <div class="d-flex align-items-center justify-content-between mb-4 p-3 rounded-3 border border-success-subtle bg-success-subtle">
       <div>
-        <h1 class="h4 mb-0">{% if wo_number %}Work Order #{{ wo_number }}{% else %}Create Work Order{% endif %}</h1>
+        <h1 class="h4 mb-1">{% if wo_number %}Work Order #{{ wo_number }}{% else %}Create Work Order{% endif %}</h1>
+        <p class="text-muted small mb-0">Create or edit labor, parts, misc charges, and payment status in one place.</p>
       </div>
       <a class="btn btn-outline-secondary" href="{{ url_for('work_orders.work_orders_page') }}">Back</a>
     </div>
 
-    <!-- Customer select (NO reload) -->
-    <div class="mb-3">
-      <label class="form-label">Customer</label>
-      <select id="customerSelect" name="customer_id" class="form-select" required>
-        <option value="">-- Select customer --</option>
-        {% for c in customers %}
-          <option value="{{ c.id }}" {% if c.id == selected_customer_id %}selected{% endif %}>
-            {{ c.label }}
-          </option>
-        {% endfor %}
-      </select>
-    </div>
+    <div class="border border-2 border-success-subtle rounded-3 p-3 p-lg-4 mb-4 bg-success-subtle shadow-sm">
+      <div class="d-flex align-items-center justify-content-between mb-3">
+        <h2 class="h6 mb-0">Customer & Unit</h2>
+      </div>
 
-    <!-- Unit select (NO reload) -->
-    <div class="mb-4">
-      <div class="row g-3 align-items-end">
-        <div class="col-md-6">
-          <label class="form-label">Unit</label>
-          <select id="unitSelect" name="unit_id" class="form-select" {% if not selected_customer_id %}disabled{% endif %}>
-            <option value="">-- Select unit --</option>
-            {% for u in units %}
-              <option value="{{ u.id }}" {% if u.id == selected_unit_id %}selected{% endif %}>
-                {{ u.label }}
-              </option>
-            {% endfor %}
-          </select>
-        </div>
+      <!-- Customer select (NO reload) -->
+      <div class="mb-3 mb-lg-4">
+        <label class="form-label fw-semibold">Customer</label>
+        <select id="customerSelect" name="customer_id" class="form-select" required>
+          <option value="">-- Select customer --</option>
+          {% for c in customers %}
+            <option value="{{ c.id }}" {% if c.id == selected_customer_id %}selected{% endif %}>
+              {{ c.label }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
 
-        <div class="col-md-2">
-          <label class="form-label">Mileage</label>
-          <input id="unitMileageInput" type="number" class="form-control" inputmode="numeric" placeholder="0"/>
-        </div>
+      <!-- Unit select (NO reload) -->
+      <div>
+        <div class="row g-3 g-lg-4 align-items-end">
+          <div class="col-lg-6">
+            <label class="form-label fw-semibold">Unit</label>
+            <select id="unitSelect" name="unit_id" class="form-select" {% if not selected_customer_id %}disabled{% endif %}>
+              <option value="">-- Select unit --</option>
+              {% for u in units %}
+                <option value="{{ u.id }}" {% if u.id == selected_unit_id %}selected{% endif %}>
+                  {{ u.label }}
+                </option>
+              {% endfor %}
+            </select>
+          </div>
 
-        <div class="col-md-4">
-          <button id="addUnitBtn" type="button" class="btn btn-success w-100" data-bs-toggle="modal" data-bs-target="#createUnitModal"
-                  {% if not selected_customer_id %}disabled{% endif %}>
-            + Add Unit
-          </button>
+          <div class="col-lg-2">
+            <label class="form-label fw-semibold">Mileage</label>
+            <input id="unitMileageInput" type="number" class="form-control" inputmode="numeric" placeholder="0"/>
+          </div>
+
+          <div class="col-lg-4">
+            <button id="addUnitBtn" type="button" class="btn btn-success w-100" data-bs-toggle="modal" data-bs-target="#createUnitModal"
+                    {% if not selected_customer_id %}disabled{% endif %}>
+              + Add Unit
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -136,7 +143,7 @@
 
 
     <!-- Work Order editor -->
-    <form id="workOrderForm" method="post" action="{{ url_for('work_orders.create_work_order') }}" class="mt-3">
+    <form id="workOrderForm" method="post" action="{{ url_for('work_orders.create_work_order') }}" class="mt-2">
 
 
       <!-- hidden ids that JS updates (important) -->
@@ -145,13 +152,18 @@
       <input type="hidden" id="unitMileageHidden" name="unit_mileage" value=""/>
 
       <!-- info -->
-      <div id="selectHint" class="alert alert-info mb-3" {% if selected_unit_id %}style="display:none;"{% endif %}>
+      <div id="selectHint" class="alert alert-info mb-4" {% if selected_unit_id %}style="display:none;"{% endif %}>
         Select a customer and unit to continue.
       </div>
 
       <fieldset id="workOrderEditor" {% if not selected_unit_id %}disabled{% endif %}>
 
-        <div class="d-flex flex-wrap gap-2 align-items-stretch mb-3 text-muted small">
+        <div class="border border-2 border-success-subtle rounded-3 p-3 p-lg-4 mb-4 bg-success-subtle shadow-sm">
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <h2 class="h6 mb-0">Order Totals</h2>
+          </div>
+
+        <div class="d-flex flex-wrap gap-3 align-items-stretch text-muted small">
           <div class="border rounded px-2 py-1">
             <div>Labor total: <strong id="laborGrandTotalDisplay">—</strong></div>
             <div>Labor: <strong id="laborGrandBaseDisplay">—</strong></div>
@@ -165,23 +177,27 @@
           </div>
           <div class="border rounded px-2 py-1 d-flex align-items-center">Grand total: <strong id="grandTotalDisplay" class="ms-1">—</strong></div>
         </div>
+        </div>
 
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <div class="text-muted small">Labors: <strong id="laborCount">1</strong></div>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div>
+            <h2 class="h6 mb-0">Labor Blocks</h2>
+            <div class="text-muted small">Labors: <strong id="laborCount">1</strong></div>
+          </div>
           <button type="button" class="btn btn-outline-primary btn-sm" id="addLaborBtn">+ Add Labor</button>
         </div>
 
         <div id="laborsContainer">
 
           <!-- Block template instance #0 -->
-          <div class="card border mb-3 wo-labor" data-labor-index="0">
+          <div class="card border border-2 border-success-subtle mb-4 shadow-sm wo-labor" data-labor-index="0">
             <div class="card-body">
 
-              <div class="d-flex justify-content-between align-items-center">
+              <div class="d-flex justify-content-between align-items-center pb-3 mb-3 border-bottom border-success-subtle">
                 <div>
                   <h2 class="h6 mb-0">Labor <span class="labor-number">1</span></h2>
-                  <div class="text-muted small mt-1 laborAssignSummary">Assigned: —</div>
-                  <div class="d-flex flex-wrap align-items-stretch gap-2 text-muted small mt-1">
+                  <div class="text-muted small mt-2 laborAssignSummary">Assigned: —</div>
+                  <div class="d-flex flex-wrap align-items-stretch gap-2 text-muted small mt-2">
                     <div class="border rounded px-2 py-1">
                       <div>Labor: <strong class="laborTotalDisplay">—</strong></div>
                     </div>
@@ -210,21 +226,19 @@
 
               <input type="hidden" class="labor-assignments-json" name="labors[0][assigned_mechanics_json]" value="[]">
 
-              <hr class="my-3"/>
-
-              <div class="row g-3">
+              <div class="row g-3 g-lg-4">
                 <div class="col-md-5">
-                  <label class="form-label">Labor Description</label>
+                  <label class="form-label fw-semibold">Labor Description</label>
                   <input class="form-control labor-description" name="labors[0][labor_description]" maxlength="200">
                 </div>
 
                 <div class="col-md-2">
-                  <label class="form-label">Hours</label>
+                  <label class="form-label fw-semibold">Hours</label>
                   <input class="form-control labor-hours" name="labors[0][labor_hours]" inputmode="decimal">
                 </div>
 
                 <div class="col-md-3">
-                  <label class="form-label">Labor Rate</label>
+                  <label class="form-label fw-semibold">Labor Rate</label>
                   <select class="form-select labor-rate" name="labors[0][labor_rate_code]">
                     <option value="">-- Select rate --</option>
                     {% for r in labor_rates %}
@@ -234,17 +248,17 @@
                 </div>
 
                 <div class="col-md-2">
-                  <label class="form-label">Labor Total</label>
+                  <label class="form-label fw-semibold">Labor Total</label>
                   <input class="form-control labor-total-input" name="labors[0][labor_total_ui]" inputmode="decimal">
                 </div>
               </div>
 
-              <div class="mt-3">
-                <h3 class="h6 mb-2">Parts</h3>
+              <div class="mt-4 pt-3 border-top">
+                <h3 class="h6 mb-3">Parts</h3>
 
-                <div class="table-responsive">
-                  <table class="table table-sm align-middle">
-                    <thead class="table-light">
+                <div class="table-responsive rounded-3">
+                  <table class="table table-sm align-middle mb-0">
+                    <thead class="table-light small">
                       <tr>
                         <th style="width:18%;">Part Number</th>
                         <th>Description</th>
@@ -256,25 +270,29 @@
                       </tr>
                     </thead>
 
-                    <tbody class="partsTbody">
+                    <tbody class="partsTbody align-middle">
                       <tr class="parts-row" data-index="0">
-                        <td>
-                          <input class="form-control form-control-sm part-number" name="labors[0][parts][0][part_number]" maxlength="64" autocomplete="off">
+                        <td class="p-1 align-middle">
+                          <div class="p-1">
+                          <input class="form-control form-control-sm part-number" name="labors[0][parts][0][part_number]" maxlength="64" autocomplete="off" style="width: 92%;">
                           <input type="hidden" class="part-id" name="labors[0][parts][0][part_id]" value="">
                           <input type="hidden" class="part-one-time" name="labors[0][parts][0][one_time_part]" value="0">
                           <input type="hidden" class="part-core-charge" name="labors[0][parts][0][core_charge]" value="0">
                           <input type="hidden" class="part-misc-charge" name="labors[0][parts][0][misc_charge]" value="0">
                           <input type="hidden" class="part-misc-charge-description" name="labors[0][parts][0][misc_charge_description]" value="">
+                          </div>
                         </td>
-                        <td><input class="form-control form-control-sm part-description" name="labors[0][parts][0][description]" maxlength="200" autocomplete="off"></td>
-                        <td><input class="form-control form-control-sm part-qty" name="labors[0][parts][0][qty]" inputmode="numeric"></td>
-                        <td>
-                          <input class="form-control form-control-sm part-cost" name="labors[0][parts][0][cost]" inputmode="decimal" readonly tabindex="-1">
-                          <div class="small text-muted mt-1 part-charges-meta"></div>
+                        <td class="p-1 align-middle"><div class="p-1"><input class="form-control form-control-sm part-description" name="labors[0][parts][0][description]" maxlength="200" autocomplete="off" style="width: 96%;"></div></td>
+                        <td class="p-1 align-middle"><div class="p-1"><input class="form-control form-control-sm part-qty" name="labors[0][parts][0][qty]" inputmode="numeric" style="width: 86%;"></div></td>
+                        <td class="p-1 align-middle">
+                          <div class="p-1">
+                            <input class="form-control form-control-sm part-cost" name="labors[0][parts][0][cost]" inputmode="decimal" readonly tabindex="-1" style="width: 88%;">
+                            <div class="small text-muted mt-1 part-charges-meta"></div>
+                          </div>
                         </td>
-                        <td><input class="form-control form-control-sm part-price" name="labors[0][parts][0][price]" value="" inputmode="decimal"></td>
-                        <td class="part-line-total">
-                          <div class="d-flex align-items-center gap-2">
+                        <td class="p-1 align-middle"><div class="p-1"><input class="form-control form-control-sm part-price" name="labors[0][parts][0][price]" value="" inputmode="decimal" style="width: 88%;"></div></td>
+                        <td class="part-line-total p-1 align-middle">
+                          <div class="d-flex align-items-center gap-2 p-1">
                             <div class="part-line-total-value"><span class="text-muted">—</span></div>
                             <div class="form-check form-switch part-core-toggle-wrapper" style="display: none; margin: 0;">
                               <input class="form-check-input part-core-toggle" type="checkbox">
@@ -282,21 +300,23 @@
                             </div>
                           </div>
                         </td>
-                        <td class="text-center">
-                          <button type="button" class="btn btn-sm btn-outline-danger delete-part-row" title="Delete this part">×</button>
+                        <td class="text-center p-1 align-middle">
+                          <div class="p-1">
+                            <button type="button" class="btn btn-sm btn-outline-danger delete-part-row" title="Delete this part">×</button>
+                          </div>
                         </td>
                       </tr>
                     </tbody>
 
                   </table>
-                  <div class="mt-2">
+                  <div class="mt-3">
                     <button type="button" class="btn btn-sm btn-outline-info" id="addMiscChargePartBtn">
                       + Add Misc Charge
                     </button>
                   </div>
                 </div>
 
-                <div class="mt-3 miscChargesEditWrap" style="display:none;">
+                <div class="mt-4 miscChargesEditWrap" style="display:none;">
                   <h4 class="h6 mb-2">Misc Charges</h4>
                   <div class="table-responsive">
                     <table class="table table-sm align-middle miscChargesTable">
@@ -323,7 +343,7 @@
 
       </fieldset>
 
-       <div class="mt-3 d-flex justify-content-end gap-2">
+     <div class="mt-4 pt-2 d-flex justify-content-end gap-2 border-top">
           <button id="editWorkOrderBtn" class="btn btn-outline-primary" type="button" style="display:none;">Edit</button>
           <button id="saveWorkOrderBtn" class="btn btn-primary" type="button" style="display:none;">Save</button>
 
