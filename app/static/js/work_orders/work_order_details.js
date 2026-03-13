@@ -257,6 +257,7 @@
       <td>
         <input class="form-control form-control-sm part-number" name="labors[${laborIndex}][parts][${rowIndex}][part_number]" maxlength="64" autocomplete="off">
         <input type="hidden" class="part-id" name="labors[${laborIndex}][parts][${rowIndex}][part_id]" value="">
+        <input type="hidden" class="part-one-time" name="labors[${laborIndex}][parts][${rowIndex}][one_time_part]" value="0">
         <input type="hidden" class="part-core-charge" name="labors[${laborIndex}][parts][${rowIndex}][core_charge]" value="0">
         <input type="hidden" class="part-misc-charge" name="labors[${laborIndex}][parts][${rowIndex}][misc_charge]" value="0">
         <input type="hidden" class="part-misc-charge-description" name="labors[${laborIndex}][parts][${rowIndex}][misc_charge_description]" value="">
@@ -295,6 +296,30 @@
     const miscDesc = tr.querySelector(".part-misc-charge-description")?.value || "";
     const hasCharges = (Number.isFinite(core) && core > 0) || (Number.isFinite(misc) && misc > 0);
     return !!(String(pn).trim() || String(ds).trim() || String(q).trim() || String(c).trim() || String(p).trim() || hasCharges || String(miscDesc).trim());
+  }
+
+  function isOneTimePartRow(tr) {
+    const input = tr.querySelector(".part-one-time");
+    const raw = String(input?.value || "").trim().toLowerCase();
+    return raw === "1" || raw === "true" || raw === "yes" || raw === "on";
+  }
+
+  function setOneTimePartRow(tr, enabled) {
+    const input = tr.querySelector(".part-one-time");
+    if (!input) return;
+    input.value = enabled ? "1" : "0";
+  }
+
+  function updatePartCostEditableState(tr) {
+    const cost = tr.querySelector(".part-cost");
+    if (!cost) return;
+    const editable = isOneTimePartRow(tr);
+    cost.readOnly = !editable;
+    if (editable) {
+      cost.removeAttribute("tabindex");
+    } else {
+      cost.setAttribute("tabindex", "-1");
+    }
   }
 
   function getRowMiscItems(tr) {
@@ -381,7 +406,7 @@
 
     let price = toNum(priceInput?.value);
 
-    if (price === null && Number.isFinite(cost) && cost >= 0 && !tr.dataset.priceAutofilled) {
+    if (price === null && Number.isFinite(cost) && cost >= 0 && !tr.dataset.priceAutofilled && !tr.dataset.priceManuallyEdited) {
       if (pricing && Array.isArray(pricing.rules) && pricing.rules.length > 0) {
         const rule = matchRule(cost, pricing.rules);
         if (rule) {
@@ -1001,13 +1026,22 @@
   }
 
   function renderDropdown(dd, items) {
-    dd._items = items || [];
-    if (!items || items.length === 0) {
-      dd.innerHTML = `<div style="padding:10px; color:#6c757d;">No results</div>`;
-      return;
-    }
+    const list = Array.isArray(items) ? items : [];
+    const oneTimeItem = { __one_time_part: true };
+    const displayItems = [oneTimeItem, ...list];
+    dd._items = displayItems;
 
-    dd.innerHTML = items.map((it, idx) => {
+    dd.innerHTML = displayItems.map((it, idx) => {
+      if (it.__one_time_part) {
+        return `
+          <div class="parts-dd-item" data-idx="${idx}"
+               style="padding:10px 12px; cursor:pointer; border-bottom:1px solid rgba(0,0,0,.06); background:#f8f9fa;">
+            <div style="font-weight:600; line-height:1.2;">+ One-time part</div>
+            <div style="font-size:12px; color:#6c757d; margin-top:2px;">Manual line (no inventory link, no part_id)</div>
+          </div>
+        `;
+      }
+
       const title = `${it.part_number || ""} — ${it.description || ""}`.trim();
       const coreCost = (it.core_has_charge && Number.isFinite(toNum(it.core_cost))) ? toNum(it.core_cost) : 0;
       const miscCost = (it.misc_has_charge && Array.isArray(it.misc_charges))
@@ -1026,6 +1060,10 @@
         </div>
       `;
     }).join("");
+
+    if (list.length === 0) {
+      dd.innerHTML += `<div style="padding:10px; color:#6c757d;">No inventory matches</div>`;
+    }
   }
 
   async function fetchParts(q) {
@@ -1044,6 +1082,9 @@
     const coreInput = tr.querySelector(".part-core-charge");
     const miscInput = tr.querySelector(".part-misc-charge");
     const miscDescriptionInput = tr.querySelector(".part-misc-charge-description");
+
+    setOneTimePartRow(tr, false);
+    updatePartCostEditableState(tr);
 
     if (pn) pn.value = part.part_number || "";
     if (partIdInput) partIdInput.value = String(part?.id || "").trim();
@@ -1148,6 +1189,45 @@
     const price = tr.querySelector(".part-price");
     if (price) price.value = "";
     delete tr.dataset.priceAutofilled;
+    delete tr.dataset.priceManuallyEdited;
+  }
+
+  function fillRowAsOneTimePart(tr, searchText) {
+    const pn = tr.querySelector(".part-number");
+    const partIdInput = tr.querySelector(".part-id");
+    const cost = tr.querySelector(".part-cost");
+    const coreInput = tr.querySelector(".part-core-charge");
+    const miscInput = tr.querySelector(".part-misc-charge");
+    const miscDescriptionInput = tr.querySelector(".part-misc-charge-description");
+    const toggle = tr.querySelector(".part-core-toggle");
+
+    if (partIdInput) partIdInput.value = "";
+    setOneTimePartRow(tr, true);
+    updatePartCostEditableState(tr);
+
+    const typed = String(searchText || "").trim();
+    if (pn && !String(pn.value || "").trim() && typed) {
+      pn.value = typed;
+    }
+
+    if (cost) cost.value = "";
+    if (coreInput) coreInput.value = "0";
+    if (miscInput) miscInput.value = "0";
+    if (miscDescriptionInput) miscDescriptionInput.value = "";
+    if (toggle) toggle.checked = coreChargeDefaultEnabled;
+    delete tr.dataset.autoMiscItemsBaseline;
+    delete tr.dataset.coreChargeBase;
+    delete tr.dataset.priceAutofilled;
+    delete tr.dataset.priceManuallyEdited;
+
+    setRowChargesMeta(tr);
+    syncCoreChargeFromToggle(tr);
+
+    const lineCell = tr.querySelector(".part-line-total");
+    if (lineCell) {
+      const toggleWrapper = lineCell.querySelector(".part-core-toggle-wrapper");
+      if (toggleWrapper) toggleWrapper.style.display = "none";
+    }
   }
 
   const debouncedSearch = debounce(async function (dd, inputEl, tr, blockEl) {
@@ -1184,6 +1264,7 @@
       tr.dataset.index = String(rIdx);
       tr.querySelector(".part-number").name = `labors[${idx}][parts][${rIdx}][part_number]`;
       tr.querySelector(".part-id").name = `labors[${idx}][parts][${rIdx}][part_id]`;
+      tr.querySelector(".part-one-time").name = `labors[${idx}][parts][${rIdx}][one_time_part]`;
       tr.querySelector(".part-core-charge").name = `labors[${idx}][parts][${rIdx}][core_charge]`;
       tr.querySelector(".part-misc-charge").name = `labors[${idx}][parts][${rIdx}][misc_charge]`;
       tr.querySelector(".part-misc-charge-description").name = `labors[${idx}][parts][${rIdx}][misc_charge_description]`;
@@ -1215,6 +1296,8 @@
       i.value = "";
     });
     clone.querySelectorAll("tr.parts-row").forEach(tr => {
+      setOneTimePartRow(tr, false);
+      updatePartCostEditableState(tr);
       delete tr.dataset.autoMiscItemsBaseline;
       delete tr.dataset.coreChargeBase;
       const toggle = tr.querySelector(".part-core-toggle");
@@ -1263,6 +1346,8 @@
           setRowChargesMeta(tr);
           syncCoreChargeFromToggle(tr);
           delete tr.dataset.priceAutofilled;
+          delete tr.dataset.priceManuallyEdited;
+          updatePartCostEditableState(tr);
           
           // Hide toggle when core is cleared
           const lineCell = tr.querySelector(".part-line-total");
@@ -1276,6 +1361,32 @@
       if (t.classList?.contains("part-core-toggle")) {
         const tr = t.closest("tr.parts-row");
         if (tr) syncCoreChargeFromToggle(tr);
+      }
+
+      if (t.classList?.contains("part-price")) {
+        const tr = t.closest("tr.parts-row");
+        if (tr) {
+          const rawPrice = String(t.value || "").trim();
+          if (!rawPrice) {
+            delete tr.dataset.priceManuallyEdited;
+            delete tr.dataset.priceAutofilled;
+          } else {
+            tr.dataset.priceManuallyEdited = "1";
+            delete tr.dataset.priceAutofilled;
+          }
+        }
+      }
+
+      if (t.classList?.contains("part-cost")) {
+        const tr = t.closest("tr.parts-row");
+        if (tr) {
+          const manualPrice = tr.dataset.priceManuallyEdited === "1";
+          if (!manualPrice) {
+            const priceInput = tr.querySelector(".part-price");
+            if (priceInput) priceInput.value = "";
+            delete tr.dataset.priceAutofilled;
+          }
+        }
       }
 
       if (!isLaborSyncing && t.classList?.contains("labor-total-input")) {
@@ -1468,9 +1579,11 @@
         const tr = makePartsRow(bIdx, rIdx);
         tr.querySelector(".part-number").value = String(p?.part_number ?? "");
         tr.querySelector(".part-id").value = String(p?.part_id ?? "");
+        setOneTimePartRow(tr, !!p?.one_time_part);
         tr.querySelector(".part-description").value = String(p?.description ?? "");
         tr.querySelector(".part-qty").value = String(p?.qty ?? "");
         tr.querySelector(".part-cost").value = String(p?.cost ?? "");
+        updatePartCostEditableState(tr);
         tr.querySelector(".part-price").value = String(p?.price ?? "");
         const coreValue = toNum(p?.core_charge ?? p?.core_cost ?? 0) || 0;
         tr.querySelector(".part-core-charge").value = String(coreValue);
@@ -1521,6 +1634,7 @@
       rows.forEach((tr) => {
         const part_number = String(tr.querySelector(".part-number")?.value || "").trim();
         const part_id = String(tr.querySelector(".part-id")?.value || "").trim();
+        const one_time_part = isOneTimePartRow(tr);
         const description = String(tr.querySelector(".part-description")?.value || "").trim();
         const qty = String(tr.querySelector(".part-qty")?.value || "").trim();
         const cost = String(tr.querySelector(".part-cost")?.value || "").trim();
@@ -1531,6 +1645,7 @@
         if (!(part_number || part_id || description || qty || cost || price || coreCharge || miscCharge || miscChargeDescription)) return;
         parts.push({
           part_id,
+          one_time_part,
           part_number,
           description,
           qty: qty === "" ? 0 : Number(qty),
@@ -1796,6 +1911,7 @@
     blocksContainer.querySelectorAll("tr.parts-row").forEach((tr) => {
       const toggle = tr.querySelector(".part-core-toggle");
       if (toggle) toggle.checked = coreChargeDefaultEnabled;
+      updatePartCostEditableState(tr);
       syncCoreChargeFromToggle(tr);
     });
 
@@ -2406,7 +2522,11 @@
       const blockEl = dd._targetBlock;
       if (!it || !tr || !blockEl) return;
 
-      fillRowFromPart(tr, it);
+      if (it.__one_time_part) {
+        fillRowAsOneTimePart(tr, dd._targetInput?.value || "");
+      } else {
+        fillRowFromPart(tr, it);
+      }
       hideDropdown(dd);
       recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
       renderMiscChargesTable(blockEl);
@@ -2429,6 +2549,11 @@
       const tr = target.closest("tr.parts-row");
       const blockEl = target.closest(".wo-labor");
       if (!tr || !blockEl) return;
+
+      if (isOneTimePartRow(tr)) {
+        hideDropdown(dd);
+        return;
+      }
 
       debouncedSearch(dd, target, tr, blockEl);
     }

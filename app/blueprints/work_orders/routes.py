@@ -58,6 +58,17 @@ def round2(v):
     return round(n + 1e-12, 2)
 
 
+def as_bool(v) -> bool:
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return v != 0
+    if v is None:
+        return False
+    raw = str(v).strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
 def get_next_wo_number(shop_db, shop_id):
     """
     Get next work order number using atomic counter.
@@ -94,6 +105,7 @@ def normalize_parts_payload(raw_parts):
 
         part_number = str(p.get("part_number") or "").strip()
         part_id = oid(p.get("part_id"))
+        one_time_part = as_bool(p.get("one_time_part"))
         description = str(p.get("description") or "").strip()
         misc_charge_description = str(
             p.get("misc_charge_description") if p.get("misc_charge_description") is not None else ""
@@ -124,6 +136,7 @@ def normalize_parts_payload(raw_parts):
         item = {
             "part_number": part_number,
             "description": description,
+            "one_time_part": one_time_part,
             "qty": int(qty_raw if qty_raw is not None else 0),
             "cost": round2(cost_raw if cost_raw is not None else 0),
             "price": round2(price_raw if price_raw is not None else 0),
@@ -142,6 +155,9 @@ def normalize_parts_payload(raw_parts):
 def _resolve_part_for_inventory(shop_db, raw_part: dict):
     """Resolve part document by part_id first, then by part_number."""
     if not isinstance(raw_part, dict):
+        return None
+
+    if as_bool(raw_part.get("one_time_part")):
         return None
 
     part_id = oid(raw_part.get("part_id"))
@@ -193,7 +209,7 @@ def _collect_inventory_qty_by_part(shop_db, labors: list):
             part_doc = _resolve_part_for_inventory(shop_db, part)
             raw_part_number = str(part.get("part_number") or "").strip()
             if not part_doc:
-                if raw_part_number:
+                if raw_part_number and not as_bool(part.get("one_time_part")):
                     errors.append(f"Part '{raw_part_number}' not found in inventory")
                 continue
 
@@ -480,6 +496,7 @@ def normalize_saved_labors(raw):
             parts_out.append(
                 {
                     "part_id": str(p.get("part_id")) if p.get("part_id") else "",
+                    "one_time_part": as_bool(p.get("one_time_part")),
                     "part_number": str(p.get("part_number") or "").strip(),
                     "description": str(p.get("description") or "").strip(),
                     "qty": str(p.get("qty") if p.get("qty") is not None else ""),
@@ -1445,6 +1462,9 @@ def adjust_inventory_for_part_changes(shop_db, old_labors: list, new_labors: lis
 
 
 def _resolve_part_for_core_tracking(shop_db, shop_id: ObjectId, part: dict, cache: dict):
+    if as_bool((part or {}).get("one_time_part")):
+        return None
+
     part_id = oid(part.get("part_id")) if isinstance(part, dict) else None
     part_number = str((part or {}).get("part_number") or "").strip()
 
@@ -1864,7 +1884,7 @@ def create_work_order():
     labor_re = re.compile(r"^(?:labors|blocks)\[(\d+)\]\[(labor_description|labor_hours|labor_rate_code|labor_total_ui|labor_full_total|assigned_mechanics_json)\]$")
     # parts
     parts_re = re.compile(
-        r"^(?:labors|blocks)\[(\d+)\]\[parts\]\[(\d+)\]\[(part_id|part_number|description|qty|cost|price|core_charge|misc_charge|misc_charge_description)\]$"
+        r"^(?:labors|blocks)\[(\d+)\]\[parts\]\[(\d+)\]\[(part_id|part_number|description|qty|cost|price|core_charge|misc_charge|misc_charge_description|one_time_part)\]$"
     )
 
     for key, val in request.form.items():
@@ -1910,6 +1930,9 @@ def create_work_order():
                 b["parts"][ridx]["misc_charge"] = (val or "").strip()
             elif field == "misc_charge_description":
                 b["parts"][ridx]["misc_charge_description"] = (val or "").strip()
+            elif field == "one_time_part":
+                raw = str(val or "").strip().lower()
+                b["parts"][ridx]["one_time_part"] = raw in ("1", "true", "yes", "on")
             continue
 
     # normalize labors list in order
