@@ -1,4 +1,5 @@
 (function () {
+  function initPartsSettingsPage() {
   // Elements
   const body = document.getElementById('mmRulesBody');
   const addBtn = document.getElementById('mmAddRow');
@@ -273,4 +274,11 @@
 
   // Init
   updateValueLabel();
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initPartsSettingsPage, { once: true });
+  } else {
+    initPartsSettingsPage();
+  }
 })();

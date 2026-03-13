@@ -1,7 +1,7 @@
 (function () {
 	"use strict";
 
-	document.addEventListener("DOMContentLoaded", function () {
+	function initSettingsWorkOrdersPage() {
 		const editButtons = document.querySelectorAll(".edit-labor-rate-btn");
 		const form = document.getElementById("editLaborRateForm");
 		const idInput = document.getElementById("editLaborRateId");
@@ -23,5 +23,11 @@
 				hourlyInput.value = hourly;
 			});
 		});
-	});
+	}
+
+	if (document.readyState === "loading") {
+		document.addEventListener("DOMContentLoaded", initSettingsWorkOrdersPage, { once: true });
+	} else {
+		initSettingsWorkOrdersPage();
+	}
 })();

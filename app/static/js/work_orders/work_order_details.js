@@ -1921,7 +1921,7 @@
   }
 
   // ---------------- init ----------------
-  document.addEventListener("DOMContentLoaded", function () {
+  function initWorkOrderDetailsPage() {
     const customersData = readJsonScript("customersData", []);
     const laborRates = readJsonScript("laborRatesData", []);
     const mechanicsData = readJsonScript("mechanicsData", []);
@@ -1935,6 +1935,11 @@
 
     const blocksContainer = $("laborsContainer");
     if (!blocksContainer) return;
+    const woPageRootMarker = blocksContainer;
+
+    function isWorkOrderPageAlive() {
+      return !!(woPageRootMarker && document.body && document.body.contains(woPageRootMarker));
+    }
 
     blocksContainer.querySelectorAll("tr.parts-row").forEach((tr) => {
       const toggle = tr.querySelector(".part-core-toggle");
@@ -2561,12 +2566,14 @@
     });
 
     document.addEventListener("click", function (e) {
+      if (!isWorkOrderPageAlive()) return;
       if (dd.style.display === "none") return;
       if (e.target.closest("#partsSearchDropdown")) return;
       hideDropdown(dd);
     });
 
     document.addEventListener("scroll", function () {
+      if (!isWorkOrderPageAlive()) return;
       if (dd.style.display !== "none") hideDropdown(dd);
     }, { passive: true });
 
@@ -2810,5 +2817,11 @@
     });
 
     applyStateFromStatus();
-  });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initWorkOrderDetailsPage, { once: true });
+  } else {
+    initWorkOrderDetailsPage();
+  }
 })();

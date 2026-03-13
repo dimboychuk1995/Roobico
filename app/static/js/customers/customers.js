@@ -1,6 +1,13 @@
 (function () {
   "use strict";
 
+  if (document.body && document.body.dataset.customersRowsBound === "1") {
+    return;
+  }
+  if (document.body) {
+    document.body.dataset.customersRowsBound = "1";
+  }
+
   function shouldIgnoreClick(target) {
     return !!target.closest("a, button, form, input, select, textarea, label");
   }

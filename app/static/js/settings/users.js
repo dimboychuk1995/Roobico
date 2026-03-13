@@ -1,25 +1,28 @@
 (function () {
   var root = document.body;
-  if (!root || root.dataset.settingsUsersBound === "1") {
+  if (!root || root.dataset.settingsUsersClickBound === "1") {
     return;
   }
-  root.dataset.settingsUsersBound = "1";
-
-  var editForm = document.getElementById("editUserForm");
-  if (!editForm) {
-    return;
-  }
-
-  var firstNameInput = document.getElementById("edit_user_first_name");
-  var lastNameInput = document.getElementById("edit_user_last_name");
-  var emailInput = document.getElementById("edit_user_email");
-  var phoneInput = document.getElementById("edit_user_phone");
-  var roleInput = document.getElementById("edit_user_role");
-  var isActiveInput = document.getElementById("edit_user_is_active");
+  root.dataset.settingsUsersClickBound = "1";
 
   document.addEventListener("click", function (event) {
     var btn = event.target && event.target.closest ? event.target.closest(".edit-user-btn") : null;
     if (!btn) return;
+
+    var editForm = document.getElementById("editUserForm");
+    if (!editForm) return;
+
+    var firstNameInput = editForm.querySelector("#edit_user_first_name");
+    var lastNameInput = editForm.querySelector("#edit_user_last_name");
+    var emailInput = editForm.querySelector("#edit_user_email");
+    var phoneInput = editForm.querySelector("#edit_user_phone");
+    var roleInput = editForm.querySelector("#edit_user_role");
+    var isActiveInput = editForm.querySelector("#edit_user_is_active");
+    var passwordInput = editForm.querySelector("#edit_user_password");
+
+    if (!firstNameInput || !lastNameInput || !emailInput || !phoneInput || !roleInput || !isActiveInput) {
+      return;
+    }
 
     var userId = btn.getAttribute("data-user-id") || "";
     if (!userId) return;
@@ -47,7 +50,6 @@
       box.checked = !!selectedShopIds[String(box.value || "")];
     }
 
-    var passwordInput = document.getElementById("edit_user_password");
     if (passwordInput) {
       passwordInput.value = "";
     }

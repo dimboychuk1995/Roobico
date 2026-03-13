@@ -1,7 +1,7 @@
 (function () {
   "use strict";
 
-  document.addEventListener("DOMContentLoaded", function () {
+  function initLocationsPage() {
     var form = document.getElementById("createShopForm");
     var errorEl = document.getElementById("createShopError");
     var submitBtn = document.getElementById("createShopSubmitBtn");
@@ -182,5 +182,11 @@
         }
       });
     });
-  });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", initLocationsPage, { once: true });
+  } else {
+    initLocationsPage();
+  }
 })();

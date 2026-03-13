@@ -3,7 +3,7 @@
 	"use strict";
 	const APP_TIMEZONE = document.body?.dataset?.appTimezone || "UTC";
 
-	document.addEventListener("DOMContentLoaded", function () {
+	function initPartsPage() {
 		const toggle = document.getElementById("coreChargeToggle");
 		const group = document.getElementById("coreCostGroup");
 			const miscToggle = document.getElementById("miscChargeToggle");
@@ -279,6 +279,11 @@
 		const partsOrderPaymentMethodInput = document.getElementById("partsOrderPaymentMethodInput");
 		const partsOrderPaymentNotesInput = document.getElementById("partsOrderPaymentNotesInput");
 		const partsOrderPaymentSubmitBtn = document.getElementById("partsOrderPaymentSubmitBtn");
+		const partsPageRootMarker = document.getElementById("orderModal") || document.getElementById("createPartModal");
+
+		function isPartsPageAlive() {
+			return !!(partsPageRootMarker && document.body && document.body.contains(partsPageRootMarker));
+		}
 
 		async function loadPartsOrderPaymentSummary(orderId) {
 			const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/payments`, {
@@ -293,6 +298,7 @@
 		}
 
 		document.addEventListener("click", async function (e) {
+			if (!isPartsPageAlive()) return;
 			const btn = e.target.closest(".js-order-payment");
 			if (!btn) return;
 
@@ -607,6 +613,7 @@
 		});
 
 		document.addEventListener("click", function (e) {
+			if (!isPartsPageAlive()) return;
 			if (!dropdown.contains(e.target) && e.target !== partSearch) hideDropdown();
 			if (!vendorDropdown.contains(e.target) && e.target !== vendorSearchInput) hideVendorDropdown();
 		});
@@ -831,6 +838,7 @@
 
 		// Load order data when Edit button clicked
 		document.addEventListener("click", async function (e) {
+			if (!isPartsPageAlive()) return;
 			const btn = e.target.closest(".editOrderBtn");
 			if (!btn) return;
 			
@@ -1024,6 +1032,7 @@
 		}
 
 		document.addEventListener("click", function (e) {
+			if (!isPartsPageAlive()) return;
 			const btn = e.target.closest(".partHistoryBtn");
 			if (!btn) return;
 			const partId = btn.getAttribute("data-part-id");
@@ -1032,6 +1041,7 @@
 		});
 
 		document.addEventListener("click", function (e) {
+			if (!isPartsPageAlive()) return;
 			const woRow = e.target.closest(".workOrderHistoryRow");
 			if (!woRow) return;
 			const woId = woRow.getAttribute("data-wo-id");
@@ -1046,6 +1056,7 @@
 		});
 
 		document.addEventListener("show.bs.modal", function (e) {
+			if (!isPartsPageAlive()) return;
 			if (!e.target || e.target.id !== "orderModal") return;
 
 			const trigger = e.relatedTarget;
@@ -1085,6 +1096,7 @@
 
 		// ---- Order List Management (Receive from Status, Delete from Orders tab) ----
 		document.addEventListener("click", async function (e) {
+			if (!isPartsPageAlive()) return;
 			// Receive order by clicking on status button
 			const receiveStatusBtn = e.target.closest(".receiveStatusBtn");
 			if (receiveStatusBtn) {
@@ -1187,6 +1199,7 @@
 
 		// Handle Edit Part buttons
 		document.addEventListener('click', function(e) {
+			if (!isPartsPageAlive()) return;
 			const btn = e.target.closest('.editPartBtn');
 			if (!btn) return;
 
@@ -1342,5 +1355,9 @@
 		syncInStockVisibility();
 	}
 
-	});
+	if (document.readyState === "loading") {
+		document.addEventListener("DOMContentLoaded", initPartsPage, { once: true });
+	} else {
+		initPartsPage();
+	}
 })();

@@ -69,11 +69,14 @@
 
   let currentWorkOrderId = null;
   let paymentsLoaded = false;
+  const body = document.body;
 
   // ========== MARK PAID BUTTON LOGIC ==========
-  document.addEventListener("click", async function (e) {
-    const btn = e.target.closest(".js-mark-paid");
-    if (!btn) return;
+  if (!body || body.dataset.workOrdersMarkPaidBound !== "1") {
+    if (body) body.dataset.workOrdersMarkPaidBound = "1";
+    document.addEventListener("click", async function (e) {
+      const btn = e.target.closest(".js-mark-paid");
+      if (!btn) return;
 
     const workOrderId = String(btn.dataset.workOrderId || "").trim();
     if (!workOrderId) return;
@@ -101,12 +104,15 @@
     } catch (err) {
       alert(err.message || "Failed to load payment info.");
     }
-  });
+    });
+  }
 
-  document.addEventListener("click", async function (e) {
-    const submitBtn = e.target.closest("#paymentListSubmitBtn");
-    if (!submitBtn) return;
-    if (!currentWorkOrderId) return;
+  if (!body || body.dataset.workOrdersPaymentSubmitBound !== "1") {
+    if (body) body.dataset.workOrdersPaymentSubmitBound = "1";
+    document.addEventListener("click", async function (e) {
+      const submitBtn = e.target.closest("#paymentListSubmitBtn");
+      if (!submitBtn) return;
+      if (!currentWorkOrderId) return;
 
     const amount = parseFloat(document.getElementById("paymentListAmountInput").value || "0");
     const paymentMethod = document.getElementById("paymentListMethodInput").value;
@@ -157,7 +163,8 @@
       btn.disabled = false;
       btn.textContent = originalText;
     }
-  });
+    });
+  }
 
   // ========== PAYMENTS TAB LOGIC ==========
   
@@ -270,12 +277,15 @@
   }
 
   // Listen for Payments tab activation
-  document.addEventListener("shown.bs.tab", function (event) {
-    if (event?.target?.id !== "tab-payments") return;
-    if (!paymentsLoaded) {
-      loadPaymentsData();
-    }
-  });
+  if (!body || body.dataset.workOrdersPaymentsTabBound !== "1") {
+    if (body) body.dataset.workOrdersPaymentsTabBound = "1";
+    document.addEventListener("shown.bs.tab", function (event) {
+      if (event?.target?.id !== "tab-payments") return;
+      if (!paymentsLoaded) {
+        loadPaymentsData();
+      }
+    });
+  }
 
   // ========== TAB PERSISTENCE LOGIC ==========
   const workOrdersTabIds = ["tab-work-orders", "tab-payments", "tab-estimates"];
@@ -365,10 +375,13 @@
     });
   });
 
-  window.addEventListener("load", restoreSavedTab);
-  window.addEventListener("smallshop:content-replaced", function () {
-    paymentsLoaded = false;
-    restoreSavedTab();
-  });
+  if (!body || body.dataset.workOrdersWindowHooksBound !== "1") {
+    if (body) body.dataset.workOrdersWindowHooksBound = "1";
+    window.addEventListener("load", restoreSavedTab);
+    window.addEventListener("smallshop:content-replaced", function () {
+      paymentsLoaded = false;
+      restoreSavedTab();
+    });
+  }
 
 })();
