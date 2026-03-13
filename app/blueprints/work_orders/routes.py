@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 from flask import request, session, redirect, url_for, flash, jsonify
@@ -274,6 +275,151 @@ def normalize_totals_payload(raw):
         "shop_supply_total": shop_supply_total,
         "grand_total": grand_total,
         "labors": blocks,
+    }
+
+
+def _parse_misc_items(raw):
+    value = str(raw or "").strip()
+    if not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except Exception:
+        return []
+    if not isinstance(parsed, list):
+        return []
+
+    out = []
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        out.append(
+            {
+                "description": str(item.get("description") or "").strip(),
+                "quantity": f64(item.get("quantity") if item.get("quantity") is not None else 1) or 0,
+                "price": f64(item.get("price")),
+                "manual": item.get("manual") is True,
+            }
+        )
+    return out
+
+
+def _calc_misc_total_from_parts(parts: list) -> float:
+    if not isinstance(parts, list) or not parts:
+        return 0.0
+
+    first_row_items = _parse_misc_items((parts[0] or {}).get("misc_charge_description"))
+    if first_row_items:
+        total = 0.0
+        for item in first_row_items:
+            price = f64(item.get("price"))
+            qty = f64(item.get("quantity") if item.get("quantity") is not None else 0)
+            if not price or price <= 0 or not qty or qty <= 0:
+                continue
+            total += round2(price * qty)
+        return round2(total)
+
+    # Backward compatibility for older rows where misc was stored per-part row.
+    total = 0.0
+    for part in parts:
+        if not isinstance(part, dict):
+            continue
+        part_qty = i32(part.get("qty")) or 0
+
+        row_items = _parse_misc_items(part.get("misc_charge_description"))
+        if row_items:
+            for item in row_items:
+                price = f64(item.get("price"))
+                if not price or price <= 0:
+                    continue
+                if item.get("manual"):
+                    qty = f64(item.get("quantity") if item.get("quantity") is not None else 0) or 0
+                else:
+                    qty = part_qty
+                if qty <= 0:
+                    continue
+                total += round2(price * qty)
+            continue
+
+        misc_charge = f64(part.get("misc_charge")) or 0
+        if misc_charge > 0 and part_qty > 0:
+            total += round2(misc_charge * part_qty)
+
+    return round2(total)
+
+
+def align_totals_with_labors(totals: dict, labors: list) -> dict:
+    src = normalize_totals_payload(totals or {})
+    blocks_src = src.get("labors") if isinstance(src.get("labors"), list) else []
+
+    out_blocks = []
+    parts_base_sum = 0.0
+    core_sum = 0.0
+    misc_sum = 0.0
+
+    normalized_labors = labors if isinstance(labors, list) else []
+
+    for idx, block in enumerate(normalized_labors):
+        block_src = blocks_src[idx] if idx < len(blocks_src) and isinstance(blocks_src[idx], dict) else {}
+        parts = normalize_parts_payload((block or {}).get("parts") or [])
+
+        parts_base = 0.0
+        core_total = 0.0
+        for part in parts:
+            qty = i32(part.get("qty")) or 0
+            if qty <= 0:
+                continue
+            price = round2(part.get("price") if part.get("price") is not None else 0)
+            core_charge = round2(part.get("core_charge") if part.get("core_charge") is not None else 0)
+            parts_base += round2(price * qty)
+            core_total += round2(core_charge * qty)
+
+        misc_total = _calc_misc_total_from_parts(parts)
+
+        labor_base = round2(
+            block_src.get("labor") if block_src.get("labor") is not None else block_src.get("labor_total")
+        )
+        shop_supply_total = round2(block_src.get("shop_supply_total"))
+        labor_total = round2(labor_base + shop_supply_total)
+        parts_total = round2(parts_base + core_total + misc_total)
+
+        out_blocks.append(
+            {
+                "labor": labor_base,
+                "labor_total": labor_total,
+                "parts": round2(parts_base),
+                "parts_total": parts_total,
+                "core_total": round2(core_total),
+                "misc_total": round2(misc_total),
+                "cost_total": round2(parts_base),
+                "shop_supply_total": shop_supply_total,
+                "labor_full_total": round2(labor_total + parts_total),
+            }
+        )
+
+        parts_base_sum += parts_base
+        core_sum += core_total
+        misc_sum += misc_total
+
+    labor_base_sum = round2(sum(round2(b.get("labor") or 0) for b in out_blocks))
+    shop_supply_sum = round2(sum(round2(b.get("shop_supply_total") or 0) for b in out_blocks))
+    labor_total_sum = round2(labor_base_sum + shop_supply_sum)
+    parts_base_sum = round2(parts_base_sum)
+    core_sum = round2(core_sum)
+    misc_sum = round2(misc_sum)
+    parts_total_sum = round2(parts_base_sum + core_sum + misc_sum)
+
+    return {
+        "labor": labor_base_sum,
+        "labor_total": labor_total_sum,
+        "parts": parts_base_sum,
+        "parts_total": parts_total_sum,
+        "core_total": core_sum,
+        "misc_total": misc_sum,
+        "cost_total": parts_base_sum,
+        "shop_supply_total": shop_supply_sum,
+        "grand_total": round2(labor_total_sum + parts_total_sum),
+        "labors": out_blocks,
     }
 
 
@@ -1806,7 +1952,7 @@ def create_work_order():
         except Exception:
             totals = {}
 
-    totals = normalize_totals_payload(totals)
+    totals = align_totals_with_labors(normalize_totals_payload(totals), labors)
 
     now = utcnow()
     user_id = current_user_id()
@@ -2130,6 +2276,7 @@ def api_work_order_update(work_order_id):
 
     mechanics_by_id = {m["id"]: m for m in get_assignable_mechanics(shop)}
     labors = apply_assignments_to_labors(labors, mechanics_by_id)
+    totals = align_totals_with_labors(totals, labors)
 
     # (опционально) можно запретить редактирование, если paid
     if (wo.get("status") or "open") == "paid":

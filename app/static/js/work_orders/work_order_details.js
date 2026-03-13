@@ -453,6 +453,7 @@
     let miscTotal = 0;
     const miscBreakdownMap = new Map();
     const rows = Array.from(tbody.querySelectorAll("tr.parts-row"));
+    const rowQtyByIndex = new Map();
 
     for (const tr of rows) {
       if (!rowHasAnyInput(tr)) {
@@ -462,71 +463,88 @@
       const qty = toNum(tr.querySelector(".part-qty")?.value);
       calcRowLineTotal(tr, pricing);
 
+      const rowIndex = Number(tr.dataset.index);
+      if (Number.isFinite(rowIndex) && Number.isFinite(qty) && qty > 0) {
+        rowQtyByIndex.set(rowIndex, round2(qty));
+      }
+
       const rowPrice = toNum(tr.querySelector(".part-price")?.value);
       if (qty !== null && qty > 0 && Number.isFinite(rowPrice) && rowPrice >= 0) {
         partsBaseTotal += round2(rowPrice * qty);
       }
 
       const { coreCharge, miscCharge } = getRowCharges(tr);
-      const miscItems = getRowMiscItems(tr);
       if (qty !== null && qty > 0) {
         coreTotal += round2(coreCharge * qty);
         miscTotal += round2(miscCharge * qty);
+      }
+    }
 
-        let hadPricedItems = false;
+    // Misc charges are edited in a dedicated table and persisted in the first row JSON.
+    // Rebuild totals from that JSON so misc remains correct regardless of where part rows move.
+    const firstRow = rows[0] || null;
+    const firstRowItems = firstRow ? getMiscItemsArray(firstRow) : [];
+    if (firstRowItems.length > 0) {
+      for (const rawItem of firstRowItems) {
+        const unitPrice = toNum(rawItem?.price);
+        if (!Number.isFinite(unitPrice) || unitPrice <= 0) continue;
+
+        const description = String(rawItem?.description || "").trim() || "Misc charge";
+        const itemQuantity = Number(rawItem?.quantity || 1);
+        const isManual = rawItem?.manual === true;
+        const partIndex = Number(rawItem?.partIndex);
+
+        let effectiveQty = 0;
+        if (isManual) {
+          effectiveQty = Number.isFinite(itemQuantity) ? itemQuantity : 0;
+        } else if (Number.isFinite(partIndex) && rowQtyByIndex.has(partIndex)) {
+          // For auto items linked to part rows, quantity in JSON is already synchronized by qty handlers.
+          effectiveQty = Number.isFinite(itemQuantity) ? itemQuantity : 0;
+        } else {
+          // Legacy/unknown format: use stored quantity if present.
+          effectiveQty = Number.isFinite(itemQuantity) ? itemQuantity : 0;
+        }
+
+        if (!Number.isFinite(effectiveQty) || effectiveQty <= 0) continue;
+
+        const roundedUnitPrice = round2(unitPrice);
+        const key = `${description}__${roundedUnitPrice}`;
+        const prev = miscBreakdownMap.get(key) || {
+          description,
+          unitPrice: roundedUnitPrice,
+          count: 0,
+          amount: 0,
+        };
+        prev.count = round2(prev.count + effectiveQty);
+        prev.amount = round2(prev.amount + (roundedUnitPrice * effectiveQty));
+        miscBreakdownMap.set(key, prev);
+      }
+    } else {
+      // Backward compatibility: older rows may still store misc JSON in each part row.
+      for (const tr of rows) {
+        const qty = toNum(tr.querySelector(".part-qty")?.value);
+        const miscItems = getRowMiscItems(tr);
         for (const item of miscItems) {
-          if (!Number.isFinite(item.price) || item.price <= 0) continue;
-          hadPricedItems = true;
+          const unitPrice = toNum(item.price);
+          if (!Number.isFinite(unitPrice) || unitPrice <= 0) continue;
+
           const description = String(item.description || "").trim() || "Misc charge";
           const itemQuantity = Number(item.quantity || 1);
-          const unitPrice = round2(item.price);
-          const key = `${description}__${unitPrice}`;
+          const effectiveQty = item.manual === true
+            ? itemQuantity
+            : (Number.isFinite(qty) && qty > 0 ? qty : 0);
+          if (!Number.isFinite(effectiveQty) || effectiveQty <= 0) continue;
+
+          const roundedUnitPrice = round2(unitPrice);
+          const key = `${description}__${roundedUnitPrice}`;
           const prev = miscBreakdownMap.get(key) || {
             description,
-            unitPrice,
+            unitPrice: roundedUnitPrice,
             count: 0,
             amount: 0,
           };
-          // Manual misc charge uses its own quantity from the misc table.
-          // Automatic misc charge is per-part and should be multiplied only by part qty.
-          const effectiveQty = item.manual === true ? itemQuantity : qty;
           prev.count = round2(prev.count + effectiveQty);
-          prev.amount = round2(prev.amount + (unitPrice * effectiveQty));
-          miscBreakdownMap.set(key, prev);
-        }
-
-        if (!hadPricedItems && miscCharge > 0) {
-          const fallbackDescriptions = miscItems.map((x) => x.description).filter(Boolean);
-          const fallbackDescription = fallbackDescriptions.length === 1 ? fallbackDescriptions[0] : "Misc charge";
-          const unitPrice = round2(miscCharge);
-          const fallbackKey = `${fallbackDescription}__${unitPrice}`;
-          const prev = miscBreakdownMap.get(fallbackKey) || {
-            description: fallbackDescription,
-            unitPrice,
-            count: 0,
-            amount: 0,
-          };
-          prev.count = round2(prev.count + qty);
-          prev.amount = round2(prev.amount + (unitPrice * qty));
-          miscBreakdownMap.set(fallbackKey, prev);
-        }
-      } else {
-        // When part qty is 0 or empty, only process manual charges
-        for (const item of miscItems) {
-          if (!item.manual) continue;
-          if (!Number.isFinite(item.price) || item.price <= 0) continue;
-          const description = String(item.description || "").trim() || "Misc charge";
-          const itemQuantity = Number(item.quantity || 1);
-          const unitPrice = round2(item.price);
-          const key = `${description}__${unitPrice}`;
-          const prev = miscBreakdownMap.get(key) || {
-            description,
-            unitPrice,
-            count: 0,
-            amount: 0,
-          };
-          prev.count = round2(prev.count + itemQuantity);
-          prev.amount = round2(prev.amount + (unitPrice * itemQuantity));
+          prev.amount = round2(prev.amount + (roundedUnitPrice * effectiveQty));
           miscBreakdownMap.set(key, prev);
         }
       }
