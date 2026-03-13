@@ -148,6 +148,16 @@
 	}
 
 	function updateSidebarActiveState(pathname) {
+		function normalizePath(path) {
+			var value = String(path || "").trim();
+			if (!value) return "/";
+			if (value.length > 1) {
+				value = value.replace(/\/+$/, "");
+			}
+			return value || "/";
+		}
+
+		var currentPath = normalizePath(pathname);
 		var links = document.querySelectorAll(".app-sidebar-link");
 		for (var i = 0; i < links.length; i += 1) {
 			var link = links[i];
@@ -160,7 +170,7 @@
 				continue;
 			}
 
-			var isActive = linkUrl.pathname === pathname;
+			var isActive = normalizePath(linkUrl.pathname) === currentPath;
 			link.classList.toggle("active", isActive);
 			if (isActive) {
 				link.setAttribute("aria-current", "page");

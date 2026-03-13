@@ -8,10 +8,10 @@
 {% endblock %}
 
 {% block content %}
-<div class="container-fluid py-3 app-shell sidebar-collapsed">
+<div class="container-fluid p-0 app-shell sidebar-collapsed">
 
   <!-- Top header -->
-  <nav class="navbar navbar-expand-lg bg-light border rounded px-3 mb-3 app-topbar">
+  <nav class="navbar navbar-expand-lg bg-light px-3 app-topbar">
     <div class="container-fluid px-0">
       <a class="navbar-brand fw-semibold" href="{{ url_for('dashboard.dashboard') }}">Small Shop</a>
 
@@ -53,11 +53,11 @@
     </div>
   </nav>
 
-  <div class="row g-3">
+  <div class="row g-0 app-shell-body">
 
     <!-- Sidebar -->
     <div class="col-12 col-md-3 col-lg-2 app-sidebar-col">
-      <div class="card app-sidebar-card">
+      <div class="card app-sidebar-card h-100">
         <div class="card-header d-flex align-items-center justify-content-between">
           <span class="app-sidebar-title">Navigation</span>
           <button
@@ -129,7 +129,7 @@
     </div>
 
     <!-- Main -->
-    <div class="col-12 col-md-9 col-lg-10 app-main-col">
+    <div class="col-12 col-md-9 col-lg-10 app-main-col app-main-pad">
       {% block app_content %}
       <!-- Page content goes here -->
       {% endblock %}

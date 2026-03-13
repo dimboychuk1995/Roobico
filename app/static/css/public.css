@@ -15,6 +15,7 @@
   --radius-sm: 8px;
   --shadow-soft: 0 6px 16px rgba(21, 37, 28, 0.08);
   --shadow-card: 0 14px 34px rgba(18, 34, 25, 0.14);
+  --chrome-bg: #c7d4c8;
 }
 
 html,
@@ -42,6 +43,17 @@ body.is-search-loading .app-main-col {
 
 .app-shell {
   position: relative;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-shell-body {
+  flex: 1;
+}
+
+.app-main-pad {
+  padding: 0.95rem 1rem 1rem;
 }
 
 h1,
@@ -63,29 +75,38 @@ small,
 }
 
 .app-topbar {
-  border: 1px solid var(--border) !important;
-  border-radius: var(--radius) !important;
-  background: #ffffff !important;
-  box-shadow: var(--shadow-soft);
+  border: none !important;
+  border-radius: 0 !important;
+  background: var(--chrome-bg) !important;
+  box-shadow: none;
+  margin-bottom: 0 !important;
+  position: sticky;
+  top: 0;
+  left: 0;
+  z-index: 1030;
 }
 
 .app-sidebar-card {
-  border: 1px solid #b9c9bb;
-  border-radius: 16px;
-  background: linear-gradient(180deg, #fcfefc 0%, #f2f8f3 100%);
-  box-shadow: 0 10px 24px rgba(19, 42, 29, 0.12);
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: var(--chrome-bg) !important;
+  box-shadow: none !important;
   overflow: hidden;
+  min-height: 100%;
 }
 
 .app-sidebar-col {
-  align-self: flex-start;
+  align-self: stretch;
+  display: flex;
+  padding-left: 0;
+  padding-right: 0;
   transition: width 0.2s ease, flex-basis 0.2s ease;
 }
 
 .app-sidebar-nav {
   gap: 0;
   padding: 0.55rem;
-  background: linear-gradient(180deg, #f8fbf8 0%, #edf4ee 100%);
+  background: var(--chrome-bg);
 }
 
 .app-sidebar-link {
@@ -97,7 +118,7 @@ small,
   margin-bottom: 0.35rem;
   padding: 0.62rem 0.75rem 0.62rem 1rem;
   font-weight: 600;
-  color: #375343;
+  color: #2f4b3b;
   background: transparent;
   transition: none;
 }
@@ -158,8 +179,8 @@ small,
 
 .app-sidebar-link:hover,
 .app-sidebar-link:focus {
-  border-color: #bfd0c2 !important;
-  background: rgba(255, 255, 255, 0.9) !important;
+  border-color: #b7c8b9 !important;
+  background: transparent !important;
   color: #274635;
   transform: none;
 }
@@ -172,16 +193,23 @@ small,
 .app-sidebar-link.active,
 .app-sidebar-link.active:hover,
 .app-sidebar-link.active:focus {
-  border-color: var(--primary) !important;
-  background: linear-gradient(110deg, var(--primary) 0%, #2f8356 100%) !important;
-  color: #ffffff !important;
-  box-shadow: 0 8px 18px rgba(31, 107, 67, 0.26);
+  border-color: #7f9b84 !important;
+  background: #b8c9bb !important;
+  color: #173224 !important;
+  box-shadow: none;
   transform: translateX(0);
+  font-weight: 700;
+  border-left: 4px solid #2a7a4f !important;
 }
 
 .app-sidebar-link.active::before {
-  background: #ffffff;
-  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+  background: #2a7a4f;
+  box-shadow: 0 0 0 2px rgba(42, 122, 79, 0.24);
+}
+
+.app-sidebar-link.active .app-sidebar-icon,
+.app-sidebar-link.active .app-sidebar-icon svg {
+  color: #1f5f3c;
 }
 
 .app-shell.sidebar-collapsed .app-sidebar-title {
@@ -207,8 +235,8 @@ small,
 }
 
 .app-sidebar-card .card-header {
-  border-bottom: 1px solid #c6d4c8;
-  background: linear-gradient(140deg, #e9f2ea 0%, #dce9df 100%);
+  border-bottom: none;
+  background: var(--chrome-bg);
   color: #2e4b3b;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -216,7 +244,30 @@ small,
   padding: 0.75rem 0.95rem;
 }
 
+.app-sidebar-nav .list-group-item {
+  border: none !important;
+}
+
+.app-sidebar-card,
+.app-sidebar-card .card-header,
+.app-sidebar-card .app-sidebar-nav {
+  background-color: var(--chrome-bg) !important;
+}
+
 @media (min-width: 768px) {
+  .app-sidebar-col {
+    width: 190px;
+    max-width: 190px;
+    flex: 0 0 190px;
+  }
+
+  .app-main-col {
+    width: calc(100% - 190px);
+    max-width: calc(100% - 190px);
+    flex: 0 0 calc(100% - 190px);
+    margin-left: 0;
+  }
+
   .app-main-col {
     transition: width 0.2s ease, flex-basis 0.2s ease;
   }
@@ -626,7 +677,7 @@ a:hover {
   }
 
   .app-sidebar-card {
-    border-radius: 14px;
+    border-radius: 0;
   }
 
   .app-sidebar-title {
