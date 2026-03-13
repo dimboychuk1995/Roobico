@@ -236,53 +236,15 @@
       }
     }
 
-    function submitForm(form) {
-      if (!form) return;
-      if (typeof form.requestSubmit === "function") {
-        form.requestSubmit();
-      } else {
-        form.submit();
-      }
-    }
-
     var forms = Array.prototype.slice.call(document.querySelectorAll('form[method="get" i]'));
     forms.forEach(function (form) {
       var searchInput = form.querySelector('input[name="q"]:not([type="hidden"]):not([disabled])');
       if (!searchInput) return;
 
-      var initialValue = String(searchInput.value || "");
-      var timer = null;
-
-      searchInput.addEventListener("input", function () {
-        if (timer) window.clearTimeout(timer);
-        timer = window.setTimeout(function () {
-          var currentValue = String(searchInput.value || "");
-          if (currentValue === initialValue) return;
-          saveSearchFocusState(form, searchInput);
-          submitForm(form);
-        }, 350);
-      });
-
       form.addEventListener("submit", function () {
         if (document.activeElement === searchInput) {
           saveSearchFocusState(form, searchInput);
         }
-      });
-
-      var instantSelectors = [
-        'select[name="paid_status"]',
-        'select[name="date_preset"]',
-        'input[name="date_from"]',
-        'input[name="date_to"]',
-      ];
-
-      instantSelectors.forEach(function (selector) {
-        var el = form.querySelector(selector);
-        if (!el) return;
-        el.addEventListener("change", function () {
-          saveSearchFocusState(form, searchInput);
-          submitForm(form);
-        });
       });
     });
 

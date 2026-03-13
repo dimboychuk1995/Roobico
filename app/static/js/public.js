@@ -318,11 +318,11 @@
 		}
 
 		form.dataset.autoSearchBound = "1";
-		var delayMs = 450;
-		var timer = null;
 		var lastSubmittedSignature = buildFormSignature(form, input);
 		var actionPath = getFormActionPath(form);
 		var useAjaxSearch = !/^\/parts(\/|$)/.test(actionPath);
+
+		ensureSearchButton(form, input);
 
 		function submitIfChanged() {
 			var nextSignature = buildFormSignature(form, input);
@@ -344,31 +344,6 @@
 			}
 
 			event.preventDefault();
-			if (timer) {
-				window.clearTimeout(timer);
-			}
-			submitIfChanged();
-		});
-
-		input.addEventListener("input", function () {
-			if (!useAjaxSearch) {
-				return;
-			}
-
-			if (timer) {
-				window.clearTimeout(timer);
-			}
-			timer = window.setTimeout(submitIfChanged, delayMs);
-		});
-
-		input.addEventListener("keydown", function (event) {
-			if (event.key !== "Enter") {
-				return;
-			}
-			event.preventDefault();
-			if (timer) {
-				window.clearTimeout(timer);
-			}
 			submitIfChanged();
 		});
 
@@ -396,14 +371,47 @@
 					presetSelect.value = "custom";
 				}
 			}
+		});
+	}
 
-			if (!useAjaxSearch) {
-				window.location.assign(buildSearchUrl(form, input).toString());
+	function ensureSearchButton(form, input) {
+		if (!form || !input) return;
+
+		var existingSubmit = form.querySelector('button[type="submit"], input[type="submit"]');
+		if (existingSubmit) {
+			return;
+		}
+
+		var btn = document.createElement("button");
+		btn.type = "submit";
+		btn.className = "btn btn-sm btn-primary";
+		btn.textContent = "Search";
+
+		var resetControl = form.querySelector('a.btn, button[type="reset"], input[type="reset"]');
+		if (resetControl) {
+			var resetParent = resetControl.parentElement;
+			if (resetParent) {
+				btn.classList.add("me-2");
+				resetParent.insertBefore(btn, resetControl);
 				return;
 			}
+		}
 
-			submitIfChanged();
-		});
+		var wrapper = document.createElement("div");
+		wrapper.className = "col-auto smallshop-search-btn-wrap";
+		wrapper.appendChild(btn);
+
+		var inputContainer = input.closest(".col-12, .col-auto, .col-md-8, .col-lg-6") || input.parentElement;
+		if (inputContainer && inputContainer.parentNode) {
+			if (inputContainer.nextSibling) {
+				inputContainer.parentNode.insertBefore(wrapper, inputContainer.nextSibling);
+			} else {
+				inputContainer.parentNode.appendChild(wrapper);
+			}
+			return;
+		}
+
+		form.appendChild(wrapper);
 	}
 
 	function bindAutoSearchForms() {
