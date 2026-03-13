@@ -110,27 +110,30 @@
 		);
 
 		if (canUseOrderComposer) {
+			try {
 
-		const vendorOptions = Array.from(vendorSelect.options)
-			.filter((opt) => opt.value)
-			.map((opt) => ({ id: String(opt.value), label: String(opt.textContent || "").trim() }));
+			let pendingEditOrderId = "";
 
-		let searchAbort = null;
+			const vendorOptions = Array.from(vendorSelect.options)
+				.filter((opt) => opt.value)
+				.map((opt) => ({ id: String(opt.value), label: String(opt.textContent || "").trim() }));
 
-		function escapeHtml(str) {
-			return (str || "").replace(/[&<>"']/g, (m) => ({
-				"&": "&amp;",
-				"<": "&lt;",
-				">": "&gt;",
-				'"': "&quot;",
-				"'": "&#039;",
-			}[m]));
-		}
+			let searchAbort = null;
 
-		function showError(msg) {
-			orderAlert.textContent = msg || "Error";
-			orderAlert.classList.remove("d-none");
-		}
+			function escapeHtml(str) {
+				return (str || "").replace(/[&<>"']/g, (m) => ({
+					"&": "&amp;",
+					"<": "&lt;",
+					">": "&gt;",
+					'"': "&quot;",
+					"'": "&#039;",
+				}[m]));
+			}
+
+			function showError(msg) {
+				orderAlert.textContent = msg || "Error";
+				orderAlert.classList.remove("d-none");
+			}
 
 		function clearError() {
 			orderAlert.textContent = "";
@@ -903,22 +906,6 @@
 			});
 		}
 
-		// Load order data when Edit button clicked
-		document.addEventListener("click", async function (e) {
-			if (!isPartsPageAlive()) return;
-			const btn = e.target.closest(".editOrderBtn");
-			if (!btn) return;
-			
-			const orderId = btn.getAttribute("data-order-id");
-			if (!orderId) return;
-
-			try {
-				await loadOrderIntoModal(orderId);
-			} catch (err) {
-				showError("Network error while loading order");
-			}
-		});
-
 		// Reset form when modal is closed
 		const orderModal = document.getElementById("orderModal");
 		orderModal?.addEventListener("hidden.bs.modal", function () {
@@ -1067,19 +1054,25 @@
 			loadPartHistory(partId);
 		});
 
+		document.addEventListener("click", function (e) {
+			if (!isPartsPageAlive()) return;
+			const editBtn = e.target.closest(".editOrderBtn");
+			if (!editBtn) return;
+			pendingEditOrderId = String(editBtn.getAttribute("data-order-id") || "").trim();
+		});
+
 		document.addEventListener("show.bs.modal", function (e) {
 			if (!isPartsPageAlive()) return;
 			if (!e.target || e.target.id !== "orderModal") return;
 
 			const trigger = e.relatedTarget;
-			const isEditOpen = !!(trigger && trigger.classList && trigger.classList.contains("editOrderBtn"));
-			if (isEditOpen) {
-				const orderId = String(trigger?.getAttribute("data-order-id") || "").trim();
-				if (orderId) {
-					loadOrderIntoModal(orderId).catch(function () {
-						showError("Network error while loading order");
-					});
-				}
+			const editBtn = trigger ? trigger.closest(".editOrderBtn") : null;
+			const orderId = (editBtn ? String(editBtn.getAttribute("data-order-id") || "").trim() : "") || pendingEditOrderId || "";
+			pendingEditOrderId = "";
+			if (orderId) {
+				loadOrderIntoModal(orderId).catch(function () {
+					showError("Network error while loading order");
+				});
 				return;
 			}
 
@@ -1126,6 +1119,7 @@
 						const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/receive`, {
 							method: "POST"
 						});
+
 						const data = await res.json();
 
 						if (data.ok) {
@@ -1167,6 +1161,9 @@
 				return;
 			}
 		});
+			} catch (err) {
+				console.error("Parts order composer init failed:", err);
+			}
 		}
 
 	// ---- Edit Part Modal Logic ----
@@ -1190,6 +1187,7 @@
 		const miscCheckbox = document.getElementById('miscChargeToggle');
 		const miscBodyParts = document.getElementById('miscChargesBody');
 		const form = createPartModal.querySelector('form[action*="/parts/create"]');
+		let pendingEditPartId = '';
 
 		async function loadPartIntoEditModal(partId) {
 			if (!partId) return;
@@ -1275,26 +1273,17 @@
 		doNotTrackInventoryCheckbox?.addEventListener('change', syncInStockVisibility);
 		coreCheckbox?.addEventListener('change', syncInStockVisibility);
 
-		// Handle Edit Part buttons
 		document.addEventListener('click', function(e) {
-			if (!isPartsPageAlive()) return;
-			const btn = e.target.closest('.editPartBtn');
-			if (!btn) return;
-
-			const partId = btn.getAttribute('data-part-id');
-			if (!partId) return;
-
-			loadPartIntoEditModal(partId).catch(err => {
-				console.error('Error loading part:', err);
-				alert('Error loading part data');
-			});
+			const editBtn = e.target.closest('.editPartBtn');
+			if (!editBtn) return;
+			pendingEditPartId = String(editBtn.getAttribute('data-part-id') || '').trim();
 		});
 
 		createPartModal.addEventListener('show.bs.modal', function (e) {
 			const trigger = e.relatedTarget;
-			const isEditOpen = !!(trigger && trigger.classList && trigger.classList.contains('editPartBtn'));
-			if (!isEditOpen) return;
-			const partId = String(trigger.getAttribute('data-part-id') || '').trim();
+			const editBtn = trigger ? trigger.closest('.editPartBtn') : null;
+			const partId = (editBtn ? String(editBtn.getAttribute('data-part-id') || '').trim() : '') || pendingEditPartId || '';
+			pendingEditPartId = '';
 			if (!partId) return;
 			loadPartIntoEditModal(partId).catch(err => {
 				console.error('Error loading part:', err);
@@ -1386,5 +1375,6 @@
 		document.addEventListener("DOMContentLoaded", initPartsPage, { once: true });
 	} else {
 		initPartsPage();
+	}
 	}
 })();

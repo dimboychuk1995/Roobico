@@ -1419,7 +1419,7 @@ def _recalc_weighted_avg(old_qty: int, old_avg: float, add_qty: int, add_price: 
 
 @parts_bp.get("/api/orders/<order_id>")
 @login_required
-@permission_required("parts.view")
+@permission_required("parts.edit")
 def parts_api_orders_get(order_id: str):
     """
     Get order details for editing.
@@ -1993,7 +1993,7 @@ def parts_api_orders_delete(order_id: str):
 
 @parts_bp.get("/api/<part_id>")
 @login_required
-@permission_required("parts.view")
+@permission_required("parts.edit")
 def parts_api_get(part_id: str):
     """
     AJAX get part data for edit modal.

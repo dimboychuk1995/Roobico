@@ -150,8 +150,8 @@
                             data-bs-toggle="modal" data-bs-target="#partHistoryModal">
                       History
                     </button>
-                    <button type="button" class="btn btn-sm btn-outline-primary editPartBtn" data-part-id="{{ p._id }}"
-                            data-bs-toggle="modal" data-bs-target="#createPartModal">
+                            <button type="button" class="btn btn-sm btn-outline-primary editPartBtn" data-part-id="{{ p._id }}"
+                              data-bs-toggle="modal" data-bs-target="#createPartModal">
                       Edit
                     </button>
                     <form method="post" action="{{ url_for('parts.parts_deactivate', part_id=p._id) }}" class="d-inline">
@@ -291,7 +291,7 @@
                               title="Record payment">
                         <i class="bi bi-cash-coin me-1"></i> Pay
                       </button>
-                      <button type="button" class="btn btn-sm btn-outline-primary editOrderBtn" 
+                            <button type="button" class="btn btn-sm btn-outline-primary editOrderBtn" 
                               data-order-id="{{ o.id }}"
                               data-bs-toggle="modal" data-bs-target="#orderModal">
                         <i class="bi bi-pencil me-1"></i> Edit
@@ -952,6 +952,6 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/parts/parts.js', v='20260313-edit-modal-fix-3') }}"></script>
+<script src="{{ url_for('static', filename='js/parts/parts.js', v='20260313-edit-modal-fix-16') }}"></script>
 
 {% endblock %}
