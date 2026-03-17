@@ -223,7 +223,7 @@
           <table class="table table-sm align-middle">
             <thead>
               <tr>
-                <th>Work Order ID</th>
+                <th>WO #</th>
                 <th>Customer</th>
                 <th>Amount</th>
                 <th>Method</th>
@@ -239,7 +239,7 @@
         try {
           const createdAt = formatDateMMDDYYYY(payment.created_at);
 
-          const woId = String(payment.work_order_id || "").substring(0, 8) || "—";
+          const woNumber = String(payment.wo_number || "").trim() || "—";
           const customer = String(payment.customer || "").trim() || "—";
           const amount = parseFloat(payment.amount) || 0;
           const method = String(payment.payment_method || "cash").toLowerCase();
@@ -247,7 +247,7 @@
 
           html += `
             <tr>
-              <td><code>${woId}</code></td>
+              <td><span class="badge bg-secondary">${woNumber}</span></td>
               <td>${customer}</td>
               <td class="fw-semibold">$${amount.toFixed(2)}</td>
               <td><span class="badge bg-secondary">${method}</span></td>

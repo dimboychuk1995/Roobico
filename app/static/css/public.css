@@ -516,7 +516,7 @@ textarea.form-control:focus {
 
 .table > :not(caption) > * > * {
   border-bottom-color: #e1e8e3;
-  padding: 0 !important;
+  padding: 0.42rem 0.68rem !important;
   vertical-align: middle;
 }
 
@@ -693,6 +693,6 @@ a:hover {
   }
 
   .table > :not(caption) > * > * {
-    padding: 0 !important;
+    padding: 0.34rem 0.5rem !important;
   }
 }

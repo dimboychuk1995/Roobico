@@ -2776,7 +2776,7 @@ def api_get_all_payments():
         work_orders = list(
             shop_db.work_orders.find(
                 {"_id": {"$in": work_order_ids}, "shop_id": shop_id},
-                {"customer_id": 1},
+                {"customer_id": 1, "wo_number": 1},
             )
         )
         for wo in work_orders:
@@ -2801,6 +2801,7 @@ def api_get_all_payments():
         {
             "id": str(p.get("_id")),
             "work_order_id": str(p.get("work_order_id")) if p.get("work_order_id") else "",
+            "wo_number": (work_orders_map.get(p.get("work_order_id")) or {}).get("wo_number") or "-",
             "customer": customers_map.get((work_orders_map.get(p.get("work_order_id")) or {}).get("customer_id")) or "-",
             "amount": round2(p.get("amount") or 0),
             "payment_method": p.get("payment_method") or "cash",
