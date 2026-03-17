@@ -229,6 +229,7 @@
                 <th>Method</th>
                 <th>Date</th>
                 <th>Notes</th>
+                <th class="text-end">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -252,6 +253,7 @@
               <td><span class="badge bg-secondary">${method}</span></td>
               <td><small>${createdAt}</small></td>
               <td>${notes ? `<small>${notes}</small>` : "<small class='text-muted'>—</small>"}</td>
+              <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger js-delete-work-order-payment" data-payment-id="${String(payment.id || "")}" title="Delete payment">Delete</button></td>
             </tr>
           `;
         } catch (itemErr) {
@@ -283,6 +285,33 @@
       if (event?.target?.id !== "tab-payments") return;
       if (!paymentsLoaded) {
         loadPaymentsData();
+      }
+    });
+  }
+
+  if (!body || body.dataset.workOrdersDeletePaymentBound !== "1") {
+    if (body) body.dataset.workOrdersDeletePaymentBound = "1";
+    document.addEventListener("click", async function (event) {
+      const btn = event.target.closest(".js-delete-work-order-payment");
+      if (!btn) return;
+
+      const paymentId = String(btn.dataset.paymentId || "").trim();
+      if (!paymentId) return;
+
+      if (!window.confirm("Delete this payment?")) return;
+
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Deleting...";
+
+      try {
+        await postJson(`/work_orders/api/payments/${encodeURIComponent(paymentId)}/delete`, {});
+        alert("Payment deleted successfully!");
+        window.location.reload();
+      } catch (err) {
+        alert(err.message || "Failed to delete payment.");
+        btn.disabled = false;
+        btn.textContent = originalText;
       }
     });
   }

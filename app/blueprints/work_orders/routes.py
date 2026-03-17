@@ -58,6 +58,59 @@ def round2(v):
     return round(n + 1e-12, 2)
 
 
+def _work_order_grand_total(wo: dict) -> float:
+    totals_doc = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
+    return round2(
+        totals_doc.get("grand_total")
+        if totals_doc.get("grand_total") is not None
+        else wo.get("grand_total") or 0
+    )
+
+
+def _sum_active_work_order_payments(shop_db, wo_id) -> float:
+    if shop_db is None or not wo_id:
+        return 0.0
+
+    payments = shop_db.work_order_payments.find({"work_order_id": wo_id, "is_active": True})
+    return round2(sum(round2(payment.get("amount") or 0) for payment in payments))
+
+
+def _build_work_order_payment_summary(wo: dict, paid_amount: float) -> dict:
+    grand_total = _work_order_grand_total(wo or {})
+    paid = round2(max(0.0, paid_amount or 0.0))
+    remaining_balance = round2(max(0.0, grand_total - paid))
+    status = "paid" if remaining_balance <= 0.01 else "open"
+    return {
+        "grand_total": grand_total,
+        "paid_amount": paid,
+        "remaining_balance": remaining_balance,
+        "status": status,
+        "is_fully_paid": status == "paid",
+    }
+
+
+def _sync_work_order_payment_state(shop_db, wo: dict, user_id, now):
+    if shop_db is None or not isinstance(wo, dict):
+        return None
+
+    wo_id = wo.get("_id")
+    if not wo_id:
+        return None
+
+    summary = _build_work_order_payment_summary(wo, _sum_active_work_order_payments(shop_db, wo_id))
+    shop_db.work_orders.update_one(
+        {"_id": wo_id},
+        {
+            "$set": {
+                "status": summary["status"],
+                "updated_at": now,
+                "updated_by": user_id,
+            }
+        },
+    )
+    return summary
+
+
 def as_bool(v) -> bool:
     if isinstance(v, bool):
         return v
@@ -2477,15 +2530,8 @@ def api_work_order_payment(work_order_id):
     if amount is None or not (isinstance(amount, (int, float)) and amount > 0):
         return jsonify({"ok": False, "error": "invalid_amount"}), 200
 
-    # Get work order grand total
-    totals_doc = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
-    grand_total = round2(totals_doc.get("grand_total") if totals_doc.get("grand_total") is not None else wo.get("grand_total") or 0)
-
-    # Get payments already made
-    existing_payments = list(
-        shop_db.work_order_payments.find({"work_order_id": wo_id, "is_active": True})
-    )
-    paid_amount = round2(sum(round2(p.get("amount") or 0) for p in existing_payments))
+    grand_total = _work_order_grand_total(wo)
+    paid_amount = _sum_active_work_order_payments(shop_db, wo_id)
 
     # Calculate new balance
     new_paid_amount = round2(paid_amount + amount)
@@ -2518,26 +2564,19 @@ def api_work_order_payment(work_order_id):
     payment_result = shop_db.work_order_payments.insert_one(payment_doc)
     payment_id = payment_result.inserted_id
 
-    # Check if fully paid - if so, update work order status
-    is_fully_paid = remaining_balance <= 0.01  # Allow 1 cent rounding difference
-    if is_fully_paid:
-        shop_db.work_orders.update_one(
-            {"_id": wo_id},
-            {
-                "$set": {
-                    "status": "paid",
-                    "updated_at": now,
-                    "updated_by": user_id,
-                }
-            }
-        )
+    refreshed_wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True}) or wo
+    payment_summary = _sync_work_order_payment_state(shop_db, refreshed_wo, user_id, now) or {
+        "status": "open",
+        "is_fully_paid": False,
+    }
 
     return jsonify({
         "ok": True,
         "payment_id": str(payment_id),
         "amount_paid": round2(new_paid_amount),
         "remaining_balance": remaining_balance,
-        "is_fully_paid": is_fully_paid
+        "status": payment_summary["status"],
+        "is_fully_paid": payment_summary["is_fully_paid"],
     }), 200
 
 
@@ -2560,16 +2599,12 @@ def api_get_work_order_payments(work_order_id):
     if not wo:
         return jsonify({"ok": False, "error": "work_order_not_found"}), 200
 
-    totals_doc = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
-    grand_total = round2(totals_doc.get("grand_total") if totals_doc.get("grand_total") is not None else wo.get("grand_total") or 0)
-
     payments = list(
         shop_db.work_order_payments.find({"work_order_id": wo_id, "is_active": True})
         .sort([("created_at", -1)])
     )
 
-    paid_amount = round2(sum(round2(p.get("amount") or 0) for p in payments))
-    remaining_balance = round2(grand_total - paid_amount)
+    summary = _build_work_order_payment_summary(wo, sum(round2(p.get("amount") or 0) for p in payments))
 
     payment_list = [
         {
@@ -2584,11 +2619,70 @@ def api_get_work_order_payments(work_order_id):
 
     return jsonify({
         "ok": True,
-        "grand_total": grand_total,
-        "paid_amount": paid_amount,
-        "remaining_balance": remaining_balance,
+        "grand_total": summary["grand_total"],
+        "paid_amount": summary["paid_amount"],
+        "remaining_balance": summary["remaining_balance"],
+        "status": summary["status"],
         "payments": payment_list
     }), 200
+
+
+@work_orders_bp.post("/work_orders/api/payments/<payment_id>/delete")
+@login_required
+@permission_required("work_orders.create")
+def api_delete_work_order_payment(payment_id):
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    pay_id = oid(payment_id)
+    if not pay_id:
+        return jsonify({"ok": False, "error": "invalid_payment_id"}), 200
+
+    payment = shop_db.work_order_payments.find_one({"_id": pay_id, "shop_id": shop["_id"], "is_active": True})
+    if not payment:
+        return jsonify({"ok": False, "error": "payment_not_found"}), 200
+
+    wo_id = payment.get("work_order_id")
+    wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True})
+    if not wo:
+        return jsonify({"ok": False, "error": "work_order_not_found"}), 200
+
+    now = utcnow()
+    user_id = current_user_id()
+
+    shop_db.work_order_payments.update_one(
+        {"_id": pay_id},
+        {
+            "$set": {
+                "is_active": False,
+                "deleted_at": now,
+                "deleted_by": user_id,
+                "updated_at": now,
+                "updated_by": user_id,
+            }
+        },
+    )
+
+    refreshed_wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True}) or wo
+    summary = _sync_work_order_payment_state(shop_db, refreshed_wo, user_id, now) or {
+        "status": "open",
+        "paid_amount": 0.0,
+        "remaining_balance": _work_order_grand_total(wo),
+        "is_fully_paid": False,
+    }
+
+    return jsonify(
+        {
+            "ok": True,
+            "payment_id": str(pay_id),
+            "work_order_id": str(wo_id) if wo_id else "",
+            "status": summary["status"],
+            "amount_paid": summary["paid_amount"],
+            "remaining_balance": summary["remaining_balance"],
+            "is_fully_paid": summary["is_fully_paid"],
+        }
+    ), 200
 
 
 @work_orders_bp.get("/work_orders/api/work_orders/all-payments")

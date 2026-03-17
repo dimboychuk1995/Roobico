@@ -1781,6 +1781,63 @@ def parts_api_orders_payments(order_id: str):
     )
 
 
+@parts_bp.post("/api/payments/<payment_id>/delete")
+@login_required
+@permission_required("parts.edit")
+def parts_api_delete_payment(payment_id: str):
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if orders_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop database not configured for this shop."}), 400
+
+    pay_oid = _oid(payment_id)
+    if not pay_oid:
+        return jsonify({"ok": False, "error": "Invalid payment id."}), 400
+
+    payments_coll = orders_coll.database.parts_order_payments
+    payment = payments_coll.find_one({"_id": pay_oid, "shop_id": shop["_id"], "is_active": True})
+    if not payment:
+        return jsonify({"ok": False, "error": "Payment not found."}), 404
+
+    order_oid = payment.get("parts_order_id")
+    order = orders_coll.find_one({"_id": order_oid, "shop_id": shop["_id"], "is_active": {"$ne": False}})
+    if not order:
+        return jsonify({"ok": False, "error": "Order not found."}), 404
+
+    now = utcnow()
+    user_oid = _oid(session.get(SESSION_USER_ID))
+
+    payments_coll.update_one(
+        {"_id": pay_oid},
+        {
+            "$set": {
+                "is_active": False,
+                "deleted_at": now,
+                "deleted_by": user_oid,
+                "updated_at": now,
+                "updated_by": user_oid,
+            }
+        },
+    )
+
+    refreshed_order = orders_coll.find_one({"_id": order_oid, "shop_id": shop["_id"], "is_active": {"$ne": False}}) or order
+    _sync_parts_order_payment_state(orders_coll, payments_coll, refreshed_order or {}, user_oid, now)
+
+    refreshed_paid_amount = _sum_active_order_payments(payments_coll, order_oid)
+    refreshed_summary = _build_parts_order_payment_summary(refreshed_order or order, refreshed_paid_amount)
+
+    return jsonify(
+        {
+            "ok": True,
+            "payment_id": str(pay_oid),
+            "parts_order_id": str(order_oid) if order_oid else "",
+            "payment_status": refreshed_summary.get("payment_status") or "unpaid",
+            "amount_paid": float(refreshed_summary.get("paid_amount") or 0.0),
+            "remaining_balance": float(refreshed_summary.get("remaining_balance") or 0.0),
+            "is_fully_paid": (refreshed_summary.get("payment_status") == "paid"),
+        }
+    )
+
+
 @parts_bp.post("/api/orders/<order_id>/receive")
 @login_required
 @permission_required("parts.edit")

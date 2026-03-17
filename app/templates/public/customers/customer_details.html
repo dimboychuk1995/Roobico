@@ -79,9 +79,9 @@
                 <select name="date_preset" class="form-select form-select-sm date-preset-select" aria-label="Date range preset">
                   <option value="today" {% if date_preset == 'today' %}selected{% endif %}>Today</option>
                   <option value="yesterday" {% if date_preset == 'yesterday' %}selected{% endif %}>Yesterday</option>
-                  <option value="this_week" {% if (date_preset or 'this_week') == 'this_week' %}selected{% endif %}>This Week</option>
+                  <option value="this_week" {% if date_preset == 'this_week' %}selected{% endif %}>This Week</option>
                   <option value="last_week" {% if date_preset == 'last_week' %}selected{% endif %}>Last Week</option>
-                  <option value="this_month" {% if date_preset == 'this_month' %}selected{% endif %}>This Month</option>
+                  <option value="this_month" {% if (date_preset or 'this_month') == 'this_month' %}selected{% endif %}>This Month</option>
                   <option value="last_month" {% if date_preset == 'last_month' %}selected{% endif %}>Last Month</option>
                   <option value="this_quarter" {% if date_preset == 'this_quarter' %}selected{% endif %}>This Quarter</option>
                   <option value="last_quarter" {% if date_preset == 'last_quarter' %}selected{% endif %}>Last Quarter</option>
@@ -237,9 +237,9 @@
                 <select name="date_preset" class="form-select form-select-sm date-preset-select" aria-label="Payments date range preset">
                   <option value="today" {% if date_preset == 'today' %}selected{% endif %}>Today</option>
                   <option value="yesterday" {% if date_preset == 'yesterday' %}selected{% endif %}>Yesterday</option>
-                  <option value="this_week" {% if (date_preset or 'this_week') == 'this_week' %}selected{% endif %}>This Week</option>
+                  <option value="this_week" {% if date_preset == 'this_week' %}selected{% endif %}>This Week</option>
                   <option value="last_week" {% if date_preset == 'last_week' %}selected{% endif %}>Last Week</option>
-                  <option value="this_month" {% if date_preset == 'this_month' %}selected{% endif %}>This Month</option>
+                  <option value="this_month" {% if (date_preset or 'this_month') == 'this_month' %}selected{% endif %}>This Month</option>
                   <option value="last_month" {% if date_preset == 'last_month' %}selected{% endif %}>Last Month</option>
                   <option value="this_quarter" {% if date_preset == 'this_quarter' %}selected{% endif %}>This Quarter</option>
                   <option value="last_quarter" {% if date_preset == 'last_quarter' %}selected{% endif %}>Last Quarter</option>
@@ -274,6 +274,7 @@
                   <th>Method</th>
                   <th>Notes</th>
                   <th>Created</th>
+                  <th class="text-end">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -288,6 +289,9 @@
                     <td>{{ item.payment_method }}</td>
                     <td>{{ item.notes if item.notes else '-' }}</td>
                     <td>{{ item.created_at }}</td>
+                    <td class="text-end">
+                      <button type="button" class="btn btn-sm btn-outline-danger js-delete-work-order-payment" data-payment-id="{{ item.id }}" title="Delete payment">Delete</button>
+                    </td>
                   </tr>
                 {% endfor %}
               </tbody>
@@ -333,9 +337,9 @@
                 <select name="date_preset" class="form-select form-select-sm date-preset-select" aria-label="Estimates date range preset">
                   <option value="today" {% if date_preset == 'today' %}selected{% endif %}>Today</option>
                   <option value="yesterday" {% if date_preset == 'yesterday' %}selected{% endif %}>Yesterday</option>
-                  <option value="this_week" {% if (date_preset or 'this_week') == 'this_week' %}selected{% endif %}>This Week</option>
+                  <option value="this_week" {% if date_preset == 'this_week' %}selected{% endif %}>This Week</option>
                   <option value="last_week" {% if date_preset == 'last_week' %}selected{% endif %}>Last Week</option>
-                  <option value="this_month" {% if date_preset == 'this_month' %}selected{% endif %}>This Month</option>
+                  <option value="this_month" {% if (date_preset or 'this_month') == 'this_month' %}selected{% endif %}>This Month</option>
                   <option value="last_month" {% if date_preset == 'last_month' %}selected{% endif %}>Last Month</option>
                   <option value="this_quarter" {% if date_preset == 'this_quarter' %}selected{% endif %}>This Quarter</option>
                   <option value="last_quarter" {% if date_preset == 'last_quarter' %}selected{% endif %}>Last Quarter</option>
@@ -503,5 +507,5 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/customers/customers.js', v='20260307-customers-js') }}"></script>
+<script src="{{ url_for('static', filename='js/customers/customers.js', v='20260316-payments-delete') }}"></script>
 {% endblock %}

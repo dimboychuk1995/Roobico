@@ -107,7 +107,7 @@ def _local_day_start_to_utc(day_value, tzinfo):
     return datetime.combine(day_value, datetime.min.time(), tzinfo=tzinfo).astimezone(timezone.utc)
 
 
-def build_date_range_filters(args, from_key: str = "date_from", to_key: str = "date_to", preset_key: str = "date_preset", default_preset: str = "this_week"):
+def build_date_range_filters(args, from_key: str = "date_from", to_key: str = "date_to", preset_key: str = "date_preset", default_preset: str = "this_month"):
     date_from_raw = (args.get(from_key) or "").strip()
     date_to_raw = (args.get(to_key) or "").strip()
     preset_raw = (args.get(preset_key) or "").strip().lower()

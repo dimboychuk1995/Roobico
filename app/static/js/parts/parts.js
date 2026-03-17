@@ -480,6 +480,39 @@
 			}
 		});
 
+		document.addEventListener("click", async function (e) {
+			if (!isPartsPageAlive()) return;
+
+			const btn = e.target.closest(".js-delete-parts-payment");
+			if (!btn) return;
+
+			const paymentId = String(btn.getAttribute("data-payment-id") || "").trim();
+			if (!paymentId) return;
+
+			if (!window.confirm("Delete this payment?")) return;
+
+			const originalText = btn.textContent;
+			btn.disabled = true;
+			btn.textContent = "Deleting...";
+
+			try {
+				const res = await fetch(`/parts/api/payments/${encodeURIComponent(paymentId)}/delete`, {
+					method: "POST",
+					headers: { "Accept": "application/json" },
+				});
+				const data = await res.json();
+				if (!res.ok || !data || !data.ok) {
+					throw new Error((data && (data.message || data.error)) || "Failed to delete payment");
+				}
+
+				location.reload();
+			} catch (err) {
+				alert(err.message || "Failed to delete payment");
+				btn.disabled = false;
+				btn.textContent = originalText;
+			}
+		});
+
 		function showVendorDropdown() {
 			vendorDropdown.style.display = "block";
 		}

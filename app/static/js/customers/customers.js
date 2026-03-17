@@ -45,4 +45,41 @@
 
   bindRowNavigation(".js-customer-row");
   bindRowNavigation(".js-unit-row");
+
+  document.addEventListener("click", async function (event) {
+    var btn = event.target.closest(".js-delete-work-order-payment");
+    if (!btn) {
+      return;
+    }
+
+    var paymentId = String(btn.getAttribute("data-payment-id") || "").trim();
+    if (!paymentId) {
+      return;
+    }
+
+    if (!window.confirm("Delete this payment?")) {
+      return;
+    }
+
+    var originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "Deleting...";
+
+    try {
+      var res = await fetch("/work_orders/api/payments/" + encodeURIComponent(paymentId) + "/delete", {
+        method: "POST",
+        headers: { "Accept": "application/json" }
+      });
+      var data = await res.json();
+      if (!res.ok || !data || data.ok !== true) {
+        throw new Error((data && (data.error || data.message)) || "Failed to delete payment.");
+      }
+
+      window.location.reload();
+    } catch (err) {
+      window.alert(err.message || "Failed to delete payment.");
+      btn.disabled = false;
+      btn.textContent = originalText;
+    }
+  });
 })();
