@@ -1140,7 +1140,7 @@ def parts_create():
     if misc_has_charge:
         import re
 
-        misc_re = re.compile(r"^misc_charges\[(\d+)\]\[(description|price)\]$")
+        misc_re = re.compile(r"^misc_charges\[(\d+)\]\[(description|price|taxable)\]$")
         misc_map: dict[int, dict] = {}
 
         for key, val in request.form.items():
@@ -1156,6 +1156,8 @@ def parts_create():
                 item["description"] = (val or "").strip()
             elif field == "price":
                 item["price"] = (val or "").strip()
+            elif field == "taxable":
+                item["taxable"] = (val or "").strip()
 
         for idx in sorted(misc_map.keys()):
             item = misc_map[idx]
@@ -1172,6 +1174,7 @@ def parts_create():
             misc_charges.append({
                 "description": desc,
                 "price": float(price),
+                "taxable": item.get("taxable", "") in ("1", "true", "on"),
             })
 
     # ✅ PyMongo Collection нельзя проверять через bool()
@@ -2411,9 +2414,18 @@ def parts_api_update(part_id: str):
         core_cost = 0.0
 
     misc_has_charge = data.get("misc_has_charge", False)
-    misc_charges = data.get("misc_charges", []) or []
-    if misc_has_charge and not isinstance(misc_charges, list):
+    misc_charges_raw = data.get("misc_charges", []) or []
+    if misc_has_charge and not isinstance(misc_charges_raw, list):
         return jsonify({"ok": False, "error": "Invalid misc charges"}), 400
+    misc_charges = [
+        {
+            "description": str(ch.get("description") or "").strip(),
+            "price": float(ch.get("price") or 0),
+            "taxable": bool(ch.get("taxable", True)),
+        }
+        for ch in misc_charges_raw
+        if isinstance(ch, dict) and str(ch.get("description") or "").strip()
+    ]
 
     # Validate references
     vendor_oid, err = (

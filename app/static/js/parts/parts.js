@@ -20,15 +20,19 @@
 			syncCoreUi();
 		}
 
-			function buildMiscRow(idx, desc, price) {
+			function buildMiscRow(idx, desc, price, taxable) {
 				const tr = document.createElement("tr");
 				tr.dataset.index = String(idx);
+				const isChecked = taxable !== false;
 				tr.innerHTML = `
 					<td>
 						<input class="form-control form-control-sm misc-desc" name="misc_charges[${idx}][description]" value="${desc || ""}" maxlength="200" />
 					</td>
 					<td class="text-end">
 						<input class="form-control form-control-sm text-end misc-price" name="misc_charges[${idx}][price]" type="number" min="0" step="0.01" value="${price || ""}" />
+					</td>
+					<td class="text-center">
+						<input class="form-check-input misc-taxable" name="misc_charges[${idx}][taxable]" type="checkbox" value="1" ${isChecked ? "checked" : ""}>
 					</td>
 					<td class="text-end">
 						<button type="button" class="btn btn-sm btn-outline-danger remove-misc-btn">Remove</button>
@@ -44,8 +48,10 @@
 					tr.dataset.index = String(idx);
 					const desc = tr.querySelector(".misc-desc");
 					const price = tr.querySelector(".misc-price");
+					const taxable = tr.querySelector(".misc-taxable");
 					if (desc) desc.name = `misc_charges[${idx}][description]`;
 					if (price) price.name = `misc_charges[${idx}][price]`;
+					if (taxable) taxable.name = `misc_charges[${idx}][taxable]`;
 				});
 			}
 
@@ -1505,20 +1511,7 @@
 				miscBodyParts.innerHTML = '';
 				if (item.misc_charges && item.misc_charges.length > 0) {
 					item.misc_charges.forEach((charge, idx) => {
-						const tr = document.createElement('tr');
-						tr.dataset.index = String(idx);
-						tr.innerHTML = `
-							<td>
-								<input class="form-control form-control-sm misc-desc" name="misc_charges[${idx}][description]" value="${charge.description || ''}" maxlength="200" />
-							</td>
-							<td class="text-end">
-								<input class="form-control form-control-sm text-end misc-price" name="misc_charges[${idx}][price]" type="number" min="0" step="0.01" value="${charge.price || ''}" />
-							</td>
-							<td class="text-end">
-								<button type="button" class="btn btn-sm btn-outline-danger remove-misc-btn">Remove</button>
-							</td>
-						`;
-						miscBodyParts.appendChild(tr);
+						miscBodyParts.appendChild(buildMiscRow(idx, charge.description, charge.price, charge.taxable));
 					});
 				}
 			}
@@ -1628,8 +1621,9 @@
 						rows.forEach(tr => {
 							const desc = tr.querySelector('.misc-desc').value.trim();
 							const price = parseFloat(tr.querySelector('.misc-price').value || '0');
+							const taxableEl = tr.querySelector('.misc-taxable');
 							if (desc && price >= 0) {
-								formData.misc_charges.push({ description: desc, price: price });
+								formData.misc_charges.push({ description: desc, price: price, taxable: !!(taxableEl && taxableEl.checked) });
 							}
 						});
 					}

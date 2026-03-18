@@ -2,6 +2,8 @@
   "use strict";
 
   let coreChargeDefaultEnabled = true;
+  let currentSalesTaxRate = 0;
+  let currentCustomerTaxable = false;
   const APP_TIMEZONE = document.body?.dataset?.appTimezone || "UTC";
 
   function $(id) { return document.getElementById(id); }
@@ -170,6 +172,13 @@
     const found = customers.find(x => String(x.id || "") === String(customerId));
     if (!found) return "";
     return String(found.default_labor_rate || "").trim();
+  }
+
+  function getCustomerTaxable(customers, customerId) {
+    if (!Array.isArray(customers) || !customerId) return false;
+    const found = customers.find(x => String(x.id || "") === String(customerId));
+    if (!found) return false;
+    return !!found.taxable;
   }
 
   function normalizeRateKey(v) {
@@ -616,10 +625,24 @@
       }
     }
     miscTotal = round2(miscTotalFromBreakdown);
+
+    // Calculate taxable portion of misc separately (for sales tax base)
+    let miscTaxableTotal = 0;
+    for (const rawItem of (firstRow ? getMiscItemsArray(firstRow) : [])) {
+      if (rawItem?.taxable === false) continue;
+      const unitPrice = toNum(rawItem?.price);
+      if (!Number.isFinite(unitPrice) || unitPrice <= 0) continue;
+      const itemQty = Number(rawItem?.quantity || 1);
+      if (!Number.isFinite(itemQty) || itemQty <= 0) continue;
+      miscTaxableTotal += round2(unitPrice * itemQty);
+    }
+    miscTaxableTotal = round2(miscTaxableTotal);
+
     return {
       partsTotal: partsBaseTotal > 0 ? partsBaseTotal : null,
       coreTotal,
       miscTotal,
+      miscTaxableTotal,
       miscBreakdown: Array.from(miscBreakdownMap.values())
         .map((row) => ({
           description: String(row.description || "").trim() || "Misc charge",
@@ -678,6 +701,7 @@
     const partsTotal = partsTotals.partsTotal;
     const coreTotal = partsTotals.coreTotal;
     const miscTotal = partsTotals.miscTotal;
+    const miscTaxableTotal = partsTotals.miscTaxableTotal || 0;
     const miscBreakdown = partsTotals.miscBreakdown;
     const supplyTotal = 0;
     setBlockTotalsUI(blockEl, laborTotal, partsTotal, coreTotal, miscTotal, supplyTotal, miscBreakdown);
@@ -691,6 +715,7 @@
       parts,
       core,
       misc,
+      miscTaxable: round2(miscTaxableTotal),
       supply,
       total: round2(labor + parts + core + misc),
     };
@@ -702,6 +727,7 @@
     let partsGrand = 0;
     let coreGrand = 0;
     let miscGrand = 0;
+    let miscTaxableGrand = 0;
     let supplyGrand = 0;
     let grand = 0;
     for (const b of blocks) {
@@ -710,18 +736,23 @@
       partsGrand += totals.parts;
       coreGrand += totals.core;
       miscGrand += totals.misc;
+      miscTaxableGrand += totals.miscTaxable || 0;
       grand += totals.total;
     }
     laborGrand = round2(laborGrand);
     partsGrand = round2(partsGrand);
     coreGrand = round2(coreGrand);
     miscGrand = round2(miscGrand);
+    miscTaxableGrand = round2(miscTaxableGrand);
     supplyGrand = (Number.isFinite(shopSupplyPct) && shopSupplyPct > 0)
       ? round2(laborGrand * (shopSupplyPct / 100))
       : 0;
+    const salesTaxGrand = (currentCustomerTaxable && Number.isFinite(currentSalesTaxRate) && currentSalesTaxRate > 0)
+      ? round2((partsGrand + miscTaxableGrand) * currentSalesTaxRate)
+      : 0;
     const partsGrandTotal = round2(partsGrand + coreGrand + miscGrand);
     const laborGrandTotal = round2(laborGrand + supplyGrand);
-    grand = round2(grand + supplyGrand);
+    grand = round2(grand + supplyGrand + salesTaxGrand);
     supplyGrand = round2(supplyGrand);
     grand = round2(grand);
 
@@ -734,6 +765,11 @@
     if (partsGrandEl) partsGrandEl.textContent = blocks.length ? `$${money(partsGrandTotal)}` : "—";
     const partsGrandBaseEl = $("partsGrandBaseDisplay");
     if (partsGrandBaseEl) partsGrandBaseEl.textContent = blocks.length ? `$${money(partsGrand)}` : "—";
+
+    const salesTaxRateEl = $("salesTaxRateLabel");
+    if (salesTaxRateEl) salesTaxRateEl.textContent = `${(round2((currentSalesTaxRate || 0) * 10000) / 100).toFixed(2)}%`;
+    const salesTaxEl = $("salesTaxGrandTotalDisplay");
+    if (salesTaxEl) salesTaxEl.textContent = blocks.length ? `$${money(salesTaxGrand)}` : "—";
 
     const coreGrandWrap = $("coreGrandTotalWrap");
     const coreGrandEl = $("coreGrandTotalDisplay");
@@ -817,6 +853,25 @@
     const supplyGrandText = $("shopSupplyGrandTotalDisplay")?.textContent || "0";
     supplySum = round2(parseMoneyText(supplyGrandText));
 
+    // Compute misc taxable total by scanning all blocks' misc items
+    let miscTaxableSum = 0;
+    blocks.forEach((bEl) => {
+      const tbody = bEl.querySelector(".partsTbody");
+      if (!tbody) return;
+      const firstRow = tbody.querySelector("tr.parts-row");
+      if (!firstRow) return;
+      const items = getMiscItemsArray(firstRow);
+      for (const item of items) {
+        if (item?.taxable === false) continue;
+        const unitPrice = toNum(item?.price);
+        const itemQty = Number(item?.quantity || 1);
+        if (Number.isFinite(unitPrice) && unitPrice > 0 && Number.isFinite(itemQty) && itemQty > 0) {
+          miscTaxableSum += round2(unitPrice * itemQty);
+        }
+      }
+    });
+    miscTaxableSum = round2(miscTaxableSum);
+
     // grand_total берём из UI, но если там "—" / пусто — пересчитаем из блоков
     const grandText = $("grandTotalDisplay")?.textContent || "";
     const grandUi = round2(parseMoneyText(grandText));
@@ -824,6 +879,9 @@
 
     const laborTotalSum = round2(laborBaseSum + supplySum);
     const partsTotalSum = round2(partsBaseSum + coreSum + miscSum);
+    const salesTaxSum = (currentCustomerTaxable && Number.isFinite(currentSalesTaxRate) && currentSalesTaxRate > 0)
+      ? round2((partsBaseSum + miscTaxableSum) * currentSalesTaxRate)
+      : 0;
 
     return {
       labor: round2(laborBaseSum),
@@ -832,9 +890,14 @@
       parts_total: partsTotalSum,
       core_total: round2(coreSum),
       misc_total: round2(miscSum),
+      misc_taxable_total: miscTaxableSum,
       cost_total: round2(partsBaseSum),
       shop_supply_total: round2(supplySum),
-      grand_total: grandFinal,
+      parts_taxable_total: round2(partsBaseSum + miscTaxableSum),
+      sales_tax_rate: Number.isFinite(currentSalesTaxRate) ? Number(currentSalesTaxRate.toFixed(6)) : 0,
+      sales_tax_total: salesTaxSum,
+      is_taxable: !!currentCustomerTaxable,
+      grand_total: round2(grandFinal > 0 ? grandFinal : (laborTotalSum + partsTotalSum + salesTaxSum)),
       labors: outBlocks,
     };
   }
@@ -882,6 +945,8 @@
     const partsGrandBaseStored = toNum(totals.parts);
     const coreGrand = toNum(totals.core_total);
     const miscGrand = toNum(totals.misc_total);
+    const salesTaxGrand = toNum(totals.sales_tax_total);
+    const salesTaxRate = toNum(totals.sales_tax_rate);
     const grand = toNum(totals.grand_total);
     const supplyGrandStored = toNum(totals.shop_supply_total);
     const supplyGrandCalculated = (
@@ -908,7 +973,7 @@
       ? round2((Number.isFinite(partsGrandBase) ? partsGrandBase : 0) + (Number.isFinite(coreGrand) ? coreGrand : 0) + (Number.isFinite(miscGrand) ? miscGrand : 0))
       : null;
     const calculatedGrand = (Number.isFinite(laborGrandTotal) && Number.isFinite(partsGrandTotal))
-      ? round2(laborGrandTotal + partsGrandTotal)
+      ? round2(laborGrandTotal + partsGrandTotal + (Number.isFinite(salesTaxGrand) ? salesTaxGrand : 0))
       : null;
 
     const laborGrandEl = $("laborGrandTotalDisplay");
@@ -920,6 +985,15 @@
     if (partsGrandEl && Number.isFinite(partsGrandTotal)) partsGrandEl.textContent = `$${money(round2(partsGrandTotal))}`;
     const partsGrandBaseEl = $("partsGrandBaseDisplay");
     if (partsGrandBaseEl && Number.isFinite(partsGrandBase)) partsGrandBaseEl.textContent = `$${money(round2(partsGrandBase))}`;
+
+    const salesTaxRateEl = $("salesTaxRateLabel");
+    const finalRate = Number.isFinite(salesTaxRate) ? salesTaxRate : (Number.isFinite(currentSalesTaxRate) ? currentSalesTaxRate : 0);
+    if (salesTaxRateEl) salesTaxRateEl.textContent = `${(round2(finalRate * 10000) / 100).toFixed(2)}%`;
+    const salesTaxEl = $("salesTaxGrandTotalDisplay");
+    if (salesTaxEl) {
+      const finalTax = Number.isFinite(salesTaxGrand) ? salesTaxGrand : 0;
+      salesTaxEl.textContent = `$${money(round2(finalTax))}`;
+    }
 
     const coreGrandWrap = $("coreGrandTotalWrap");
     const coreGrandEl = $("coreGrandTotalDisplay");
@@ -1138,6 +1212,7 @@
       .map((ch) => ({
         description: String(ch?.description || "").trim(),
         price: Number.isFinite(toNum(ch?.price)) ? round2(toNum(ch?.price)) : null,
+        taxable: ch?.taxable !== false,
       }))
       .filter((x) => x.description);
 
@@ -1833,7 +1908,7 @@
     input.value = JSON.stringify(items || []);
   }
 
-  function addMiscChargeToRow(tr, description, quantity, price) {
+  function addMiscChargeToRow(tr, description, quantity, price, taxable) {
     const desc = String(description || "").trim();
     const qty = Number(quantity || 1);
     const prc = toNum(price);
@@ -1848,6 +1923,7 @@
       quantity: qty,
       price: round2(prc),
       manual: true,
+      taxable: taxable !== false,
     });
     saveMiscItemsArray(tr, items);
     return true;
@@ -1881,6 +1957,7 @@
       const price = Number(item.price || 0);
       const total = round2(qty * price);
       const isManual = item.manual === true;
+      const isTaxable = item.taxable !== false;
       
       const row = document.createElement("tr");
       row.dataset.miscIndex = String(idx);
@@ -1893,6 +1970,9 @@
         </td>
         <td>
           <input type="number" class="form-control form-control-sm misc-price-input" value="${price}" step="0.01" min="0" max="999999" placeholder="Price">
+        </td>
+        <td class="text-center align-middle">
+          <input type="checkbox" class="form-check-input misc-taxable-input" ${isTaxable ? "checked" : ""} title="Taxable">
         </td>
         <td class="misc-total-display align-middle" style="font-weight: 500;">$${money(total)}</td>
         <td>
@@ -1955,10 +2035,12 @@
     const mechanicsData = readJsonScript("mechanicsData", []);
     const pricing = readJsonScript("partsPricingRulesData", null);
     const shopSupplyData = readJsonScript("shopSupplyData", { percentage: 0 });
+    const salesTaxData = readJsonScript("salesTaxData", { rate: 0, zip_code: "" });
     const coreChargeData = readJsonScript("coreChargeDefaultData", { enabled: true });
     const totalsSnapshot = readJsonScript("workOrderInitialTotalsData", {});
 
     const shopSupplyPct = toNum(shopSupplyData?.percentage ?? shopSupplyData) || 0;
+    currentSalesTaxRate = Math.max(0, toNum(salesTaxData?.rate) || 0);
     coreChargeDefaultEnabled = !!coreChargeData?.enabled;
 
     const blocksContainer = $("laborsContainer");
@@ -2362,6 +2444,28 @@
       }
     });
 
+    // taxable checkbox toggle in misc charges table
+    blocksContainer.addEventListener("change", function (e) {
+      const target = e.target;
+      if (target.classList.contains("misc-taxable-input")) {
+        const row = target.closest("tr");
+        if (!row) return;
+        const index = Number(row.dataset.miscIndex);
+        const blockEl = target.closest(".wo-labor");
+        if (!blockEl) return;
+        const partsTable = blockEl.querySelector("table tbody.partsTbody");
+        if (!partsTable) return;
+        const firstRow = partsTable.querySelector("tr.parts-row");
+        if (!firstRow) return;
+        const items = getMiscItemsArray(firstRow);
+        if (index >= 0 && index < items.length) {
+          items[index].taxable = target.checked;
+          saveMiscItemsArray(firstRow, items);
+          recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
+        }
+      }
+    });
+
     blocksContainer.addEventListener("click", function (e) {
       // -------- delete part row --------
       const deletePartBtn = e.target.closest(".delete-part-row");
@@ -2436,6 +2540,7 @@
     const miscChargeDescInput = $("miscChargeDescInput");
     const miscChargeQtyInput = $("miscChargeQtyInput");
     const miscChargePriceInput = $("miscChargePriceInput");
+    const miscChargeTaxableInput = $("miscChargeTaxableInput");
     const miscChargeAddBtn = $("miscChargeAddBtn");
     let targetMiscBlock = null;
 
@@ -2448,6 +2553,7 @@
         if (miscChargeDescInput) miscChargeDescInput.value = "";
         if (miscChargeQtyInput) miscChargeQtyInput.value = "1";
         if (miscChargePriceInput) miscChargePriceInput.value = "";
+        if (miscChargeTaxableInput) miscChargeTaxableInput.checked = true;
 
         if (miscChargeModal && window.bootstrap && window.bootstrap.Modal) {
           const modal = window.bootstrap.Modal.getOrCreateInstance(miscChargeModal);
@@ -2472,8 +2578,9 @@
       const desc = miscChargeDescInput?.value || "";
       const qty = miscChargeQtyInput?.value || "1";
       const price = miscChargePriceInput?.value || "";
+      const taxable = miscChargeTaxableInput ? miscChargeTaxableInput.checked : true;
 
-      if (addMiscChargeToRow(tr, desc, qty, price)) {
+      if (addMiscChargeToRow(tr, desc, qty, price, taxable)) {
         recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
         
         const blockEl = targetMiscBlock;
@@ -2495,6 +2602,7 @@
     // customer/unit change (только пока НЕ создано)
     customerSel?.addEventListener("change", async function () {
       const customerId = String(customerSel.value || "").trim();
+      currentCustomerTaxable = getCustomerTaxable(customersData, customerId);
       if (customerHidden) customerHidden.value = customerId;
       if (createUnitCustomerHidden) createUnitCustomerHidden.value = customerId;
       if (addUnitBtn) addUnitBtn.disabled = !customerId;
@@ -2949,6 +3057,7 @@
     }
 
     const initialCustomerId = String(customerSel?.value || "").trim();
+    currentCustomerTaxable = getCustomerTaxable(customersData, initialCustomerId);
     const initialDefaultRateCode = getCustomerDefaultLaborRate(customersData, initialCustomerId);
     applyDefaultLaborRateToAll(blocksContainer, initialDefaultRateCode, true);
     recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);

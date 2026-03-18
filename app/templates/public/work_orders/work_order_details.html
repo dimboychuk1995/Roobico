@@ -135,6 +135,7 @@
     <script type="application/json" id="mechanicsData">{{ mechanics|tojson }}</script>
     <script type="application/json" id="partsPricingRulesData">{{ parts_pricing_rules|tojson }}</script>
     <script type="application/json" id="shopSupplyData">{{ {"percentage": shop_supply_procentage}|tojson }}</script>
+    <script type="application/json" id="salesTaxData">{{ sales_tax_context|tojson }}</script>
     <script type="application/json" id="coreChargeDefaultData">{{ {"enabled": charge_for_cores_default}|tojson }}</script>
     <script type="application/json" id="workOrderInitialData">{{ (initial_labors or [])|tojson }}</script>
     <script type="application/json" id="workOrderInitialTotalsData">{{ (initial_totals or {})|tojson }}</script>
@@ -174,6 +175,7 @@
             <div>Parts: <strong id="partsGrandBaseDisplay">—</strong></div>
             <div id="coreGrandTotalWrap" style="display:none;">Cores: <strong id="coreGrandTotalDisplay">—</strong></div>
             <div id="miscGrandTotalWrap" style="display:none;">Misc: <strong id="miscGrandTotalDisplay">—</strong></div>
+            <div>Sales tax (<span id="salesTaxRateLabel">0.00%</span>): <strong id="salesTaxGrandTotalDisplay">—</strong></div>
           </div>
           <div class="border rounded px-2 py-1 d-flex align-items-center">Grand total: <strong id="grandTotalDisplay" class="ms-1">—</strong></div>
         </div>
@@ -323,9 +325,10 @@
                       <thead class="table-light">
                         <tr>
                           <th>Description</th>
-                          <th style="width:15%;">Quantity</th>
-                          <th style="width:15%;">Price</th>
-                          <th style="width:15%;">Total</th>
+                          <th style="width:12%;">Quantity</th>
+                          <th style="width:12%;">Price</th>
+                          <th style="width:8%;" class="text-center">Taxable</th>
+                          <th style="width:12%;">Total</th>
                           <th style="width:10%;"></th>
                         </tr>
                       </thead>
@@ -423,6 +426,13 @@
             <div class="mb-3">
               <label class="form-label">Price (per unit)</label>
               <input type="number" id="miscChargePriceInput" class="form-control" inputmode="decimal" placeholder="0.00" step="0.01">
+            </div>
+
+            <div class="mb-3">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="miscChargeTaxableInput" checked>
+                <label class="form-check-label" for="miscChargeTaxableInput">Taxable</label>
+              </div>
             </div>
           </div>
 

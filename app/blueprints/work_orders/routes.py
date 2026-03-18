@@ -23,6 +23,7 @@ from app.utils.display_datetime import (
 from app.utils.date_filters import build_date_range_filters
 from app.utils.email_sender import send_email
 from app.utils.pdf_utils import render_html_to_pdf
+from app.utils.sales_tax import get_shop_zip_code, get_zip_sales_tax_rate
 
 
 def utcnow():
@@ -73,6 +74,67 @@ def _work_order_grand_total(wo: dict) -> float:
         if totals_doc.get("grand_total") is not None
         else wo.get("grand_total") or 0
     )
+
+
+def _work_order_tax_total(wo: dict) -> float:
+    totals_doc = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
+    return round2(
+        totals_doc.get("sales_tax_total")
+        if totals_doc.get("sales_tax_total") is not None
+        else wo.get("sales_tax_total") or 0
+    )
+
+
+def _get_shop_sales_tax_context(shop: dict) -> dict:
+    master = get_master_db()
+    zip_code = get_shop_zip_code(shop)
+    if not zip_code:
+        return {"zip_code": "", "rate": 0.0}
+
+    rate_doc = get_zip_sales_tax_rate(master, zip_code) or {}
+    try:
+        rate = float(rate_doc.get("combined_rate") or 0)
+    except Exception:
+        rate = 0.0
+
+    return {
+        "zip_code": zip_code,
+        "rate": round(rate + 1e-12, 6),
+    }
+
+
+def _is_customer_taxable(shop_db, customer_id: ObjectId | None) -> bool:
+    if not customer_id:
+        return False
+    customer = shop_db.customers.find_one({"_id": customer_id}, {"taxable": 1}) or {}
+    return bool(customer.get("taxable", False))
+
+
+def _apply_sales_tax_to_totals(totals: dict, tax_rate: float, is_taxable: bool) -> dict:
+    src = normalize_totals_payload(totals or {})
+
+    parts_only = round2(src.get("parts") if src.get("parts") is not None else src.get("parts_total"))
+    misc_taxable_total = round2(src.get("misc_taxable_total") or 0)
+    parts_taxable_total = round2(parts_only + misc_taxable_total)
+    safe_tax_rate = 0.0
+    try:
+        safe_tax_rate = max(0.0, float(tax_rate or 0))
+    except Exception:
+        safe_tax_rate = 0.0
+
+    sales_tax_total = round2(parts_taxable_total * safe_tax_rate) if is_taxable else 0.0
+    grand_total = round2(
+        round2(src.get("labor_total"))
+        + round2(src.get("parts_total"))
+        + sales_tax_total
+    )
+
+    src["parts_taxable_total"] = parts_taxable_total
+    src["sales_tax_rate"] = round(safe_tax_rate + 1e-12, 6)
+    src["sales_tax_total"] = sales_tax_total
+    src["is_taxable"] = bool(is_taxable)
+    src["grand_total"] = grand_total
+    return src
 
 
 def _sum_active_work_order_payments(shop_db, wo_id) -> float:
@@ -334,12 +396,19 @@ def normalize_totals_payload(raw):
     misc_total = round2(src.get("misc_total"))
     shop_supply_total = round2(src.get("shop_supply_total"))
     cost_total = round2(src.get("cost_total") if src.get("cost_total") is not None else parts)
+    parts_taxable_total = round2(src.get("parts_taxable_total") if src.get("parts_taxable_total") is not None else parts)
+    misc_taxable_total = round2(src.get("misc_taxable_total") or 0)
+    sales_tax_rate = round(float(src.get("sales_tax_rate") or 0) + 1e-12, 6)
+    sales_tax_total = round2(src.get("sales_tax_total"))
+    is_taxable = bool(src.get("is_taxable", False))
 
     labor_total = round2(labor + shop_supply_total)
     parts_total = round2(parts + core_total + misc_total)
     calculated_grand_total = round2(labor_total + parts_total)
     grand_total = round2(
-        src.get("grand_total") if src.get("grand_total") is not None else calculated_grand_total
+        src.get("grand_total")
+        if src.get("grand_total") is not None
+        else round2(calculated_grand_total + sales_tax_total)
     )
 
     return {
@@ -349,8 +418,13 @@ def normalize_totals_payload(raw):
         "parts_total": parts_total,
         "core_total": core_total,
         "misc_total": misc_total,
+        "misc_taxable_total": misc_taxable_total,
         "cost_total": cost_total,
         "shop_supply_total": shop_supply_total,
+        "parts_taxable_total": parts_taxable_total,
+        "sales_tax_rate": sales_tax_rate,
+        "sales_tax_total": sales_tax_total,
+        "is_taxable": is_taxable,
         "grand_total": grand_total,
         "labors": blocks,
     }
@@ -377,28 +451,35 @@ def _parse_misc_items(raw):
                 "quantity": f64(item.get("quantity") if item.get("quantity") is not None else 1) or 0,
                 "price": f64(item.get("price")),
                 "manual": item.get("manual") is True,
+                "taxable": item.get("taxable") is not False,
             }
         )
     return out
 
 
-def _calc_misc_total_from_parts(parts: list) -> float:
+def _calc_misc_total_from_parts(parts: list) -> tuple:
+    """Returns (misc_total, misc_taxable_total)."""
     if not isinstance(parts, list) or not parts:
-        return 0.0
+        return 0.0, 0.0
 
     first_row_items = _parse_misc_items((parts[0] or {}).get("misc_charge_description"))
     if first_row_items:
         total = 0.0
+        taxable_total = 0.0
         for item in first_row_items:
             price = f64(item.get("price"))
             qty = f64(item.get("quantity") if item.get("quantity") is not None else 0)
             if not price or price <= 0 or not qty or qty <= 0:
                 continue
-            total += round2(price * qty)
-        return round2(total)
+            amount = round2(price * qty)
+            total += amount
+            if item.get("taxable") is not False:
+                taxable_total += amount
+        return round2(total), round2(taxable_total)
 
     # Backward compatibility for older rows where misc was stored per-part row.
     total = 0.0
+    taxable_total = 0.0
     for part in parts:
         if not isinstance(part, dict):
             continue
@@ -416,14 +497,19 @@ def _calc_misc_total_from_parts(parts: list) -> float:
                     qty = part_qty
                 if qty <= 0:
                     continue
-                total += round2(price * qty)
+                amount = round2(price * qty)
+                total += amount
+                if item.get("taxable") is not False:
+                    taxable_total += amount
             continue
 
         misc_charge = f64(part.get("misc_charge")) or 0
         if misc_charge > 0 and part_qty > 0:
-            total += round2(misc_charge * part_qty)
+            amount = round2(misc_charge * part_qty)
+            total += amount
+            taxable_total += amount  # legacy items default to taxable
 
-    return round2(total)
+    return round2(total), round2(taxable_total)
 
 
 def align_totals_with_labors(totals: dict, labors: list) -> dict:
@@ -434,6 +520,7 @@ def align_totals_with_labors(totals: dict, labors: list) -> dict:
     parts_base_sum = 0.0
     core_sum = 0.0
     misc_sum = 0.0
+    misc_taxable_sum = 0.0
 
     normalized_labors = labors if isinstance(labors, list) else []
 
@@ -452,7 +539,8 @@ def align_totals_with_labors(totals: dict, labors: list) -> dict:
             parts_base += round2(price * qty)
             core_total += round2(core_charge * qty)
 
-        misc_total = _calc_misc_total_from_parts(parts)
+        misc_total, misc_taxable_block = _calc_misc_total_from_parts(parts)
+        misc_taxable_block = round2(misc_taxable_block)
 
         labor_base = round2(
             block_src.get("labor") if block_src.get("labor") is not None else block_src.get("labor_total")
@@ -469,6 +557,7 @@ def align_totals_with_labors(totals: dict, labors: list) -> dict:
                 "parts_total": parts_total,
                 "core_total": round2(core_total),
                 "misc_total": round2(misc_total),
+                "misc_taxable_total": misc_taxable_block,
                 "cost_total": round2(parts_base),
                 "shop_supply_total": shop_supply_total,
                 "labor_full_total": round2(labor_total + parts_total),
@@ -478,6 +567,7 @@ def align_totals_with_labors(totals: dict, labors: list) -> dict:
         parts_base_sum += parts_base
         core_sum += core_total
         misc_sum += misc_total
+        misc_taxable_sum += misc_taxable_block
 
     labor_base_sum = round2(sum(round2(b.get("labor") or 0) for b in out_blocks))
     shop_supply_from_blocks = round2(sum(round2(b.get("shop_supply_total") or 0) for b in out_blocks))
@@ -510,7 +600,17 @@ def align_totals_with_labors(totals: dict, labors: list) -> dict:
     parts_base_sum = round2(parts_base_sum)
     core_sum = round2(core_sum)
     misc_sum = round2(misc_sum)
+    misc_taxable_sum = round2(misc_taxable_sum)
     parts_total_sum = round2(parts_base_sum + core_sum + misc_sum)
+    sales_tax_rate = round(float(src.get("sales_tax_rate") or 0) + 1e-12, 6)
+    sales_tax_total = round2(src.get("sales_tax_total"))
+    is_taxable = bool(src.get("is_taxable", False))
+    misc_taxable_total = round2(
+        src.get("misc_taxable_total") if src.get("misc_taxable_total") is not None else misc_taxable_sum
+    )
+    parts_taxable_total = round2(
+        src.get("parts_taxable_total") if src.get("parts_taxable_total") is not None else round2(parts_base_sum + misc_taxable_total)
+    )
 
     return {
         "labor": labor_base_sum,
@@ -519,9 +619,14 @@ def align_totals_with_labors(totals: dict, labors: list) -> dict:
         "parts_total": parts_total_sum,
         "core_total": core_sum,
         "misc_total": misc_sum,
+        "misc_taxable_total": misc_taxable_total,
         "cost_total": parts_base_sum,
         "shop_supply_total": shop_supply_sum,
-        "grand_total": round2(labor_total_sum + parts_total_sum),
+        "parts_taxable_total": parts_taxable_total,
+        "sales_tax_rate": sales_tax_rate,
+        "sales_tax_total": sales_tax_total,
+        "is_taxable": is_taxable,
+        "grand_total": round2(labor_total_sum + parts_total_sum + sales_tax_total),
         "labors": out_blocks,
     }
 
@@ -794,6 +899,7 @@ def get_work_orders_totals(shop_db, query: dict):
                 "_id": None,
                 "labor_total": {"$sum": {"$ifNull": ["$totals.labor_total", {"$ifNull": ["$labor_total", 0]}]}},
                 "parts_total": {"$sum": {"$ifNull": ["$totals.parts_total", {"$ifNull": ["$parts_total", 0]}]}},
+                "sales_tax_total": {"$sum": {"$ifNull": ["$totals.sales_tax_total", {"$ifNull": ["$sales_tax_total", 0]}]}},
                 "grand_total": {"$sum": {"$ifNull": ["$totals.grand_total", {"$ifNull": ["$grand_total", 0]}]}},
             }
         },
@@ -804,6 +910,7 @@ def get_work_orders_totals(shop_db, query: dict):
         return {
             "labor_total": 0.0,
             "parts_total": 0.0,
+            "sales_tax_total": 0.0,
             "grand_total": 0.0,
         }
 
@@ -811,6 +918,7 @@ def get_work_orders_totals(shop_db, query: dict):
     return {
         "labor_total": round2(row.get("labor_total") or 0),
         "parts_total": round2(row.get("parts_total") or 0),
+        "sales_tax_total": round2(row.get("sales_tax_total") or 0),
         "grand_total": round2(row.get("grand_total") or 0),
     }
 
@@ -923,6 +1031,7 @@ def get_work_orders_list(
 
         labor_total = round2(totals.get("labor_total") if totals.get("labor_total") is not None else x.get("labor_total"))
         parts_total = round2(totals.get("parts_total") if totals.get("parts_total") is not None else x.get("parts_total"))
+        sales_tax_total = round2(totals.get("sales_tax_total") if totals.get("sales_tax_total") is not None else x.get("sales_tax_total"))
         grand_total = round2(totals.get("grand_total") if totals.get("grand_total") is not None else x.get("grand_total"))
 
         status = (x.get("status") or "open").strip().lower()
@@ -936,6 +1045,7 @@ def get_work_orders_list(
                 "unit": units_map.get(x.get("unit_id")) or "-",
                 "labor_total": labor_total,
                 "parts_total": parts_total,
+                "sales_tax_total": sales_tax_total,
                 "grand_total": grand_total,
                 "is_paid": status == "paid",
             }
@@ -1045,6 +1155,7 @@ def get_estimates_list(
 
         labor_total = round2(totals.get("labor_total") if totals.get("labor_total") is not None else x.get("labor_total"))
         parts_total = round2(totals.get("parts_total") if totals.get("parts_total") is not None else x.get("parts_total"))
+        sales_tax_total = round2(totals.get("sales_tax_total") if totals.get("sales_tax_total") is not None else x.get("sales_tax_total"))
         grand_total = round2(totals.get("grand_total") if totals.get("grand_total") is not None else x.get("grand_total"))
 
         status = (x.get("status") or "estimate").strip().lower()
@@ -1058,6 +1169,7 @@ def get_estimates_list(
                 "unit": units_map.get(x.get("unit_id")) or "-",
                 "labor_total": labor_total,
                 "parts_total": parts_total,
+                "sales_tax_total": sales_tax_total,
                 "grand_total": grand_total,
                 "status": status,
             }
@@ -1156,6 +1268,7 @@ def get_customers(shop_db):
             "id": str(x["_id"]),
             "label": customer_label(x),
             "default_labor_rate": resolve_customer_rate_code(x.get("default_labor_rate")),
+            "taxable": bool(x.get("taxable", False)),
         }
         for x in rows
     ]
@@ -1403,6 +1516,7 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
             unit_id = None
 
     ctx = {
+        "sales_tax_context": _get_shop_sales_tax_context(shop),
         "active_page": "work_orders",
         "customers": customers,
         "units": units,
@@ -1966,6 +2080,10 @@ def work_order_details_page():
                     "core_total": 0,
                     "misc_total": 0,
                     "shop_supply_total": 0,
+                    "parts_taxable_total": wo.get("parts_total") or 0,
+                    "sales_tax_rate": 0,
+                    "sales_tax_total": wo.get("sales_tax_total") or 0,
+                    "is_taxable": False,
                     "cost_total": wo.get("parts_total") or 0,
                     "grand_total": wo.get("grand_total") or 0,
                     "labors": [],
@@ -2149,6 +2267,12 @@ def create_work_order():
             totals = {}
 
     totals = align_totals_with_labors(normalize_totals_payload(totals), labors)
+    shop_tax = _get_shop_sales_tax_context(shop)
+    totals = _apply_sales_tax_to_totals(
+        totals,
+        shop_tax.get("rate") or 0,
+        _is_customer_taxable(shop_db, customer_id),
+    )
     work_order_date = shop_local_date_to_utc(request.form.get("work_order_date"), default_today=True)
 
     now = utcnow()
@@ -2476,6 +2600,12 @@ def api_work_order_update(work_order_id):
     mechanics_by_id = {m["id"]: m for m in get_assignable_mechanics(shop)}
     labors = apply_assignments_to_labors(labors, mechanics_by_id)
     totals = align_totals_with_labors(totals, labors)
+    shop_tax = _get_shop_sales_tax_context(shop)
+    totals = _apply_sales_tax_to_totals(
+        totals,
+        shop_tax.get("rate") or 0,
+        _is_customer_taxable(shop_db, wo.get("customer_id")),
+    )
 
     # (опционально) можно запретить редактирование, если paid
     if (wo.get("status") or "open") == "paid":

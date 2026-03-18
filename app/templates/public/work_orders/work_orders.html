@@ -99,6 +99,7 @@
                   <th>Unit</th>
                   <th class="text-end">Labor</th>
                   <th class="text-end">Parts</th>
+                  <th class="text-end">Tax</th>
                   <th class="text-end">Total</th>
                   <th class="text-center">Paid</th>
                   <th class="text-end">Actions</th>
@@ -113,6 +114,7 @@
                     <td>{{ w.unit }}</td>
                     <td class="text-end">${{ "%.2f"|format(w.labor_total) }}</td>
                     <td class="text-end">${{ "%.2f"|format(w.parts_total) }}</td>
+                    <td class="text-end">${{ "%.2f"|format(w.sales_tax_total or 0) }}</td>
                     <td class="text-end fw-semibold">${{ "%.2f"|format(w.grand_total) }}</td>
                     <td class="text-center">
                       {% if w.is_paid %}
@@ -149,6 +151,7 @@
                 <div class="wo-totals-box">
                   <span>Labor: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('labor_total', 0)) }}</strong></span>
                   <span>Parts: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('parts_total', 0)) }}</strong></span>
+                  <span>Tax: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('sales_tax_total', 0)) }}</strong></span>
                   <span>Total: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('grand_total', 0)) }}</strong></span>
                 </div>
               </div>
@@ -279,6 +282,7 @@
                   <th>Status</th>
                   <th class="text-end">Labor</th>
                   <th class="text-end">Parts</th>
+                  <th class="text-end">Tax</th>
                   <th class="text-end">Total</th>
                   <th class="text-end">Actions</th>
                 </tr>
@@ -293,6 +297,7 @@
                     <td><span class="badge bg-info text-dark">{{ (e.status or 'estimate')|capitalize }}</span></td>
                     <td class="text-end">${{ "%.2f"|format(e.labor_total) }}</td>
                     <td class="text-end">${{ "%.2f"|format(e.parts_total) }}</td>
+                    <td class="text-end">${{ "%.2f"|format(e.sales_tax_total or 0) }}</td>
                     <td class="text-end fw-semibold">${{ "%.2f"|format(e.grand_total) }}</td>
                     <td class="text-end">
                       <a class="btn btn-outline-primary btn-sm" href="{{ url_for('work_orders.work_order_details_page', work_order_id=e.id) }}" target="_blank" rel="noopener noreferrer">

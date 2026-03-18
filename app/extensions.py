@@ -42,6 +42,10 @@ def ensure_master_collections_indexes(master_db):
     _safe_create_index(master_db.shops, [("tenant_id", ASCENDING)], name="idx_shop_tenant_id")
     _safe_create_index(master_db.shops, [("tenant_id", ASCENDING), ("created_at", ASCENDING)], name="idx_shop_tenant_created")
 
+    # Centralized ZIP -> sales tax lookup data for all shops.
+    _safe_create_index(master_db.zip_sales_tax_rates, [("zip_code", ASCENDING)], unique=True, name="uniq_zip_sales_tax_rates_zip")
+    _safe_create_index(master_db.zip_sales_tax_rates, [("updated_at", DESCENDING)], name="idx_zip_sales_tax_rates_updated_desc")
+
 
 def ensure_shop_collections_indexes(shop_db):
     """
