@@ -793,7 +793,7 @@ def parts_page():
 
         orders_search_filter = build_regex_search_filter(
             q,
-            text_fields=["status"],
+            text_fields=["status", "vendor_bill"],
             numeric_fields=["order_number"],
             object_id_fields=["_id", "vendor_id", "shop_id", "tenant_id", "created_by", "updated_by"],
         )
@@ -823,6 +823,7 @@ def parts_page():
                 "vendor_id": 1,
                 "order_number": 1,
                 "status": 1,
+                "vendor_bill": 1,
                 "order_date": 1,
                 "created_at": 1,
                 "items": 1,
@@ -878,6 +879,7 @@ def parts_page():
                 "vendor_id": str(order.get("vendor_id")) if order.get("vendor_id") else "",
                 "vendor": vendors_map.get(order.get("vendor_id")) or "-",
                 "status": order.get("status") or "ordered",
+                "vendor_bill": str(order.get("vendor_bill") or "").strip(),
                 "items": order_items_inline,
                 "non_inventory_amounts": non_inventory_inline,
                 "payment_status": payment_summary.get("payment_status") or "unpaid",
@@ -915,7 +917,7 @@ def parts_page():
             order_base_query = {"shop_id": shop["_id"], "is_active": {"$ne": False}}
             order_search_filter = build_regex_search_filter(
                 q,
-                text_fields=["status", "payment_status"],
+                text_fields=["status", "payment_status", "vendor_bill"],
                 numeric_fields=["order_number", "paid_amount", "remaining_balance"],
                 object_id_fields=["_id", "vendor_id", "shop_id", "tenant_id"],
             )
@@ -1464,6 +1466,7 @@ def parts_api_orders_create():
     order_doc = {
         "vendor_id": vendor_oid,
         "order_number": order_number,
+        "vendor_bill": "",
         "items": items,
         "non_inventory_amounts": non_inventory_amounts,
         "status": "ordered",
@@ -1576,6 +1579,7 @@ def parts_api_orders_get(order_id: str):
             "id": str(order.get("_id")),
             "vendor_id": str(order.get("vendor_id")) if order.get("vendor_id") else "",
             "status": order.get("status") or "ordered",
+            "vendor_bill": str(order.get("vendor_bill") or "").strip(),
             "items": items,
             "non_inventory_amounts": [
                 {
@@ -1915,6 +1919,13 @@ def parts_api_orders_receive(order_id: str):
     if order.get("status") == "received":
         return jsonify({"ok": True, "updated_parts": 0, "message": "Order already received."})
 
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        payload = {}
+    vendor_bill = str(payload.get("vendor_bill") or request.form.get("vendor_bill") or "").strip()
+    if len(vendor_bill) > 120:
+        return jsonify({"ok": False, "error": "Vendor Bill is too long (max 120)."}), 400
+
     items = order.get("items") or []
     if not isinstance(items, list) or len(items) == 0:
         return jsonify({"ok": False, "error": "Order has no items."}), 400
@@ -1976,6 +1987,7 @@ def parts_api_orders_receive(order_id: str):
         {"_id": oid},
         {"$set": {
             "status": "received",
+            "vendor_bill": vendor_bill,
             "received_at": now,
             "received_by": user_oid,
             "updated_at": now,

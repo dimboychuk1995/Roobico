@@ -246,6 +246,7 @@
               <thead>
                 <tr>
                   <th>Order #</th>
+                  <th>Vendor Bill</th>
                   <th>Vendor</th>
                   <th class="text-end">Items</th>
                   <th class="text-end">Total</th>
@@ -261,6 +262,7 @@
                 {% for o in orders %}
                   <tr>
                     <td><span class="badge bg-secondary">{{ o.order_number or '-' }}</span></td>
+                    <td>{{ o.vendor_bill or '-' }}</td>
                     <td>{{ o.vendor }}</td>
                     <td class="text-end">{{ o.items_count }}</td>
                     <td class="text-end fw-semibold">${{ "%.2f"|format(o.total_amount or 0) }}</td>
@@ -281,6 +283,7 @@
                       {% else %}
                         <button type="button" class="btn btn-sm btn-warning text-dark receiveStatusBtn" 
                                 data-order-id="{{ o.id }}" 
+                          data-vendor-bill="{{ o.vendor_bill or '' }}"
                                 title="Click to receive this order">
                           <span class="badge bg-warning text-dark">{{ o.status or 'ordered' }}</span>
                         </button>
@@ -1012,6 +1015,6 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/parts/parts.js', v='20260317-parts-table-paid-hide') }}"></script>
+<script src="{{ url_for('static', filename='js/parts/parts.js', v='20260317-parts-receive-vendor-bill') }}"></script>
 
 {% endblock %}

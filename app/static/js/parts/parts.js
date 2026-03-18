@@ -110,6 +110,7 @@
 
 		let orderItems = [];
 		let currentOrderStatus = null;
+		let currentVendorBill = "";
 
 		const canUseOrderComposer = !!(
 			vendorSelect && vendorSearchInput && vendorDropdown && partSearch && dropdown && itemsBody &&
@@ -465,6 +466,7 @@
 		function applyOrderToModal(order, orderId) {
 			if (!order || typeof order !== "object") return;
 			currentOrderStatus = String(order.status || "").trim().toLowerCase();
+			currentVendorBill = String(order.vendor_bill || "").trim();
 			const isReceived = currentOrderStatus === "received";
 			if (receiveOrderModalBtn) receiveOrderModalBtn.style.display = isReceived ? "none" : "block";
 			if (unreceiveOrderModalBtn) unreceiveOrderModalBtn.style.display = isReceived ? "block" : "none";
@@ -1072,25 +1074,39 @@
 			}
 		}
 
+		function askVendorBill(defaultValue) {
+			const initial = String(defaultValue || "").trim();
+			const value = window.prompt("Vendor Bill (invoice number). Leave blank if none.", initial);
+			if (value === null) return null;
+			return String(value || "").trim();
+		}
+
+		async function receiveOrderWithVendorBill(orderId, vendorBill) {
+			const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/receive`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json", "Accept": "application/json" },
+				body: JSON.stringify({ vendor_bill: String(vendorBill || "").trim() }),
+			});
+			const data = await res.json();
+			if (!res.ok || !data || !data.ok) {
+				throw new Error((data && (data.error || data.message)) || "Receive failed.");
+			}
+			return data;
+		}
+
 		async function receiveOrderAjax() {
 			clearError();
 
 			const oid = createdOrderId.value || "";
 			if (!oid) { showError("Order id missing."); return; }
+			const vendorBill = askVendorBill(currentVendorBill);
+			if (vendorBill === null) return;
 
 			receiveBtn.disabled = true;
 
 			try {
-				const res = await fetch(`/parts/api/orders/${encodeURIComponent(oid)}/receive`, {
-					method: "POST",
-				});
-				const data = await res.json();
-
-				if (!data.ok) {
-					showError(data.error || "Receive failed.");
-					receiveBtn.disabled = false;
-					return;
-				}
+				await receiveOrderWithVendorBill(oid, vendorBill);
+				currentVendorBill = vendorBill;
 
 				const modalEl = document.getElementById("orderModal");
 				const modal = window.bootstrap?.Modal?.getInstance(modalEl);
@@ -1113,26 +1129,19 @@
 			receiveOrderModalBtn.addEventListener("click", async function () {
 				const orderId = createdOrderId.value;
 				if (!orderId) return;
+				const vendorBill = askVendorBill(currentVendorBill);
+				if (vendorBill === null) return;
 
-				if (confirm("Mark this order as received?")) {
-					try {
-						const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/receive`, {
-							method: "POST"
-						});
-						const data = await res.json();
-
-						if (data.ok) {
-							alert(`Order received! ${data.updated_parts} parts updated.`);
-							const modalEl = document.getElementById("orderModal");
-							const modal = window.bootstrap?.Modal?.getInstance(modalEl);
-							if (modal) modal.hide();
-							location.reload();
-						} else {
-							alert("Error: " + (data.error || "Failed to receive order"));
-						}
-					} catch (err) {
-						alert("Network error while receiving order");
-					}
+				try {
+					const data = await receiveOrderWithVendorBill(orderId, vendorBill);
+					currentVendorBill = vendorBill;
+					alert(`Order received! ${data.updated_parts} parts updated.`);
+					const modalEl = document.getElementById("orderModal");
+					const modal = window.bootstrap?.Modal?.getInstance(modalEl);
+					if (modal) modal.hide();
+					location.reload();
+				} catch (err) {
+					alert(err.message || "Network error while receiving order");
 				}
 			});
 		}
@@ -1191,6 +1200,7 @@
 			if (receiveOrderModalBtn) receiveOrderModalBtn.style.display = "none";
 			if (unreceiveOrderModalBtn) unreceiveOrderModalBtn.style.display = "none";
 			if (payOrderModalBtn) payOrderModalBtn.style.display = "none";
+			currentVendorBill = "";
 			if (receiveBtn) receiveBtn.disabled = false;
 			if (orderDatesBlock) orderDatesBlock.classList.add("d-none");
 			if (orderMetaCreated) orderMetaCreated.textContent = "-";
@@ -1358,23 +1368,16 @@
 				const orderId = receiveStatusBtn.getAttribute("data-order-id");
 				if (!orderId) return;
 
-				if (confirm("Mark this order as received?")) {
-					try {
-						const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/receive`, {
-							method: "POST"
-						});
+				const vendorBillDefault = String(receiveStatusBtn.getAttribute("data-vendor-bill") || "").trim();
+				const vendorBill = askVendorBill(vendorBillDefault);
+				if (vendorBill === null) return;
 
-						const data = await res.json();
-
-						if (data.ok) {
-							alert(`Order received! ${data.updated_parts} parts updated.`);
-							location.reload();
-						} else {
-							alert("Error: " + (data.error || "Failed to receive order"));
-						}
-					} catch (err) {
-						alert("Network error while receiving order");
-					}
+				try {
+					const data = await receiveOrderWithVendorBill(orderId, vendorBill);
+					alert(`Order received! ${data.updated_parts} parts updated.`);
+					location.reload();
+				} catch (err) {
+					alert(err.message || "Network error while receiving order");
 				}
 				return;
 			}
