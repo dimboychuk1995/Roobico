@@ -12,6 +12,50 @@
 <div class="row g-3">
 
   <div class="col-12 col-md-6 col-xl-4">
+    <a href="{{ url_for('reports.standard_report_page', report_key='sales_summary') }}" class="text-decoration-none">
+      <div class="card h-100">
+        <div class="card-body">
+          <h2 class="h6 mb-2">Sales Summary</h2>
+          <p class="text-muted mb-0">Revenue breakdown by customer with labor, parts, and tax totals.</p>
+        </div>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-12 col-md-6 col-xl-4">
+    <a href="{{ url_for('reports.standard_report_page', report_key='payments_summary') }}" class="text-decoration-none">
+      <div class="card h-100">
+        <div class="card-body">
+          <h2 class="h6 mb-2">Payments Summary</h2>
+          <p class="text-muted mb-0">Incoming payments grouped by customer.</p>
+        </div>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-12 col-md-6 col-xl-4">
+    <a href="{{ url_for('reports.standard_report_page', report_key='customer_balances') }}" class="text-decoration-none">
+      <div class="card h-100">
+        <div class="card-body">
+          <h2 class="h6 mb-2">Customer Balances</h2>
+          <p class="text-muted mb-0">Outstanding balances by customer.</p>
+        </div>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-12 col-md-6 col-xl-4">
+    <a href="{{ url_for('reports.standard_report_page', report_key='vendor_balances') }}" class="text-decoration-none">
+      <div class="card h-100">
+        <div class="card-body">
+          <h2 class="h6 mb-2">Vendor Balances</h2>
+          <p class="text-muted mb-0">Parts orders totals, paid and outstanding balances by vendor.</p>
+        </div>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-12 col-md-6 col-xl-4">
     <a href="{{ url_for('reports.activity_journal_page') }}" class="text-decoration-none">
       <div class="card h-100">
         <div class="card-body">

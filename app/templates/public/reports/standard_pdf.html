@@ -1,0 +1,123 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>{{ report_data.title or 'Report' }}</title>
+  <style>
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #1f2937; }
+    h1 { font-size: 20px; margin: 0 0 6px; }
+    .muted { color: #6b7280; }
+    .meta { margin-bottom: 10px; }
+    .summary-table, .data-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .summary-table td { border: 1px solid #d1d5db; padding: 6px; }
+    .data-table th, .data-table td { border: 1px solid #d1d5db; padding: 6px; }
+    .data-table th { background: #f3f4f6; text-align: left; }
+    .text-end { text-align: right; }
+  </style>
+</head>
+<body>
+  <h1>{{ report_data.title or 'Report' }}</h1>
+  <div class="meta muted">
+    Shop: {{ shop_name or '-' }}<br>
+    Generated at: {{ generated_at or '-' }}<br>
+    Date preset: {{ date_preset or 'this_month' }}
+    {% if date_from or date_to %}
+      <br>Date range: {{ date_from or '-' }} to {{ date_to or '-' }}
+    {% endif %}
+  </div>
+
+  {% if report_data.summary %}
+    <table class="summary-table">
+      {% for key, value in report_data.summary.items() %}
+      <tr>
+        <td>{{ key.replace('_', ' ')|title }}</td>
+        <td class="text-end">
+          {% if 'count' in key %}
+            {{ value }}
+          {% else %}
+            ${{ "%.2f"|format(value or 0) }}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+
+  {% if report_data.rows and report_data.rows|length > 0 %}
+    <table class="data-table">
+      <thead>
+        {% if selected_tab == 'sales_summary' %}
+          <tr>
+            <th>Customer</th>
+            <th class="text-end">Orders</th>
+            <th class="text-end">Labor</th>
+            <th class="text-end">Parts</th>
+            <th class="text-end">Tax</th>
+            <th class="text-end">Revenue</th>
+          </tr>
+        {% elif selected_tab == 'payments_summary' %}
+          <tr>
+            <th>Customer</th>
+            <th class="text-end">Payments</th>
+            <th class="text-end">Amount</th>
+          </tr>
+        {% elif selected_tab == 'customer_balances' %}
+          <tr>
+            <th>Customer</th>
+            <th class="text-end">Orders</th>
+            <th class="text-end">Billed</th>
+            <th class="text-end">Paid</th>
+            <th class="text-end">Outstanding</th>
+          </tr>
+        {% else %}
+          <tr>
+            <th>Vendor</th>
+            <th class="text-end">Orders</th>
+            <th class="text-end">Total</th>
+            <th class="text-end">Paid</th>
+            <th class="text-end">Outstanding</th>
+          </tr>
+        {% endif %}
+      </thead>
+      <tbody>
+        {% for row in report_data.rows %}
+          {% if selected_tab == 'sales_summary' %}
+            <tr>
+              <td>{{ row.customer_label }}</td>
+              <td class="text-end">{{ row.orders_count }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.labor_total or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.parts_total or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.sales_tax_total or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.grand_total or 0) }}</td>
+            </tr>
+          {% elif selected_tab == 'payments_summary' %}
+            <tr>
+              <td>{{ row.customer_label }}</td>
+              <td class="text-end">{{ row.payments_count }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.amount_total or 0) }}</td>
+            </tr>
+          {% elif selected_tab == 'customer_balances' %}
+            <tr>
+              <td>{{ row.customer_label }}</td>
+              <td class="text-end">{{ row.orders_count }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.billed_total or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.paid_total or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.outstanding_total or 0) }}</td>
+            </tr>
+          {% else %}
+            <tr>
+              <td>{{ row.vendor_label }}</td>
+              <td class="text-end">{{ row.orders_count }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.total_amount or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.paid_amount or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.remaining_balance or 0) }}</td>
+            </tr>
+          {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="muted">No data for selected filters.</div>
+  {% endif %}
+</body>
+</html>

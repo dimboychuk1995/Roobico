@@ -1,0 +1,212 @@
+{% extends "layouts/app_base.html" %}
+{% block page_title %}Reports - Standard{% endblock %}
+
+{% block app_content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h1 class="h4 mb-1">Standard Reports</h1>
+    <p class="text-muted mb-0">Tab-based reports with date filters, customer include/exclude filters, and PDF export.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('reports.activity_journal_page') }}" class="btn btn-outline-primary btn-sm">Activity Journal</a>
+    <a href="{{ url_for('reports.reports_index') }}" class="btn btn-outline-secondary btn-sm">Back to Reports</a>
+  </div>
+</div>
+
+{% if report_error %}
+  <div class="alert alert-danger">{{ report_error }}</div>
+{% endif %}
+
+<form id="standardReportsFilterForm" method="GET" action="{{ url_for('reports.standard_report_page', report_key=selected_tab or 'sales_summary') }}" class="card mb-3">
+
+  <div class="card-header">
+    <ul class="nav nav-tabs card-header-tabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <a class="nav-link {% if selected_tab == 'sales_summary' %}active{% endif %}" href="{{ url_for('reports.standard_report_page', report_key='sales_summary') }}">Sales Summary</a>
+      </li>
+      <li class="nav-item" role="presentation">
+        <a class="nav-link {% if selected_tab == 'payments_summary' %}active{% endif %}" href="{{ url_for('reports.standard_report_page', report_key='payments_summary') }}">Payments Summary</a>
+      </li>
+      <li class="nav-item" role="presentation">
+        <a class="nav-link {% if selected_tab == 'customer_balances' %}active{% endif %}" href="{{ url_for('reports.standard_report_page', report_key='customer_balances') }}">Customer Balances</a>
+      </li>
+      <li class="nav-item" role="presentation">
+        <a class="nav-link {% if selected_tab == 'vendor_balances' %}active{% endif %}" href="{{ url_for('reports.standard_report_page', report_key='vendor_balances') }}">Vendor Balances</a>
+      </li>
+    </ul>
+  </div>
+
+  <div class="card-body">
+    <div class="row g-2 align-items-end">
+      <div class="col-12 col-md-3">
+        <label class="form-label">Date Preset</label>
+        <select name="date_preset" class="form-select form-select-sm">
+          <option value="all_time" {% if date_preset == 'all_time' %}selected{% endif %}>All Time</option>
+          <option value="today" {% if date_preset == 'today' %}selected{% endif %}>Today</option>
+          <option value="yesterday" {% if date_preset == 'yesterday' %}selected{% endif %}>Yesterday</option>
+          <option value="this_week" {% if date_preset == 'this_week' %}selected{% endif %}>This Week</option>
+          <option value="last_week" {% if date_preset == 'last_week' %}selected{% endif %}>Last Week</option>
+          <option value="this_month" {% if date_preset == 'this_month' %}selected{% endif %}>This Month</option>
+          <option value="last_month" {% if date_preset == 'last_month' %}selected{% endif %}>Last Month</option>
+          <option value="this_quarter" {% if date_preset == 'this_quarter' %}selected{% endif %}>This Quarter</option>
+          <option value="last_quarter" {% if date_preset == 'last_quarter' %}selected{% endif %}>Last Quarter</option>
+          <option value="this_year" {% if date_preset == 'this_year' %}selected{% endif %}>This Year</option>
+          <option value="last_year" {% if date_preset == 'last_year' %}selected{% endif %}>Last Year</option>
+          <option value="custom" {% if date_preset == 'custom' %}selected{% endif %}>Custom</option>
+        </select>
+      </div>
+
+      <div class="col-6 col-md-2">
+        <label class="form-label">Date From</label>
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from or '' }}">
+      </div>
+
+      <div class="col-6 col-md-2">
+        <label class="form-label">Date To</label>
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to or '' }}">
+      </div>
+
+      <div class="col-auto d-flex gap-1 align-items-end">
+        <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+        <button type="submit" formaction="{{ url_for('reports.standard_report_pdf', report_key=selected_tab or 'sales_summary') }}" formtarget="_blank" class="btn btn-outline-dark btn-sm">Download PDF</button>
+      </div>
+    </div>
+
+    {% if show_customer_filters %}
+      <hr>
+      <div class="row g-2 align-items-start">
+        <div class="col-12 col-md-6">
+          <label class="form-label">Include Only Selected Customers</label>
+          <select name="include_customer_ids" class="form-select form-select-sm" multiple size="7">
+            {% for c in customer_options %}
+              <option value="{{ c.id }}" {% if c.id in include_customer_ids %}selected{% endif %}>{{ c.label }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text">If empty, includes all customers.</div>
+        </div>
+
+        <div class="col-12 col-md-6">
+          <label class="form-label">Exclude Selected Customers</label>
+          <select name="exclude_customer_ids" class="form-select form-select-sm" multiple size="7">
+            {% for c in customer_options %}
+              <option value="{{ c.id }}" {% if c.id in exclude_customer_ids %}selected{% endif %}>{{ c.label }}</option>
+            {% endfor %}
+          </select>
+          <div class="form-text">Exclusion has priority if the same customer is in both lists.</div>
+        </div>
+      </div>
+    {% endif %}
+  </div>
+</form>
+
+<div class="card">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <div class="fw-semibold">{{ report_data.title or 'Report' }}</div>
+    <div class="small text-muted">Shop: {{ shop_name or '-' }}</div>
+  </div>
+  <div class="card-body">
+    {% if report_data.summary %}
+      <div class="row g-2 mb-3">
+        {% for key, value in report_data.summary.items() %}
+          <div class="col-6 col-md-3">
+            <div class="border rounded p-2 h-100">
+              <div class="small text-muted text-capitalize">{{ key.replace('_', ' ') }}</div>
+              <div class="fw-semibold">
+                {% if 'count' in key %}
+                  {{ value }}
+                {% else %}
+                  ${{ "%.2f"|format(value or 0) }}
+                {% endif %}
+              </div>
+            </div>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
+    {% if report_data.rows and report_data.rows|length > 0 %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            {% if selected_tab == 'sales_summary' %}
+              <tr class="text-muted">
+                <th>Customer</th>
+                <th class="text-end">Orders</th>
+                <th class="text-end">Labor</th>
+                <th class="text-end">Parts</th>
+                <th class="text-end">Tax</th>
+                <th class="text-end">Revenue</th>
+              </tr>
+            {% elif selected_tab == 'payments_summary' %}
+              <tr class="text-muted">
+                <th>Customer</th>
+                <th class="text-end">Payments</th>
+                <th class="text-end">Amount</th>
+              </tr>
+            {% elif selected_tab == 'customer_balances' %}
+              <tr class="text-muted">
+                <th>Customer</th>
+                <th class="text-end">Orders</th>
+                <th class="text-end">Billed</th>
+                <th class="text-end">Paid</th>
+                <th class="text-end">Outstanding</th>
+              </tr>
+            {% else %}
+              <tr class="text-muted">
+                <th>Vendor</th>
+                <th class="text-end">Orders</th>
+                <th class="text-end">Total</th>
+                <th class="text-end">Paid</th>
+                <th class="text-end">Outstanding</th>
+              </tr>
+            {% endif %}
+          </thead>
+          <tbody>
+            {% for row in report_data.rows %}
+              {% if selected_tab == 'sales_summary' %}
+                <tr>
+                  <td>{{ row.customer_label }}</td>
+                  <td class="text-end">{{ row.orders_count }}</td>
+                  <td class="text-end">${{ "%.2f"|format(row.labor_total or 0) }}</td>
+                  <td class="text-end">${{ "%.2f"|format(row.parts_total or 0) }}</td>
+                  <td class="text-end">${{ "%.2f"|format(row.sales_tax_total or 0) }}</td>
+                  <td class="text-end fw-semibold">${{ "%.2f"|format(row.grand_total or 0) }}</td>
+                </tr>
+              {% elif selected_tab == 'payments_summary' %}
+                <tr>
+                  <td>{{ row.customer_label }}</td>
+                  <td class="text-end">{{ row.payments_count }}</td>
+                  <td class="text-end fw-semibold">${{ "%.2f"|format(row.amount_total or 0) }}</td>
+                </tr>
+              {% elif selected_tab == 'customer_balances' %}
+                <tr>
+                  <td>{{ row.customer_label }}</td>
+                  <td class="text-end">{{ row.orders_count }}</td>
+                  <td class="text-end">${{ "%.2f"|format(row.billed_total or 0) }}</td>
+                  <td class="text-end">${{ "%.2f"|format(row.paid_total or 0) }}</td>
+                  <td class="text-end fw-semibold">${{ "%.2f"|format(row.outstanding_total or 0) }}</td>
+                </tr>
+              {% else %}
+                <tr>
+                  <td>{{ row.vendor_label }}</td>
+                  <td class="text-end">{{ row.orders_count }}</td>
+                  <td class="text-end">${{ "%.2f"|format(row.total_amount or 0) }}</td>
+                  <td class="text-end">${{ "%.2f"|format(row.paid_amount or 0) }}</td>
+                  <td class="text-end fw-semibold">${{ "%.2f"|format(row.remaining_balance or 0) }}</td>
+                </tr>
+              {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <div class="text-muted">No data for selected filters.</div>
+    {% endif %}
+  </div>
+  <div class="card-footer small text-muted">
+    Generated: {{ generated_at or '-' }}
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/reports/reports.js') }}"></script>
+{% endblock %}
