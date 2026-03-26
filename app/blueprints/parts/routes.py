@@ -1207,7 +1207,7 @@ def parts_create():
 
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
-    order_date = shop_local_date_to_utc(data.get("order_date"), default_today=True)
+    order_date = shop_local_date_to_utc(request.form.get("order_date"), default_today=True)
 
     doc = {
         "part_number": part_number,
