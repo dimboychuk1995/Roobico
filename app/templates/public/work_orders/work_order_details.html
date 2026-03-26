@@ -1,6 +1,11 @@
 {% extends "layouts/app_base.html" %}
 {% block page_title %}Work Order Details{% endblock %}
 
+{% block extra_styles %}
+  {{ super() }}
+  <link href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.bootstrap5.min.css" rel="stylesheet">
+{% endblock %}
+
 {% block app_content %}
 <div class="card shadow border-0">
   <div class="card-body">
@@ -534,7 +539,21 @@
       </div>
     </div>
 
+    <script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
     <script src="{{ url_for('static', filename='js/work_orders/work_order_details.js', v='20260317-work-order-email') }}"></script>
+    <script>
+      (function () {
+        var tsConfig = { allowEmptyOption: true, maxOptions: null };
+        var customerEl = document.getElementById('customerSelect');
+        var unitEl = document.getElementById('unitSelect');
+        if (customerEl && typeof TomSelect !== 'undefined') {
+          new TomSelect(customerEl, tsConfig);
+        }
+        if (unitEl && typeof TomSelect !== 'undefined') {
+          new TomSelect(unitEl, tsConfig);
+        }
+      })();
+    </script>
 
   </div>
 </div>

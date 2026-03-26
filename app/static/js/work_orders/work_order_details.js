@@ -1604,6 +1604,20 @@
   // ---------------- customer/unit ----------------
   function setSelectOptions(selectEl, items, placeholder) {
     if (!selectEl) return;
+
+    if (selectEl.tomSelect) {
+      const ts = selectEl.tomSelect;
+      ts.clear(true);
+      ts.clearOptions();
+      ts.addOption({ value: "", text: placeholder || "-- Select --" });
+      (items || []).forEach(it => {
+        ts.addOption({ value: String(it.id || ""), text: String(it.label || "") });
+      });
+      ts.refreshOptions(false);
+      ts.setValue("", true);
+      return;
+    }
+
     selectEl.innerHTML = "";
 
     const ph = document.createElement("option");
@@ -1617,6 +1631,15 @@
       opt.textContent = String(it.label || "");
       selectEl.appendChild(opt);
     });
+  }
+
+  function setSelectDisabled(selectEl, disabled) {
+    if (!selectEl) return;
+    selectEl.disabled = disabled;
+    if (selectEl.tomSelect) {
+      if (disabled) selectEl.tomSelect.disable();
+      else selectEl.tomSelect.enable();
+    }
   }
 
   async function fetchUnits(customerId) {
@@ -1826,16 +1849,16 @@
       editor.style.pointerEvents = "";
       editor.style.opacity = "";
       // При редактировании разрешаем менять customer/unit
-      if (customerSel) customerSel.disabled = false;
-      if (unitSel) unitSel.disabled = false;
+      setSelectDisabled(customerSel, false);
+      setSelectDisabled(unitSel, false);
       if (addUnitBtn) addUnitBtn.disabled = false;
       if (addLaborBtn) addLaborBtn.disabled = false;
       document.querySelectorAll(".removeLaborBtn").forEach(b => { b.disabled = false; });
     } else {
       editor.style.pointerEvents = "none";
       editor.style.opacity = "0.75";
-      if (customerSel) customerSel.disabled = true;
-      if (unitSel) unitSel.disabled = true;
+      setSelectDisabled(customerSel, true);
+      setSelectDisabled(unitSel, true);
       if (addUnitBtn) addUnitBtn.disabled = true;
       if (addLaborBtn) addLaborBtn.disabled = true;
       document.querySelectorAll(".removeLaborBtn").forEach(b => { b.disabled = true; });
@@ -2613,9 +2636,8 @@
 
       if (unitHidden) unitHidden.value = "";
       if (unitSel) {
-        unitSel.disabled = !customerId;
+        setSelectDisabled(unitSel, !customerId);
         setSelectOptions(unitSel, [], customerId ? "Loading…" : "-- Select unit --");
-        unitSel.value = "";
       }
       
       // Clear mileage when customer changes
@@ -2627,7 +2649,7 @@
       if (!customerId || !unitSel) return;
       const units = await fetchUnits(customerId);
       setSelectOptions(unitSel, units, "-- Select unit --");
-      unitSel.disabled = false;
+      setSelectDisabled(unitSel, false);
 
       if (Array.isArray(units) && units.length === 0) {
         const createUnitModalEl = $("createUnitModal");
@@ -2834,8 +2856,8 @@
       }
 
       // created: customer/unit больше не меняем
-      if (customerSel) customerSel.disabled = true;
-      if (unitSel) unitSel.disabled = true;
+      setSelectDisabled(customerSel, true);
+      setSelectDisabled(unitSel, true);
       if (addUnitBtn) addUnitBtn.disabled = true;
 
       if (workOrderStatus === "paid") {
