@@ -24,16 +24,13 @@
     return {
       modal: document.getElementById("createVendorModal"),
       form: form,
+      contactsForm: document.getElementById("vendorContactsForm"),
       editingVendorId: document.getElementById("editingVendorId"),
       modalTitle: document.getElementById("createVendorModalLabel"),
       submitBtn: document.getElementById("vendorSubmitBtn"),
       activeGroup: document.getElementById("vendorActiveGroup"),
       nameInput: document.getElementById("vendorName"),
-      phoneInput: document.getElementById("vendorPhone"),
-      emailInput: document.getElementById("vendorEmail"),
       websiteInput: document.getElementById("vendorWebsite"),
-      pcFirstInput: document.getElementById("vendorPCFirst"),
-      pcLastInput: document.getElementById("vendorPCLast"),
       addressInput: document.getElementById("vendorAddress"),
       notesInput: document.getElementById("vendorNotes"),
       isActiveInput: document.getElementById("vendorIsActive"),
@@ -216,14 +213,13 @@
       if (els.activeGroup) els.activeGroup.style.display = "block";
 
       if (els.nameInput) els.nameInput.value = vendor.name || "";
-      if (els.phoneInput) els.phoneInput.value = vendor.phone || "";
-      if (els.emailInput) els.emailInput.value = vendor.email || "";
       if (els.websiteInput) els.websiteInput.value = vendor.website || "";
-      if (els.pcFirstInput) els.pcFirstInput.value = vendor.primary_contact_first_name || "";
-      if (els.pcLastInput) els.pcLastInput.value = vendor.primary_contact_last_name || "";
       if (els.addressInput) els.addressInput.value = vendor.address || "";
       if (els.notesInput) els.notesInput.value = vendor.notes || "";
       if (els.isActiveInput) els.isActiveInput.checked = vendor.is_active !== false;
+      if (els.contactsForm && window.SmallShopContacts) {
+        window.SmallShopContacts.setContacts(els.contactsForm, Array.isArray(vendor.contacts) ? vendor.contacts : []);
+      }
     } catch (err) {
       appAlert("Network error while loading vendor data", 'error');
     }
@@ -264,6 +260,9 @@
         current.submitBtn.textContent = "Create Vendor";
         if (current.activeGroup) current.activeGroup.style.display = "none";
         current.form.reset();
+        if (current.contactsForm && window.SmallShopContacts) {
+          window.SmallShopContacts.setContacts(current.contactsForm, []);
+        }
       });
     }
 
@@ -300,11 +299,10 @@
 
         var formData = {
           name: (current.nameInput && current.nameInput.value || "").trim(),
-          phone: (current.phoneInput && current.phoneInput.value || "").trim(),
-          email: (current.emailInput && current.emailInput.value || "").trim(),
           website: (current.websiteInput && current.websiteInput.value || "").trim(),
-          primary_contact_first_name: (current.pcFirstInput && current.pcFirstInput.value || "").trim(),
-          primary_contact_last_name: (current.pcLastInput && current.pcLastInput.value || "").trim(),
+          contacts: current.contactsForm && window.SmallShopContacts
+            ? window.SmallShopContacts.getContacts(current.contactsForm)
+            : [],
           address: (current.addressInput && current.addressInput.value || "").trim(),
           notes: (current.notesInput && current.notesInput.value || "").trim(),
           is_active: !!(current.isActiveInput && current.isActiveInput.checked),

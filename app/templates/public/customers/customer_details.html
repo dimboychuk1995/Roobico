@@ -436,7 +436,7 @@
         <form method="post" action="{{ url_for('customers.customer_details_update', customer_id=customer_id) }}">
           <div class="alert alert-info py-2">
             <div class="small mb-0">
-              You must enter either <strong>Company Name</strong> or <strong>First + Last Name</strong>.
+              You must enter either <strong>Company Name</strong> or at least one contact with a name.
             </div>
           </div>
 
@@ -444,26 +444,6 @@
             <div class="col-12">
               <label class="form-label">Company Name</label>
               <input type="text" class="form-control" name="company_name" value="{{ customer.company_name }}" />
-            </div>
-
-            <div class="col-12 col-md-6">
-              <label class="form-label">First Name</label>
-              <input type="text" class="form-control" name="first_name" value="{{ customer.first_name }}" />
-            </div>
-
-            <div class="col-12 col-md-6">
-              <label class="form-label">Last Name</label>
-              <input type="text" class="form-control" name="last_name" value="{{ customer.last_name }}" />
-            </div>
-
-            <div class="col-12 col-md-6">
-              <label class="form-label">Phone</label>
-              <input type="text" class="form-control" name="phone" value="{{ customer.phone }}" />
-            </div>
-
-            <div class="col-12 col-md-6">
-              <label class="form-label">Email</label>
-              <input type="email" class="form-control" name="email" value="{{ customer.email }}" />
             </div>
 
             <div class="col-12 col-md-6">
@@ -489,6 +469,54 @@
             <div class="col-12">
               <label class="form-label">Address</label>
               <textarea class="form-control" name="address" rows="3">{{ customer.address }}</textarea>
+            </div>
+
+            <div class="col-12">
+              <div class="border rounded p-3" data-contacts-form data-contact-title="Contact" id="customerDetailsContactsForm">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                  <div>
+                    <div class="fw-semibold">Contacts</div>
+                    <div class="small text-muted">Main contact is shown in tables and used as the default recipient.</div>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-outline-primary" data-add-contact>Add Contact</button>
+                </div>
+                <div class="d-grid gap-3" data-contacts-list>
+                  {% if customer.contacts and customer.contacts|length > 0 %}
+                    {% for contact in customer.contacts %}
+                      <div class="border rounded p-3" data-contact-row>
+                        <div class="d-flex align-items-center justify-content-between mb-3">
+                          <div class="fw-semibold" data-contact-title>Contact {{ loop.index }}</div>
+                          <button type="button" class="btn btn-sm btn-outline-danger" data-remove-contact>Remove</button>
+                        </div>
+                        <div class="row g-3">
+                          <div class="col-12 col-md-3">
+                            <label class="form-label">First Name</label>
+                            <input type="text" class="form-control" name="contact_first_name" value="{{ contact.first_name or '' }}">
+                          </div>
+                          <div class="col-12 col-md-3">
+                            <label class="form-label">Last Name</label>
+                            <input type="text" class="form-control" name="contact_last_name" value="{{ contact.last_name or '' }}">
+                          </div>
+                          <div class="col-12 col-md-3">
+                            <label class="form-label">Phone</label>
+                            <input type="text" class="form-control" name="contact_phone" value="{{ contact.phone or '' }}">
+                          </div>
+                          <div class="col-12 col-md-3">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" name="contact_email" value="{{ contact.email or '' }}">
+                          </div>
+                          <div class="col-12">
+                            <div class="form-check">
+                              <input class="form-check-input" type="radio" data-contact-main name="contact_main_index" value="{{ loop.index0 }}" {% if contact.is_main %}checked{% endif %}>
+                              <label class="form-check-label">Main contact</label>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    {% endfor %}
+                  {% endif %}
+                </div>
+              </div>
             </div>
 
             <div class="col-12 col-md-6">
@@ -525,5 +553,6 @@
   </div>
 </div>
 
+<script src="{{ url_for('static', filename='js/shared/contacts_form.js', v='20260330-contacts') }}"></script>
 <script src="{{ url_for('static', filename='js/customers/customers.js', v='20260316-payments-delete') }}"></script>
 {% endblock %}

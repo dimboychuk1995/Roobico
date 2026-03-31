@@ -18,6 +18,17 @@ from app.utils.mongo_search import build_regex_search_filter
 from app.utils.permissions import permission_required
 from app.utils.display_datetime import format_date_mmddyyyy, format_preferred_shop_date
 from app.utils.date_filters import build_date_range_filters
+from app.utils.contacts import (
+    build_contacts_from_form,
+    build_contacts_from_payload,
+    build_customer_legacy_contact_fields,
+    contact_full_name,
+    get_contacts,
+    get_main_contact,
+    get_main_contact_email,
+    get_main_contact_phone,
+    has_contact_name,
+)
 
 
 def utcnow():
@@ -190,10 +201,18 @@ def _customer_label(customer: dict) -> str:
     company = (customer.get("company_name") or "").strip()
     if company:
         return company
-    first_name = (customer.get("first_name") or "").strip()
-    last_name = (customer.get("last_name") or "").strip()
-    full_name = f"{first_name} {last_name}".strip()
+    full_name = contact_full_name(get_main_contact(customer, entity_type="customer"))
     return full_name or "-"
+
+
+def _decorate_customer(customer: dict) -> dict:
+    contacts = get_contacts(customer, entity_type="customer")
+    main_contact = get_main_contact(customer, entity_type="customer") or {}
+    customer["contacts"] = contacts
+    customer["main_contact_name"] = contact_full_name(main_contact) or ""
+    customer["main_contact_phone"] = get_main_contact_phone(customer, entity_type="customer")
+    customer["main_contact_email"] = get_main_contact_email(customer, entity_type="customer")
+    return customer
 
 
 def _unit_label(unit: dict) -> str:
@@ -430,6 +449,10 @@ def customers_page():
             "last_name",
             "phone",
             "email",
+            "contacts.first_name",
+            "contacts.last_name",
+            "contacts.phone",
+            "contacts.email",
             "address",
             "default_labor_rate",
         ],
@@ -447,6 +470,8 @@ def customers_page():
     )
 
     _attach_customers_current_balances(customers, coll.database, shop["_id"])
+    for customer in customers:
+        _decorate_customer(customer)
 
     return _render_app_page(
         "public/customers.html",
@@ -517,10 +542,11 @@ def customer_details_page(customer_id):
         "id": str(customer.get("_id")),
         "label": _customer_label(customer),
         "company_name": customer.get("company_name") or "",
-        "first_name": customer.get("first_name") or "",
-        "last_name": customer.get("last_name") or "",
-        "phone": customer.get("phone") or "",
-        "email": customer.get("email") or "",
+        "first_name": (main_contact := (get_main_contact(customer, entity_type="customer") or {})).get("first_name") or "",
+        "last_name": main_contact.get("last_name") or "",
+        "phone": get_main_contact_phone(customer, entity_type="customer") or "",
+        "email": get_main_contact_email(customer, entity_type="customer") or "",
+        "contacts": get_contacts(customer, entity_type="customer"),
         "address": customer.get("address") or "",
         "taxable": bool(customer.get("taxable", False)),
         "default_labor_rate": str(customer.get("default_labor_rate")) if isinstance(customer.get("default_labor_rate"), ObjectId) else "",
@@ -950,16 +976,12 @@ def customers_create():
         return redirect(url_for("main.index"))
 
     company_name = (request.form.get("company_name") or "").strip()
-    first_name = (request.form.get("first_name") or "").strip()
-    last_name = (request.form.get("last_name") or "").strip()
-    phone = (request.form.get("phone") or "").strip()
-    email = (request.form.get("email") or "").strip().lower()
+    contacts = build_contacts_from_form(request.form)
     address = (request.form.get("address") or "").strip()
     taxable = (request.form.get("taxable") or "").strip().lower() in {"1", "true", "on", "yes"}
 
-    # Минимальная валидация: пусть будет обязательна компания ИЛИ имя+фамилия
-    if not company_name and not (first_name and last_name):
-        flash("Company name or First+Last name is required.", "error")
+    if not company_name and not has_contact_name(contacts):
+        flash("Company name or at least one contact name is required.", "error")
         return redirect(url_for("customers.customers_page"))
 
     now = utcnow()
@@ -978,10 +1000,7 @@ def customers_create():
 
     doc = {
         "company_name": company_name or None,
-        "first_name": first_name or None,
-        "last_name": last_name or None,
-        "phone": phone or None,
-        "email": email or None,
+        "contacts": contacts,
         "address": address or None,
         "taxable": taxable,
         "default_labor_rate": default_rate_doc.get("_id") if default_rate_doc else None,
@@ -999,6 +1018,7 @@ def customers_create():
         "shop_id": shop["_id"],
         "tenant_id": tenant_oid,
     }
+    doc.update(build_customer_legacy_contact_fields(contacts))
 
     coll.insert_one(doc)
 
@@ -1067,10 +1087,7 @@ def customer_details_update(customer_id):
         return redirect(url_for("customers.customers_page"))
 
     company_name = (request.form.get("company_name") or "").strip()
-    first_name = (request.form.get("first_name") or "").strip()
-    last_name = (request.form.get("last_name") or "").strip()
-    phone = (request.form.get("phone") or "").strip()
-    email = (request.form.get("email") or "").strip().lower()
+    contacts = build_contacts_from_form(request.form)
     address = (request.form.get("address") or "").strip()
     taxable = (request.form.get("taxable") or "").strip().lower() in {"1", "true", "on", "yes"}
     default_labor_rate_id = _oid(request.form.get("default_labor_rate"))
@@ -1086,30 +1103,25 @@ def customer_details_update(customer_id):
             flash("Selected default labor rate is invalid.", "error")
             return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="details"))
 
-    if not company_name and not (first_name and last_name):
-        flash("Company name or First+Last name is required.", "error")
+    if not company_name and not has_contact_name(contacts):
+        flash("Company name or at least one contact name is required.", "error")
         return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="details"))
 
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
 
-    coll.update_one(
-        {"_id": cid},
-        {
-            "$set": {
-                "company_name": company_name or None,
-                "first_name": first_name or None,
-                "last_name": last_name or None,
-                "phone": phone or None,
-                "email": email or None,
-                "address": address or None,
-                "taxable": taxable,
-                "default_labor_rate": default_labor_rate_id,
-                "updated_at": now,
-                "updated_by": user_oid,
-            }
-        },
-    )
+    update_data = {
+        "company_name": company_name or None,
+        "contacts": contacts,
+        "address": address or None,
+        "taxable": taxable,
+        "default_labor_rate": default_labor_rate_id,
+        "updated_at": now,
+        "updated_by": user_oid,
+    }
+    update_data.update(build_customer_legacy_contact_fields(contacts))
+
+    coll.update_one({"_id": cid}, {"$set": update_data})
 
     flash("Customer updated successfully.", "success")
     return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="details"))
@@ -1137,10 +1149,11 @@ def customers_api_get(customer_id):
             "item": {
                 "_id": str(customer.get("_id")),
                 "company_name": customer.get("company_name") or "",
-                "first_name": customer.get("first_name") or "",
-                "last_name": customer.get("last_name") or "",
-                "phone": customer.get("phone") or "",
-                "email": customer.get("email") or "",
+                "first_name": (main_contact := (get_main_contact(customer, entity_type="customer") or {})).get("first_name") or "",
+                "last_name": main_contact.get("last_name") or "",
+                "phone": get_main_contact_phone(customer, entity_type="customer") or "",
+                "email": get_main_contact_email(customer, entity_type="customer") or "",
+                "contacts": get_contacts(customer, entity_type="customer"),
                 "address": customer.get("address") or "",
                 "taxable": bool(customer.get("taxable", False)),
                 "is_active": customer.get("is_active", True),
@@ -1167,36 +1180,28 @@ def customers_api_update(customer_id):
 
     data = request.get_json(silent=True) or {}
     company_name = (data.get("company_name") or "").strip()
-    first_name = (data.get("first_name") or "").strip()
-    last_name = (data.get("last_name") or "").strip()
-    phone = (data.get("phone") or "").strip()
-    email = (data.get("email") or "").strip().lower()
+    contacts = build_contacts_from_payload(data)
     address = (data.get("address") or "").strip()
     taxable_raw = data.get("taxable", False)
     taxable = bool(taxable_raw) if isinstance(taxable_raw, bool) else str(taxable_raw).strip().lower() in {"1", "true", "on", "yes"}
 
-    if not company_name and not (first_name and last_name):
-        return jsonify({"ok": False, "error": "Company name or First+Last name is required."}), 400
+    if not company_name and not has_contact_name(contacts):
+        return jsonify({"ok": False, "error": "Company name or at least one contact name is required."}), 400
 
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
 
-    coll.update_one(
-        {"_id": cid},
-        {
-            "$set": {
-                "company_name": company_name or None,
-                "first_name": first_name or None,
-                "last_name": last_name or None,
-                "phone": phone or None,
-                "email": email or None,
-                "address": address or None,
-                "taxable": taxable,
-                "updated_at": now,
-                "updated_by": user_oid,
-            }
-        },
-    )
+    update_data = {
+        "company_name": company_name or None,
+        "contacts": contacts,
+        "address": address or None,
+        "taxable": taxable,
+        "updated_at": now,
+        "updated_by": user_oid,
+    }
+    update_data.update(build_customer_legacy_contact_fields(contacts))
+
+    coll.update_one({"_id": cid}, {"$set": update_data})
 
     return jsonify({"ok": True, "message": "Customer updated successfully"})
 

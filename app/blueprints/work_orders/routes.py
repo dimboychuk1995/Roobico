@@ -21,6 +21,7 @@ from app.utils.display_datetime import (
     shop_local_date_to_utc,
 )
 from app.utils.date_filters import build_date_range_filters
+from app.utils.contacts import get_main_contact_email, get_main_contact_name, get_main_contact_phone
 from app.utils.email_sender import send_email
 from app.utils.pdf_utils import render_html_to_pdf
 from app.utils.sales_tax import get_shop_zip_code, get_zip_sales_tax_rate
@@ -958,6 +959,10 @@ def get_work_orders_list(
                         {"last_name": {"$regex": q, "$options": "i"}},
                         {"phone": {"$regex": q, "$options": "i"}},
                         {"email": {"$regex": q, "$options": "i"}},
+                        {"contacts.first_name": {"$regex": q, "$options": "i"}},
+                        {"contacts.last_name": {"$regex": q, "$options": "i"}},
+                        {"contacts.phone": {"$regex": q, "$options": "i"}},
+                        {"contacts.email": {"$regex": q, "$options": "i"}},
                         {"address": {"$regex": q, "$options": "i"}},
                     ]
                 },
@@ -1084,6 +1089,10 @@ def get_estimates_list(
                         {"last_name": {"$regex": q, "$options": "i"}},
                         {"phone": {"$regex": q, "$options": "i"}},
                         {"email": {"$regex": q, "$options": "i"}},
+                        {"contacts.first_name": {"$regex": q, "$options": "i"}},
+                        {"contacts.last_name": {"$regex": q, "$options": "i"}},
+                        {"contacts.phone": {"$regex": q, "$options": "i"}},
+                        {"contacts.email": {"$regex": q, "$options": "i"}},
                         {"address": {"$regex": q, "$options": "i"}},
                     ]
                 },
@@ -1222,9 +1231,7 @@ def customer_label(c: dict) -> str:
     company = (c.get("company_name") or "").strip()
     if company:
         return company
-    fn = (c.get("first_name") or "").strip()
-    ln = (c.get("last_name") or "").strip()
-    name = (fn + " " + ln).strip()
+    name = get_main_contact_name(c, entity_type="customer")
     return name or "(no name)"
 
 
@@ -2464,10 +2471,11 @@ def api_parts_search():
 
     if len(items) < limit:
         contains = re.escape(q)
+        # Fallback must not be limited to docs without search_terms,
+        # because many legacy/seeded docs may have incomplete token arrays.
         fallback_query = {
             "shop_id": shop["_id"],
             "is_active": True,
-            "search_terms": {"$exists": False},
             "$or": [
                 {"part_number": {"$regex": contains, "$options": "i"}},
                 {"description": {"$regex": contains, "$options": "i"}},
@@ -2803,8 +2811,8 @@ def api_get_work_order_payments(work_order_id):
         for p in payments
     ]
 
-    customer = shop_db.customers.find_one({"_id": wo.get("customer_id")}, {"email": 1}) or {}
-    customer_email = str(customer.get("email") or "").strip()
+    customer = shop_db.customers.find_one({"_id": wo.get("customer_id")}, {"email": 1, "contacts": 1}) or {}
+    customer_email = get_main_contact_email(customer, entity_type="customer")
 
     return jsonify({
         "ok": True,
@@ -2915,6 +2923,12 @@ def api_get_all_payments():
                         {"company_name": {"$regex": q, "$options": "i"}},
                         {"first_name": {"$regex": q, "$options": "i"}},
                         {"last_name": {"$regex": q, "$options": "i"}},
+                        {"phone": {"$regex": q, "$options": "i"}},
+                        {"email": {"$regex": q, "$options": "i"}},
+                        {"contacts.first_name": {"$regex": q, "$options": "i"}},
+                        {"contacts.last_name": {"$regex": q, "$options": "i"}},
+                        {"contacts.phone": {"$regex": q, "$options": "i"}},
+                        {"contacts.email": {"$regex": q, "$options": "i"}},
                     ]
                 },
                 {"_id": 1},
@@ -2984,7 +2998,10 @@ def api_get_all_payments():
     customers_map = {}
     if customer_ids:
         customers = list(
-            shop_db.customers.find({"_id": {"$in": customer_ids}}, {"company_name": 1, "first_name": 1, "last_name": 1})
+            shop_db.customers.find(
+                {"_id": {"$in": customer_ids}},
+                {"company_name": 1, "first_name": 1, "last_name": 1, "contacts": 1},
+            )
         )
         for c in customers:
             c_id = c.get("_id")
@@ -3181,8 +3198,8 @@ def api_send_work_order_email(work_order_id):
 
     customer = shop_db.customers.find_one({"_id": wo.get("customer_id")}) or {}
     cust_name = customer_label(customer)
-    customer_email_val = str(customer.get("email") or "").strip()
-    customer_phone = str(customer.get("phone") or "").strip()
+    customer_email_val = get_main_contact_email(customer, entity_type="customer")
+    customer_phone = get_main_contact_phone(customer, entity_type="customer")
 
     unit = shop_db.units.find_one({"_id": wo.get("unit_id")}) or {}
     unit_lbl = unit_label(unit)

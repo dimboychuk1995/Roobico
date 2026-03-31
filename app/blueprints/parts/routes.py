@@ -2307,11 +2307,13 @@ def parts_api_history(part_id: str):
         return jsonify({"ok": True, "part": {"id": str(pid), "part_number": part_number}, "orders": orders_out, "work_orders": []})
 
     work_orders_coll = db.work_orders
+    pid_str = str(pid)
     wo_filter = {
         "shop_id": shop["_id"],
         "is_active": {"$ne": False},
         "$or": [
             {"labors.parts.part_id": pid},
+            {"labors.parts.part_id": pid_str},
             {"labors.parts.part_number": part_number},
         ],
     }
@@ -2351,8 +2353,13 @@ def parts_api_history(part_id: str):
                 if not isinstance(p, dict):
                     continue
                 p_pid = p.get("part_id")
+                p_pid_str = str(p_pid).strip() if p_pid is not None else ""
                 p_num = str(p.get("part_number") or "").strip()
-                if p_pid == pid or (not p_pid and part_number and p_num == part_number):
+                if (
+                    p_pid == pid
+                    or (p_pid_str and p_pid_str == pid_str)
+                    or (not p_pid and part_number and p_num == part_number)
+                ):
                     used_qty += max(0, _parse_int(p.get("qty"), default=0))
 
         if used_qty <= 0:

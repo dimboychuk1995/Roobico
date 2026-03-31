@@ -17,6 +17,16 @@ from app.utils.pagination import get_pagination_params, paginate_find
 from app.utils.permissions import permission_required
 from app.utils.mongo_search import build_regex_search_filter
 from app.utils.display_datetime import format_date_mmddyyyy
+from app.utils.contacts import (
+    build_contacts_from_form,
+    build_contacts_from_payload,
+    build_vendor_legacy_contact_fields,
+    contact_full_name,
+    get_contacts,
+    get_main_contact,
+    get_main_contact_email,
+    get_main_contact_phone,
+)
 
 
 def utcnow():
@@ -96,6 +106,16 @@ def _vendors_collection():
     return db.vendors, shop, master
 
 
+def _decorate_vendor(vendor: dict) -> dict:
+    contacts = get_contacts(vendor, entity_type="vendor")
+    main_contact = get_main_contact(vendor, entity_type="vendor") or {}
+    vendor["contacts"] = contacts
+    vendor["main_contact_name"] = contact_full_name(main_contact) or ""
+    vendor["main_contact_phone"] = get_main_contact_phone(vendor, entity_type="vendor")
+    vendor["main_contact_email"] = get_main_contact_email(vendor, entity_type="vendor")
+    return vendor
+
+
 @vendors_bp.get("/")
 @login_required
 @permission_required("vendors.view")
@@ -115,6 +135,10 @@ def vendors_page():
             "name",
             "phone",
             "email",
+            "contacts.first_name",
+            "contacts.last_name",
+            "contacts.phone",
+            "contacts.email",
             "website",
             "address",
             "primary_contact_first_name",
@@ -163,6 +187,7 @@ def vendors_page():
 
     for vendor in vendors:
         vendor["balance"] = float(balance_map.get(vendor.get("_id"), 0.0))
+        _decorate_vendor(vendor)
 
     return _render_app_page(
         "public/vendors.html",
@@ -189,14 +214,10 @@ def vendors_create():
         return redirect(url_for("main.index"))
 
     name = (request.form.get("name") or "").strip()
-    phone = (request.form.get("phone") or "").strip()
-    email = (request.form.get("email") or "").strip().lower()
     address = (request.form.get("address") or "").strip()
     notes = (request.form.get("notes") or "").strip()
-
     website = (request.form.get("website") or "").strip()
-    pc_first = (request.form.get("primary_contact_first_name") or "").strip()
-    pc_last = (request.form.get("primary_contact_last_name") or "").strip()
+    contacts = build_contacts_from_form(request.form)
 
     if not name:
         flash("Vendor name is required.", "error")
@@ -207,12 +228,9 @@ def vendors_create():
 
     doc = {
         "name": name,
-        "phone": phone or None,
-        "email": email or None,
         "website": website or None,
         "address": address or None,
-        "primary_contact_first_name": pc_first or None,
-        "primary_contact_last_name": pc_last or None,
+        "contacts": contacts,
         "notes": notes or None,
 
         "is_active": True,
@@ -227,6 +245,7 @@ def vendors_create():
         "shop_id": shop["_id"],
         "tenant_id": tenant_oid,
     }
+    doc.update(build_vendor_legacy_contact_fields(contacts))
 
     coll.insert_one(doc)
 
@@ -340,16 +359,19 @@ def vendors_api_get(vendor_id):
     if not vendor:
         return jsonify({"ok": False, "error": "Vendor not found"}), 404
 
+    vendor = _decorate_vendor(vendor)
+
     return jsonify({
         "ok": True,
         "item": {
             "_id": str(vendor["_id"]),
             "name": vendor.get("name") or "",
-            "phone": vendor.get("phone") or "",
-            "email": vendor.get("email") or "",
+            "phone": vendor.get("main_contact_phone") or "",
+            "email": vendor.get("main_contact_email") or "",
             "website": vendor.get("website") or "",
-            "primary_contact_first_name": vendor.get("primary_contact_first_name") or "",
-            "primary_contact_last_name": vendor.get("primary_contact_last_name") or "",
+            "primary_contact_first_name": (main_contact := (get_main_contact(vendor, entity_type="vendor") or {})).get("first_name") or "",
+            "primary_contact_last_name": main_contact.get("last_name") or "",
+            "contacts": vendor.get("contacts") or [],
             "address": vendor.get("address") or "",
             "notes": vendor.get("notes") or "",
             "is_active": vendor.get("is_active", True),
@@ -449,13 +471,10 @@ def vendors_api_update(vendor_id):
     if not name:
         return jsonify({"ok": False, "error": "Vendor name is required"}), 400
 
-    phone = (data.get("phone") or "").strip()
-    email = (data.get("email") or "").strip().lower()
     website = (data.get("website") or "").strip()
     address = (data.get("address") or "").strip()
     notes = (data.get("notes") or "").strip()
-    pc_first = (data.get("primary_contact_first_name") or "").strip()
-    pc_last = (data.get("primary_contact_last_name") or "").strip()
+    contacts = build_contacts_from_payload(data)
     is_active = data.get("is_active", True)
 
     now = utcnow()
@@ -463,17 +482,15 @@ def vendors_api_update(vendor_id):
 
     update_data = {
         "name": name,
-        "phone": phone or None,
-        "email": email or None,
         "website": website or None,
         "address": address or None,
         "notes": notes or None,
-        "primary_contact_first_name": pc_first or None,
-        "primary_contact_last_name": pc_last or None,
+        "contacts": contacts,
         "is_active": bool(is_active),
         "updated_at": now,
         "updated_by": user_oid,
     }
+    update_data.update(build_vendor_legacy_contact_fields(contacts))
 
     # If changing to inactive, set deactivated fields
     if not is_active and vendor.get("is_active", True):
