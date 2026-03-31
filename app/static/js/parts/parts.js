@@ -427,6 +427,7 @@
 			const isReceivedOrder = String(data.order_status || "").toLowerCase() === "received";
 			if (partsOrderPaymentDateInput) {
 				partsOrderPaymentDateInput.value = partsOrderPaymentDateInput.defaultValue || partsOrderPaymentDateInput.value || "";
+				if (partsOrderPaymentDateInput._flatpickr) { partsOrderPaymentDateInput._flatpickr.setDate(partsOrderPaymentDateInput.value || null, false, "Y-m-d"); }
 				setDateInputLocked(partsOrderPaymentDateInput, isReceivedOrder);
 			}
 			partsOrderPaymentNotesInput.value = "";
@@ -525,6 +526,7 @@
 			renderNonInventoryRows(nonInventoryLines, isReceived);
 			if (orderDateInput) {
 				orderDateInput.value = String(order.order_date || orderDateInput.defaultValue || "").trim();
+				if (orderDateInput._flatpickr) { orderDateInput._flatpickr.setDate(orderDateInput.value || null, false, "Y-m-d"); }
 				setDateInputLocked(orderDateInput, isReceived);
 			}
 			createdOrderId.value = orderId;

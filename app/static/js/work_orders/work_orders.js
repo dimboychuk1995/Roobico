@@ -100,6 +100,7 @@
       const paymentDateInput = document.getElementById("paymentListDateInput");
       if (paymentDateInput) {
         paymentDateInput.value = paymentDateInput.defaultValue || paymentDateInput.value || "";
+        if (paymentDateInput._flatpickr) { paymentDateInput._flatpickr.setDate(paymentDateInput.value || null, false, "Y-m-d"); }
       }
 
       // Show modal
