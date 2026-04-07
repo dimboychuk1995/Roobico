@@ -225,6 +225,38 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
       <div class="modal-body">
+        <!-- Date range filter -->
+        <div class="row g-2 align-items-center mb-3" id="vendorOrdersDateFilter">
+          <div class="col-12 col-md-4 col-lg-3">
+            <select class="form-select form-select-sm" id="vendorOrdersDatePreset" aria-label="Date range preset">
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="this_week">This Week</option>
+              <option value="last_week">Last Week</option>
+              <option value="this_month" selected>This Month</option>
+              <option value="last_month">Last Month</option>
+              <option value="this_quarter">This Quarter</option>
+              <option value="last_quarter">Last Quarter</option>
+              <option value="this_year">This Year</option>
+              <option value="last_year">Last Year</option>
+              <option value="all_time">All Time</option>
+              <option value="custom">Custom Range</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-6 col-lg-5">
+            <div class="input-group input-group-sm date-range-group" aria-label="Date range">
+              <span class="input-group-text">From</span>
+              <input type="date" class="form-control" id="vendorOrdersDateFrom" aria-label="Start date" />
+              <span class="input-group-text">To</span>
+              <input type="date" class="form-control" id="vendorOrdersDateTo" aria-label="End date" />
+            </div>
+          </div>
+          <div class="col-12 col-md-2 col-lg d-flex align-items-center gap-2 justify-content-lg-end justify-content-center">
+            <button type="button" class="btn btn-sm btn-primary" id="vendorOrdersSearchBtn">Search</button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="vendorOrdersDateReset">Reset</button>
+          </div>
+        </div>
+
         <div class="d-flex align-items-center justify-content-between mb-2">
           <div class="small text-muted" id="vendorOrdersSummary">Loading...</div>
           <div class="btn-group btn-group-sm" role="group" aria-label="Vendor orders pagination">
@@ -239,16 +271,47 @@
               <tr class="text-muted">
                 <th>Order #</th>
                 <th class="text-end">Items</th>
+                <th class="text-end">Amount</th>
                 <th>Status</th>
                 <th>Created</th>
               </tr>
             </thead>
             <tbody id="vendorOrdersTableBody">
               <tr>
-                <td colspan="4" class="text-center text-muted py-4">Select a vendor to see part orders.</td>
+                <td colspan="5" class="text-center text-muted py-4">Select a vendor to see part orders.</td>
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- Orders summary -->
+        <div class="border-top mt-3 pt-3" id="vendorOrdersSummaryBlock" style="display:none;">
+          <div class="row g-2 text-center">
+            <div class="col">
+              <div class="small text-muted">Orders</div>
+              <div class="fw-semibold" id="summaryTotalOrders">0</div>
+            </div>
+            <div class="col">
+              <div class="small text-muted">Total Amount</div>
+              <div class="fw-semibold" id="summaryTotalAmount">$0.00</div>
+            </div>
+            <div class="col">
+              <div class="small text-muted">Paid</div>
+              <div class="fw-semibold text-success" id="summaryTotalPaid">$0.00</div>
+            </div>
+            <div class="col">
+              <div class="small text-muted">Unpaid</div>
+              <div class="fw-semibold text-danger" id="summaryUnpaid">$0.00</div>
+            </div>
+            <div class="col">
+              <div class="small text-muted">Received</div>
+              <div class="fw-semibold text-success" id="summaryReceived">0</div>
+            </div>
+            <div class="col">
+              <div class="small text-muted">Not Received</div>
+              <div class="fw-semibold text-warning" id="summaryNotReceived">0</div>
+            </div>
+          </div>
         </div>
       </div>
       <div class="modal-footer">
