@@ -73,6 +73,21 @@
         </div>
 
         <div class="list-group list-group-flush app-sidebar-nav">
+
+          <!-- Global search -->
+          <div class="app-global-search-wrap px-2 pb-2">
+            <div class="position-relative">
+              <input
+                type="text"
+                id="globalSearchInput"
+                class="form-control form-control-sm"
+                placeholder="Search..."
+                autocomplete="off"
+              >
+              <div id="globalSearchResults" class="app-global-search-results d-none"></div>
+            </div>
+          </div>
+
           {% for item in nav_items %}
             {% set is_active = (active_page == item.key) %}
             <a
@@ -253,4 +268,81 @@
 </script>
 
 <script src="{{ url_for('static', filename='js/dashboard/dashboard.js') }}"></script>
+
+<script>
+(function () {
+  var input = document.getElementById("globalSearchInput");
+  var resultsBox = document.getElementById("globalSearchResults");
+  if (!input || !resultsBox) return;
+
+  var debounceTimer = null;
+  var controller = null;
+
+  input.addEventListener("input", function () {
+    clearTimeout(debounceTimer);
+    var q = input.value.trim();
+    if (q.length < 2) {
+      resultsBox.classList.add("d-none");
+      resultsBox.innerHTML = "";
+      return;
+    }
+    debounceTimer = setTimeout(function () { doSearch(q); }, 300);
+  });
+
+  function doSearch(q) {
+    if (controller) controller.abort();
+    controller = new AbortController();
+
+    fetch("/api/global-search?q=" + encodeURIComponent(q), { signal: controller.signal })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        renderResults(data.results || []);
+      })
+      .catch(function (e) {
+        if (e.name !== "AbortError") resultsBox.classList.add("d-none");
+      });
+  }
+
+  function renderResults(groups) {
+    if (!groups.length) {
+      resultsBox.innerHTML = '<div class="gs-empty">No results</div>';
+      resultsBox.classList.remove("d-none");
+      return;
+    }
+    var html = "";
+    groups.forEach(function (g) {
+      html += '<div class="gs-category">' + escHtml(g.category) + '</div>';
+      g.items.forEach(function (item) {
+        html += '<a class="gs-item" href="' + escAttr(item.url) + '">' + escHtml(item.label) + '</a>';
+      });
+    });
+    resultsBox.innerHTML = html;
+    resultsBox.classList.remove("d-none");
+  }
+
+  function escHtml(s) {
+    var d = document.createElement("div");
+    d.appendChild(document.createTextNode(s));
+    return d.innerHTML;
+  }
+
+  function escAttr(s) {
+    return s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+
+  // Close dropdown on outside click
+  document.addEventListener("click", function (e) {
+    if (!input.contains(e.target) && !resultsBox.contains(e.target)) {
+      resultsBox.classList.add("d-none");
+    }
+  });
+
+  // Re-show on focus if has content
+  input.addEventListener("focus", function () {
+    if (resultsBox.innerHTML && input.value.trim().length >= 2) {
+      resultsBox.classList.remove("d-none");
+    }
+  });
+})();
+</script>
 {% endblock %}
