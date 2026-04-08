@@ -291,9 +291,73 @@ def global_search_api():
         return jsonify({"results": []})
 
     pattern = re.compile(re.escape(q), re.IGNORECASE)
+    regex = re.escape(q)
     groups = []
 
-    # 1. Customers
+    # helper: numeric-field regex match via $expr/$toString
+    def _num_regex(field):
+        return {
+            "$expr": {
+                "$regexMatch": {
+                    "input": {"$toString": {"$ifNull": [f"${field}", ""]}},
+                    "regex": regex,
+                    "options": "i",
+                }
+            }
+        }
+
+    def _primary_contact(doc):
+        """Return (name, phone, email) from the first contact."""
+        contacts = doc.get("contacts") or []
+        if not contacts:
+            return "", "", ""
+        cn = contacts[0]
+        name = " ".join(filter(None, [cn.get("first_name"), cn.get("last_name")]))
+        phone = cn.get("phone") or ""
+        email = cn.get("email") or ""
+        return name, phone, email
+
+    # 1. Units  (unit_number, vin)
+    units = list(
+        db.units.find(
+            {"$or": [
+                {"unit_number": pattern},
+                {"vin": pattern},
+            ]},
+            {"unit_number": 1, "year": 1, "make": 1, "model": 1, "vin": 1, "customer_id": 1},
+        ).limit(_GLOBAL_SEARCH_LIMIT)
+    )
+    if units:
+        # resolve customer names
+        cust_ids = list({u["customer_id"] for u in units if u.get("customer_id")})
+        cust_map = {}
+        if cust_ids:
+            for c in db.customers.find({"_id": {"$in": cust_ids}}, {"company_name": 1, "contacts": 1}):
+                company = (c.get("company_name") or "").strip()
+                if not company:
+                    company, _, _ = _primary_contact(c)
+                cust_map[c["_id"]] = company or ""
+
+        items = []
+        for u in units:
+            parts_l = []
+            if u.get("unit_number"):
+                parts_l.append(str(u["unit_number"]))
+            desc = " ".join(filter(None, [str(u.get("year") or ""), u.get("make") or "", u.get("model") or ""]))
+            if desc:
+                parts_l.append(desc)
+            vin = u.get("vin") or ""
+            if vin:
+                parts_l.append(f"VIN {vin}")
+            company = cust_map.get(u.get("customer_id")) or ""
+            if company:
+                parts_l.append(company)
+            label = " · ".join(parts_l) or "—"
+            cid = u.get("customer_id") or ""
+            items.append({"label": label, "url": f"/customers/{cid}/units/{u['_id']}"})
+        groups.append({"category": "Units", "items": items})
+
+    # 2. Customers  (company, name)
     customers = list(
         db.customers.find(
             {"$or": [
@@ -307,58 +371,87 @@ def global_search_api():
     if customers:
         items = []
         for c in customers:
-            label = c.get("company_name") or ""
-            contacts = c.get("contacts") or []
-            if contacts:
-                cn = contacts[0]
-                name = " ".join(filter(None, [cn.get("first_name"), cn.get("last_name")]))
-                if name and name != label:
-                    label = f"{label} — {name}" if label else name
-            items.append({"label": label or "—", "url": f"/customers/{c['_id']}"})
+            company = (c.get("company_name") or "").strip()
+            name, phone, email = _primary_contact(c)
+            parts_l = []
+            if company:
+                parts_l.append(company)
+            if name and name != company:
+                parts_l.append(name)
+            if phone:
+                parts_l.append(phone)
+            if email:
+                parts_l.append(email)
+            label = " · ".join(parts_l) or "—"
+            items.append({"label": label, "url": f"/customers/{c['_id']}"})
         groups.append({"category": "Customers", "items": items})
 
-    # 2. Units
-    units = list(
-        db.units.find(
+    # 3. Vendors  (name, primary contact)
+    vendors = list(
+        db.vendors.find(
             {"$or": [
-                {"unit_number": pattern},
-                {"make": pattern},
-                {"model": pattern},
-                {"vin": pattern},
+                {"name": pattern},
+                {"contacts.first_name": pattern},
+                {"contacts.last_name": pattern},
             ]},
-            {"unit_number": 1, "year": 1, "make": 1, "model": 1, "vin": 1, "customer_id": 1},
+            {"name": 1, "contacts": 1},
         ).limit(_GLOBAL_SEARCH_LIMIT)
     )
-    if units:
+    if vendors:
         items = []
-        for u in units:
-            bits = []
-            if u.get("unit_number"):
-                bits.append(str(u["unit_number"]))
-            if u.get("year"):
-                bits.append(str(u["year"]))
-            if u.get("make"):
-                bits.append(str(u["make"]))
-            if u.get("model"):
-                bits.append(str(u["model"]))
-            label = " ".join(bits) or "—"
-            cid = u.get("customer_id") or ""
-            items.append({"label": label, "url": f"/customers/{cid}/units/{u['_id']}"})
-        groups.append({"category": "Units", "items": items})
+        for v in vendors:
+            company = (v.get("name") or "").strip()
+            name, phone, email = _primary_contact(v)
+            parts_l = []
+            if company:
+                parts_l.append(company)
+            if name and name != company:
+                parts_l.append(name)
+            if phone:
+                parts_l.append(phone)
+            if email:
+                parts_l.append(email)
+            label = " · ".join(parts_l) or "—"
+            items.append({"label": label, "url": f"/vendors/{v['_id']}"})
+        groups.append({"category": "Vendors", "items": items})
 
-    # 3. Work Orders (by wo_number)
-    wo_filter = {"wo_number": pattern}
+    # 4. Work Orders  (wo_number — numeric field)
     work_orders = list(
-        db.work_orders.find(wo_filter, {"wo_number": 1}).limit(_GLOBAL_SEARCH_LIMIT)
+        db.work_orders.find(
+            _num_regex("wo_number"),
+            {"wo_number": 1, "customer_id": 1, "totals": 1, "grand_total": 1, "status": 1},
+        ).limit(_GLOBAL_SEARCH_LIMIT)
     )
     if work_orders:
+        # resolve customer names
+        wo_cust_ids = list({wo["customer_id"] for wo in work_orders if wo.get("customer_id")})
+        wo_cust_map = {}
+        if wo_cust_ids:
+            for c in db.customers.find({"_id": {"$in": wo_cust_ids}}, {"company_name": 1, "contacts": 1}):
+                company = (c.get("company_name") or "").strip()
+                if not company:
+                    company, _, _ = _primary_contact(c)
+                wo_cust_map[c["_id"]] = company or ""
+
         items = []
         for wo in work_orders:
-            label = f"WO #{wo.get('wo_number', '')}"
+            totals_doc = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
+            gt = totals_doc.get("grand_total") if totals_doc.get("grand_total") is not None else (wo.get("grand_total") or 0)
+            gt = round(float(gt or 0), 2)
+            status = (wo.get("status") or "open").strip().lower()
+            paid_label = "Paid" if status == "paid" else "Unpaid"
+            customer_name = wo_cust_map.get(wo.get("customer_id")) or ""
+
+            parts_l = [f"WO #{wo.get('wo_number', '')}"]
+            if customer_name:
+                parts_l.append(customer_name)
+            parts_l.append(f"${gt:,.2f}")
+            parts_l.append(paid_label)
+            label = " · ".join(parts_l)
             items.append({"label": label, "url": f"/work_orders/details?work_order_id={wo['_id']}"})
         groups.append({"category": "Work Orders", "items": items})
 
-    # 4. Parts
+    # 5. Parts
     parts = list(
         db.parts.find(
             {"$or": [
@@ -377,17 +470,61 @@ def global_search_api():
             items.append({"label": label, "url": f"/parts/?tab=parts&q={q}"})
         groups.append({"category": "Parts", "items": items})
 
-    # 5. Part Orders (by order_number)
+    # 6. Part Orders  (order_number — numeric, vendor_bill — text)
     orders = list(
         db.parts_orders.find(
-            {"order_number": pattern},
-            {"order_number": 1},
+            {"$or": [
+                _num_regex("order_number"),
+                {"vendor_bill": pattern},
+            ]},
+            {"order_number": 1, "vendor_bill": 1, "vendor_id": 1, "status": 1,
+             "items": 1, "non_inventory_amounts": 1},
         ).limit(_GLOBAL_SEARCH_LIMIT)
     )
     if orders:
+        # resolve vendor names
+        ord_vendor_ids = list({o["vendor_id"] for o in orders if o.get("vendor_id")})
+        ord_vendor_map = {}
+        if ord_vendor_ids:
+            for v in db.vendors.find({"_id": {"$in": ord_vendor_ids}}, {"name": 1}):
+                ord_vendor_map[v["_id"]] = (v.get("name") or "").strip()
+
+        # resolve payment status
+        order_ids = [o["_id"] for o in orders]
+        paid_totals = {}
+        for pay in db.parts_order_payments.find({"order_id": {"$in": order_ids}, "is_active": True}, {"order_id": 1, "amount": 1}):
+            paid_totals[pay["order_id"]] = paid_totals.get(pay["order_id"], 0.0) + float(pay.get("amount") or 0)
+
         items = []
         for o in orders:
-            label = f"Order #{o.get('order_number', '')}"
+            vendor_name = ord_vendor_map.get(o.get("vendor_id")) or ""
+            num = o.get("order_number", "")
+            vb = o.get("vendor_bill") or ""
+            status = (o.get("status") or "ordered").strip().lower()
+            received_label = "Received" if status == "received" else "Not received"
+
+            # compute total amount from items + non_inventory
+            total_amt = 0.0
+            for it in (o.get("items") or []):
+                if isinstance(it, dict):
+                    total_amt += float(it.get("quantity") or 0) * float(it.get("price") or 0)
+            for ni in (o.get("non_inventory_amounts") or []):
+                if isinstance(ni, dict):
+                    total_amt += float(ni.get("amount") or 0)
+            total_amt = round(total_amt, 2)
+
+            paid_amt = round(paid_totals.get(o["_id"], 0.0), 2)
+            pay_label = "Paid" if total_amt > 0 and paid_amt >= total_amt - 0.01 else "Unpaid"
+
+            parts_l = []
+            if vendor_name:
+                parts_l.append(vendor_name)
+            parts_l.append(f"Order #{num}")
+            if vb:
+                parts_l.append(f"Bill: {vb}")
+            parts_l.append(pay_label)
+            parts_l.append(received_label)
+            label = " · ".join(parts_l)
             items.append({"label": label, "url": f"/parts/?tab=orders&open_order={o['_id']}"})
         groups.append({"category": "Part Orders", "items": items})
 
