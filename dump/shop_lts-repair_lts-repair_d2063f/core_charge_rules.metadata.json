@@ -1,1 +1,0 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"shop_id":{"$numberInt":"1"}},"name":"uniq_core_charge_rules_shop","unique":true}],"uuid":"15545a76bf4346caa05423e7fd740313","collectionName":"core_charge_rules","type":"collection"}

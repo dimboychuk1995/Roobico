@@ -1,1 +1,0 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"shop_id":{"$numberInt":"1"},"is_active":{"$numberInt":"1"},"name":{"$numberInt":"1"}},"name":"idx_parts_locations_shop_active_name"}],"uuid":"51f3c3eea73448408ef330c389d2732b","collectionName":"parts_locations","type":"collection"}

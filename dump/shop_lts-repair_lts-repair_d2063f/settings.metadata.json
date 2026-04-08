@@ -1,1 +1,0 @@
-{"indexes":[{"v":{"$numberInt":"2"},"key":{"_id":{"$numberInt":"1"}},"name":"_id_"},{"v":{"$numberInt":"2"},"key":{"key":{"$numberInt":"1"}},"name":"uniq_settings_key","unique":true},{"v":{"$numberInt":"2"},"key":{"shop_id":{"$numberInt":"1"}},"name":"idx_settings_shop"}],"uuid":"e5a39f5b997342c0a226bc5f46ef2d81","collectionName":"settings","type":"collection"}
