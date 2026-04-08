@@ -1439,6 +1439,27 @@
 			}
 		}
 
+		// Auto-open order modal if ?open_order=<id> is in URL
+		(function checkUrlOpenOrder() {
+			var params = new URLSearchParams(window.location.search);
+			var openOrderId = (params.get("open_order") || "").trim();
+			if (!openOrderId) return;
+			// Clean URL without reloading
+			params.delete("open_order");
+			var cleanUrl = window.location.pathname + (params.toString() ? "?" + params.toString() : "") + window.location.hash;
+			window.history.replaceState({}, "", cleanUrl);
+			// Create a virtual trigger button that mimics an editOrderBtn
+			var modalEl = document.getElementById("orderModal");
+			if (!modalEl) return;
+			var virtualBtn = document.createElement("button");
+			virtualBtn.classList.add("editOrderBtn");
+			virtualBtn.setAttribute("data-order-id", openOrderId);
+			var ModalClass = (window.bootstrap && window.bootstrap.Modal) ? window.bootstrap.Modal : null;
+			if (ModalClass) {
+				ModalClass.getOrCreateInstance(modalEl).show(virtualBtn);
+			}
+		})();
+
 	// ---- Edit Part Modal Logic ----
 	const createPartModal = document.getElementById('createPartModal');
 	if (createPartModal) {

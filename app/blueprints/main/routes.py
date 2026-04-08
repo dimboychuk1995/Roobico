@@ -1,9 +1,11 @@
-from flask import render_template, request, redirect, url_for, session, flash, g
+import re
+
+from flask import render_template, request, redirect, url_for, session, flash, g, jsonify
 from bson import ObjectId
 
 from app.utils.auth import login_required, SESSION_USER_ID, SESSION_TENANT_ID
 from app.utils.permissions import permission_required
-from app.extensions import get_master_db
+from app.extensions import get_master_db, get_mongo_client
 from app.utils.display_datetime import get_active_shop_timezone_name
 from . import main_bp
 
@@ -241,5 +243,154 @@ def settings_workflows():
 @permission_required("settings.manage_org")
 def settings_notifications():
     return _render_app_page("public/settings/notifications.html", active_page="settings")
+
+
+# ── helpers for global search ──────────────────────────────────
+
+def _get_shop_db_for_search():
+    master = get_master_db()
+    shop_id_raw = session.get("shop_id")
+    if not shop_id_raw:
+        return None
+    try:
+        shop_oid = ObjectId(str(shop_id_raw))
+    except Exception:
+        return None
+
+    tenant_id = _maybe_object_id(session.get(SESSION_TENANT_ID))
+    shop = master.shops.find_one({"_id": shop_oid, "tenant_id": tenant_id})
+    if not shop:
+        return None
+
+    db_name = (
+        shop.get("db_name")
+        or shop.get("database")
+        or shop.get("db")
+        or shop.get("mongo_db")
+        or shop.get("shop_db")
+    )
+    if not db_name:
+        return None
+
+    client = get_mongo_client()
+    return client[str(db_name)]
+
+
+_GLOBAL_SEARCH_LIMIT = 5
+
+
+@main_bp.get("/api/global-search")
+@login_required
+def global_search_api():
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return jsonify({"results": []})
+
+    db = _get_shop_db_for_search()
+    if db is None:
+        return jsonify({"results": []})
+
+    pattern = re.compile(re.escape(q), re.IGNORECASE)
+    groups = []
+
+    # 1. Customers
+    customers = list(
+        db.customers.find(
+            {"$or": [
+                {"company_name": pattern},
+                {"contacts.first_name": pattern},
+                {"contacts.last_name": pattern},
+            ]},
+            {"company_name": 1, "contacts": 1},
+        ).limit(_GLOBAL_SEARCH_LIMIT)
+    )
+    if customers:
+        items = []
+        for c in customers:
+            label = c.get("company_name") or ""
+            contacts = c.get("contacts") or []
+            if contacts:
+                cn = contacts[0]
+                name = " ".join(filter(None, [cn.get("first_name"), cn.get("last_name")]))
+                if name and name != label:
+                    label = f"{label} — {name}" if label else name
+            items.append({"label": label or "—", "url": f"/customers/{c['_id']}"})
+        groups.append({"category": "Customers", "items": items})
+
+    # 2. Units
+    units = list(
+        db.units.find(
+            {"$or": [
+                {"unit_number": pattern},
+                {"make": pattern},
+                {"model": pattern},
+                {"vin": pattern},
+            ]},
+            {"unit_number": 1, "year": 1, "make": 1, "model": 1, "vin": 1, "customer_id": 1},
+        ).limit(_GLOBAL_SEARCH_LIMIT)
+    )
+    if units:
+        items = []
+        for u in units:
+            bits = []
+            if u.get("unit_number"):
+                bits.append(str(u["unit_number"]))
+            if u.get("year"):
+                bits.append(str(u["year"]))
+            if u.get("make"):
+                bits.append(str(u["make"]))
+            if u.get("model"):
+                bits.append(str(u["model"]))
+            label = " ".join(bits) or "—"
+            cid = u.get("customer_id") or ""
+            items.append({"label": label, "url": f"/customers/{cid}/units/{u['_id']}"})
+        groups.append({"category": "Units", "items": items})
+
+    # 3. Work Orders (by wo_number)
+    wo_filter = {"wo_number": pattern}
+    work_orders = list(
+        db.work_orders.find(wo_filter, {"wo_number": 1}).limit(_GLOBAL_SEARCH_LIMIT)
+    )
+    if work_orders:
+        items = []
+        for wo in work_orders:
+            label = f"WO #{wo.get('wo_number', '')}"
+            items.append({"label": label, "url": f"/work_orders/details?work_order_id={wo['_id']}"})
+        groups.append({"category": "Work Orders", "items": items})
+
+    # 4. Parts
+    parts = list(
+        db.parts.find(
+            {"$or": [
+                {"part_number": pattern},
+                {"description": pattern},
+            ]},
+            {"part_number": 1, "description": 1},
+        ).limit(_GLOBAL_SEARCH_LIMIT)
+    )
+    if parts:
+        items = []
+        for p in parts:
+            pn = p.get("part_number") or ""
+            desc = p.get("description") or ""
+            label = f"{pn} — {desc}" if pn and desc else (pn or desc or "—")
+            items.append({"label": label, "url": f"/parts/?tab=parts&q={q}"})
+        groups.append({"category": "Parts", "items": items})
+
+    # 5. Part Orders (by order_number)
+    orders = list(
+        db.parts_orders.find(
+            {"order_number": pattern},
+            {"order_number": 1},
+        ).limit(_GLOBAL_SEARCH_LIMIT)
+    )
+    if orders:
+        items = []
+        for o in orders:
+            label = f"Order #{o.get('order_number', '')}"
+            items.append({"label": label, "url": f"/parts/?tab=orders&open_order={o['_id']}"})
+        groups.append({"category": "Part Orders", "items": items})
+
+    return jsonify({"results": groups})
 
 

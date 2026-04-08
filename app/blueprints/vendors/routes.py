@@ -17,6 +17,7 @@ from app.utils.pagination import get_pagination_params, paginate_find
 from app.utils.permissions import permission_required
 from app.utils.mongo_search import build_regex_search_filter
 from app.utils.display_datetime import format_date_mmddyyyy
+from app.utils.date_filters import build_date_range_filters
 from app.utils.contacts import (
     build_contacts_from_form,
     build_contacts_from_payload,
@@ -379,6 +380,67 @@ def vendors_api_get(vendor_id):
     })
 
 
+def _calc_order_total(order_doc: dict) -> float:
+    total = 0.0
+    for item in (order_doc.get("items") or []):
+        if not isinstance(item, dict):
+            continue
+        qty = max(0, int(_to_float(item.get("quantity"), 0)))
+        price = max(0.0, _to_float(item.get("price"), 0.0))
+        total += qty * price
+        # Add core charge per unit if applicable
+        if item.get("core_has_charge") and _to_float(item.get("core_cost"), 0.0) > 0:
+            total += qty * _to_float(item.get("core_cost"), 0.0)
+    for line in (order_doc.get("non_inventory_amounts") or []):
+        if not isinstance(line, dict):
+            continue
+        total += max(0.0, _to_float(line.get("amount"), 0.0))
+    return round(total, 2)
+
+
+def _build_vendor_orders_summary(orders_coll, payments_coll, query: dict) -> dict:
+    all_orders = list(orders_coll.find(query, {
+        "_id": 1, "status": 1, "items": 1, "non_inventory_amounts": 1,
+    }))
+
+    total_orders = len(all_orders)
+    total_amount = 0.0
+    received_count = 0
+    not_received_count = 0
+    order_ids = []
+
+    for order in all_orders:
+        total_amount += _calc_order_total(order)
+        status = (order.get("status") or "ordered").strip().lower()
+        if status == "received":
+            received_count += 1
+        else:
+            not_received_count += 1
+        order_ids.append(order["_id"])
+
+    # Calculate paid amounts
+    total_paid = 0.0
+    if order_ids and payments_coll is not None:
+        pipeline = [
+            {"$match": {"parts_order_id": {"$in": order_ids}, "is_active": True}},
+            {"$group": {"_id": None, "total": {"$sum": {"$ifNull": ["$amount", 0]}}}},
+        ]
+        rows = list(payments_coll.aggregate(pipeline))
+        if rows:
+            total_paid = float(rows[0].get("total", 0))
+
+    unpaid = max(0.0, total_amount - total_paid)
+
+    return {
+        "total_orders": total_orders,
+        "total_amount": round(total_amount, 2),
+        "total_paid": round(total_paid, 2),
+        "unpaid": round(unpaid, 2),
+        "received": received_count,
+        "not_received": not_received_count,
+    }
+
+
 @vendors_bp.get("/api/<vendor_id>/part-orders")
 @login_required
 @permission_required("vendors.view")
@@ -395,14 +457,25 @@ def vendors_api_part_orders(vendor_id):
     if not vendor:
         return jsonify({"ok": False, "error": "Vendor not found"}), 404
 
+    date_filters = build_date_range_filters(request.args, default_preset="this_month")
+
     page, per_page = get_pagination_params(request.args, default_per_page=10, max_per_page=100)
     orders_coll = coll.database.parts_orders
+    payments_coll = coll.database.parts_order_payments
 
     query = {
         "shop_id": shop["_id"],
         "vendor_id": vid,
         "is_active": {"$ne": False},
     }
+
+    if date_filters["created_from"] or date_filters["created_to_exclusive"]:
+        date_cond = {}
+        if date_filters["created_from"]:
+            date_cond["$gte"] = date_filters["created_from"]
+        if date_filters["created_to_exclusive"]:
+            date_cond["$lt"] = date_filters["created_to_exclusive"]
+        query["created_at"] = date_cond
 
     orders, pagination = paginate_find(
         orders_coll,
@@ -414,6 +487,7 @@ def vendors_api_part_orders(vendor_id):
             "order_number": 1,
             "status": 1,
             "items": 1,
+            "non_inventory_amounts": 1,
             "created_at": 1,
         },
     )
@@ -421,15 +495,20 @@ def vendors_api_part_orders(vendor_id):
     items = []
     for order in orders:
         raw_items = order.get("items") if isinstance(order.get("items"), list) else []
+        order_total = _calc_order_total(order)
         items.append(
             {
                 "id": str(order.get("_id")),
                 "order_number": order.get("order_number") or "-",
                 "status": (order.get("status") or "ordered").strip().lower(),
                 "items_count": len(raw_items),
+                "total_amount": order_total,
                 "created_at": _fmt_dt_label(order.get("created_at")),
             }
         )
+
+    # Build summary across ALL matching orders (not just current page)
+    summary = _build_vendor_orders_summary(orders_coll, payments_coll, query)
 
     return jsonify(
         {
@@ -440,6 +519,10 @@ def vendors_api_part_orders(vendor_id):
             },
             "items": items,
             "pagination": pagination,
+            "summary": summary,
+            "date_preset": date_filters["date_preset"],
+            "date_from": date_filters["date_from"],
+            "date_to": date_filters["date_to"],
         }
     )
 
