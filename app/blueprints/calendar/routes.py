@@ -212,6 +212,21 @@ def api_statuses():
     return jsonify(_get_statuses(db))
 
 
+@calendar_bp.get("/calendar/api/presets")
+@login_required
+def api_presets():
+    db, shop = _get_shop_db()
+    if db is None:
+        return jsonify([])
+    rows = list(
+        db.wo_presets.find(
+            {"shop_id": shop["_id"], "is_active": True},
+            {"name": 1, "description": 1},
+        ).sort([("name", 1)])
+    )
+    return jsonify([{"id": str(r["_id"]), "name": r.get("name") or ""} for r in rows])
+
+
 @calendar_bp.put("/calendar/api/statuses")
 @login_required
 def api_save_statuses():
@@ -292,6 +307,7 @@ def api_events():
             "unit_label": r.get("unit_label") or "",
             "mechanic_id": str(r["mechanic_id"]) if r.get("mechanic_id") else "",
             "mechanic_name": r.get("mechanic_name") or "",
+            "presets": r.get("presets") or [],
         })
 
     return jsonify(events)
@@ -329,6 +345,18 @@ def api_create_event():
     status = (data.get("status") or "scheduled").strip()
     title = (data.get("title") or "").strip()
 
+    # presets (array of {id, name})
+    raw_presets = data.get("presets") or []
+    presets = []
+    if isinstance(raw_presets, list):
+        for rp in raw_presets:
+            if not isinstance(rp, dict):
+                continue
+            pid = (rp.get("id") or "").strip()
+            pname = (rp.get("name") or "").strip()
+            if pid and pname:
+                presets.append({"id": pid, "name": pname})
+
     valid_statuses = {s["key"] for s in _get_statuses(db)}
     if status not in valid_statuses:
         status = "scheduled"
@@ -347,6 +375,7 @@ def api_create_event():
         "unit_label": unit_label_val,
         "mechanic_id": _oid(mechanic_id_raw),
         "mechanic_name": mechanic_name_val,
+        "presets": presets,
         "shop_id": shop["_id"],
         "tenant_id": _oid(session.get(SESSION_TENANT_ID)),
         "created_at": now,
@@ -370,6 +399,7 @@ def api_create_event():
         "unit_label": doc["unit_label"],
         "mechanic_id": str(doc["mechanic_id"]) if doc["mechanic_id"] else "",
         "mechanic_name": doc["mechanic_name"],
+        "presets": doc.get("presets") or [],
     }), 201
 
 
@@ -395,6 +425,19 @@ def api_update_event(event_id):
     for field in ("customer_id", "unit_id", "mechanic_id"):
         if field in data:
             updates[field] = _oid(data[field])
+
+    if "presets" in data:
+        raw_presets = data["presets"] or []
+        presets = []
+        if isinstance(raw_presets, list):
+            for rp in raw_presets:
+                if not isinstance(rp, dict):
+                    continue
+                pid = (rp.get("id") or "").strip()
+                pname = (rp.get("name") or "").strip()
+                if pid and pname:
+                    presets.append({"id": pid, "name": pname})
+        updates["presets"] = presets
 
     for field in ("start_time", "end_time"):
         if field in data and data[field]:
@@ -422,6 +465,7 @@ def api_update_event(event_id):
         "unit_label": updated.get("unit_label") or "",
         "mechanic_id": str(updated["mechanic_id"]) if updated.get("mechanic_id") else "",
         "mechanic_name": updated.get("mechanic_name") or "",
+        "presets": updated.get("presets") or [],
     })
 
 

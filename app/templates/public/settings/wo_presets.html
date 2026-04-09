@@ -1,0 +1,199 @@
+{% extends "layouts/app_base.html" %}
+{% block page_title %}Settings — Work Order Presets{% endblock %}
+
+{% block app_content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h1 class="h4 mb-1">Work Order Presets</h1>
+    <p class="text-muted mb-0">Reusable service templates with labor, parts and pricing.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#presetModal" id="addPresetBtn">
+      + Add Preset
+    </button>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('main.settings') }}">Back to Settings</a>
+  </div>
+</div>
+
+{% if presets and presets|length > 0 %}
+<div class="row g-3">
+  {% for p in presets %}
+  <div class="col-12 col-md-6 col-xl-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <h2 class="h6 mb-0">{{ p.name }}</h2>
+          <div class="d-flex gap-1">
+            <button type="button"
+                    class="btn btn-sm btn-outline-primary edit-preset-btn"
+                    data-preset-id="{{ p.id }}">Edit</button>
+            <form method="post"
+                  action="{{ url_for('settings.wo_presets_delete', preset_id=p.id) }}"
+                  onsubmit="return confirm('Delete this preset?');">
+              <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
+            </form>
+          </div>
+        </div>
+
+        {% if p.description %}
+          <p class="text-muted small mb-2">{{ p.description }}</p>
+        {% endif %}
+
+        <div class="small">
+          {% if p.labor_hours is not none %}
+            <div><strong>Labor:</strong> {{ p.labor_hours }} hr{% if p.labor_rate_code %} · {{ p.labor_rate_code }}{% endif %}</div>
+          {% endif %}
+
+          {% if p.get('fixed_labor_price') is not none %}
+            <div><strong>Labor:</strong> ${{ '%.2f'|format(p.fixed_labor_price) }}</div>
+          {% endif %}
+          {% if p.get('fixed_parts_total') is not none %}
+            <div><strong>Parts:</strong> ${{ '%.2f'|format(p.fixed_parts_total) }}</div>
+          {% endif %}
+          {% if p.get('fixed_total_price') is not none %}
+            <div><strong>Total:</strong> ${{ '%.2f'|format(p.fixed_total_price) }}</div>
+          {% endif %}
+
+          {% if p.parts and p.parts|length > 0 %}
+            <div class="mt-1"><strong>Parts ({{ p.parts|length }}):</strong></div>
+            <ul class="mb-0 ps-3">
+              {% for pt in p.parts[:5] %}
+                <li>{{ pt.part_number or '—' }} {{ pt.description or '' }} × {{ pt.qty }}{% if pt.price %} @ ${{ '%.2f'|format(pt.price) }}{% endif %}</li>
+              {% endfor %}
+              {% if p.parts|length > 5 %}
+                <li class="text-muted">… and {{ p.parts|length - 5 }} more</li>
+              {% endif %}
+            </ul>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">
+  <div class="card-body text-muted">
+    No presets yet. Click <strong>+ Add Preset</strong> to create one.
+  </div>
+</div>
+{% endif %}
+
+<!-- ───────── Create / Edit Preset Modal ───────── -->
+<div class="modal fade" id="presetModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <form method="post" id="presetForm" action="{{ url_for('settings.wo_presets_create') }}">
+        <div class="modal-header">
+          <h5 class="modal-title" id="presetModalTitle">New Preset</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+
+          <!-- Name & Description -->
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" id="presetName" class="form-control" maxlength="120" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold">Description</label>
+              <input type="text" name="description" id="presetDescription" class="form-control" maxlength="250">
+            </div>
+          </div>
+
+          <!-- Labor Section -->
+          <h6 class="border-bottom pb-2 mb-3">Labor</h6>
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              <label class="form-label">Hours</label>
+              <input type="number" step="0.01" min="0" name="labor_hours" id="presetLaborHours" class="form-control" placeholder="e.g. 1.5">
+            </div>
+            <div class="col-md-6">
+              <label class="form-label">Labor Rate</label>
+              <select name="labor_rate_code" id="presetLaborRate" class="form-select">
+                <option value="">— Use customer default —</option>
+                {% for r in labor_rates %}
+                  <option value="{{ r.code }}">{{ r.name }} (${{ '%.2f'|format(r.hourly_rate) }}/hr)</option>
+                {% endfor %}
+              </select>
+            </div>
+          </div>
+
+          <!-- Parts Section -->
+          <h6 class="border-bottom pb-2 mb-3">Parts</h6>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle mb-0" id="presetPartsTable">
+              <thead class="table-light small">
+                <tr>
+                  <th style="width:20%">Part #</th>
+                  <th style="width:26%">Description</th>
+                  <th style="width:8%">Qty</th>
+                  <th style="width:12%">Cost</th>
+                  <th style="width:12%">Price</th>
+                  <th style="width:12%">Total</th>
+                  <th style="width:5%"></th>
+                </tr>
+              </thead>
+              <tbody id="presetPartsTbody">
+              </tbody>
+            </table>
+          </div>
+          <div class="mt-2">
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="addPresetPartBtn">+ Add Part</button>
+          </div>
+          <div class="form-check form-switch mt-3">
+            <input class="form-check-input" type="checkbox" role="switch" id="presetAllowDiscount" name="allow_discount" value="1" checked>
+            <label class="form-check-label" for="presetAllowDiscount">
+              Allow customer discount on parts
+            </label>
+            <div class="form-text">If enabled, customer discount will be applied to part prices in the work order.</div>
+          </div>
+
+          <input type="hidden" name="parts_json" id="presetPartsJson" value="[]">
+
+          <!-- Pricing Summary -->
+          <h6 class="border-bottom pb-2 mb-3 mt-4">Pricing Summary</h6>
+          <p class="text-muted small mb-3">
+            Fill any two values — the third will be calculated automatically.
+          </p>
+          <div class="row g-3 mb-2">
+            <div class="col-md-4">
+              <label class="form-label">Labor Price</label>
+              <input type="number" step="0.01" min="0" name="fixed_labor_price" id="presetFixedLabor" class="form-control" placeholder="0.00">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Parts Total</label>
+              <input type="number" step="0.01" min="0" name="fixed_parts_total" id="presetFixedParts" class="form-control" placeholder="0.00">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Grand Total</label>
+              <input type="number" step="0.01" min="0" name="fixed_total_price" id="presetFixedTotal" class="form-control" placeholder="0.00">
+            </div>
+          </div>
+          <div id="pricingSummaryHint" class="text-muted small mt-1" style="display:none;"></div>
+
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="presetSaveBtn">Create</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Parts search dropdown (reused from WO) -->
+<div id="presetPartsDropdown" class="position-absolute bg-white border rounded shadow-sm"
+     style="display:none; z-index:1060; max-height:260px; overflow-y:auto; min-width:320px;"></div>
+
+<script>
+  var LABOR_RATES_DATA = {{ labor_rates|tojson }};
+  var PRICING_RULES = {{ pricing_rules|tojson }};
+  var CREATE_URL = {{ url_for('settings.wo_presets_create')|tojson }};
+  var UPDATE_URL_TPL = {{ url_for('settings.wo_presets_update', preset_id='__ID__')|tojson }};
+  var DETAIL_URL_TPL = {{ url_for('settings.wo_presets_detail', preset_id='__ID__')|tojson }};
+  var PARTS_SEARCH_URL = {{ url_for('work_orders.api_parts_search')|tojson }};
+</script>
+<script src="{{ url_for('static', filename='js/settings/wo_presets.js', v='20260409-v9') }}"></script>
+{% endblock %}

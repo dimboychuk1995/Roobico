@@ -1,5 +1,11 @@
 /* ── Calendar – Google Calendar style ── */
 
+#calWeekContainer {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+}
+
 .cal-toolbar {
   position: sticky;
   top: 0;
@@ -105,9 +111,9 @@
 .cal-body-scroll {
   display: flex;
   flex: 1;
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: hidden;
   position: relative;
+  padding-top: 6px;
 }
 
 /* ── time gutter ── */
@@ -125,7 +131,7 @@
   justify-content: flex-end;
   padding: 0 8px 0 0;
   font-family: 'Google Sans', Roboto, Arial, sans-serif;
-  font-size: .625rem;
+  font-size: .75rem;
   color: #70757a;
   box-sizing: border-box;
   position: relative;

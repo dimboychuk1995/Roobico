@@ -4,7 +4,7 @@
 
 {% block extra_styles %}
   {{ super() }}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/calendar.css', v='20260408-v4') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/calendar.css', v='20260409-v6') }}">
 {% endblock %}
 
 {% block app_content %}
@@ -65,18 +65,29 @@
       <div class="modal-body">
         <input type="hidden" id="apptEventId" value="">
 
-        <div class="mb-3">
+        <div class="mb-3 position-relative">
           <label class="form-label">Customer</label>
-          <select class="form-select" id="apptCustomer">
-            <option value="">— New Customer —</option>
-          </select>
+          <input type="hidden" id="apptCustomer" value="">
+          <input type="text" class="form-control" id="apptCustomerSearch" placeholder="Search customer..." autocomplete="off">
+          <div id="apptCustomerDrop" class="list-group position-absolute shadow-sm" style="z-index:1060; display:none; max-height:220px; overflow:auto; width:100%;"></div>
         </div>
 
-        <div class="mb-3">
+        <div class="mb-3 position-relative">
           <label class="form-label">Unit</label>
-          <select class="form-select" id="apptUnit" disabled>
-            <option value="">— New Unit —</option>
-          </select>
+          <input type="hidden" id="apptUnit" value="">
+          <input type="text" class="form-control" id="apptUnitSearch" placeholder="Search unit..." autocomplete="off" disabled>
+          <div id="apptUnitDrop" class="list-group position-absolute shadow-sm" style="z-index:1060; display:none; max-height:220px; overflow:auto; width:100%;"></div>
+        </div>
+
+        <div class="mb-3 position-relative">
+          <label class="form-label">Service Presets</label>
+          <div class="d-flex gap-2">
+            <input type="text" class="form-control form-control-sm" id="apptPresetSearch" placeholder="Search preset..." autocomplete="off">
+            <button type="button" class="btn btn-outline-secondary btn-sm flex-shrink-0" id="apptPresetAddBtn" disabled>+ Add</button>
+          </div>
+          <div id="apptPresetDrop" class="list-group position-absolute shadow-sm" style="z-index:1060; display:none; max-height:220px; overflow:auto; width:100%;"></div>
+          <input type="hidden" id="apptPresetPendingId" value="">
+          <div id="apptPresetTags" class="d-flex flex-wrap gap-1 mt-2"></div>
         </div>
 
         <input type="hidden" id="apptDate" value="">
@@ -92,11 +103,11 @@
           </div>
         </div>
 
-        <div class="mb-3">
+        <div class="mb-3 position-relative">
           <label class="form-label">Assign to Mechanic</label>
-          <select class="form-select" id="apptMechanic">
-            <option value="">— None —</option>
-          </select>
+          <input type="hidden" id="apptMechanic" value="">
+          <input type="text" class="form-control" id="apptMechanicSearch" placeholder="Search mechanic..." autocomplete="off">
+          <div id="apptMechanicDrop" class="list-group position-absolute shadow-sm" style="z-index:1060; display:none; max-height:220px; overflow:auto; width:100%;"></div>
         </div>
 
         <div class="mb-3">
@@ -118,5 +129,5 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/calendar/calendar.js', v='20260408-v4') }}"></script>
+<script src="{{ url_for('static', filename='js/calendar/calendar.js', v='20260409-v8') }}"></script>
 {% endblock %}

@@ -13,6 +13,20 @@
   var STEP_MINUTES = 15;
   var PX_PER_MINUTE = SLOT_HEIGHT / 60;
 
+  function calcSlotHeight() {
+    var toolbar = document.querySelector('.cal-toolbar');
+    var topbar = document.querySelector('.app-topbar');
+    var toolbarH = toolbar ? toolbar.offsetHeight : 0;
+    var topbarH = topbar ? topbar.offsetHeight : 0;
+    var headerRowH = 70; // approximate header row height
+    // account for .app-main-pad padding (~31px), toolbar mb-2 (~8px), borders (~2px)
+    var chrome = topbarH + toolbarH + headerRowH + 42;
+    var available = window.innerHeight - chrome;
+    var numSlots = HOURS_END - HOURS_START;
+    var h = Math.floor(available / numSlots);
+    return Math.max(h, 30);
+  }
+
   /* ── state ── */
   var weekStart = null;
   var expandedDayIndex = -1;
@@ -21,6 +35,7 @@
   var cachedCustomers = [];
   var cachedMechanics = [];
   var cachedStatuses = [];
+  var cachedPresets = [];
   var drag = null; // active drag state
   var dragJustEnded = false;
 
@@ -34,16 +49,28 @@
   var modalEl     = document.getElementById("appointmentModal");
   var modalTitle  = document.getElementById("appointmentModalLabel");
   var elEventId   = document.getElementById("apptEventId");
-  var elCustomer  = document.getElementById("apptCustomer");
-  var elUnit      = document.getElementById("apptUnit");
-  var elDate      = document.getElementById("apptDate");
-  var elStart     = document.getElementById("apptStart");
-  var elEnd       = document.getElementById("apptEnd");
-  var elMechanic  = document.getElementById("apptMechanic");
-  var elStatusGrp = document.getElementById("apptStatusGroup");
-  var elTitleInp  = document.getElementById("apptTitle");
-  var elSaveBtn   = document.getElementById("apptSaveBtn");
-  var elDelBtn    = document.getElementById("apptDeleteBtn");
+  var elCustomer        = document.getElementById("apptCustomer");
+  var elCustomerSearch  = document.getElementById("apptCustomerSearch");
+  var elCustomerDrop    = document.getElementById("apptCustomerDrop");
+  var elUnit            = document.getElementById("apptUnit");
+  var elUnitSearch      = document.getElementById("apptUnitSearch");
+  var elUnitDrop        = document.getElementById("apptUnitDrop");
+  var elDate            = document.getElementById("apptDate");
+  var elStart           = document.getElementById("apptStart");
+  var elEnd             = document.getElementById("apptEnd");
+  var elMechanic        = document.getElementById("apptMechanic");
+  var elMechanicSearch  = document.getElementById("apptMechanicSearch");
+  var elMechanicDrop    = document.getElementById("apptMechanicDrop");
+  var elStatusGrp       = document.getElementById("apptStatusGroup");
+  var elTitleInp        = document.getElementById("apptTitle");
+  var elPresetSearch    = document.getElementById("apptPresetSearch");
+  var elPresetDrop      = document.getElementById("apptPresetDrop");
+  var elPresetPendingId = document.getElementById("apptPresetPendingId");
+  var elPresetAddBtn    = document.getElementById("apptPresetAddBtn");
+  var elPresetTags      = document.getElementById("apptPresetTags");
+  var elSaveBtn         = document.getElementById("apptSaveBtn");
+  var elDelBtn          = document.getElementById("apptDeleteBtn");
+  var selectedPresets   = []; // [{id, name}]
 
   if (!container) return;
 
@@ -156,6 +183,12 @@
     });
   }
 
+  function loadPresets() {
+    return fetchJSON("/calendar/api/presets").then(function (data) {
+      cachedPresets = data || [];
+    });
+  }
+
   function loadUnits(customerId) {
     if (!customerId) return Promise.resolve([]);
     return fetchJSON("/calendar/api/units/" + customerId);
@@ -257,6 +290,9 @@
   function render() {
     container.innerHTML = "";
     updateTitle();
+
+    SLOT_HEIGHT = calcSlotHeight();
+    PX_PER_MINUTE = SLOT_HEIGHT / 60;
 
     var grid = document.createElement("div");
     grid.className = "cal-grid";
@@ -652,6 +688,75 @@
     }
   }
 
+  /* ── searchable dropdown helper ── */
+  function bindSearchable(searchInput, dropDiv, hiddenInput, items, valueFn, labelFn, onSelect) {
+    var list = items.map(function (item) {
+      return { value: valueFn(item), label: labelFn(item) };
+    });
+
+    // Remove old listeners by cloning the search input
+    var newInput = searchInput.cloneNode(true);
+    searchInput.parentNode.replaceChild(newInput, searchInput);
+
+    // Update DOM references
+    if (searchInput === elCustomerSearch) elCustomerSearch = newInput;
+    else if (searchInput === elUnitSearch) elUnitSearch = newInput;
+    else if (searchInput === elMechanicSearch) elMechanicSearch = newInput;
+    else if (searchInput === elPresetSearch) elPresetSearch = newInput;
+
+    function renderList(filtered) {
+      dropDiv.innerHTML = "";
+      for (var i = 0; i < filtered.length; i++) {
+        (function (entry) {
+          var a = document.createElement("a");
+          a.href = "#";
+          a.className = "list-group-item list-group-item-action py-1 px-2";
+          a.style.fontSize = "0.9em";
+          a.textContent = entry.label;
+          a.addEventListener("mousedown", function (e) {
+            e.preventDefault();
+            hiddenInput.value = entry.value;
+            newInput.value = entry.label;
+            dropDiv.style.display = "none";
+            if (onSelect) onSelect(entry.value, entry.label);
+          });
+          dropDiv.appendChild(a);
+        })(filtered[i]);
+      }
+      dropDiv.style.display = filtered.length ? "block" : "none";
+    }
+
+    newInput.addEventListener("input", function () {
+      var q = this.value.toLowerCase();
+      if (!q) {
+        hiddenInput.value = "";
+        renderList(list);
+        return;
+      }
+      var filtered = list.filter(function (entry) {
+        return entry.label.toLowerCase().indexOf(q) !== -1;
+      });
+      renderList(filtered);
+    });
+
+    newInput.addEventListener("focus", function () {
+      var q = this.value.toLowerCase();
+      var filtered = q ? list.filter(function (e) { return e.label.toLowerCase().indexOf(q) !== -1; }) : list;
+      renderList(filtered);
+    });
+
+    newInput.addEventListener("blur", function () {
+      setTimeout(function () { dropDiv.style.display = "none"; }, 150);
+    });
+  }
+
+  function clearSearchable(searchInput, hiddenInput, dropDiv) {
+    searchInput.value = "";
+    hiddenInput.value = "";
+    dropDiv.innerHTML = "";
+    dropDiv.style.display = "none";
+  }
+
   function buildStatusButtons(selectedKey) {
     elStatusGrp.innerHTML = "";
     for (var i = 0; i < cachedStatuses.length; i++) {
@@ -691,17 +796,17 @@
   }
 
   function loadUnitsForCustomer(customerId) {
-    elUnit.innerHTML = '<option value="">— New Unit —</option>';
+    clearSearchable(elUnitSearch, elUnit, elUnitDrop);
     if (!customerId) {
-      elUnit.disabled = true;
+      elUnitSearch.disabled = true;
       return;
     }
-    elUnit.disabled = false;
+    elUnitSearch.disabled = false;
     loadUnits(customerId).then(function (units) {
-      populateSelect(elUnit, units,
+      bindSearchable(elUnitSearch, elUnitDrop, elUnit, units,
         function (u) { return u.id; },
         function (u) { return u.label; },
-        "— New Unit —"
+        null
       );
     });
   }
@@ -712,50 +817,81 @@
     elEventId.value = isEdit ? existingEvent.id : "";
     elDelBtn.classList.toggle("d-none", !isEdit);
 
-    // populate customers
-    populateSelect(elCustomer, cachedCustomers,
+    // bind searchable dropdowns
+    bindSearchable(elCustomerSearch, elCustomerDrop, elCustomer, cachedCustomers,
       function (c) { return c.id; },
       function (c) { return c.label; },
-      "— New Customer —"
+      function (val) { loadUnitsForCustomer(val); }
     );
+    // clear units when customer text is manually edited
+    elCustomerSearch.addEventListener("input", function () {
+      if (!elCustomer.value) {
+        clearSearchable(elUnitSearch, elUnit, elUnitDrop);
+        elUnitSearch.disabled = true;
+      }
+    });
 
-    // populate mechanics
-    populateSelect(elMechanic, cachedMechanics,
+    bindSearchable(elMechanicSearch, elMechanicDrop, elMechanic, cachedMechanics,
       function (m) { return m.id; },
       function (m) { return m.name + (m.role ? " (" + m.role + ")" : ""); },
-      "— None —"
+      null
+    );
+
+    // presets searchable
+    bindSearchable(elPresetSearch, elPresetDrop, elPresetPendingId, cachedPresets,
+      function (p) { return p.id; },
+      function (p) { return p.name; },
+      function () { elPresetAddBtn.disabled = false; }
     );
 
     if (isEdit) {
+      // customer
       elCustomer.value = existingEvent.customer_id || "";
+      elCustomerSearch.value = existingEvent.customer_label || "";
       if (existingEvent.customer_id) {
-        loadUnitsForCustomer(existingEvent.customer_id);
-        // set unit after load
-        loadUnits(existingEvent.customer_id).then(function () {
+        loadUnits(existingEvent.customer_id).then(function (units) {
+          bindSearchable(elUnitSearch, elUnitDrop, elUnit, units,
+            function (u) { return u.id; },
+            function (u) { return u.label; },
+            null
+          );
+          elUnitSearch.disabled = false;
           elUnit.value = existingEvent.unit_id || "";
+          elUnitSearch.value = existingEvent.unit_label || "";
         });
       } else {
-        elUnit.innerHTML = '<option value="">— New Unit —</option>';
-        elUnit.disabled = true;
+        elUnitSearch.disabled = true;
       }
+
       var stDt = new Date(existingEvent.start_time);
       var enDt = new Date(existingEvent.end_time);
       elDate.value = toISODate(stDt);
       elStart.value = pad2(stDt.getHours()) + ":" + pad2(stDt.getMinutes());
       elEnd.value = pad2(enDt.getHours()) + ":" + pad2(enDt.getMinutes());
+
       elMechanic.value = existingEvent.mechanic_id || "";
+      elMechanicSearch.value = existingEvent.mechanic_name || "";
+
       elTitleInp.value = existingEvent.title || "";
+      selectedPresets = (existingEvent.presets || []).slice();
+      renderPresetTags();
       buildStatusButtons(existingEvent.status || "scheduled");
     } else {
+      clearSearchable(elCustomerSearch, elCustomer, elCustomerDrop);
+      clearSearchable(elUnitSearch, elUnit, elUnitDrop);
+      clearSearchable(elMechanicSearch, elMechanic, elMechanicDrop);
+      clearSearchable(elPresetSearch, elPresetPendingId, elPresetDrop);
+      elPresetAddBtn.disabled = true;
+      elUnitSearch.disabled = true;
+
       var dayDate = addDays(weekStart, dayIndex);
       elDate.value = toISODate(dayDate);
       elStart.value = pad2(hour) + ":00";
       var endHour = Math.min(hour + 1, HOURS_END);
       elEnd.value = pad2(endHour) + ":00";
-      elMechanic.value = "";
       elTitleInp.value = "";
-      elUnit.innerHTML = '<option value="">— New Unit —</option>';
-      elUnit.disabled = true;
+      selectedPresets = [];
+      renderPresetTags();
       buildStatusButtons("scheduled");
     }
 
@@ -766,9 +902,38 @@
     openModal(ev, 0, 0);
   }
 
-  /* ── customer change → reload units ── */
-  elCustomer.addEventListener("change", function () {
-    loadUnitsForCustomer(this.value);
+  /* ── preset add / remove ── */
+  function renderPresetTags() {
+    elPresetTags.innerHTML = "";
+    for (var i = 0; i < selectedPresets.length; i++) {
+      (function (idx) {
+        var p = selectedPresets[idx];
+        var tag = document.createElement("span");
+        tag.className = "badge bg-secondary d-inline-flex align-items-center gap-1";
+        tag.style.fontSize = "0.85em";
+        tag.innerHTML = escapeHtml(p.name) + ' <button type="button" class="btn-close btn-close-white" style="font-size:0.6em;" aria-label="Remove"></button>';
+        tag.querySelector(".btn-close").addEventListener("click", function () {
+          selectedPresets.splice(idx, 1);
+          renderPresetTags();
+        });
+        elPresetTags.appendChild(tag);
+      })(i);
+    }
+  }
+
+  elPresetAddBtn.addEventListener("click", function () {
+    var val = elPresetPendingId.value;
+    if (!val) return;
+    // don't add duplicates
+    for (var i = 0; i < selectedPresets.length; i++) {
+      if (selectedPresets[i].id === val) return;
+    }
+    selectedPresets.push({ id: val, name: elPresetSearch.value });
+    renderPresetTags();
+    clearSearchable(elPresetSearch, elPresetPendingId, elPresetDrop);
+    elPresetAddBtn.disabled = true;
+    // auto-fill title with preset names
+    elTitleInp.value = selectedPresets.map(function (p) { return p.name; }).join(", ");
   });
 
   /* ── save ── */
@@ -784,19 +949,16 @@
     var startISO = toLocalISO(dateVal, startVal);
     var endISO   = toLocalISO(dateVal, endVal);
 
-    var custSel = elCustomer.options[elCustomer.selectedIndex];
-    var unitSel = elUnit.options[elUnit.selectedIndex];
-    var mechSel = elMechanic.options[elMechanic.selectedIndex];
-
     var payload = {
       start_time: startISO,
       end_time: endISO,
       customer_id: elCustomer.value || "",
-      customer_label: elCustomer.value ? custSel.textContent : "New Customer",
+      customer_label: elCustomer.value ? elCustomerSearch.value : "New Customer",
       unit_id: elUnit.value || "",
-      unit_label: elUnit.value ? unitSel.textContent : (elUnit.disabled ? "" : "New Unit"),
+      unit_label: elUnit.value ? elUnitSearch.value : (elUnitSearch.disabled ? "" : "New Unit"),
       mechanic_id: elMechanic.value || "",
-      mechanic_name: elMechanic.value ? mechSel.textContent : "",
+      mechanic_name: elMechanic.value ? elMechanicSearch.value : "",
+      presets: selectedPresets.slice(),
       status: getSelectedStatus(),
       title: elTitleInp.value.trim(),
     };
@@ -980,7 +1142,13 @@
 
   /* ── init ── */
   goToWeek(new Date());
-  Promise.all([loadCustomers(), loadMechanics(), loadStatuses()])
+  Promise.all([loadCustomers(), loadMechanics(), loadStatuses(), loadPresets()])
     .then(function () { loadEvents(); })
     .catch(function (e) { console.warn("Calendar data load error:", e); });
+
+  var resizeTimer;
+  window.addEventListener("resize", function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () { render(); }, 150);
+  });
 })();
