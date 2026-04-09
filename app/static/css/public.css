@@ -273,35 +273,48 @@ small,
 
 .app-global-search-wrap .form-control {
   border-radius: 8px;
-  font-size: 0.82rem;
+  font-size: 1rem;
   background: rgba(255,255,255,0.7);
+  padding: 0.45rem 0.65rem;
 }
 
 .app-global-search-results {
   position: fixed;
   z-index: 1050;
-  min-width: 340px;
+  min-width: 680px;
   background: #fff;
   border: 1px solid #c5d1c8;
   border-radius: 8px;
-  max-height: 360px;
+  max-height: 420px;
   overflow-y: auto;
   box-shadow: 0 6px 18px rgba(0,0,0,0.12);
 }
 
+.gs-group {
+  border-bottom: 1px solid #e2e8e4;
+  padding-bottom: 0.25rem;
+  margin-bottom: 0.25rem;
+}
+
+.gs-group:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
 .gs-category {
-  font-size: 0.7rem;
+  font-size: 0.8rem;
   font-weight: 700;
   text-transform: uppercase;
   color: #6b8f73;
-  padding: 0.45rem 0.65rem 0.15rem;
+  padding: 0.5rem 0.75rem 0.2rem;
   letter-spacing: 0.04em;
 }
 
 .gs-item {
   display: block;
-  padding: 0.3rem 0.65rem;
-  font-size: 0.82rem;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.95rem;
   color: #2f4b3b;
   text-decoration: none;
   white-space: nowrap;
@@ -315,8 +328,8 @@ small,
 }
 
 .gs-empty {
-  padding: 0.55rem 0.65rem;
-  font-size: 0.82rem;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.95rem;
   color: #888;
 }
 

@@ -458,7 +458,7 @@ def global_search_api():
                 {"part_number": pattern},
                 {"description": pattern},
             ]},
-            {"part_number": 1, "description": 1},
+            {"part_number": 1, "description": 1, "in_stock": 1, "do_not_track_inventory": 1},
         ).limit(_GLOBAL_SEARCH_LIMIT)
     )
     if parts:
@@ -466,7 +466,17 @@ def global_search_api():
         for p in parts:
             pn = p.get("part_number") or ""
             desc = p.get("description") or ""
-            label = f"{pn} — {desc}" if pn and desc else (pn or desc or "—")
+            parts_l = []
+            if pn and desc:
+                parts_l.append(f"{pn} — {desc}")
+            else:
+                parts_l.append(pn or desc or "—")
+            if bool(p.get("do_not_track_inventory")):
+                parts_l.append("Not tracked")
+            else:
+                stock = int(p.get("in_stock") or 0)
+                parts_l.append(f"In stock: {stock}")
+            label = " · ".join(parts_l)
             items.append({"label": label, "url": f"/parts/?tab=parts&q={q}"})
         groups.append({"category": "Parts", "items": items})
 

@@ -308,7 +308,7 @@
     resultsBox.style.position = "fixed";
     resultsBox.style.top  = (rect.bottom + 4) + "px";
     resultsBox.style.left = rect.left + "px";
-    resultsBox.style.width = Math.max(340, rect.width) + "px";
+    resultsBox.style.width = Math.max(680, rect.width) + "px";
   }
 
   function showResults() {
@@ -324,10 +324,12 @@
     }
     var html = "";
     groups.forEach(function (g) {
+      html += '<div class="gs-group">';
       html += '<div class="gs-category">' + escHtml(g.category) + '</div>';
       g.items.forEach(function (item) {
         html += '<a class="gs-item" href="' + escAttr(item.url) + '">' + escHtml(item.label) + '</a>';
       });
+      html += '</div>';
     });
     resultsBox.innerHTML = html;
     showResults();
