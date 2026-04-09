@@ -3417,3 +3417,99 @@ def api_send_payment_receipt(payment_id):
         return jsonify({"ok": False, "error": str(exc)}), 500
 
     return jsonify({"ok": True, "sent_to": to_email}), 200
+
+
+# ──────────────── WO Presets API ────────────────
+
+@work_orders_bp.get("/work_orders/api/presets")
+@login_required
+@permission_required("work_orders.create")
+def api_presets_list():
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify([]), 200
+
+    rows = list(
+        shop_db.wo_presets.find(
+            {"shop_id": shop["_id"], "is_active": True},
+            {"name": 1},
+        ).sort([("name", 1)])
+    )
+    return jsonify([{"id": str(r["_id"]), "name": r.get("name") or ""} for r in rows]), 200
+
+
+@work_orders_bp.get("/work_orders/api/presets/<preset_id>")
+@login_required
+@permission_required("work_orders.create")
+def api_preset_detail(preset_id):
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"error": "no_shop"}), 400
+
+    pid = oid(preset_id)
+    if not pid:
+        return jsonify({"error": "bad_id"}), 400
+
+    doc = shop_db.wo_presets.find_one({"_id": pid, "shop_id": shop["_id"], "is_active": True})
+    if not doc:
+        return jsonify({"error": "not_found"}), 404
+
+    # Enrich parts with current core/misc data from the parts collection
+    raw_parts = doc.get("parts") or []
+    part_ids = []
+    for p in raw_parts:
+        pid_str = p.get("part_id")
+        if pid_str:
+            o = oid(pid_str)
+            if o:
+                part_ids.append(o)
+
+    parts_lookup = {}
+    if part_ids:
+        for pdoc in shop_db.parts.find(
+            {"_id": {"$in": part_ids}, "is_active": True},
+            {
+                "_id": 1,
+                "average_cost": 1,
+                "core_has_charge": 1,
+                "core_cost": 1,
+                "misc_has_charge": 1,
+                "misc_charges": 1,
+                "has_selling_price": 1,
+                "selling_price": 1,
+            },
+        ):
+            parts_lookup[str(pdoc["_id"])] = pdoc
+
+    enriched_parts = []
+    for p in raw_parts:
+        ep = dict(p)
+        pid_str = p.get("part_id")
+        if pid_str and pid_str in parts_lookup:
+            live = parts_lookup[pid_str]
+            ep["core_has_charge"] = bool(live.get("core_has_charge"))
+            ep["core_cost"] = float(live.get("core_cost") or 0)
+            misc_items = []
+            for m in (live.get("misc_charges") or []):
+                if isinstance(m, dict):
+                    misc_items.append({
+                        "description": str(m.get("description") or "").strip(),
+                        "price": float(m.get("price") or 0),
+                        "taxable": m.get("taxable", True),
+                    })
+            ep["misc_has_charge"] = bool(live.get("misc_has_charge"))
+            ep["misc_charges"] = misc_items
+            # Update cost to current average
+            if live.get("average_cost") is not None:
+                ep["cost"] = float(live["average_cost"])
+        enriched_parts.append(ep)
+
+    return jsonify({
+        "id": str(doc["_id"]),
+        "name": doc.get("name") or "",
+        "description": doc.get("description") or "",
+        "labor_hours": doc.get("labor_hours"),
+        "labor_rate_code": doc.get("labor_rate_code"),
+        "allow_discount": bool(doc.get("allow_discount")),
+        "parts": enriched_parts,
+    }), 200

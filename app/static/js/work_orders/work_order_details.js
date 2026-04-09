@@ -1616,6 +1616,247 @@
     });
   }
 
+  // ---------------- preset logic ----------------
+  let cachedPresetsList = null;
+  let presetTargetBlock = null;
+
+  async function loadPresetsList() {
+    if (cachedPresetsList) return cachedPresetsList;
+    try {
+      const res = await fetch("/work_orders/api/presets", { headers: { "Accept": "application/json" } });
+      if (!res.ok) return [];
+      cachedPresetsList = await res.json();
+    } catch { cachedPresetsList = []; }
+    return cachedPresetsList;
+  }
+
+  function bindPresetSearch(searchInput, dropDiv, hiddenInput) {
+    searchInput.value = "";
+    hiddenInput.value = "";
+    dropDiv.innerHTML = "";
+    dropDiv.style.display = "none";
+
+    const applyBtn = document.getElementById("presetApplyBtn");
+    if (applyBtn) applyBtn.disabled = true;
+
+    // Remove old listeners by replacing handler references
+    const handlers = searchInput._presetHandlers;
+    if (handlers) {
+      searchInput.removeEventListener("input", handlers.onInput);
+      searchInput.removeEventListener("focus", handlers.onFocus);
+      searchInput.removeEventListener("blur", handlers.onBlur);
+    }
+
+    loadPresetsList().then(function (items) {
+      const list = items.map(function (p) { return { value: p.id, label: p.name }; });
+
+      function renderList(filtered) {
+        dropDiv.innerHTML = "";
+        filtered.forEach(function (entry) {
+          const a = document.createElement("a");
+          a.href = "#";
+          a.className = "list-group-item list-group-item-action py-1 px-2";
+          a.style.fontSize = "0.9em";
+          a.textContent = entry.label;
+          a.addEventListener("mousedown", function (e) {
+            e.preventDefault();
+            hiddenInput.value = entry.value;
+            searchInput.value = entry.label;
+            dropDiv.style.display = "none";
+            if (applyBtn) applyBtn.disabled = false;
+          });
+          dropDiv.appendChild(a);
+        });
+        dropDiv.style.display = filtered.length ? "block" : "none";
+      }
+
+      function onInput() {
+        const q = searchInput.value.toLowerCase();
+        hiddenInput.value = "";
+        if (applyBtn) applyBtn.disabled = true;
+        const filtered = q ? list.filter(function (e) { return e.label.toLowerCase().indexOf(q) !== -1; }) : list;
+        renderList(filtered);
+      }
+
+      function onFocus() {
+        const q = searchInput.value.toLowerCase();
+        const filtered = q ? list.filter(function (e) { return e.label.toLowerCase().indexOf(q) !== -1; }) : list;
+        renderList(filtered);
+      }
+
+      function onBlur() {
+        setTimeout(function () { dropDiv.style.display = "none"; }, 150);
+      }
+
+      searchInput.addEventListener("input", onInput);
+      searchInput.addEventListener("focus", onFocus);
+      searchInput.addEventListener("blur", onBlur);
+
+      searchInput._presetHandlers = { onInput: onInput, onFocus: onFocus, onBlur: onBlur };
+    });
+  }
+
+  async function applyPresetToBlock(presetId, blockEl, blocksContainer, pricing, laborRates, shopSupplyPct) {
+    let data;
+    try {
+      const res = await fetch(`/work_orders/api/presets/${encodeURIComponent(presetId)}`, { headers: { "Accept": "application/json" } });
+      if (!res.ok) { toast("Failed to load preset", "error"); return; }
+      data = await res.json();
+      if (data.error) { toast("Preset not found", "error"); return; }
+    } catch { toast("Network error", "error"); return; }
+
+    // Fill labor description
+    const descInput = blockEl.querySelector(".labor-description");
+    if (descInput && data.description) descInput.value = data.description;
+    if (descInput && !descInput.value && data.name) descInput.value = data.name;
+
+    // Fill labor hours
+    const hoursInput = blockEl.querySelector(".labor-hours");
+    if (hoursInput && data.labor_hours != null) hoursInput.value = String(data.labor_hours);
+
+    // Fill labor rate
+    const rateSelect = blockEl.querySelector(".labor-rate");
+    if (rateSelect && data.labor_rate_code) {
+      rateSelect.value = data.labor_rate_code;
+    }
+
+    // Add preset parts
+    if (Array.isArray(data.parts) && data.parts.length > 0) {
+      const tbody = blockEl.querySelector(".partsTbody");
+      const laborIdx = parseInt(blockEl.dataset.laborIndex || "0", 10);
+
+      // Find first empty row or use existing empty
+      let existingRows = Array.from(tbody.querySelectorAll("tr.parts-row"));
+      let startRowIdx = existingRows.length;
+
+      // Check if last row is empty — use it for first preset part
+      const lastRow = existingRows[existingRows.length - 1];
+      let firstEmptyRow = null;
+      if (lastRow && !rowHasAnyInput(lastRow)) {
+        firstEmptyRow = lastRow;
+        startRowIdx = existingRows.length - 1;
+      }
+
+      data.parts.forEach(function (p, pIdx) {
+        let tr;
+        if (pIdx === 0 && firstEmptyRow) {
+          tr = firstEmptyRow;
+        } else {
+          tr = makePartsRow(laborIdx, startRowIdx + pIdx);
+          tbody.appendChild(tr);
+        }
+
+        const pn = tr.querySelector(".part-number");
+        const pid = tr.querySelector(".part-id");
+        const desc = tr.querySelector(".part-description");
+        const qty = tr.querySelector(".part-qty");
+        const cost = tr.querySelector(".part-cost");
+        const price = tr.querySelector(".part-price");
+
+        if (pn) pn.value = String(p.part_number || "");
+        if (pid) pid.value = String(p.part_id || "");
+        if (desc) desc.value = String(p.description || "");
+        if (qty) qty.value = String(p.qty || 1);
+        if (cost) cost.value = (p.cost != null) ? String(p.cost) : "";
+        if (price) price.value = (p.price != null) ? String(p.price) : "";
+
+        if (p.price != null) {
+          tr.dataset.priceManuallyEdited = "1";
+          delete tr.dataset.priceAutofilled;
+        }
+
+        setOneTimePartRow(tr, !p.part_id);
+        updatePartCostEditableState(tr);
+
+        // ── core charge ──
+        const coreCharge = (p.core_has_charge && Number.isFinite(toNum(p.core_cost)))
+          ? Math.max(0, round2(toNum(p.core_cost)))
+          : 0;
+        const coreInput = tr.querySelector(".part-core-charge");
+        tr.dataset.coreChargeBase = String(coreCharge);
+        if (coreInput) coreInput.value = isCoreChargeEnabled(tr) ? String(coreCharge) : "0";
+
+        const lineCell = tr.querySelector(".part-line-total");
+        if (lineCell) {
+          const toggleWrapper = lineCell.querySelector(".part-core-toggle-wrapper");
+          if (toggleWrapper) {
+            toggleWrapper.style.display = (Number.isFinite(coreCharge) && coreCharge > 0) ? "flex" : "none";
+          }
+        }
+        syncCoreChargeFromToggle(tr);
+
+        // ── misc charges ──
+        const miscCharge = (p.misc_has_charge && Array.isArray(p.misc_charges))
+          ? Math.max(0, round2(p.misc_charges.reduce((sum, ch) => sum + (toNum(ch?.price) || 0), 0)))
+          : 0;
+        const miscInput = tr.querySelector(".part-misc-charge");
+        if (miscInput) miscInput.value = String(miscCharge);
+
+        const miscItems = (Array.isArray(p.misc_charges) ? p.misc_charges : [])
+          .map((ch) => ({
+            description: String(ch?.description || "").trim(),
+            price: Number.isFinite(toNum(ch?.price)) ? round2(toNum(ch.price)) : null,
+            taxable: ch?.taxable !== false,
+          }))
+          .filter((x) => x.description);
+
+        if (miscItems.length > 0) {
+          const firstRow = tbody.querySelector("tr.parts-row");
+          const firstMiscInput = firstRow ? firstRow.querySelector(".part-misc-charge-description") : null;
+          if (firstMiscInput) {
+            const rows = Array.from(tbody.querySelectorAll("tr.parts-row"));
+            const rowIndex = rows.indexOf(tr);
+            const existingItems = getMiscItemsArray(firstRow);
+            const itemsToKeep = existingItems.filter(item =>
+              item.manual === true || item.partIndex !== rowIndex
+            );
+            const rowQty = Number(qty?.value || 1) || 1;
+            const autoItemsForThisRow = miscItems.map(item => ({
+              ...item,
+              quantity: rowQty,
+              partIndex: rowIndex,
+            }));
+            firstMiscInput.value = JSON.stringify([...itemsToKeep, ...autoItemsForThisRow]);
+
+            let baseline = [];
+            try {
+              baseline = JSON.parse(firstRow.dataset.autoMiscItemsBaseline || "[]")
+                .filter(item => item.partIndex !== rowIndex);
+            } catch {}
+            const baselineItems = miscItems.map(item => ({
+              description: item.description,
+              price: item.price,
+              quantity: 1,
+              partIndex: rowIndex,
+              manual: false,
+            }));
+            firstRow.dataset.autoMiscItemsBaseline = JSON.stringify([...baseline, ...baselineItems]);
+          }
+          const miscDescriptionInput = tr.querySelector(".part-misc-charge-description");
+          if (miscDescriptionInput && tr !== tbody.querySelector("tr.parts-row")) {
+            miscDescriptionInput.value = "";
+            delete tr.dataset.autoMiscItemsBaseline;
+          }
+        }
+
+        setRowChargesMeta(tr);
+      });
+
+      // Add empty row at end
+      const allRows = Array.from(tbody.querySelectorAll("tr.parts-row"));
+      tbody.appendChild(makePartsRow(laborIdx, allRows.length));
+
+      // Renumber
+      renumberBlock(blockEl, laborIdx);
+
+      // Render misc charges table so rows are visible
+      renderMiscChargesTable(blockEl);
+    }
+
+    recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
+    toast("Preset applied", "success");
+  }
+
   // ---------------- customer/unit ----------------
   function hasSelect2() {
     return !!(window.jQuery && window.jQuery.fn && typeof window.jQuery.fn.select2 === "function");
@@ -2781,6 +3022,42 @@
       if (assignMechanicsModal && window.bootstrap && window.bootstrap.Modal) {
         const modal = window.bootstrap.Modal.getOrCreateInstance(assignMechanicsModal);
         modal.show();
+      }
+    });
+
+    // ── Add Preset ──
+    const addPresetModalEl = $("addPresetModal");
+    const presetSelectedId = $("presetSelectedId");
+    const presetSearchInput = $("presetSearchInput");
+    const presetSearchDrop = $("presetSearchDrop");
+    const presetApplyBtn = $("presetApplyBtn");
+
+    blocksContainer.addEventListener("click", function (e) {
+      const presetBtn = e.target.closest(".laborAddPresetBtn");
+      if (!presetBtn) return;
+      e.preventDefault();
+
+      const blockEl = presetBtn.closest(".wo-labor");
+      if (!blockEl) return;
+
+      presetTargetBlock = blockEl;
+      bindPresetSearch(presetSearchInput, presetSearchDrop, presetSelectedId);
+
+      if (addPresetModalEl && window.bootstrap && window.bootstrap.Modal) {
+        const modal = window.bootstrap.Modal.getOrCreateInstance(addPresetModalEl);
+        modal.show();
+      }
+    });
+
+    presetApplyBtn?.addEventListener("click", function () {
+      const pid = presetSelectedId?.value;
+      if (!pid || !presetTargetBlock) return;
+
+      applyPresetToBlock(pid, presetTargetBlock, blocksContainer, pricing, laborRates, shopSupplyPct);
+
+      if (addPresetModalEl && window.bootstrap && window.bootstrap.Modal) {
+        const modal = window.bootstrap.Modal.getInstance(addPresetModalEl);
+        if (modal) modal.hide();
       }
     });
 

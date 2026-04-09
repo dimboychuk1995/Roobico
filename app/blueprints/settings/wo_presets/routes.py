@@ -147,18 +147,6 @@ def _parse_preset_form(form):
     # discount override
     allow_discount = bool(form.get("allow_discount"))
 
-    # pricing mode
-    fixed_labor_price = _f64(form.get("fixed_labor_price"))
-    fixed_parts_total = _f64(form.get("fixed_parts_total"))
-    fixed_total_price = _f64(form.get("fixed_total_price"))
-
-    if fixed_labor_price is not None and fixed_labor_price < 0:
-        return None, "Fixed labor price cannot be negative."
-    if fixed_parts_total is not None and fixed_parts_total < 0:
-        return None, "Fixed parts total cannot be negative."
-    if fixed_total_price is not None and fixed_total_price < 0:
-        return None, "Fixed total price cannot be negative."
-
     # parts
     parts = []
     parts_json = str(form.get("parts_json") or "").strip()
@@ -181,6 +169,16 @@ def _parse_preset_form(form):
             cost = _f64(p.get("cost"))
             price = _f64(p.get("price"))
 
+            # misc charges
+            misc_charges = []
+            for m in (p.get("misc_charges") or []):
+                if not isinstance(m, dict):
+                    continue
+                md = str(m.get("description") or "").strip()
+                mp = _f64(m.get("price"))
+                if md or (mp is not None and mp > 0):
+                    misc_charges.append({"description": md, "price": mp or 0})
+
             parts.append({
                 "part_id": part_id,
                 "part_number": part_number,
@@ -188,6 +186,7 @@ def _parse_preset_form(form):
                 "qty": qty,
                 "cost": cost,
                 "price": price,
+                "misc_charges": misc_charges,
             })
 
     data = {
@@ -196,9 +195,6 @@ def _parse_preset_form(form):
         "labor_hours": labor_hours,
         "labor_rate_code": labor_rate_code,
         "allow_discount": allow_discount,
-        "fixed_labor_price": fixed_labor_price,
-        "fixed_parts_total": fixed_parts_total,
-        "fixed_total_price": fixed_total_price,
         "parts": parts,
     }
     return data, None
@@ -228,11 +224,41 @@ def wo_presets_index():
             {"shop_id": shop_oid, "is_active": True},
         ).sort([("name", 1)])
     )
-    for p in presets:
-        p["id"] = str(p["_id"])
 
     labor_rates = _load_labor_rates(sdb, shop_oid)
     pricing_rules = _load_pricing_rules(sdb, shop_oid)
+
+    # Build a code→hourly_rate lookup
+    rate_map = {}
+    standard_rate = 0.0
+    for lr in labor_rates:
+        code = lr.get("code") or ""
+        hr = float(lr.get("hourly_rate") or 0)
+        rate_map[code] = hr
+        if code == "standard":
+            standard_rate = hr
+    if not standard_rate and labor_rates:
+        standard_rate = float(labor_rates[0].get("hourly_rate") or 0)
+
+    for p in presets:
+        p["id"] = str(p["_id"])
+        # Estimate totals for card display
+        hours = float(p.get("labor_hours") or 0)
+        rate_code = p.get("labor_rate_code") or ""
+        rate = rate_map.get(rate_code, standard_rate)
+        p["est_labor"] = round(hours * rate, 2)
+
+        parts_sum = 0.0
+        misc_sum = 0.0
+        for pt in (p.get("parts") or []):
+            qty = float(pt.get("qty") or 0)
+            price = float(pt.get("price") or 0)
+            parts_sum += qty * price
+            for mc in (pt.get("misc_charges") or []):
+                misc_sum += qty * float(mc.get("price") or 0)
+        p["est_parts"] = round(parts_sum, 2)
+        p["est_misc"] = round(misc_sum, 2)
+        p["est_total"] = round(p["est_labor"] + parts_sum + misc_sum, 2)
 
     return _render_page(
         "public/settings/wo_presets.html",
@@ -302,17 +328,60 @@ def wo_presets_detail(preset_id: str):
     if not doc:
         return jsonify({"error": "not_found"}), 404
 
+    # Enrich parts with live core/misc data from parts collection
+    raw_parts = doc.get("parts") or []
+    part_ids = []
+    for p in raw_parts:
+        pid_str = p.get("part_id")
+        if pid_str:
+            o = _maybe_oid(pid_str)
+            if o:
+                part_ids.append(o)
+
+    parts_lookup = {}
+    if part_ids:
+        for pdoc in sdb.parts.find(
+            {"_id": {"$in": part_ids}, "is_active": True},
+            {
+                "_id": 1,
+                "average_cost": 1,
+                "core_has_charge": 1,
+                "core_cost": 1,
+                "misc_has_charge": 1,
+                "misc_charges": 1,
+            },
+        ):
+            parts_lookup[str(pdoc["_id"])] = pdoc
+
+    enriched_parts = []
+    for p in raw_parts:
+        ep = dict(p)
+        pid_str = p.get("part_id")
+        if pid_str and pid_str in parts_lookup:
+            live = parts_lookup[pid_str]
+            ep["core_has_charge"] = bool(live.get("core_has_charge"))
+            ep["core_cost"] = float(live.get("core_cost") or 0)
+            misc_items = []
+            for m in (live.get("misc_charges") or []):
+                if isinstance(m, dict):
+                    misc_items.append({
+                        "description": str(m.get("description") or "").strip(),
+                        "price": float(m.get("price") or 0),
+                    })
+            ep["misc_has_charge"] = bool(live.get("misc_has_charge"))
+            ep["misc_charges"] = misc_items
+            if live.get("average_cost") is not None:
+                ep["cost"] = float(live["average_cost"])
+        enriched_parts.append(ep)
+
     return jsonify({
         "id": str(doc["_id"]),
         "name": doc.get("name") or "",
         "description": doc.get("description") or "",
         "labor_hours": doc.get("labor_hours"),
         "labor_rate_code": doc.get("labor_rate_code"),
-        "fixed_labor_price": doc.get("fixed_labor_price"),
-        "fixed_parts_total": doc.get("fixed_parts_total"),
-        "fixed_total_price": doc.get("fixed_total_price"),
         "allow_discount": bool(doc.get("allow_discount")),
-        "parts": doc.get("parts") or [],
+        "parts": enriched_parts,
     })
 
 

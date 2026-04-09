@@ -44,16 +44,6 @@
             <div><strong>Labor:</strong> {{ p.labor_hours }} hr{% if p.labor_rate_code %} · {{ p.labor_rate_code }}{% endif %}</div>
           {% endif %}
 
-          {% if p.get('fixed_labor_price') is not none %}
-            <div><strong>Labor:</strong> ${{ '%.2f'|format(p.fixed_labor_price) }}</div>
-          {% endif %}
-          {% if p.get('fixed_parts_total') is not none %}
-            <div><strong>Parts:</strong> ${{ '%.2f'|format(p.fixed_parts_total) }}</div>
-          {% endif %}
-          {% if p.get('fixed_total_price') is not none %}
-            <div><strong>Total:</strong> ${{ '%.2f'|format(p.fixed_total_price) }}</div>
-          {% endif %}
-
           {% if p.parts and p.parts|length > 0 %}
             <div class="mt-1"><strong>Parts ({{ p.parts|length }}):</strong></div>
             <ul class="mb-0 ps-3">
@@ -65,6 +55,13 @@
               {% endif %}
             </ul>
           {% endif %}
+        </div>
+
+        <div class="border-top mt-2 pt-2 small text-muted d-flex gap-3">
+          <div><strong>Labor:</strong> ${{ '%.2f'|format(p.est_labor) }}</div>
+          <div><strong>Parts:</strong> ${{ '%.2f'|format(p.est_parts) }}{% if p.est_misc %} <span class="text-nowrap">(+ ${{ '%.2f'|format(p.est_misc) }} misc)</span>{% endif %}</div>
+          <div><strong>Total:</strong> ${{ '%.2f'|format(p.est_total) }}</div>
+          <div class="fst-italic">(Estimated)</div>
         </div>
       </div>
     </div>
@@ -152,26 +149,25 @@
 
           <input type="hidden" name="parts_json" id="presetPartsJson" value="[]">
 
-          <!-- Pricing Summary -->
-          <h6 class="border-bottom pb-2 mb-3 mt-4">Pricing Summary</h6>
-          <p class="text-muted small mb-3">
-            Fill any two values — the third will be calculated automatically.
-          </p>
+          <!-- Estimate Summary -->
+          <h6 class="border-bottom pb-2 mb-3 mt-4">Estimate</h6>
           <div class="row g-3 mb-2">
             <div class="col-md-4">
-              <label class="form-label">Labor Price</label>
-              <input type="number" step="0.01" min="0" name="fixed_labor_price" id="presetFixedLabor" class="form-control" placeholder="0.00">
+              <label class="form-label text-muted">Labor Total</label>
+              <div id="presetEstLabor" class="fw-semibold">$0.00</div>
             </div>
             <div class="col-md-4">
-              <label class="form-label">Parts Total</label>
-              <input type="number" step="0.01" min="0" name="fixed_parts_total" id="presetFixedParts" class="form-control" placeholder="0.00">
+              <label class="form-label text-muted">Parts Total</label>
+              <div id="presetEstParts" class="fw-semibold">$0.00</div>
             </div>
             <div class="col-md-4">
-              <label class="form-label">Grand Total</label>
-              <input type="number" step="0.01" min="0" name="fixed_total_price" id="presetFixedTotal" class="form-control" placeholder="0.00">
+              <label class="form-label text-muted">Grand Total</label>
+              <div id="presetEstTotal" class="fw-semibold">$0.00</div>
             </div>
           </div>
-          <div id="pricingSummaryHint" class="text-muted small mt-1" style="display:none;"></div>
+          <div class="text-muted small mt-2 fst-italic">
+            <i class="bi bi-info-circle me-1"></i>Actual price may vary based on customer's default labor rate and parts discount.
+          </div>
 
         </div>
         <div class="modal-footer">
@@ -195,5 +191,5 @@
   var DETAIL_URL_TPL = {{ url_for('settings.wo_presets_detail', preset_id='__ID__')|tojson }};
   var PARTS_SEARCH_URL = {{ url_for('work_orders.api_parts_search')|tojson }};
 </script>
-<script src="{{ url_for('static', filename='js/settings/wo_presets.js', v='20260409-v9') }}"></script>
+<script src="{{ url_for('static', filename='js/settings/wo_presets.js', v='20260409-v10') }}"></script>
 {% endblock %}

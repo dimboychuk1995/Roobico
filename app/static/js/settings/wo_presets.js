@@ -69,149 +69,55 @@
     return round2(cost / denom);
   }
 
-  /* ── pricing summary (2-of-3 auto-calc) ── */
+  /* ── estimate summary (read-only) ── */
 
-  var fLabor = document.getElementById("presetFixedLabor");
-  var fParts = document.getElementById("presetFixedParts");
-  var fTotal = document.getElementById("presetFixedTotal");
-  var pricingHint = document.getElementById("pricingSummaryHint");
-  var autoField = null;   // "labor" | "parts" | "total" | null
-  var insideAutoCalc = false;
+  var estLabor = document.getElementById("presetEstLabor");
+  var estParts = document.getElementById("presetEstParts");
+  var estTotal = document.getElementById("presetEstTotal");
 
-  function getFieldVal(field) {
-    var el = field === "labor" ? fLabor : field === "parts" ? fParts : fTotal;
-    var v = toNum(el.value);
-    return (v !== null && v >= 0) ? v : null;
+  function getStandardRate() {
+    if (!Array.isArray(LABOR_RATES_DATA)) return 0;
+    for (var i = 0; i < LABOR_RATES_DATA.length; i++) {
+      if (LABOR_RATES_DATA[i].code === "standard") return toNum(LABOR_RATES_DATA[i].hourly_rate) || 0;
+    }
+    return LABOR_RATES_DATA.length ? (toNum(LABOR_RATES_DATA[0].hourly_rate) || 0) : 0;
   }
 
-  function setFieldVal(field, value) {
-    var el = field === "labor" ? fLabor : field === "parts" ? fParts : fTotal;
-    el.value = money(value);
+  function getRateByCode(code) {
+    if (!code || !Array.isArray(LABOR_RATES_DATA)) return null;
+    for (var i = 0; i < LABOR_RATES_DATA.length; i++) {
+      if (LABOR_RATES_DATA[i].code === code) return toNum(LABOR_RATES_DATA[i].hourly_rate) || 0;
+    }
+    return null;
   }
 
-  function highlightAutoField() {
-    var fields = [
-      { el: fLabor, name: "labor" },
-      { el: fParts, name: "parts" },
-      { el: fTotal, name: "total" }
-    ];
-    for (var i = 0; i < fields.length; i++) {
-      fields[i].el.style.backgroundColor = (fields[i].name === autoField) ? "#e8f4fd" : "";
-    }
-    if (pricingHint) {
-      if (autoField) {
-        var label = autoField === "labor" ? "Labor Price" : autoField === "parts" ? "Parts Total" : "Grand Total";
-        pricingHint.textContent = label + " is auto-calculated. Clear any field to change the calculation.";
-        pricingHint.style.display = "";
-      } else {
-        pricingHint.style.display = "none";
-      }
-    }
+  function recalcEstimate() {
+    var hoursEl = document.getElementById("presetLaborHours");
+    var rateEl = document.getElementById("presetLaborRate");
+    var hours = toNum(hoursEl ? hoursEl.value : "") || 0;
+    var rateCode = rateEl ? rateEl.value.trim() : "";
+    var rate = getRateByCode(rateCode);
+    if (rate === null) rate = getStandardRate();
+
+    var laborTotal = round2(hours * rate);
+    var partsTotal = getPartsTableSum();
+    var miscTotal = getMiscChargesSum();
+    var grandTotal = round2(laborTotal + partsTotal + miscTotal);
+
+    if (estLabor) estLabor.textContent = "$" + money(laborTotal);
+    if (estParts) estParts.textContent = "$" + money(partsTotal) + (miscTotal > 0 ? " (+ $" + money(miscTotal) + " misc)" : "");
+    if (estTotal) estTotal.textContent = "$" + money(grandTotal);
   }
 
-  function calcField(field) {
-    var labor = getFieldVal("labor");
-    var parts = getFieldVal("parts");
-    var total = getFieldVal("total");
-
-    if (field === "total" && labor !== null && parts !== null) {
-      setFieldVal("total", round2(labor + parts));
-    } else if (field === "parts" && labor !== null && total !== null) {
-      var v = round2(total - labor);
-      if (v < 0) v = 0;
-      setFieldVal("parts", v);
-      scalePartPrices(v);
-    } else if (field === "labor" && parts !== null && total !== null) {
-      var v = round2(total - parts);
-      if (v < 0) v = 0;
-      setFieldVal("labor", v);
-    }
-    autoField = field;
-    highlightAutoField();
-  }
-
-  function tryAutoCalc(justEdited) {
-    if (insideAutoCalc) return;
-    insideAutoCalc = true;
-
-    var labor = getFieldVal("labor");
-    var parts = getFieldVal("parts");
-    var total = getFieldVal("total");
-
-    var filled = [];
-    if (labor !== null) filled.push("labor");
-    if (parts !== null) filled.push("parts");
-    if (total !== null) filled.push("total");
-
-    if (filled.length < 2) {
-      autoField = null;
-      highlightAutoField();
-      insideAutoCalc = false;
-      return;
-    }
-
-    if (filled.length === 2) {
-      var all = ["labor", "parts", "total"];
-      var empty = null;
-      for (var i = 0; i < all.length; i++) {
-        if (filled.indexOf(all[i]) === -1) { empty = all[i]; break; }
-      }
-      calcField(empty);
-      insideAutoCalc = false;
-      return;
-    }
-
-    // All 3 filled — recalculate autoField if it differs from justEdited
-    if (autoField && autoField !== justEdited) {
-      calcField(autoField);
-      insideAutoCalc = false;
-      return;
-    }
-
-    // autoField is null or equals justEdited → pick new auto
-    // Priority: total first (least destructive), then parts, then labor
-    var priority = ["total", "parts", "labor"];
-    for (var i = 0; i < priority.length; i++) {
-      if (priority[i] !== justEdited) {
-        calcField(priority[i]);
-        break;
-      }
-    }
-    insideAutoCalc = false;
-  }
-
-  function scalePartPrices(targetTotal) {
-    var rows = partsTbody.querySelectorAll("tr.preset-part-row");
-    if (!rows.length || targetTotal <= 0) return;
-
-    // Distribute target total proportionally to cost × qty
-    var totalCostWeighted = 0;
+  function getMiscChargesSum() {
+    var total = 0;
+    var rows = partsTbody.querySelectorAll("tr.preset-misc-row");
     for (var i = 0; i < rows.length; i++) {
-      var qty = toNum(rows[i].querySelector(".pp-qty").value) || 0;
-      var cost = toNum(rows[i].querySelector(".pp-cost").value) || 0;
-      totalCostWeighted += cost * qty;
+      var qty = toNum(rows[i].dataset.parentQty) || 1;
+      var price = toNum(rows[i].dataset.miscPrice) || 0;
+      total += qty * price;
     }
-
-    // Fallback: if no costs, distribute evenly
-    if (totalCostWeighted <= 0) {
-      var perRow = targetTotal / rows.length;
-      for (var i = 0; i < rows.length; i++) {
-        var qty = toNum(rows[i].querySelector(".pp-qty").value) || 1;
-        rows[i].querySelector(".pp-price").value = money(round2(perRow / qty));
-      }
-      recalcLineTotals();
-      return;
-    }
-
-    for (var i = 0; i < rows.length; i++) {
-      var qty = toNum(rows[i].querySelector(".pp-qty").value) || 1;
-      var cost = toNum(rows[i].querySelector(".pp-cost").value) || 0;
-      var share = (cost * qty) / totalCostWeighted;
-      var lineAmount = targetTotal * share;
-      var priceInput = rows[i].querySelector(".pp-price");
-      priceInput.value = money(round2(lineAmount / qty));
-    }
-    recalcLineTotals();
+    return round2(total);
   }
 
   function recalcLineTotals() {
@@ -238,9 +144,7 @@
   /* Called when parts table rows change (add/remove/edit qty/price) */
   function updatePartsFromTable() {
     recalcLineTotals();
-    var sum = getPartsTableSum();
-    fParts.value = sum > 0 ? money(sum) : "";
-    tryAutoCalc("parts");
+    recalcEstimate();
   }
 
   /* ── parts list state ── */
@@ -261,6 +165,16 @@
     var rows = partsTbody.querySelectorAll("tr.preset-part-row");
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
+      var miscCharges = [];
+      // Collect misc rows right after this part row
+      var next = r.nextElementSibling;
+      while (next && next.classList.contains("preset-misc-row")) {
+        miscCharges.push({
+          description: next.dataset.miscDesc || "",
+          price: toNum(next.dataset.miscPrice) || 0,
+        });
+        next = next.nextElementSibling;
+      }
       partsState.push({
         part_id: r.querySelector(".pp-part-id").value || null,
         part_number: r.querySelector(".pp-part-number").value.trim(),
@@ -268,6 +182,7 @@
         qty: toNum(r.querySelector(".pp-qty").value) || 1,
         cost: toNum(r.querySelector(".pp-cost").value) || 0,
         price: toNum(r.querySelector(".pp-price").value) || 0,
+        misc_charges: miscCharges.length ? miscCharges : undefined,
       });
     }
   }
@@ -306,7 +221,58 @@
       '<td class="p-1 text-center"><button type="button" class="btn btn-sm btn-outline-danger pp-delete">&times;</button></td>';
 
     partsTbody.appendChild(tr);
+
+    // Render misc charge rows for this part
+    var miscCharges = (data && data.misc_charges) || [];
+    for (var m = 0; m < miscCharges.length; m++) {
+      addMiscRow(miscCharges[m], qty, idx);
+    }
+
     return tr;
+  }
+
+  function createMiscRow(misc, parentQty, parentIdx) {
+    var mtr = document.createElement("tr");
+    mtr.className = "preset-misc-row text-muted";
+    mtr.dataset.parentIdx = parentIdx;
+    mtr.dataset.miscDesc = misc.description || "";
+    mtr.dataset.miscPrice = misc.price || 0;
+    mtr.dataset.parentQty = parentQty || 1;
+    var lineTotal = (toNum(parentQty) || 1) * (toNum(misc.price) || 0);
+    mtr.innerHTML =
+      '<td class="p-1 ps-4" colspan="4"><small><i class="bi bi-arrow-return-right me-1"></i>Misc: ' + escapeHtml(misc.description || "") + '</small></td>' +
+      '<td class="p-1"><small>$' + money(misc.price || 0) + '</small></td>' +
+      '<td class="p-1"><small>$' + money(lineTotal) + '</small></td>' +
+      '<td></td>';
+    return mtr;
+  }
+
+  function addMiscRow(misc, parentQty, parentIdx) {
+    var mtr = createMiscRow(misc, parentQty, parentIdx);
+    partsTbody.appendChild(mtr);
+  }
+
+  function removeMiscRowsForPart(partRow) {
+    var next = partRow.nextElementSibling;
+    while (next && next.classList.contains("preset-misc-row")) {
+      var toRemove = next;
+      next = next.nextElementSibling;
+      toRemove.remove();
+    }
+  }
+
+  function updateMiscRowsQty(partRow) {
+    var qty = toNum(partRow.querySelector(".pp-qty").value) || 1;
+    var next = partRow.nextElementSibling;
+    while (next && next.classList.contains("preset-misc-row")) {
+      next.dataset.parentQty = qty;
+      var price = toNum(next.dataset.miscPrice) || 0;
+      var cells = next.querySelectorAll("td small");
+      if (cells.length >= 3) {
+        cells[2].textContent = "$" + money(qty * price);
+      }
+      next = next.nextElementSibling;
+    }
   }
 
   /* ── add part ── */
@@ -318,51 +284,29 @@
   partsTbody.addEventListener("click", function (e) {
     var btn = e.target.closest(".pp-delete");
     if (!btn) return;
-    btn.closest("tr").remove();
+    var tr = btn.closest("tr");
+    removeMiscRowsForPart(tr);
+    tr.remove();
     syncPartsJson();
     updatePartsFromTable();
   });
 
   /* ── recalc on qty/price change in parts table ── */
   partsTbody.addEventListener("input", function (e) {
-    if (e.target.classList.contains("pp-qty") || e.target.classList.contains("pp-price")) {
+    if (e.target.classList.contains("pp-qty")) {
+      var tr = e.target.closest("tr.preset-part-row");
+      if (tr) updateMiscRowsQty(tr);
+      updatePartsFromTable();
+    } else if (e.target.classList.contains("pp-price")) {
       updatePartsFromTable();
     }
   });
 
-  /* ── pricing summary input handlers ── */
-  fLabor.addEventListener("input", function () {
-    if (toNum(fLabor.value) === null && fLabor.value.trim() === "") {
-      if (autoField === "labor") autoField = null;
-      highlightAutoField();
-      return;
-    }
-    tryAutoCalc("labor");
-  });
-
-  fParts.addEventListener("input", function () {
-    if (toNum(fParts.value) === null && fParts.value.trim() === "") {
-      if (autoField === "parts") autoField = null;
-      highlightAutoField();
-      return;
-    }
-    // User manually typed a parts total — scale individual prices to match
-    var target = toNum(fParts.value);
-    if (target !== null && target >= 0) {
-      scalePartPrices(target);
-      syncPartsJson();
-    }
-    tryAutoCalc("parts");
-  });
-
-  fTotal.addEventListener("input", function () {
-    if (toNum(fTotal.value) === null && fTotal.value.trim() === "") {
-      if (autoField === "total") autoField = null;
-      highlightAutoField();
-      return;
-    }
-    tryAutoCalc("total");
-  });
+  /* ── recalc estimate on labor hours/rate change ── */
+  var laborHoursInput = document.getElementById("presetLaborHours");
+  var laborRateSelect = document.getElementById("presetLaborRate");
+  if (laborHoursInput) laborHoursInput.addEventListener("input", recalcEstimate);
+  if (laborRateSelect) laborRateSelect.addEventListener("change", recalcEstimate);
 
   /* ── parts search ── */
 
@@ -396,6 +340,9 @@
     dropdown.innerHTML = items.map(function (it, idx) {
       var title = (it.part_number || "") + " \u2014 " + (it.description || "");
       var meta = "Stock: " + (it.in_stock || 0) + " \u00b7 Avg cost: $" + money(it.average_cost);
+      if (it.misc_has_charge && Array.isArray(it.misc_charges) && it.misc_charges.length) {
+        meta += " \u00b7 Misc charges: " + it.misc_charges.length;
+      }
       return '<div class="pp-dd-item" data-idx="' + idx + '" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid rgba(0,0,0,.06);">' +
         '<div style="font-weight:600; line-height:1.2;">' + escapeHtml(title) + '</div>' +
         '<div style="font-size:12px; color:#6c757d; margin-top:2px;">' + escapeHtml(meta) + '</div>' +
@@ -463,6 +410,19 @@
       }
     }
 
+    // Add misc charge rows if part has them
+    removeMiscRowsForPart(activeSearchRow);
+    if (it.misc_has_charge && Array.isArray(it.misc_charges) && it.misc_charges.length) {
+      var parentIdx = activeSearchRow.dataset.idx;
+      var qty = toNum(activeSearchRow.querySelector(".pp-qty").value) || 1;
+      var insertAfter = activeSearchRow;
+      for (var mi = 0; mi < it.misc_charges.length; mi++) {
+        var mtr = createMiscRow(it.misc_charges[mi], qty, parentIdx);
+        insertAfter.parentNode.insertBefore(mtr, insertAfter.nextSibling);
+        insertAfter = mtr;
+      }
+    }
+
     hideDropdown();
     syncPartsJson();
     updatePartsFromTable();
@@ -482,10 +442,9 @@
     saveBtn.textContent = "Create";
     form.reset();
     partsState = [];
-    autoField = null;
     renderPartsRows([]);
     syncPartsJson();
-    highlightAutoField();
+    recalcEstimate();
   });
 
   /* ── open modal for edit ── */
@@ -510,17 +469,10 @@
         document.getElementById("presetLaborRate").value = data.labor_rate_code || "";
         document.getElementById("presetAllowDiscount").checked = !!data.allow_discount;
 
-        // Load pricing summary
-        fLabor.value = data.fixed_labor_price != null ? data.fixed_labor_price : "";
-        fParts.value = data.fixed_parts_total != null ? data.fixed_parts_total : "";
-        fTotal.value = data.fixed_total_price != null ? data.fixed_total_price : "";
-
         partsState = data.parts || [];
         renderPartsRows(partsState);
         syncPartsJson();
-
-        // Detect which field was auto-calculated
-        detectAutoField();
+        recalcEstimate();
 
         getModal().show();
       })
@@ -529,28 +481,6 @@
         alert("Failed to load preset data.");
       });
   });
-
-  function detectAutoField() {
-    var labor = getFieldVal("labor");
-    var parts = getFieldVal("parts");
-    var total = getFieldVal("total");
-
-    var filled = [];
-    if (labor !== null) filled.push("labor");
-    if (parts !== null) filled.push("parts");
-    if (total !== null) filled.push("total");
-
-    if (filled.length < 3) {
-      autoField = null;
-    } else {
-      if (Math.abs(total - (labor + parts)) < 0.02) {
-        autoField = "total";
-      } else {
-        autoField = null;
-      }
-    }
-    highlightAutoField();
-  }
 
   /* ── sync parts JSON before submit ── */
 
