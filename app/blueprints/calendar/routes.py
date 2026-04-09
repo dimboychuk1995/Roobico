@@ -131,6 +131,16 @@ APPOINTMENT_STATUSES = [
 ]
 
 
+def _get_statuses(db):
+    """Return statuses from DB settings, or default list."""
+    if db is None:
+        return list(APPOINTMENT_STATUSES)
+    doc = db.calendar_settings.find_one({"key": "statuses"})
+    if doc and doc.get("statuses"):
+        return doc["statuses"]
+    return list(APPOINTMENT_STATUSES)
+
+
 # ── page ─────────────────────────────────────────────────────
 
 @calendar_bp.get("/calendar")
@@ -198,7 +208,47 @@ def api_mechanics():
 @calendar_bp.get("/calendar/api/statuses")
 @login_required
 def api_statuses():
-    return jsonify(APPOINTMENT_STATUSES)
+    db, _ = _get_shop_db()
+    return jsonify(_get_statuses(db))
+
+
+@calendar_bp.put("/calendar/api/statuses")
+@login_required
+def api_save_statuses():
+    import re
+    db, _ = _get_shop_db()
+    if db is None:
+        return jsonify({"error": "Shop not configured"}), 400
+
+    data = request.get_json(force=True, silent=True) or {}
+    items = data.get("statuses")
+    if not isinstance(items, list) or not items:
+        return jsonify({"error": "At least one status is required"}), 400
+
+    clean = []
+    seen_keys = set()
+    for s in items:
+        key = re.sub(r"[^a-z0-9_]", "_", (s.get("key") or "").strip().lower())
+        label = (s.get("label") or "").strip()
+        color = (s.get("color") or "#888888").strip()
+        if not key or not label:
+            continue
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        if not re.match(r"^#[0-9a-fA-F]{6}$", color):
+            color = "#888888"
+        clean.append({"key": key, "label": label, "color": color})
+
+    if not clean:
+        return jsonify({"error": "At least one valid status is required"}), 400
+
+    db.calendar_settings.update_one(
+        {"key": "statuses"},
+        {"$set": {"statuses": clean, "updated_at": _utcnow()}},
+        upsert=True,
+    )
+    return jsonify(clean)
 
 
 # ── API: events CRUD ─────────────────────────────────────────
@@ -279,7 +329,7 @@ def api_create_event():
     status = (data.get("status") or "scheduled").strip()
     title = (data.get("title") or "").strip()
 
-    valid_statuses = {s["key"] for s in APPOINTMENT_STATUSES}
+    valid_statuses = {s["key"] for s in _get_statuses(db)}
     if status not in valid_statuses:
         status = "scheduled"
 
@@ -353,7 +403,7 @@ def api_update_event(event_id):
             except Exception:
                 pass
 
-    valid_statuses = {s["key"] for s in APPOINTMENT_STATUSES}
+    valid_statuses = {s["key"] for s in _get_statuses(db)}
     if "status" in updates and updates["status"] not in valid_statuses:
         updates["status"] = existing.get("status", "scheduled")
 

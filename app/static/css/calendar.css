@@ -151,7 +151,7 @@
 }
 
 .cal-hour-slot {
-  border-bottom: 1px solid #dadce0;
+  border-bottom: 1px solid #bdc1c6;
   box-sizing: border-box;
   position: relative;
 }
@@ -173,7 +173,7 @@
 /* ── expanded / collapsed ── */
 
 .cal-header-cell.cal-expanded {
-  flex: 2.6 1 0 !important;
+  flex: 4.9 1 0 !important;
 }
 
 .cal-header-cell.cal-expanded {
@@ -191,7 +191,7 @@
 }
 
 .cal-day-col.cal-expanded {
-  flex: 2.6 1 0 !important;
+  flex: 4.9 1 0 !important;
 }
 
 .cal-day-col.cal-collapsed {
@@ -225,16 +225,18 @@
 
 .cal-event {
   position: absolute;
-  left: 2px;
-  right: 2px;
+  left: 0;
+  width: 100%;
   border-radius: 4px;
   padding: 2px 6px;
+  box-sizing: border-box;
+  border: 1px solid rgba(255,255,255,.45);
   color: #fff;
   font-family: 'Google Sans', Roboto, Arial, sans-serif;
   font-size: .75rem;
   line-height: 1.25;
   overflow: hidden;
-  cursor: pointer;
+  cursor: grab;
   z-index: 3;
   box-shadow: 0 1px 2px rgba(0,0,0,.2);
   transition: box-shadow .15s ease;
@@ -244,16 +246,15 @@
   box-shadow: 0 3px 6px rgba(0,0,0,.3);
 }
 
-.cal-event-title {
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.cal-event.cal-dragging {
+  opacity: .85;
+  box-shadow: 0 6px 14px rgba(0,0,0,.35);
+  z-index: 10;
+  cursor: grabbing;
 }
 
-.cal-event-time {
-  font-size: .675rem;
-  opacity: .9;
+.cal-event-title {
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -267,7 +268,14 @@
   text-overflow: ellipsis;
 }
 
-/* ── hour slot hover ── */
+.cal-event-note {
+  font-size: .675rem;
+  opacity: .9;
+  font-style: italic;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .cal-hour-slot {
   cursor: pointer;
@@ -290,4 +298,16 @@
 
 .cal-status-btn:hover {
   opacity: .85;
+}
+
+/* ── settings modal ── */
+
+.settings-status-row input.form-control-color {
+  height: 31px;
+  cursor: pointer;
+}
+
+.settings-status-row .btn-outline-danger {
+  line-height: 1;
+  padding: 2px 7px;
 }

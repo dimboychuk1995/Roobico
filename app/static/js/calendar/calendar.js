@@ -10,6 +10,8 @@
   var HOURS_START = 6;
   var HOURS_END = 21;
   var SLOT_HEIGHT = 48;
+  var STEP_MINUTES = 15;
+  var PX_PER_MINUTE = SLOT_HEIGHT / 60;
 
   /* ── state ── */
   var weekStart = null;
@@ -19,6 +21,8 @@
   var cachedCustomers = [];
   var cachedMechanics = [];
   var cachedStatuses = [];
+  var drag = null; // active drag state
+  var dragJustEnded = false;
 
   /* ── DOM refs ── */
   var container = document.getElementById("calWeekContainer");
@@ -89,6 +93,26 @@
   function toLocalISO(dateStr, timeStr) {
     return dateStr + "T" + timeStr + ":00";
   }
+
+  /* ── time select options (15-min step) ── */
+
+  function buildTimeOptions(selectEl) {
+    selectEl.innerHTML = "";
+    for (var h = HOURS_START; h <= HOURS_END; h++) {
+      for (var m = 0; m < 60; m += STEP_MINUTES) {
+        if (h === HOURS_END && m > 0) break;
+        var opt = document.createElement("option");
+        var val = pad2(h) + ":" + pad2(m);
+        opt.value = val;
+        opt.textContent = val;
+        selectEl.appendChild(opt);
+      }
+    }
+  }
+
+  // pre-fill both selects
+  buildTimeOptions(elStart);
+  buildTimeOptions(elEnd);
 
   /* ── title ── */
 
@@ -219,6 +243,7 @@
 
       (function (hour, di) {
         slot.addEventListener("click", function (e) {
+          if (dragJustEnded) return;
           if (e.target.closest(".cal-event")) return;
           openModal(null, di, hour);
         });
@@ -273,66 +298,264 @@
       statusColors[cachedStatuses[s].key] = cachedStatuses[s].color;
     }
 
+    // group events by day
+    var dayBuckets = {};
     for (var i = 0; i < cachedEvents.length; i++) {
       var ev = cachedEvents[i];
       var st = new Date(ev.start_time);
-      var en = new Date(ev.end_time);
-
       var dayIdx = -1;
       for (var d = 0; d < 7; d++) {
         if (isSameDay(st, addDays(weekStart, d))) { dayIdx = d; break; }
       }
       if (dayIdx < 0) continue;
+      if (!dayBuckets[dayIdx]) dayBuckets[dayIdx] = [];
+      dayBuckets[dayIdx].push(ev);
+    }
 
-      var col = cols[dayIdx];
+    for (var di in dayBuckets) {
+      if (!dayBuckets.hasOwnProperty(di)) continue;
+      var dayEvents = dayBuckets[di];
+      var col = cols[parseInt(di)];
       if (!col) continue;
 
-      var startH = st.getHours() + st.getMinutes() / 60;
-      var endH   = en.getHours() + en.getMinutes() / 60;
-      if (endH <= HOURS_START || startH >= HOURS_END) continue;
+      // sort by start time, then longer events first
+      dayEvents.sort(function (a, b) {
+        var d = new Date(a.start_time) - new Date(b.start_time);
+        if (d !== 0) return d;
+        return new Date(b.end_time) - new Date(a.end_time);
+      });
 
-      var topClamped = Math.max(startH, HOURS_START);
-      var botClamped = Math.min(endH, HOURS_END);
-
-      var topPx  = (topClamped - HOURS_START) * SLOT_HEIGHT;
-      var height = (botClamped - topClamped) * SLOT_HEIGHT;
-      if (height < 12) height = 12;
-
-      var color = statusColors[ev.status] || "#1a73e8";
-
-      var block = document.createElement("div");
-      block.className = "cal-event";
-      block.style.top = topPx + "px";
-      block.style.height = height + "px";
-      block.style.backgroundColor = color;
-
-      var line1 = ev.customer_label || ev.title || "Appointment";
-      var line2Parts = [];
-      if (ev.unit_label) line2Parts.push(ev.unit_label);
-      if (ev.mechanic_name) line2Parts.push(ev.mechanic_name);
-      var timeStr = pad2(st.getHours()) + ":" + pad2(st.getMinutes()) + " – " +
-                    pad2(en.getHours()) + ":" + pad2(en.getMinutes());
-
-      block.innerHTML =
-        '<div class="cal-event-title">' + escapeHtml(line1) + '</div>' +
-        '<div class="cal-event-time">' + timeStr + '</div>' +
-        (line2Parts.length ? '<div class="cal-event-sub">' + escapeHtml(line2Parts.join(" · ")) + '</div>' : '');
-
-      (function (evt) {
-        block.addEventListener("click", function (e) {
-          e.stopPropagation();
-          openModalForEdit(evt);
+      // build time ranges
+      var items = [];
+      for (var j = 0; j < dayEvents.length; j++) {
+        var stD = new Date(dayEvents[j].start_time);
+        var enD = new Date(dayEvents[j].end_time);
+        items.push({
+          ev: dayEvents[j],
+          startMin: stD.getHours() * 60 + stD.getMinutes(),
+          endMin: enD.getHours() * 60 + enD.getMinutes()
         });
-      })(ev);
+      }
 
-      col.appendChild(block);
+      // split into independent clusters (connected overlap groups)
+      var clusters = [];
+      var ci = 0;
+      while (ci < items.length) {
+        var cluster = [items[ci]];
+        var clusterEnd = items[ci].endMin;
+        ci++;
+        while (ci < items.length && items[ci].startMin < clusterEnd) {
+          cluster.push(items[ci]);
+          if (items[ci].endMin > clusterEnd) clusterEnd = items[ci].endMin;
+          ci++;
+        }
+        clusters.push(cluster);
+      }
+
+      // for each cluster, assign columns independently
+      for (var gc = 0; gc < clusters.length; gc++) {
+        var clItems = clusters[gc];
+        var columns = [];
+        var assignments = [];
+
+        for (var j = 0; j < clItems.length; j++) {
+          var it = clItems[j];
+          var placed = false;
+          for (var c = 0; c < columns.length; c++) {
+            var fits = true;
+            for (var p = 0; p < columns[c].length; p++) {
+              if (it.startMin < columns[c][p].endMin && it.endMin > columns[c][p].startMin) {
+                fits = false;
+                break;
+              }
+            }
+            if (fits) {
+              columns[c].push(it);
+              assignments.push({ ev: it.ev, colIndex: c });
+              placed = true;
+              break;
+            }
+          }
+          if (!placed) {
+            columns.push([it]);
+            assignments.push({ ev: it.ev, colIndex: columns.length - 1 });
+          }
+        }
+
+        var totalCols = columns.length;
+        for (var k = 0; k < assignments.length; k++) {
+          renderSingleEvent(assignments[k].ev, col, statusColors, assignments[k].colIndex, totalCols);
+        }
+      }
     }
+  }
+
+  function renderSingleEvent(ev, col, statusColors, colIndex, colTotal) {
+    var st = new Date(ev.start_time);
+    var en = new Date(ev.end_time);
+
+    var startH = st.getHours() + st.getMinutes() / 60;
+    var endHr  = en.getHours() + en.getMinutes() / 60;
+    if (endHr <= HOURS_START || startH >= HOURS_END) return;
+
+    var topClamped = Math.max(startH, HOURS_START);
+    var botClamped = Math.min(endHr, HOURS_END);
+    var topPx  = (topClamped - HOURS_START) * SLOT_HEIGHT;
+    var height = (botClamped - topClamped) * SLOT_HEIGHT;
+    if (height < 12) height = 12;
+
+    var color = statusColors[ev.status] || "#1a73e8";
+
+    var block = document.createElement("div");
+    block.className = "cal-event";
+    block.style.top = topPx + "px";
+    block.style.height = height + "px";
+    block.style.backgroundColor = color;
+
+    // side-by-side layout for overlaps
+    var w = 100 / colTotal;
+    block.style.left = (w * colIndex) + "%";
+    block.style.width = w + "%";
+
+    var line1 = ev.customer_label || ev.title || "Appointment";
+    var line2Parts = [];
+    if (ev.unit_label) line2Parts.push(ev.unit_label);
+    if (ev.mechanic_name) line2Parts.push(ev.mechanic_name);
+
+    var html = '<div class="cal-event-title">' + escapeHtml(line1) + '</div>';
+    if (line2Parts.length) html += '<div class="cal-event-sub">' + escapeHtml(line2Parts.join(" \u00b7 ")) + '</div>';
+    if (ev.title && ev.title !== line1) html += '<div class="cal-event-note">' + escapeHtml(ev.title) + '</div>';
+    block.innerHTML = html;
+
+    (function (evt, blk) {
+      blk.addEventListener("click", function (e) {
+        e.stopPropagation();
+        if (dragJustEnded) return;
+        openModalForEdit(evt);
+      });
+      blk.addEventListener("mousedown", function (e) {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        startDrag(evt, blk, e);
+      });
+    })(ev, block);
+
+    col.appendChild(block);
   }
 
   function escapeHtml(str) {
     var div = document.createElement("div");
     div.appendChild(document.createTextNode(str));
     return div.innerHTML;
+  }
+
+  /* ── drag & drop ── */
+
+  function snapTo15(minutes) {
+    return Math.round(minutes / STEP_MINUTES) * STEP_MINUTES;
+  }
+
+  function startDrag(evt, blockEl, mouseEvt) {
+    var bodyCols = container.querySelector(".cal-body-cols");
+    if (!bodyCols) return;
+    var cols = bodyCols.querySelectorAll(".cal-day-col");
+
+    var st = new Date(evt.start_time);
+    var en = new Date(evt.end_time);
+    var durationMin = (en - st) / 60000;
+
+    // find original day index
+    var origDayIdx = 0;
+    for (var d = 0; d < 7; d++) {
+      if (isSameDay(st, addDays(weekStart, d))) { origDayIdx = d; break; }
+    }
+
+    drag = {
+      evt: evt,
+      el: blockEl,
+      durationMin: durationMin,
+      startX: mouseEvt.clientX,
+      startY: mouseEvt.clientY,
+      origTop: parseFloat(blockEl.style.top),
+      origDayIdx: origDayIdx,
+      currentDayIdx: origDayIdx,
+      cols: cols,
+      moved: false
+    };
+
+    blockEl.classList.add("cal-dragging");
+    document.addEventListener("mousemove", onDragMove);
+    document.addEventListener("mouseup", onDragEnd);
+  }
+
+  function onDragMove(e) {
+    if (!drag) return;
+    var dx = e.clientX - drag.startX;
+    var dy = e.clientY - drag.startY;
+    if (Math.abs(dy) > 3 || Math.abs(dx) > 3) drag.moved = true;
+
+    // vertical: snap to 15 min
+    var newTop = drag.origTop + dy;
+    var maxTop = (HOURS_END - HOURS_START) * SLOT_HEIGHT - parseFloat(drag.el.style.height);
+    newTop = Math.max(0, Math.min(newTop, maxTop));
+    var snappedMin = snapTo15(newTop / PX_PER_MINUTE);
+    newTop = snappedMin * PX_PER_MINUTE;
+    drag.el.style.top = newTop + "px";
+
+    // horizontal: detect day column under cursor & move block
+    var colIdx = -1;
+    for (var i = 0; i < drag.cols.length; i++) {
+      var cr = drag.cols[i].getBoundingClientRect();
+      if (e.clientX >= cr.left && e.clientX < cr.right) { colIdx = i; break; }
+    }
+    if (colIdx >= 0 && colIdx !== drag.currentDayIdx) {
+      drag.cols[colIdx].appendChild(drag.el);
+      drag.currentDayIdx = colIdx;
+    }
+  }
+
+  function onDragEnd(e) {
+    document.removeEventListener("mousemove", onDragMove);
+    document.removeEventListener("mouseup", onDragEnd);
+    if (!drag) return;
+
+    drag.el.classList.remove("cal-dragging");
+
+    if (!drag.moved) { drag = null; return; }
+
+    // suppress clicks briefly after drag
+    dragJustEnded = true;
+    setTimeout(function () { dragJustEnded = false; }, 300);
+
+    var topPx = parseFloat(drag.el.style.top);
+    var totalMin = snapTo15(topPx / PX_PER_MINUTE);
+    var newHour = HOURS_START + Math.floor(totalMin / 60);
+    var newMin = totalMin % 60;
+
+    var dayIdx = drag.currentDayIdx;
+
+    var newDate = addDays(weekStart, dayIdx);
+    var startISO = toISODate(newDate) + "T" + pad2(newHour) + ":" + pad2(newMin) + ":00";
+    var endTotalMin = totalMin + drag.durationMin;
+    var endH = HOURS_START + Math.floor(endTotalMin / 60);
+    var endM = endTotalMin % 60;
+    var endISO = toISODate(newDate) + "T" + pad2(endH) + ":" + pad2(endM) + ":00";
+
+    var evtId = drag.evt.id;
+    drag = null;
+
+    fetch("/calendar/api/events/" + evtId, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ start_time: startISO, end_time: endISO }),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) { alert(data.error); }
+        loadEvents();
+      })
+      .catch(function () { loadEvents(); });
   }
 
   /* ── now line ── */
@@ -617,6 +840,122 @@
         loadEvents();
       });
   });
+
+  /* ── settings modal ── */
+
+  var settingsModalEl = document.getElementById("calSettingsModal");
+  var settingsListEl  = document.getElementById("settingsStatusList");
+  var settingsAddBtn  = document.getElementById("settingsAddStatus");
+  var settingsSaveBtn = document.getElementById("settingsSaveBtn");
+  var settingsBtn     = document.getElementById("calSettingsBtn");
+  var bsSettingsModal = null;
+
+  function getSettingsModal() {
+    if (!bsSettingsModal && settingsModalEl) {
+      bsSettingsModal = new bootstrap.Modal(settingsModalEl);
+    }
+    return bsSettingsModal;
+  }
+
+  function renderSettingsRows() {
+    settingsListEl.innerHTML = "";
+    cachedStatuses.forEach(function (s, idx) {
+      var row = document.createElement("div");
+      row.className = "d-flex align-items-center gap-2 mb-2 settings-status-row";
+      row.dataset.index = idx;
+
+      var colorInput = document.createElement("input");
+      colorInput.type = "color";
+      colorInput.className = "form-control form-control-color";
+      colorInput.value = s.color;
+      colorInput.title = "Pick color";
+      colorInput.style.width = "40px";
+      colorInput.style.minWidth = "40px";
+      colorInput.style.padding = "2px";
+
+      var keyInput = document.createElement("input");
+      keyInput.type = "text";
+      keyInput.className = "form-control form-control-sm";
+      keyInput.value = s.key;
+      keyInput.placeholder = "key";
+      keyInput.style.width = "120px";
+
+      var labelInput = document.createElement("input");
+      labelInput.type = "text";
+      labelInput.className = "form-control form-control-sm";
+      labelInput.value = s.label;
+      labelInput.placeholder = "Label";
+      labelInput.style.flex = "1";
+
+      var removeBtn = document.createElement("button");
+      removeBtn.type = "button";
+      removeBtn.className = "btn btn-outline-danger btn-sm";
+      removeBtn.innerHTML = "&times;";
+      removeBtn.title = "Remove";
+      removeBtn.addEventListener("click", function () {
+        cachedStatuses.splice(idx, 1);
+        renderSettingsRows();
+      });
+
+      row.appendChild(colorInput);
+      row.appendChild(keyInput);
+      row.appendChild(labelInput);
+      row.appendChild(removeBtn);
+      settingsListEl.appendChild(row);
+    });
+  }
+
+  function collectStatusesFromRows() {
+    var rows = settingsListEl.querySelectorAll(".settings-status-row");
+    var result = [];
+    rows.forEach(function (row) {
+      var inputs = row.querySelectorAll("input");
+      var color = inputs[0].value;
+      var key = inputs[1].value.trim();
+      var label = inputs[2].value.trim();
+      if (key && label) {
+        result.push({ key: key, label: label, color: color });
+      }
+    });
+    return result;
+  }
+
+  if (settingsBtn) {
+    settingsBtn.addEventListener("click", function () {
+      renderSettingsRows();
+      getSettingsModal().show();
+    });
+  }
+
+  if (settingsAddBtn) {
+    settingsAddBtn.addEventListener("click", function () {
+      var fromRows = collectStatusesFromRows();
+      cachedStatuses = fromRows;
+      cachedStatuses.push({ key: "", label: "", color: "#888888" });
+      renderSettingsRows();
+    });
+  }
+
+  if (settingsSaveBtn) {
+    settingsSaveBtn.addEventListener("click", function () {
+      var statuses = collectStatusesFromRows();
+      if (!statuses.length) { alert("Add at least one status."); return; }
+
+      fetch("/calendar/api/statuses", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ statuses: statuses }),
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.error) { alert(data.error); return; }
+          cachedStatuses = data;
+          getSettingsModal().hide();
+          renderEvents();
+        })
+        .catch(function (e) { console.error("Save statuses error:", e); });
+    });
+  }
 
   /* ── navigation ── */
 
