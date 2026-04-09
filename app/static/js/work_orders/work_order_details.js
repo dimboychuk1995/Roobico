@@ -1705,19 +1705,32 @@
       if (data.error) { toast("Preset not found", "error"); return; }
     } catch { toast("Network error", "error"); return; }
 
+    console.log("[applyPresetToBlock] API response:", JSON.stringify(data, null, 2));
+    console.log("[applyPresetToBlock] blockEl disabled?", blockEl.closest("fieldset")?.disabled);
+
     // Fill labor description
     const descInput = blockEl.querySelector(".labor-description");
     if (descInput && data.description) descInput.value = data.description;
     if (descInput && !descInput.value && data.name) descInput.value = data.name;
+    console.log("[applyPresetToBlock] descInput:", descInput?.value, "| disabled?", descInput?.disabled);
 
     // Fill labor hours
     const hoursInput = blockEl.querySelector(".labor-hours");
     if (hoursInput && data.labor_hours != null) hoursInput.value = String(data.labor_hours);
+    console.log("[applyPresetToBlock] hoursInput:", hoursInput?.value, "| data.labor_hours:", data.labor_hours);
 
-    // Fill labor rate
+    // Fill labor rate (use selectRateIfExists for robust matching)
     const rateSelect = blockEl.querySelector(".labor-rate");
     if (rateSelect && data.labor_rate_code) {
-      rateSelect.value = data.labor_rate_code;
+      const matched = selectRateIfExists(rateSelect, data.labor_rate_code);
+      console.log("[applyPresetToBlock] selectRateIfExists matched?", matched, "| code:", data.labor_rate_code, "| select value after:", rateSelect.value);
+      if (!matched) {
+        // Fallback: direct assignment
+        rateSelect.value = data.labor_rate_code;
+        console.log("[applyPresetToBlock] fallback direct assign, select value:", rateSelect.value);
+      }
+    } else {
+      console.log("[applyPresetToBlock] skipped rate: rateSelect?", !!rateSelect, "| labor_rate_code:", data.labor_rate_code);
     }
 
     // Add preset parts
@@ -3525,6 +3538,52 @@
     });
 
     applyStateFromStatus();
+
+    // ── Auto-apply presets from URL query params ──
+    if (!isCreated) {
+      const urlParams = new URLSearchParams(window.location.search);
+      const presetsParam = urlParams.get("presets");
+      console.log("[WO auto-apply] isCreated:", isCreated, "presetsParam:", presetsParam);
+      if (presetsParam) {
+        const presetIds = presetsParam.split(",").map(s => s.trim()).filter(Boolean);
+        console.log("[WO auto-apply] presetIds:", presetIds);
+        if (presetIds.length > 0) {
+          (async function () {
+            try {
+              // Ensure editor is enabled before applying presets
+              console.log("[WO auto-apply] editor disabled before?", editor?.disabled);
+              if (editor) editor.disabled = false;
+
+              for (let i = 0; i < presetIds.length; i++) {
+                let blockEl;
+                if (i === 0) {
+                  blockEl = blocksContainer.querySelector(".wo-labor");
+                } else {
+                  blockEl = cloneBlock(blocksContainer);
+                  setupMiscChargeButton(blockEl);
+                  Array.from(blocksContainer.querySelectorAll(".wo-labor")).forEach((b, idx) => renumberBlock(b, idx));
+                }
+                console.log("[WO auto-apply] applying preset", presetIds[i], "to block", i, "blockEl?", !!blockEl);
+                if (blockEl) {
+                  await applyPresetToBlock(presetIds[i], blockEl, blocksContainer, pricing, laborRates, shopSupplyPct);
+                }
+                // Verify after apply
+                if (blockEl) {
+                  const h = blockEl.querySelector(".labor-hours");
+                  const r = blockEl.querySelector(".labor-rate");
+                  const d = blockEl.querySelector(".labor-description");
+                  console.log("[WO auto-apply] AFTER apply block", i, "- hours:", h?.value, "rate:", r?.value, "desc:", d?.value);
+                }
+              }
+              recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
+              console.log("[WO auto-apply] done, recalcAll called");
+            } catch (err) {
+              console.error("[WO auto-apply presets] error:", err);
+            }
+          })();
+        }
+      }
+    }
   }
 
   if (document.readyState === "loading") {

@@ -70,6 +70,7 @@
   var elPresetTags      = document.getElementById("apptPresetTags");
   var elSaveBtn         = document.getElementById("apptSaveBtn");
   var elDelBtn          = document.getElementById("apptDeleteBtn");
+  var elCreateWOBtn     = document.getElementById("apptCreateWOBtn");
   var selectedPresets   = []; // [{id, name}]
 
   if (!container) return;
@@ -806,7 +807,7 @@
       bindSearchable(elUnitSearch, elUnitDrop, elUnit, units,
         function (u) { return u.id; },
         function (u) { return u.label; },
-        null
+        function () { updateCreateWOBtn(); }
       );
     });
   }
@@ -821,13 +822,14 @@
     bindSearchable(elCustomerSearch, elCustomerDrop, elCustomer, cachedCustomers,
       function (c) { return c.id; },
       function (c) { return c.label; },
-      function (val) { loadUnitsForCustomer(val); }
+      function (val) { loadUnitsForCustomer(val); updateCreateWOBtn(); }
     );
     // clear units when customer text is manually edited
     elCustomerSearch.addEventListener("input", function () {
       if (!elCustomer.value) {
         clearSearchable(elUnitSearch, elUnit, elUnitDrop);
         elUnitSearch.disabled = true;
+        updateCreateWOBtn();
       }
     });
 
@@ -873,7 +875,9 @@
       elMechanicSearch.value = existingEvent.mechanic_name || "";
 
       elTitleInp.value = existingEvent.title || "";
+      console.log("[CalendarModal] existingEvent.presets:", JSON.stringify(existingEvent.presets));
       selectedPresets = (existingEvent.presets || []).slice();
+      console.log("[CalendarModal] selectedPresets after load:", JSON.stringify(selectedPresets));
       renderPresetTags();
       buildStatusButtons(existingEvent.status || "scheduled");
     } else {
@@ -895,7 +899,15 @@
       buildStatusButtons("scheduled");
     }
 
+    updateCreateWOBtn();
     getModal().show();
+  }
+
+  function updateCreateWOBtn() {
+    if (!elCreateWOBtn) return;
+    var hasCustomer = !!elCustomer.value;
+    var hasUnit = !!elUnit.value;
+    elCreateWOBtn.classList.toggle("d-none", !(hasCustomer && hasUnit));
   }
 
   function openModalForEdit(ev) {
@@ -923,12 +935,14 @@
 
   elPresetAddBtn.addEventListener("click", function () {
     var val = elPresetPendingId.value;
+    console.log("[CalendarPreset] Add clicked, pendingId:", val, "search:", elPresetSearch.value);
     if (!val) return;
     // don't add duplicates
     for (var i = 0; i < selectedPresets.length; i++) {
       if (selectedPresets[i].id === val) return;
     }
     selectedPresets.push({ id: val, name: elPresetSearch.value });
+    console.log("[CalendarPreset] selectedPresets now:", JSON.stringify(selectedPresets));
     renderPresetTags();
     clearSearchable(elPresetSearch, elPresetPendingId, elPresetDrop);
     elPresetAddBtn.disabled = true;
@@ -962,6 +976,7 @@
       status: getSelectedStatus(),
       title: elTitleInp.value.trim(),
     };
+    console.log("[CalendarSave] payload.presets:", JSON.stringify(payload.presets));
 
     var eventId = elEventId.value;
     var url, method;
@@ -987,6 +1002,25 @@
         getModal().hide();
         loadEvents();
       });
+  });
+
+  /* ── create work order ── */
+  elCreateWOBtn.addEventListener("click", function () {
+    var customerId = elCustomer.value;
+    var unitId = elUnit.value;
+    if (!customerId || !unitId) {
+      alert("Please select a customer and unit first.");
+      return;
+    }
+    console.log("[CalendarCreateWO] selectedPresets:", JSON.stringify(selectedPresets));
+    var url = "/work_orders/details?customer_id=" + encodeURIComponent(customerId) +
+              "&unit_id=" + encodeURIComponent(unitId);
+    if (selectedPresets.length) {
+      var ids = selectedPresets.map(function (p) { return p.id; }).join(",");
+      url += "&presets=" + encodeURIComponent(ids);
+    }
+    console.log("[CalendarCreateWO] url:", url);
+    window.open(url, "_blank");
   });
 
   /* ── delete ── */
