@@ -18,6 +18,7 @@ def index():
 # Единый список меню (добавлять новые страницы — 1 строка тут)
 NAV_ITEMS = [
     {"key": "dashboard", "label": "Dashboard", "endpoint": "dashboard.dashboard"},
+    {"key": "calendar", "label": "Calendar", "endpoint": "calendar.calendar_page"},
 
     {"key": "parts", "label": "Parts", "endpoint": "parts.parts_page"},
     {"key": "vendors", "label": "Vendors", "endpoint": "vendors.vendors_page"},

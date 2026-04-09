@@ -1,0 +1,94 @@
+{% extends "layouts/app_base.html" %}
+
+{% block page_title %}Calendar{% endblock %}
+
+{% block extra_styles %}
+  {{ super() }}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/calendar.css', v='20260408-v3') }}">
+{% endblock %}
+
+{% block app_content %}
+<div class="cal-toolbar d-flex align-items-center justify-content-between mb-2">
+  <div class="d-flex align-items-center gap-2">
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="calPrev" title="Previous week">
+      <span aria-hidden="true">&#x2039;</span>
+    </button>
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="calToday">Today</button>
+    <button type="button" class="btn btn-outline-secondary btn-sm" id="calNext" title="Next week">
+      <span aria-hidden="true">&#x203A;</span>
+    </button>
+  </div>
+  <h5 class="cal-title mb-0" id="calTitle"></h5>
+  <div style="min-width:120px"></div>
+</div>
+
+<div id="calWeekContainer"></div>
+
+<!-- Appointment Modal -->
+<div class="modal fade" id="appointmentModal" tabindex="-1" aria-labelledby="appointmentModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="appointmentModalLabel">New Appointment</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="apptEventId" value="">
+
+        <div class="mb-3">
+          <label class="form-label">Customer</label>
+          <select class="form-select" id="apptCustomer">
+            <option value="">— New Customer —</option>
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Unit</label>
+          <select class="form-select" id="apptUnit" disabled>
+            <option value="">— New Unit —</option>
+          </select>
+        </div>
+
+        <div class="row mb-3">
+          <div class="col-6">
+            <label class="form-label">Date</label>
+            <input type="date" class="form-control" id="apptDate">
+          </div>
+          <div class="col-3">
+            <label class="form-label">Start</label>
+            <input type="time" class="form-control" id="apptStart">
+          </div>
+          <div class="col-3">
+            <label class="form-label">End</label>
+            <input type="time" class="form-control" id="apptEnd">
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Assign to Mechanic</label>
+          <select class="form-select" id="apptMechanic">
+            <option value="">— None —</option>
+          </select>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Status</label>
+          <div id="apptStatusGroup" class="d-flex gap-2 flex-wrap"></div>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label">Title / Note</label>
+          <input type="text" class="form-control" id="apptTitle" placeholder="Optional">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-danger me-auto d-none" id="apptDeleteBtn">Delete</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="apptSaveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/calendar/calendar.js', v='20260408-v3') }}"></script>
+{% endblock %}

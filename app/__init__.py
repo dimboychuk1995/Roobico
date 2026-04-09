@@ -74,10 +74,12 @@ def create_app():
     from app.blueprints.parts import parts_bp
     from app.blueprints.customers import customers_bp
     from app.blueprints.work_orders import work_orders_bp
+    from app.blueprints.calendar import calendar_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(reports_bp)
     app.register_blueprint(dashboard_bp)
+    app.register_blueprint(calendar_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(tenant_bp)
     app.register_blueprint(settings_bp)
