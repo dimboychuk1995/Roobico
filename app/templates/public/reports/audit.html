@@ -49,17 +49,17 @@
   <div class="card-body p-0">
     {% if activity_entries and activity_entries|length > 0 %}
       <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
+        <table class="table table-sm align-middle mb-0 sortable">
           <thead>
             <tr class="text-muted">
-              <th style="min-width: 150px;">When</th>
-              <th style="width: 90px;">Method</th>
-              <th style="min-width: 210px;">Endpoint</th>
-              <th style="min-width: 220px;">Path</th>
-              <th style="width: 80px;">Status</th>
-              <th style="min-width: 170px;">User</th>
-              <th style="min-width: 170px;">Shop</th>
-              <th style="min-width: 260px;">Error</th>
+              <th data-sort-field="created_at" style="min-width: 150px;">When</th>
+              <th data-sort-field="method" style="width: 90px;">Method</th>
+              <th data-sort-field="endpoint" style="min-width: 210px;">Endpoint</th>
+              <th data-sort-field="path" style="min-width: 220px;">Path</th>
+              <th data-sort-field="status_code" style="width: 80px;">Status</th>
+              <th class="no-sort" style="min-width: 170px;">User</th>
+              <th class="no-sort" style="min-width: 170px;">Shop</th>
+              <th class="no-sort" style="min-width: 260px;">Error</th>
             </tr>
           </thead>
           <tbody>
@@ -102,13 +102,13 @@
     {% set next_page = activity_page + 1 %}
 
     {% if activity_page > 1 %}
-      <a class="btn btn-outline-secondary" href="{{ url_for('reports.activity_journal_page', page=prev_page, method=method_filter, endpoint=endpoint_filter) }}">Prev</a>
+      <a class="btn btn-outline-secondary" href="{{ url_for('reports.activity_journal_page', page=prev_page, method=method_filter, endpoint=endpoint_filter, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
     {% else %}
       <button class="btn btn-outline-secondary" disabled>Prev</button>
     {% endif %}
 
     {% if activity_page < activity_total_pages %}
-      <a class="btn btn-outline-secondary" href="{{ url_for('reports.activity_journal_page', page=next_page, method=method_filter, endpoint=endpoint_filter) }}">Next</a>
+      <a class="btn btn-outline-secondary" href="{{ url_for('reports.activity_journal_page', page=next_page, method=method_filter, endpoint=endpoint_filter, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
     {% else %}
       <button class="btn btn-outline-secondary" disabled>Next</button>
     {% endif %}

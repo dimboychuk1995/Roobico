@@ -266,6 +266,28 @@ small,
   background-color: var(--chrome-bg) !important;
 }
 
+/* ── Table sorting ── */
+.sortable-th {
+  position: relative;
+  white-space: nowrap;
+}
+
+.sortable-th:hover {
+  background: rgba(0,0,0,0.04);
+}
+
+.sort-indicator {
+  font-size: 0.7em;
+  opacity: 0.7;
+  margin-left: 2px;
+}
+
+.sortable-th:not(.sort-asc):not(.sort-desc):hover .sort-indicator::after {
+  content: " ⇅";
+  font-size: 0.85em;
+  opacity: 0.4;
+}
+
 /* ── Global sidebar search ── */
 .app-global-search-wrap {
   padding-top: 0.35rem;

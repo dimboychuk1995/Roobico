@@ -9,7 +9,7 @@ from flask import request, redirect, url_for, flash, session, jsonify
 from app.blueprints.main.routes import _render_app_page
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import login_required, SESSION_TENANT_ID, SESSION_USER_ID
-from app.utils.pagination import get_pagination_params, paginate_find
+from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
 from app.utils.mongo_search import build_regex_search_filter
 from app.utils.parts_search import build_parts_search_terms, build_query_tokens, part_matches_query
 from app.utils.permissions import permission_required
@@ -695,7 +695,7 @@ def parts_page():
         parts_in_stock, pagination = paginate_find(
             parts_coll,
             parts_query,
-            [("part_number", 1), ("description", 1), ("created_at", -1)],
+            get_sort_params(request.args, [("part_number", 1), ("description", 1), ("created_at", -1)], ["part_number", "description", "reference", "in_stock", "average_cost", "created_at"]),
             parts_page_num,
             parts_per_page,
         )
@@ -817,7 +817,7 @@ def parts_page():
         orders_rows, orders_pagination = paginate_find(
             orders_coll,
             orders_query,
-            [("order_date", -1), ("created_at", -1)],
+            get_sort_params(request.args, [("order_date", -1), ("created_at", -1)], ["order_number", "status", "order_date", "created_at"]),
             orders_page_num,
             orders_per_page,
             projection={
@@ -959,7 +959,7 @@ def parts_page():
         payment_rows, payments_pagination = paginate_find(
             payments_coll,
             payments_query,
-            [("payment_date", -1), ("created_at", -1)],
+            get_sort_params(request.args, [("payment_date", -1), ("created_at", -1)], ["amount", "payment_method", "payment_date", "created_at"]),
             payments_page_num,
             payments_per_page,
         )
@@ -1023,7 +1023,7 @@ def parts_page():
         cores_rows, cores_pagination = paginate_find(
             cores_coll,
             cores_query,
-            [("part_number", 1), ("updated_at", -1)],
+            get_sort_params(request.args, [("part_number", 1), ("updated_at", -1)], ["part_number", "description", "core_cost", "quantity", "updated_at"]),
             cores_page_num,
             cores_per_page,
         )
@@ -1065,6 +1065,8 @@ def parts_page():
         date_from=date_from,
         date_to=date_to,
         today_date_input_value=get_active_shop_today_iso(),
+        sort_by=(request.args.get("sort_by") or "").strip(),
+        sort_dir=(request.args.get("sort_dir") or "").strip(),
     )
 
 

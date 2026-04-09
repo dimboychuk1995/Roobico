@@ -41,11 +41,11 @@
 
         {% if parts_locations and parts_locations|length > 0 %}
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table class="table table-sm align-middle sortable">
               <thead>
                 <tr>
-                  <th style="width: 60%;">Name</th>
-                  <th class="text-end" style="width: 40%;">Actions</th>
+                  <th data-sort-field="name" style="width: 60%;">Name</th>
+                  <th class="text-end no-sort" style="width: 40%;">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -90,9 +90,9 @@
               </div>
               <div class="btn-group btn-group-sm" role="group" aria-label="Locations pagination">
                 <a class="btn btn-outline-secondary {% if not pagination_locations.has_prev %}disabled{% endif %}"
-                   href="{{ url_for('settings.parts_settings_index', loc_page=pagination_locations.prev_page, loc_per_page=pagination_locations.per_page, cat_page=request.args.get('cat_page', 1), cat_per_page=request.args.get('cat_per_page', 20), edit_location_id=edit_location_id, edit_category_id=edit_category_id) }}">Prev</a>
+                   href="{{ url_for('settings.parts_settings_index', loc_page=pagination_locations.prev_page, loc_per_page=pagination_locations.per_page, cat_page=request.args.get('cat_page', 1), cat_per_page=request.args.get('cat_per_page', 20), edit_location_id=edit_location_id, edit_category_id=edit_category_id, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
                 <a class="btn btn-outline-secondary {% if not pagination_locations.has_next %}disabled{% endif %}"
-                   href="{{ url_for('settings.parts_settings_index', loc_page=pagination_locations.next_page, loc_per_page=pagination_locations.per_page, cat_page=request.args.get('cat_page', 1), cat_per_page=request.args.get('cat_per_page', 20), edit_location_id=edit_location_id, edit_category_id=edit_category_id) }}">Next</a>
+                   href="{{ url_for('settings.parts_settings_index', loc_page=pagination_locations.next_page, loc_per_page=pagination_locations.per_page, cat_page=request.args.get('cat_page', 1), cat_per_page=request.args.get('cat_per_page', 20), edit_location_id=edit_location_id, edit_category_id=edit_category_id, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
               </div>
             </div>
           {% endif %}
@@ -123,11 +123,11 @@
 
         {% if parts_categories and parts_categories|length > 0 %}
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table class="table table-sm align-middle sortable">
               <thead>
                 <tr>
-                  <th style="width: 60%;">Name</th>
-                  <th class="text-end" style="width: 40%;">Actions</th>
+                  <th data-sort-field="name" style="width: 60%;">Name</th>
+                  <th class="text-end no-sort" style="width: 40%;">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -172,9 +172,9 @@
               </div>
               <div class="btn-group btn-group-sm" role="group" aria-label="Categories pagination">
                 <a class="btn btn-outline-secondary {% if not pagination_categories.has_prev %}disabled{% endif %}"
-                   href="{{ url_for('settings.parts_settings_index', cat_page=pagination_categories.prev_page, cat_per_page=pagination_categories.per_page, loc_page=request.args.get('loc_page', 1), loc_per_page=request.args.get('loc_per_page', 20), edit_location_id=edit_location_id, edit_category_id=edit_category_id) }}">Prev</a>
+                   href="{{ url_for('settings.parts_settings_index', cat_page=pagination_categories.prev_page, cat_per_page=pagination_categories.per_page, loc_page=request.args.get('loc_page', 1), loc_per_page=request.args.get('loc_per_page', 20), edit_location_id=edit_location_id, edit_category_id=edit_category_id, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
                 <a class="btn btn-outline-secondary {% if not pagination_categories.has_next %}disabled{% endif %}"
-                   href="{{ url_for('settings.parts_settings_index', cat_page=pagination_categories.next_page, cat_per_page=pagination_categories.per_page, loc_page=request.args.get('loc_page', 1), loc_per_page=request.args.get('loc_per_page', 20), edit_location_id=edit_location_id, edit_category_id=edit_category_id) }}">Next</a>
+                   href="{{ url_for('settings.parts_settings_index', cat_page=pagination_categories.next_page, cat_per_page=pagination_categories.per_page, loc_page=request.args.get('loc_page', 1), loc_per_page=request.args.get('loc_per_page', 20), edit_location_id=edit_location_id, edit_category_id=edit_category_id, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
               </div>
             </div>
           {% endif %}
@@ -214,13 +214,13 @@
 
         <form onsubmit="return false;">
           <div class="table-responsive">
-            <table class="table table-sm align-middle mb-2" id="mmRulesTable">
+            <table class="table table-sm align-middle mb-2 sortable" id="mmRulesTable">
               <thead>
                 <tr>
                   <th style="width: 25%;">From</th>
                   <th style="width: 25%;">To</th>
                   <th style="width: 25%;"><span id="mmValueLabel">{% if pricing_mode == 'markup' %}Markup %{% else %}Margin %{% endif %}</span></th>
-                  <th class="text-end" style="width: 25%;">Actions</th>
+                  <th class="text-end no-sort" style="width: 25%;">Actions</th>
                 </tr>
               </thead>
 

@@ -13,7 +13,7 @@ from app.utils.auth import (
     SESSION_TENANT_ID,
     SESSION_USER_ID,
 )
-from app.utils.pagination import get_pagination_params, paginate_find
+from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
 from app.utils.permissions import permission_required
 from app.utils.mongo_search import build_regex_search_filter
 from app.utils.display_datetime import format_date_mmddyyyy
@@ -154,7 +154,7 @@ def vendors_page():
     vendors, pagination = paginate_find(
         coll,
         query,
-        [("is_active", -1), ("name", 1), ("created_at", -1)],
+        get_sort_params(request.args, [("is_active", -1), ("name", 1), ("created_at", -1)], ["name", "is_active", "created_at"]),
         page,
         per_page,
     )
@@ -196,6 +196,8 @@ def vendors_page():
         vendors=vendors,
         pagination=pagination,
         q=q,
+        sort_by=(request.args.get("sort_by") or "").strip(),
+        sort_dir=(request.args.get("sort_dir") or "").strip(),
     )
 
 

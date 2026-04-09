@@ -392,6 +392,10 @@
 					</tr>
 				`;
 			}).join("");
+
+			// Re-init sorting for refreshed payments table
+			var payTbl = orderMetaPaymentsBody && orderMetaPaymentsBody.closest("table");
+			if (payTbl && window.TableSort) window.TableSort.refresh(payTbl);
 		}
 
 		function isPartsPageAlive() {
@@ -1329,6 +1333,14 @@
 					</tr>
 				`;
 				}).join("");
+				}
+
+				// Re-init sorting for refreshed history tables
+				if (window.TableSort) {
+					var oTbl = partHistoryOrdersBody && partHistoryOrdersBody.closest("table");
+					var wTbl = partHistoryWorkOrdersBody && partHistoryWorkOrdersBody.closest("table");
+					if (oTbl) window.TableSort.refresh(oTbl);
+					if (wTbl) window.TableSort.refresh(wTbl);
 				}
 			} catch (err) {
 				partHistoryMeta.textContent = "Network error while loading history";

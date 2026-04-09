@@ -17,7 +17,7 @@ from app.utils.auth import (
 from app.utils.permissions import permission_required, filter_nav_items
 from app.blueprints.main.routes import NAV_ITEMS
 from app.utils.layout import build_app_layout_context
-from app.utils.pagination import get_pagination_params, paginate_find
+from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
 from app.utils.mongo_search import build_regex_search_filter
 
 
@@ -181,7 +181,7 @@ def users_index():
     users, pagination = paginate_find(
         master.users,
         query_filter,
-        [("created_at", -1)],
+        get_sort_params(request.args, [("created_at", -1)], ["name", "email", "role", "is_active", "created_at"]),
         page,
         per_page,
     )
@@ -200,7 +200,9 @@ def users_index():
         pagination=pagination,
         q=q,
         shops_for_form=shops_for_form,
-        active_shop_id=str(session.get(SESSION_SHOP_ID) or "")  # чтобы в UI pre-check
+        active_shop_id=str(session.get(SESSION_SHOP_ID) or ""),
+        sort_by=(request.args.get("sort_by") or "").strip(),
+        sort_dir=(request.args.get("sort_dir") or "").strip(),
     )
 
 

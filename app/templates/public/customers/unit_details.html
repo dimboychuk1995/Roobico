@@ -43,16 +43,16 @@
 
         {% if tab_items and tab_items|length > 0 %}
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table class="table table-sm align-middle sortable">
               <thead>
                 <tr>
-                  <th>WO #</th>
-                  <th>Status</th>
-                  <th class="text-end">Grand Total</th>
+                  <th data-sort-field="wo_number">WO #</th>
+                  <th data-sort-field="status">Status</th>
+                  <th data-sort-field="grand_total" class="text-end">Grand Total</th>
                   <th class="text-end">Paid</th>
                   <th class="text-end">Remaining</th>
-                  <th>Created</th>
-                  <th class="text-end">Actions</th>
+                  <th data-sort-field="work_order_date">Created</th>
+                  <th class="text-end no-sort">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -148,9 +148,9 @@
           </div>
           <div class="btn-group btn-group-sm" role="group" aria-label="Unit work orders pagination">
             <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-              href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=unit.id, tab='work_orders', page=pagination.prev_page, per_page=pagination.per_page, q=q) }}">Prev</a>
+              href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=unit.id, tab='work_orders', page=pagination.prev_page, per_page=pagination.per_page, q=q, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
             <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-              href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=unit.id, tab='work_orders', page=pagination.next_page, per_page=pagination.per_page, q=q) }}">Next</a>
+              href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=unit.id, tab='work_orders', page=pagination.next_page, per_page=pagination.per_page, q=q, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
           </div>
         </div>
       {% endif %}

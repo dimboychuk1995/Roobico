@@ -11,6 +11,7 @@ from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import SESSION_TENANT_ID, login_required
 from app.utils.date_filters import build_date_range_filters
 from app.utils.layout import render_internal_page
+from app.utils.pagination import get_sort_params
 from app.utils.pdf_utils import render_html_to_pdf
 from app.utils.permissions import filter_nav_items
 
@@ -700,6 +701,14 @@ def activity_journal_page():
     if endpoint_filter:
         query["endpoint"] = endpoint_filter
 
+    sort = get_sort_params(
+        request.args,
+        [("created_at", -1)],
+        ["created_at", "method", "endpoint", "path", "status_code"],
+    )
+    sort_by = sort[0][0] if sort else "created_at"
+    sort_dir = "asc" if sort and sort[0][1] == 1 else "desc"
+
     total = master.audit_journal.count_documents(query)
     total_pages = (total + per_page - 1) // per_page if total > 0 else 1
     if page > total_pages:
@@ -719,7 +728,7 @@ def activity_journal_page():
             "payload": 1,
             "error": 1,
         },
-    ).sort("created_at", -1).skip(skip).limit(per_page)
+    ).sort(sort).skip(skip).limit(per_page)
 
     entries = []
     for row in cursor:
@@ -749,4 +758,6 @@ def activity_journal_page():
         activity_total_pages=total_pages,
         method_filter=method_filter,
         endpoint_filter=endpoint_filter,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )

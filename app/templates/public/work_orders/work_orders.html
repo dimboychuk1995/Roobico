@@ -90,19 +90,19 @@
 
         {% if work_orders and work_orders|length > 0 %}
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table class="table table-sm align-middle sortable">
               <thead>
                 <tr>
-                  <th>WO #</th>
+                  <th data-sort-field="wo_number">WO #</th>
                   <th>Customer</th>
-                  <th>Date</th>
+                  <th data-sort-field="work_order_date">Date</th>
                   <th>Unit</th>
                   <th class="text-end">Labor</th>
                   <th class="text-end">Parts</th>
                   <th class="text-end">Tax</th>
-                  <th class="text-end">Total</th>
+                  <th data-sort-field="grand_total" class="text-end">Total</th>
                   <th class="text-center">Paid</th>
-                  <th class="text-end">Actions</th>
+                  <th class="text-end no-sort">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -158,9 +158,9 @@
               {% if pagination.pages > 1 %}
                 <div class="btn-group btn-group-sm wo-pagination-actions" role="group" aria-label="Work orders pagination">
                   <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-                    href="{{ url_for('work_orders.work_orders_page', page=pagination.prev_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}">Prev</a>
+                    href="{{ url_for('work_orders.work_orders_page', page=pagination.prev_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
                   <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-                    href="{{ url_for('work_orders.work_orders_page', page=pagination.next_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}">Next</a>
+                    href="{{ url_for('work_orders.work_orders_page', page=pagination.next_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
                 </div>
               {% else %}
                 <div class="wo-pagination-actions"></div>
@@ -272,19 +272,19 @@
 
         {% if estimates and estimates|length > 0 %}
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table class="table table-sm align-middle sortable">
               <thead>
                 <tr>
-                  <th>Estimate #</th>
+                  <th data-sort-field="wo_number">Estimate #</th>
                   <th>Customer</th>
-                  <th>Date</th>
+                  <th data-sort-field="work_order_date">Date</th>
                   <th>Unit</th>
-                  <th>Status</th>
+                  <th data-sort-field="status">Status</th>
                   <th class="text-end">Labor</th>
                   <th class="text-end">Parts</th>
                   <th class="text-end">Tax</th>
-                  <th class="text-end">Total</th>
-                  <th class="text-end">Actions</th>
+                  <th data-sort-field="grand_total" class="text-end">Total</th>
+                  <th class="text-end no-sort">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -317,9 +317,9 @@
               </div>
               <div class="btn-group btn-group-sm" role="group" aria-label="Estimates pagination">
                 <a class="btn btn-outline-secondary {% if not estimates_pagination.has_prev %}disabled{% endif %}"
-                   href="{{ url_for('work_orders.work_orders_page', estimates_page=estimates_pagination.prev_page, estimates_per_page=estimates_pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}#content-estimates">Prev</a>
+                   href="{{ url_for('work_orders.work_orders_page', estimates_page=estimates_pagination.prev_page, estimates_per_page=estimates_pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to, sort_by=sort_by, sort_dir=sort_dir) }}#content-estimates">Prev</a>
                 <a class="btn btn-outline-secondary {% if not estimates_pagination.has_next %}disabled{% endif %}"
-                   href="{{ url_for('work_orders.work_orders_page', estimates_page=estimates_pagination.next_page, estimates_per_page=estimates_pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}#content-estimates">Next</a>
+                   href="{{ url_for('work_orders.work_orders_page', estimates_page=estimates_pagination.next_page, estimates_per_page=estimates_pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to, sort_by=sort_by, sort_dir=sort_dir) }}#content-estimates">Next</a>
               </div>
             </div>
           {% endif %}

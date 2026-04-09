@@ -9,7 +9,7 @@ from app.blueprints.work_orders import work_orders_bp
 from app.blueprints.main.routes import _render_app_page
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import login_required, SESSION_TENANT_ID, SESSION_USER_ID
-from app.utils.pagination import get_pagination_params, paginate_find
+from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
 from app.utils.mongo_search import build_regex_search_filter
 from app.utils.parts_search import build_query_tokens, part_matches_query
 from app.utils.permissions import permission_required
@@ -1012,7 +1012,7 @@ def get_work_orders_list(
     rows, pagination = paginate_find(
         shop_db.work_orders,
         query,
-        [("work_order_date", -1), ("created_at", -1)],
+        get_sort_params(request.args, [("work_order_date", -1), ("created_at", -1)], ["wo_number", "status", "work_order_date", "grand_total", "created_at"]),
         page,
         per_page,
     )
@@ -1140,7 +1140,7 @@ def get_estimates_list(
     rows, pagination = paginate_find(
         shop_db.work_orders,
         query,
-        [("work_order_date", -1), ("created_at", -1)],
+        get_sort_params(request.args, [("work_order_date", -1), ("created_at", -1)], ["wo_number", "status", "work_order_date", "grand_total", "created_at"]),
         page,
         per_page,
     )
@@ -2039,6 +2039,8 @@ def work_orders_page():
         date_to=date_to,
         date_preset=date_preset,
         today_date_input_value=get_active_shop_today_iso(),
+        sort_by=(request.args.get("sort_by") or "").strip(),
+        sort_dir=(request.args.get("sort_dir") or "").strip(),
     )
 
 

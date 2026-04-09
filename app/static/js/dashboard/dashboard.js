@@ -122,6 +122,10 @@
 
     tableWrap.style.display = '';
     empty.style.display = 'none';
+
+    // Re-init sorting for refreshed table
+    var tbl = tableWrap.querySelector("table");
+    if (tbl && window.TableSort) window.TableSort.refresh(tbl);
   }
 
   function renderWoMoney(data) {

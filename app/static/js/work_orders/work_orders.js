@@ -232,7 +232,7 @@
       // Build payments table
       let html = `
         <div class="table-responsive">
-          <table class="table table-sm align-middle">
+          <table class="table table-sm align-middle sortable">
             <thead>
               <tr>
                 <th>WO #</th>
@@ -241,7 +241,7 @@
                 <th>Method</th>
                 <th>Date</th>
                 <th>Notes</th>
-                <th class="text-end">Actions</th>
+                <th class="text-end no-sort">Actions</th>
               </tr>
             </thead>
             <tbody>

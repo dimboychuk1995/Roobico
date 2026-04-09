@@ -25,7 +25,7 @@ from app.utils.auth import (
 from app.utils.permissions import permission_required, filter_nav_items
 from app.blueprints.main.routes import NAV_ITEMS
 from app.utils.layout import build_app_layout_context
-from app.utils.pagination import get_pagination_params, paginate_find
+from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
 
 
 # -----------------------------
@@ -221,14 +221,14 @@ def parts_settings_index():
     parts_locations, pagination_locations = paginate_find(
         sdb.parts_locations,
         {"shop_id": shop_oid},
-        [("name", 1), ("created_at", 1)],
+        get_sort_params(request.args, [("name", 1), ("created_at", 1)], ["name", "created_at"]),
         loc_page,
         loc_per_page,
     )
     parts_categories, pagination_categories = paginate_find(
         sdb.parts_categories,
         {"shop_id": shop_oid},
-        [("name", 1), ("created_at", 1)],
+        get_sort_params(request.args, [("name", 1), ("created_at", 1)], ["name", "created_at"]),
         cat_page,
         cat_per_page,
     )
@@ -258,6 +258,8 @@ def parts_settings_index():
         pricing_mode=pricing_mode,
         pricing_rules=pricing_rules,
         error_message=None,
+        sort_by=(request.args.get("sort_by") or "").strip(),
+        sort_dir=(request.args.get("sort_dir") or "").strip(),
     )
 
 # -----------------------------

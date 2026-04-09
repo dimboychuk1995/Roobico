@@ -118,17 +118,17 @@
 
         {% if tab_items and tab_items|length > 0 %}
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table class="table table-sm align-middle sortable">
               <thead>
                 <tr>
-                  <th>WO #</th>
-                  <th>Status</th>
+                  <th data-sort-field="wo_number">WO #</th>
+                  <th data-sort-field="status">Status</th>
                   <th>Unit</th>
-                  <th class="text-end">Grand Total</th>
+                  <th data-sort-field="grand_total" class="text-end">Grand Total</th>
                   <th class="text-end">Paid</th>
                   <th class="text-end">Remaining</th>
-                  <th>Created</th>
-                  <th class="text-end">Actions</th>
+                  <th data-sort-field="work_order_date">Created</th>
+                  <th class="text-end no-sort">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -174,9 +174,9 @@
             {% if pagination.pages > 1 %}
               <div class="btn-group btn-group-sm wo-pagination-actions" role="group" aria-label="Customer work orders pagination">
                 <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-                  href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='work_orders', page=pagination.prev_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}">Prev</a>
+                  href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='work_orders', page=pagination.prev_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
                 <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-                  href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='work_orders', page=pagination.next_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}">Next</a>
+                  href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='work_orders', page=pagination.next_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
               </div>
             {% else %}
               <div class="wo-pagination-actions"></div>
@@ -199,15 +199,15 @@
 
         {% if tab_items and tab_items|length > 0 %}
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table class="table table-sm align-middle sortable">
               <thead>
                 <tr>
-                  <th>Unit #</th>
+                  <th data-sort-field="unit_number">Unit #</th>
                   <th>Unit</th>
-                  <th>VIN</th>
-                  <th class="text-end">Mileage</th>
-                  <th>Created</th>
-                  <th class="text-end">Actions</th>
+                  <th data-sort-field="vin">VIN</th>
+                  <th data-sort-field="mileage" class="text-end">Mileage</th>
+                  <th data-sort-field="created_at">Created</th>
+                  <th class="text-end no-sort">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -276,15 +276,15 @@
 
         {% if tab_items and tab_items|length > 0 %}
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table class="table table-sm align-middle sortable">
               <thead>
                 <tr>
                   <th>WO #</th>
-                  <th class="text-end">Amount</th>
-                  <th>Method</th>
+                  <th data-sort-field="amount" class="text-end">Amount</th>
+                  <th data-sort-field="payment_method">Method</th>
                   <th>Notes</th>
-                  <th>Created</th>
-                  <th class="text-end">Actions</th>
+                  <th data-sort-field="payment_date">Created</th>
+                  <th class="text-end no-sort">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -324,9 +324,9 @@
             {% if pagination.pages > 1 %}
               <div class="btn-group btn-group-sm wo-pagination-actions" role="group" aria-label="Customer payments pagination">
                 <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-                  href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='payments', page=pagination.prev_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}">Prev</a>
+                  href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='payments', page=pagination.prev_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
                 <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-                  href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='payments', page=pagination.next_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}">Next</a>
+                  href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='payments', page=pagination.next_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
               </div>
             {% else %}
               <div class="wo-pagination-actions"></div>
@@ -376,15 +376,15 @@
 
         {% if tab_items and tab_items|length > 0 %}
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table class="table table-sm align-middle sortable">
               <thead>
                 <tr>
-                  <th>Estimate #</th>
-                  <th>Status</th>
+                  <th data-sort-field="wo_number">Estimate #</th>
+                  <th data-sort-field="status">Status</th>
                   <th>Unit</th>
-                  <th class="text-end">Total</th>
-                  <th>Created</th>
-                  <th class="text-end">Actions</th>
+                  <th data-sort-field="grand_total" class="text-end">Total</th>
+                  <th data-sort-field="work_order_date">Created</th>
+                  <th class="text-end no-sort">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -422,9 +422,9 @@
             {% if pagination.pages > 1 %}
               <div class="btn-group btn-group-sm wo-pagination-actions" role="group" aria-label="Customer estimates pagination">
                 <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-                  href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='estimates', page=pagination.prev_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}">Prev</a>
+                  href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='estimates', page=pagination.prev_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
                 <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-                  href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='estimates', page=pagination.next_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}">Next</a>
+                  href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='estimates', page=pagination.next_page, per_page=pagination.per_page, q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
               </div>
             {% else %}
               <div class="wo-pagination-actions"></div>

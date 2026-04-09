@@ -2246,6 +2246,10 @@
             </tr>
           `;
         }).join("");
+
+        // Re-init sorting for refreshed payments table
+        var payTbl = woMetaPaymentsBody.closest("table");
+        if (payTbl && window.TableSort) window.TableSort.refresh(payTbl);
       } catch (err) {
         workOrderDatesBlock.style.display = "";
         woMetaPaymentsBody.innerHTML = `<tr><td colspan="5" class="text-danger">Failed to load payment data.</td></tr>`;

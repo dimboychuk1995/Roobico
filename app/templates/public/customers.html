@@ -40,15 +40,15 @@
 
     {% if customers and customers|length > 0 %}
       <div class="table-responsive">
-        <table class="table table-sm align-middle">
+        <table class="table table-sm align-middle sortable">
           <thead>
             <tr>
-              <th style="width: 25%;">Company</th>
-              <th style="width: 18%;">Name</th>
+              <th data-sort-field="company_name" style="width: 25%;">Company</th>
+              <th data-sort-field="last_name" style="width: 18%;">Name</th>
               <th style="width: 16%;">Phone</th>
               <th style="width: 21%;">Email</th>
               <th class="text-end" style="width: 10%;">Current Balance</th>
-              <th class="text-end" style="width: 10%;">Actions</th>
+              <th class="text-end no-sort" style="width: 10%;">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -102,9 +102,9 @@
           </div>
           <div class="btn-group btn-group-sm" role="group" aria-label="Customers pagination">
             <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-               href="{{ url_for('customers.customers_page', page=pagination.prev_page, per_page=pagination.per_page, q=q) }}">Prev</a>
+               href="{{ url_for('customers.customers_page', page=pagination.prev_page, per_page=pagination.per_page, q=q, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
             <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-               href="{{ url_for('customers.customers_page', page=pagination.next_page, per_page=pagination.per_page, q=q) }}">Next</a>
+               href="{{ url_for('customers.customers_page', page=pagination.next_page, per_page=pagination.per_page, q=q, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
           </div>
         </div>
       {% endif %}

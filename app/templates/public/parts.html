@@ -74,18 +74,18 @@
 
     {% if parts and parts|length > 0 %}
       <div class="table-responsive">
-        <table class="table table-sm align-middle">
+        <table class="table table-sm align-middle sortable">
           <thead>
             <tr>
-              <th style="min-width:160px;">Part #</th>
-              <th style="min-width:260px;">Description</th>
-              <th style="min-width:180px;">Reference</th>
-              <th class="text-end" style="width:120px;">In stock</th>
-              <th class="text-end" style="width:150px;">Avg cost</th>
+              <th data-sort-field="part_number" style="min-width:160px;">Part #</th>
+              <th data-sort-field="description" style="min-width:260px;">Description</th>
+              <th data-sort-field="reference" style="min-width:180px;">Reference</th>
+              <th data-sort-field="in_stock" class="text-end" style="width:120px;">In stock</th>
+              <th data-sort-field="average_cost" class="text-end" style="width:150px;">Avg cost</th>
               <th style="min-width:180px;">Vendor</th>
               <th style="min-width:180px;">Category</th>
               <th style="min-width:180px;">Location</th>
-              <th class="text-end" style="width:220px;">Actions</th>
+              <th class="text-end no-sort" style="width:220px;">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -177,9 +177,9 @@
           </div>
           <div class="btn-group btn-group-sm" role="group" aria-label="Parts pagination">
             <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-               href="{{ url_for('parts.parts_page', tab='parts', q=q, parts_page=pagination.prev_page, parts_per_page=pagination.per_page) }}">Prev</a>
+               href="{{ url_for('parts.parts_page', tab='parts', q=q, parts_page=pagination.prev_page, parts_per_page=pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
             <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-               href="{{ url_for('parts.parts_page', tab='parts', q=q, parts_page=pagination.next_page, parts_per_page=pagination.per_page) }}">Next</a>
+               href="{{ url_for('parts.parts_page', tab='parts', q=q, parts_page=pagination.next_page, parts_per_page=pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
           </div>
         </div>
       {% endif %}
@@ -242,10 +242,10 @@
 
         {% if orders and orders|length > 0 %}
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table class="table table-sm align-middle sortable">
               <thead>
                 <tr>
-                  <th>Order #</th>
+                  <th data-sort-field="order_number">Order #</th>
                   <th>Vendor Bill</th>
                   <th>Vendor</th>
                   <th class="text-end">Items</th>
@@ -253,9 +253,9 @@
                   <th class="text-end">Paid</th>
                   <th class="text-end">Balance</th>
                   <th>Invoice</th>
-                  <th>Status</th>
-                  <th>Date</th>
-                  <th class="text-end">Actions</th>
+                  <th data-sort-field="status">Status</th>
+                  <th data-sort-field="order_date">Date</th>
+                  <th class="text-end no-sort">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -333,9 +333,9 @@
               {% if orders_pagination.pages > 1 %}
                 <div class="btn-group btn-group-sm wo-pagination-actions" role="group" aria-label="Parts orders pagination">
                   <a class="btn btn-outline-secondary {% if not orders_pagination.has_prev %}disabled{% endif %}"
-                    href="{{ url_for('parts.parts_page', tab='orders', q=q, date_preset=date_preset, date_from=date_from, date_to=date_to, orders_page=orders_pagination.prev_page, orders_per_page=orders_pagination.per_page) }}">Prev</a>
+                    href="{{ url_for('parts.parts_page', tab='orders', q=q, date_preset=date_preset, date_from=date_from, date_to=date_to, orders_page=orders_pagination.prev_page, orders_per_page=orders_pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
                   <a class="btn btn-outline-secondary {% if not orders_pagination.has_next %}disabled{% endif %}"
-                    href="{{ url_for('parts.parts_page', tab='orders', q=q, date_preset=date_preset, date_from=date_from, date_to=date_to, orders_page=orders_pagination.next_page, orders_per_page=orders_pagination.per_page) }}">Next</a>
+                    href="{{ url_for('parts.parts_page', tab='orders', q=q, date_preset=date_preset, date_from=date_from, date_to=date_to, orders_page=orders_pagination.next_page, orders_per_page=orders_pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
                 </div>
               {% else %}
                 <div class="wo-pagination-actions"></div>
@@ -393,17 +393,17 @@
 
         {% if payments and payments|length > 0 %}
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table class="table table-sm align-middle sortable">
               <thead>
                 <tr>
                   <th>Order #</th>
                   <th>Vendor</th>
                   <th>Order Status</th>
-                  <th class="text-end">Amount</th>
-                  <th>Method</th>
-                  <th>Date</th>
+                  <th data-sort-field="amount" class="text-end">Amount</th>
+                  <th data-sort-field="payment_method">Method</th>
+                  <th data-sort-field="payment_date">Date</th>
                   <th>Notes</th>
-                  <th class="text-end">Actions</th>
+                  <th class="text-end no-sort">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -445,9 +445,9 @@
               {% if payments_pagination.pages > 1 %}
                 <div class="btn-group btn-group-sm wo-pagination-actions" role="group" aria-label="Parts order payments pagination">
                   <a class="btn btn-outline-secondary {% if not payments_pagination.has_prev %}disabled{% endif %}"
-                    href="{{ url_for('parts.parts_page', tab='payments', q=q, date_preset=date_preset, date_from=date_from, date_to=date_to, payments_page=payments_pagination.prev_page, payments_per_page=payments_pagination.per_page) }}">Prev</a>
+                    href="{{ url_for('parts.parts_page', tab='payments', q=q, date_preset=date_preset, date_from=date_from, date_to=date_to, payments_page=payments_pagination.prev_page, payments_per_page=payments_pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
                   <a class="btn btn-outline-secondary {% if not payments_pagination.has_next %}disabled{% endif %}"
-                    href="{{ url_for('parts.parts_page', tab='payments', q=q, date_preset=date_preset, date_from=date_from, date_to=date_to, payments_page=payments_pagination.next_page, payments_per_page=payments_pagination.per_page) }}">Next</a>
+                    href="{{ url_for('parts.parts_page', tab='payments', q=q, date_preset=date_preset, date_from=date_from, date_to=date_to, payments_page=payments_pagination.next_page, payments_per_page=payments_pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
                 </div>
               {% else %}
                 <div class="wo-pagination-actions"></div>
@@ -479,14 +479,14 @@
 
         {% if cores and cores|length > 0 %}
           <div class="table-responsive">
-            <table class="table table-sm align-middle">
+            <table class="table table-sm align-middle sortable">
               <thead>
                 <tr>
-                  <th style="min-width: 160px;">Part #</th>
-                  <th>Description</th>
-                  <th class="text-end" style="width: 130px;">Core Cost</th>
-                  <th class="text-end" style="width: 130px;">Quantity</th>
-                  <th style="width: 180px;">Updated</th>
+                  <th data-sort-field="part_number" style="min-width: 160px;">Part #</th>
+                  <th data-sort-field="description">Description</th>
+                  <th data-sort-field="core_cost" class="text-end" style="width: 130px;">Core Cost</th>
+                  <th data-sort-field="quantity" class="text-end" style="width: 130px;">Quantity</th>
+                  <th data-sort-field="updated_at" style="width: 180px;">Updated</th>
                 </tr>
               </thead>
               <tbody>
@@ -510,9 +510,9 @@
               </div>
               <div class="btn-group btn-group-sm" role="group" aria-label="Cores pagination">
                 <a class="btn btn-outline-secondary {% if not cores_pagination.has_prev %}disabled{% endif %}"
-                   href="{{ url_for('parts.parts_page', tab='cores', q=q, cores_page=cores_pagination.prev_page, cores_per_page=cores_pagination.per_page) }}">Prev</a>
+                   href="{{ url_for('parts.parts_page', tab='cores', q=q, cores_page=cores_pagination.prev_page, cores_per_page=cores_pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
                 <a class="btn btn-outline-secondary {% if not cores_pagination.has_next %}disabled{% endif %}"
-                   href="{{ url_for('parts.parts_page', tab='cores', q=q, cores_page=cores_pagination.next_page, cores_per_page=cores_pagination.per_page) }}">Next</a>
+                   href="{{ url_for('parts.parts_page', tab='cores', q=q, cores_page=cores_pagination.next_page, cores_per_page=cores_pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
               </div>
             </div>
           {% endif %}
@@ -924,14 +924,14 @@
           <div>
             <div class="small text-muted mb-1">Paid</div>
             <div class="table-responsive">
-              <table class="table table-sm align-middle mb-0">
+              <table class="table table-sm align-middle mb-0 sortable">
                 <thead>
                   <tr>
                     <th>Date</th>
                     <th class="text-end">Amount</th>
                     <th>Method</th>
                     <th>Notes</th>
-                    <th class="text-end">Actions</th>
+                    <th class="text-end no-sort">Actions</th>
                   </tr>
                 </thead>
                 <tbody id="orderMetaPaymentsBody">
@@ -979,7 +979,7 @@
           <div class="col-12 col-lg-6">
             <h6 class="mb-2">Orders</h6>
             <div class="table-responsive">
-              <table class="table table-sm align-middle mb-0">
+              <table class="table table-sm align-middle mb-0 sortable">
                 <thead>
                   <tr>
                     <th>Order #</th>
@@ -1001,7 +1001,7 @@
           <div class="col-12 col-lg-6">
             <h6 class="mb-2">Work Orders</h6>
             <div class="table-responsive">
-              <table class="table table-sm align-middle mb-0">
+              <table class="table table-sm align-middle mb-0 sortable">
                 <thead>
                   <tr>
                     <th>WO #</th>

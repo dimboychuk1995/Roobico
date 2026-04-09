@@ -282,6 +282,10 @@
       renderOrdersSummary(data.summary);
 
       updateOrdersPaginationControls();
+
+      // Re-init sorting for refreshed table
+      var tbl = els.body && els.body.closest("table");
+      if (tbl && window.TableSort) window.TableSort.refresh(tbl);
     } catch (err) {
       var fallbackEls = getOrdersEls();
       setOrdersLoading("Network error while loading part orders.");

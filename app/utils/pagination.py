@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 
 
 def _to_int(value, default: int) -> int:
@@ -8,6 +9,29 @@ def _to_int(value, default: int) -> int:
         return int(str(value).strip())
     except Exception:
         return default
+
+
+_SORT_FIELD_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_.]*$")
+
+
+def get_sort_params(
+    args,
+    default_sort: list[tuple[str, int]],
+    allowed_fields: list[str] | None = None,
+    sort_by_key: str = "sort_by",
+    sort_dir_key: str = "sort_dir",
+) -> list[tuple[str, int]]:
+    sort_by = (args.get(sort_by_key) or "").strip()
+    sort_dir = (args.get(sort_dir_key) or "").strip().lower()
+
+    if not sort_by or not _SORT_FIELD_RE.match(sort_by):
+        return default_sort
+
+    if allowed_fields and sort_by not in allowed_fields:
+        return default_sort
+
+    direction = -1 if sort_dir == "desc" else 1
+    return [(sort_by, direction)]
 
 
 def get_pagination_params(

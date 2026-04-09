@@ -39,18 +39,18 @@
 
     {% if vendors and vendors|length > 0 %}
       <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
+        <table class="table table-sm align-middle mb-0 sortable">
           <thead>
             <tr class="text-muted">
-              <th style="width: 18%;">Name</th>
+              <th data-sort-field="name" style="width: 18%;">Name</th>
               <th style="width: 12%;">Phone</th>
               <th style="width: 16%;">Email</th>
               <th style="width: 14%;">Website</th>
               <th style="width: 14%;">Primary contact</th>
               <th style="width: 16%;">Address</th>
               <th style="width: 10%;" class="text-end">Balance</th>
-              <th style="width: 6%;" class="text-end">Status</th>
-              <th style="width: 4%;" class="text-end">Actions</th>
+              <th data-sort-field="is_active" style="width: 6%;" class="text-end">Status</th>
+              <th style="width: 4%;" class="text-end no-sort">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -140,9 +140,9 @@
           </div>
           <div class="btn-group btn-group-sm" role="group" aria-label="Vendors pagination">
             <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-              href="{{ url_for('vendors.vendors_page', page=pagination.prev_page, per_page=pagination.per_page, q=q) }}">Prev</a>
+              href="{{ url_for('vendors.vendors_page', page=pagination.prev_page, per_page=pagination.per_page, q=q, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
             <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-              href="{{ url_for('vendors.vendors_page', page=pagination.next_page, per_page=pagination.per_page, q=q) }}">Next</a>
+              href="{{ url_for('vendors.vendors_page', page=pagination.next_page, per_page=pagination.per_page, q=q, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
           </div>
         </div>
       {% endif %}
@@ -266,7 +266,7 @@
         </div>
 
         <div class="table-responsive">
-          <table class="table table-sm align-middle mb-0">
+          <table class="table table-sm align-middle mb-0 sortable">
             <thead>
               <tr class="text-muted">
                 <th>Order #</th>

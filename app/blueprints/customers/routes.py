@@ -13,7 +13,7 @@ from app.utils.auth import (
     SESSION_TENANT_ID,
     SESSION_USER_ID,
 )
-from app.utils.pagination import get_pagination_params, paginate_find
+from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
 from app.utils.mongo_search import build_regex_search_filter
 from app.utils.permissions import permission_required
 from app.utils.display_datetime import format_date_mmddyyyy, format_preferred_shop_date
@@ -464,7 +464,7 @@ def customers_page():
     customers, pagination = paginate_find(
         coll,
         query,
-        [("is_active", -1), ("company_name", 1), ("last_name", 1), ("first_name", 1), ("created_at", -1)],
+        get_sort_params(request.args, [("is_active", -1), ("company_name", 1), ("last_name", 1), ("first_name", 1), ("created_at", -1)], ["company_name", "last_name", "first_name", "created_at", "is_active"]),
         page,
         per_page,
     )
@@ -473,12 +473,17 @@ def customers_page():
     for customer in customers:
         _decorate_customer(customer)
 
+    sort_by = (request.args.get("sort_by") or "").strip()
+    sort_dir = (request.args.get("sort_dir") or "").strip()
+
     return _render_app_page(
         "public/customers.html",
         active_page="customers",
         customers=customers,
         pagination=pagination,
         q=q,
+        sort_by=sort_by,
+        sort_dir=sort_dir,
     )
 
 
@@ -593,7 +598,7 @@ def customer_details_page(customer_id):
         work_orders, tab_pagination = paginate_find(
             shop_db.work_orders,
             wo_query,
-            [("work_order_date", -1), ("created_at", -1)],
+            get_sort_params(request.args, [("work_order_date", -1), ("created_at", -1)], ["wo_number", "status", "work_order_date", "grand_total", "created_at"]),
             page,
             per_page,
             projection={
@@ -653,7 +658,7 @@ def customer_details_page(customer_id):
         units, tab_pagination = paginate_find(
             shop_db.units,
             units_query,
-            [("created_at", -1)],
+            get_sort_params(request.args, [("created_at", -1)], ["unit_number", "vin", "mileage", "created_at"]),
             page,
             per_page,
             projection={
@@ -729,7 +734,7 @@ def customer_details_page(customer_id):
             payments, tab_pagination = paginate_find(
                 shop_db.work_order_payments,
                 payments_query,
-                [("payment_date", -1), ("created_at", -1)],
+                get_sort_params(request.args, [("payment_date", -1), ("created_at", -1)], ["amount", "payment_method", "payment_date", "created_at"]),
                 page,
                 per_page,
                 projection={
@@ -783,7 +788,7 @@ def customer_details_page(customer_id):
         estimates, tab_pagination = paginate_find(
             shop_db.work_orders,
             estimate_query,
-            [("work_order_date", -1), ("created_at", -1)],
+            get_sort_params(request.args, [("work_order_date", -1), ("created_at", -1)], ["wo_number", "status", "work_order_date", "grand_total", "created_at"]),
             page,
             per_page,
             projection={
@@ -835,6 +840,8 @@ def customer_details_page(customer_id):
         date_to=date_to,
         date_preset=date_preset,
         labor_rates=labor_rates,
+        sort_by=(request.args.get("sort_by") or "").strip(),
+        sort_dir=(request.args.get("sort_dir") or "").strip(),
     )
 
 
@@ -894,7 +901,7 @@ def customer_unit_details_page(customer_id, unit_id):
         rows, pagination = paginate_find(
             shop_db.work_orders,
             wo_query,
-            [("work_order_date", -1), ("created_at", -1)],
+            get_sort_params(request.args, [("work_order_date", -1), ("created_at", -1)], ["wo_number", "status", "work_order_date", "grand_total", "created_at"]),
             page,
             per_page,
             projection={
@@ -957,6 +964,8 @@ def customer_unit_details_page(customer_id, unit_id):
         q=q,
         tab_items=tab_items,
         pagination=pagination,
+        sort_by=(request.args.get("sort_by") or "").strip(),
+        sort_dir=(request.args.get("sort_dir") or "").strip(),
     )
 
 

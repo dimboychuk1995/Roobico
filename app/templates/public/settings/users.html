@@ -49,14 +49,14 @@
 
     {% if users %}
       <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0">
+        <table class="table table-sm align-middle mb-0 sortable">
           <thead>
             <tr>
-              <th style="min-width: 220px;">Name</th>
-              <th style="min-width: 230px;">Email</th>
-              <th style="min-width: 160px;">Role</th>
-              <th style="min-width: 130px;">Status</th>
-              <th class="text-end" style="min-width: 220px;">Actions</th>
+              <th data-sort-field="name" style="min-width: 220px;">Name</th>
+              <th data-sort-field="email" style="min-width: 230px;">Email</th>
+              <th data-sort-field="role" style="min-width: 160px;">Role</th>
+              <th data-sort-field="is_active" style="min-width: 130px;">Status</th>
+              <th class="text-end no-sort" style="min-width: 220px;">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -132,11 +132,11 @@
         <div class="btn-group btn-group-sm" role="group" aria-label="Users pagination">
           <a
             class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-            href="{{ url_for('settings.users_index', q=q, page=pagination.prev_page, per_page=pagination.per_page) }}"
+            href="{{ url_for('settings.users_index', q=q, page=pagination.prev_page, per_page=pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}"
           >Prev</a>
           <a
             class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-            href="{{ url_for('settings.users_index', q=q, page=pagination.next_page, per_page=pagination.per_page) }}"
+            href="{{ url_for('settings.users_index', q=q, page=pagination.next_page, per_page=pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}"
           >Next</a>
         </div>
       </div>
