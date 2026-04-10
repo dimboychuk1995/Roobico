@@ -274,6 +274,67 @@
 
   // Init
   updateValueLabel();
+
+  // ── Sales Tax Rate ──
+  var taxRateForm = document.getElementById("taxRateForm");
+  var saveTaxRateBtn = document.getElementById("saveTaxRateBtn");
+  var resetTaxRateBtn = document.getElementById("resetTaxRateBtn");
+  var taxRateErrorEl = document.getElementById("taxRateError");
+
+  if (taxRateForm && saveTaxRateBtn) {
+    function setTaxRateError(message) {
+      if (!taxRateErrorEl) return;
+      if (!message) {
+        taxRateErrorEl.textContent = "";
+        taxRateErrorEl.classList.add("d-none");
+        return;
+      }
+      taxRateErrorEl.textContent = message;
+      taxRateErrorEl.classList.remove("d-none");
+    }
+
+    saveTaxRateBtn.addEventListener("click", function (event) {
+      event.preventDefault();
+      setTaxRateError("");
+
+      var rateInput = taxRateForm.querySelector('input[name="custom_tax_rate"]');
+      if (!rateInput) return;
+
+      var rateStr = (rateInput.value || "").trim();
+      if (!rateStr) {
+        setTaxRateError("Please enter a tax rate.");
+        return;
+      }
+
+      var rate = parseFloat(rateStr);
+      if (isNaN(rate) || rate < 0 || rate > 100) {
+        setTaxRateError("Tax rate must be between 0 and 100.");
+        return;
+      }
+
+      taxRateForm.submit();
+    });
+
+    if (resetTaxRateBtn) {
+      resetTaxRateBtn.addEventListener("click", async function (event) {
+        event.preventDefault();
+
+        if (typeof appConfirm === "function") {
+          if (!await appConfirm("Reset tax rate to API-based lookup?")) return;
+        } else {
+          if (!confirm("Reset tax rate to API-based lookup?")) return;
+        }
+
+        var hiddenInput = document.createElement("input");
+        hiddenInput.type = "hidden";
+        hiddenInput.name = "reset_tax_rate";
+        hiddenInput.value = "true";
+        taxRateForm.appendChild(hiddenInput);
+
+        taxRateForm.submit();
+      });
+    }
+  }
   }
 
   if (document.readyState === "loading") {

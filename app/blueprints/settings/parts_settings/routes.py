@@ -26,6 +26,7 @@ from app.utils.permissions import permission_required, filter_nav_items
 from app.blueprints.main.routes import NAV_ITEMS
 from app.utils.layout import build_app_layout_context
 from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
+from app.utils.sales_tax import get_zip_sales_tax_rate, get_custom_shop_sales_tax_settings, get_shop_zip_code
 
 
 # -----------------------------
@@ -199,6 +200,8 @@ def parts_settings_index():
             edit_category_id=None,
             pricing_mode="margin",
             pricing_rules=[],
+            api_tax_rate=None,
+            custom_tax_rate=None,
             error_message="Please select an active shop (and ensure it has a shop DB).",
         )
 
@@ -241,6 +244,22 @@ def parts_settings_index():
     edit_location_id = request.args.get("edit_location_id") or None
     edit_category_id = request.args.get("edit_category_id") or None
 
+    # ── Sales Tax Rate ──
+    api_tax_rate = None
+    custom_tax_rate = None
+
+    shop_doc = master.shops.find_one({"_id": shop_oid})
+    if shop_doc:
+        zip_code = get_shop_zip_code(shop_doc)
+        if zip_code:
+            api_rate_doc = get_zip_sales_tax_rate(master, zip_code)
+            if api_rate_doc:
+                api_tax_rate = api_rate_doc.get("combined_rate")
+
+        custom_settings = get_custom_shop_sales_tax_settings(sdb)
+        if custom_settings:
+            custom_tax_rate = custom_settings.get("combined_rate")
+
     return _render_settings_page(
         "public/settings/parts_settings.html",
         active_shop_id=active_shop_id,
@@ -257,10 +276,66 @@ def parts_settings_index():
         edit_category_id=edit_category_id,
         pricing_mode=pricing_mode,
         pricing_rules=pricing_rules,
+        api_tax_rate=api_tax_rate,
+        custom_tax_rate=custom_tax_rate,
         error_message=None,
         sort_by=(request.args.get("sort_by") or "").strip(),
         sort_dir=(request.args.get("sort_dir") or "").strip(),
     )
+
+
+# -----------------------------
+# Sales Tax Rate
+# -----------------------------
+
+@settings_bp.route("/parts-settings/tax-rate", methods=["POST"])
+@login_required
+@permission_required("parts.edit")
+def parts_settings_save_tax():
+    master, sdb, shop_oid = _require_shop_db_or_redirect()
+    if sdb is None:
+        return redirect(url_for("settings.parts_settings_index"))
+
+    custom_tax_rate_str = (request.form.get("custom_tax_rate") or "").strip()
+    reset_tax_rate = request.form.get("reset_tax_rate") == "true"
+
+    now = utcnow()
+    user = _load_current_user(master)
+
+    if reset_tax_rate:
+        sdb.shop_settings.delete_one({"key": "sales_tax_rate"})
+        flash("Sales tax rate reset to API-based lookup.", "success")
+    elif custom_tax_rate_str:
+        try:
+            custom_rate_percent = float(custom_tax_rate_str)
+            if custom_rate_percent < 0 or custom_rate_percent > 100:
+                flash("Tax rate must be between 0 and 100 (%).", "error")
+                return redirect(url_for("settings.parts_settings_index"))
+
+            custom_rate = custom_rate_percent / 100.0
+
+            sdb.shop_settings.update_one(
+                {"key": "sales_tax_rate"},
+                {
+                    "$set": {
+                        "combined_rate": custom_rate,
+                        "is_active": True,
+                        "updated_at": now,
+                        "updated_by": user.get("_id") if user else None,
+                    },
+                    "$setOnInsert": {
+                        "created_at": now,
+                        "created_by": user.get("_id") if user else None,
+                    },
+                },
+                upsert=True,
+            )
+            flash(f"Custom sales tax rate set to {custom_rate * 100:.2f}%.", "success")
+        except ValueError:
+            flash("Invalid tax rate format. Please enter a decimal number.", "error")
+
+    return redirect(url_for("settings.parts_settings_index"))
+
 
 # -----------------------------
 # CRUD: Parts Locations

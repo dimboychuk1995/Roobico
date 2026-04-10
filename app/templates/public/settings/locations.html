@@ -156,68 +156,6 @@
   </div>
 </div>
 
-<div class="card">
-  <div class="card-header">
-    <div class="fw-semibold">Sales Tax Rate For Active Shop</div>
-  </div>
-  <div class="card-body">
-    {% if active_shop_id %}
-      <div class="row g-3 mb-3">
-        <div class="col-12 col-md-6">
-          <div class="small text-muted">Current API-Based Rate</div>
-          <div class="fw-semibold" id="apiTaxRate">
-            {% if api_tax_rate is not none %}
-              {{ "%.2f%%" % (api_tax_rate * 100) }}
-            {% else %}
-              <span class="text-muted">—</span>
-            {% endif %}
-          </div>
-        </div>
-        <div class="col-12 col-md-6">
-          <div class="small text-muted">Custom Rate (Override)</div>
-          <div class="fw-semibold" id="customTaxRate">
-            {% if custom_tax_rate is not none %}
-              {{ "%.2f%%" % (custom_tax_rate * 100) }}
-            {% else %}
-              <span class="text-muted">Not set</span>
-            {% endif %}
-          </div>
-        </div>
-      </div>
-
-      <form id="taxRateForm" method="POST" action="{{ url_for('settings.locations_index') }}" class="row g-2 align-items-end">
-        <div class="col-12 col-md-6">
-          <label class="form-label">Custom Combined Tax Rate (%)</label>
-          <input 
-            type="number" 
-            class="form-control form-control-sm" 
-            id="customTaxRateInput" 
-            name="custom_tax_rate"
-            placeholder="e.g., 11 for 11%"
-            step="0.01"
-            min="0"
-            max="100"
-            {% if custom_tax_rate is not none %}value="{{ '%.2f' % (custom_tax_rate * 100) }}"{% endif %}
-          >
-        </div>
-        <div class="col-auto d-flex gap-1 align-items-end">
-          <button type="submit" class="btn btn-primary btn-sm" id="saveTaxRateBtn">Save Rate</button>
-          {% if custom_tax_rate is not none %}
-            <button type="button" class="btn btn-outline-secondary btn-sm" id="resetTaxRateBtn">Reset to API</button>
-          {% endif %}
-        </div>
-        <div class="col-12">
-          <div class="form-text mt-1">Enter as percent (e.g., 11 for 11%). Leave empty to use API-based rate.</div>
-        </div>
-        <div id="taxRateError" class="text-danger small d-none"></div>
-        <div id="taxRateSuccess" class="text-success small d-none"></div>
-      </form>
-    {% else %}
-      <div class="text-muted">Active shop is not selected in session.</div>
-    {% endif %}
-  </div>
-</div>
-
 <div class="modal fade" id="createShopModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog">
     <div class="modal-content">

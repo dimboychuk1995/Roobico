@@ -189,67 +189,7 @@
       });
     });
 
-    // Initialize tax rate form
-    var taxRateForm = document.getElementById("taxRateForm");
-    var saveTaxRateBtn = document.getElementById("saveTaxRateBtn");
-    var resetTaxRateBtn = document.getElementById("resetTaxRateBtn");
-    var taxRateErrorEl = document.getElementById("taxRateError");
-
-    if (taxRateForm && saveTaxRateBtn) {
-      function setTaxRateError(message) {
-        if (!taxRateErrorEl) return;
-        if (!message) {
-          taxRateErrorEl.textContent = "";
-          taxRateErrorEl.classList.add("d-none");
-          return;
-        }
-        taxRateErrorEl.textContent = message;
-        taxRateErrorEl.classList.remove("d-none");
-      }
-
-      saveTaxRateBtn.addEventListener("click", function (event) {
-        event.preventDefault();
-        setTaxRateError("");
-
-        var rateInput = taxRateForm.querySelector('input[name="custom_tax_rate"]');
-        if (!rateInput) return;
-
-        var rateStr = (rateInput.value || "").trim();
-        if (!rateStr) {
-          setTaxRateError("Please enter a tax rate.");
-          return;
-        }
-
-        var rate = parseFloat(rateStr);
-        if (isNaN(rate) || rate < 0 || rate > 100) {
-          setTaxRateError("Tax rate must be between 0 and 100.");
-          return;
-        }
-
-        // Validation passed, submit the form
-        taxRateForm.submit();
-      });
-
-      if (resetTaxRateBtn) {
-        resetTaxRateBtn.addEventListener("click", async function (event) {
-          event.preventDefault();
-
-          if (!await appConfirm("Reset tax rate to API-based lookup?")) {
-            return;
-          }
-
-          // Create hidden input for reset flag
-          var hiddenInput = document.createElement("input");
-          hiddenInput.type = "hidden";
-          hiddenInput.name = "reset_tax_rate";
-          hiddenInput.value = "true";
-          taxRateForm.appendChild(hiddenInput);
-
-          // Submit the form
-          taxRateForm.submit();
-        });
-      }
-    }
+    // Initialize tax rate form (moved to parts_settings.js)
 
   }
 

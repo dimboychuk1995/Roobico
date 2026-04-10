@@ -9,52 +9,91 @@
   </div>
 </div>
 
+<!-- ── Company ── -->
+<h2 class="h6 text-muted text-uppercase mt-4 mb-2">Company</h2>
 <div class="row g-3">
-
   <div class="col-12 col-md-6 col-xl-4">
     <a href="{{ url_for('main.settings_organization') }}" class="text-decoration-none">
       <div class="card h-100">
         <div class="card-body">
           <h2 class="h6 mb-2">Organization</h2>
-          <p class="text-muted mb-0">Company info, address, phone, timezone, logo.</p>
+          <p class="text-muted mb-0">Company profile, contacts, legal, and billing.</p>
         </div>
       </div>
     </a>
   </div>
 
+  <div class="col-12 col-md-6 col-xl-4">
+    <a href="{{ url_for('settings.locations_index') }}" class="text-decoration-none">
+      <div class="card h-100">
+        <div class="card-body">
+          <h2 class="h6 mb-2">Shops</h2>
+          <p class="text-muted mb-0">Manage shop locations, timezone, and contact details.</p>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<!-- ── People ── -->
+<h2 class="h6 text-muted text-uppercase mt-4 mb-2">People</h2>
+<div class="row g-3">
   <div class="col-12 col-md-6 col-xl-4">
     <a href="{{ url_for('settings.users_index') }}" class="text-decoration-none">
       <div class="card h-100">
         <div class="card-body">
-          <h2 class="h6 mb-2">Users</h2>
-          <p class="text-muted mb-0">Manage users, activation, invitations.</p>
+          <h2 class="h6 mb-2">Users & Roles</h2>
+          <p class="text-muted mb-0">Manage users, roles, and permissions.</p>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<!-- ── Work Orders ── -->
+<h2 class="h6 text-muted text-uppercase mt-4 mb-2">Work Orders</h2>
+<div class="row g-3">
+  <div class="col-12 col-md-6 col-xl-4">
+    <a href="{{ url_for('settings.work_orders_index') }}" class="text-decoration-none">
+      <div class="card h-100">
+        <div class="card-body">
+          <h2 class="h6 mb-2">Work Order Settings</h2>
+          <p class="text-muted mb-0">Labor rates, shop supply, core charges, and workflows.</p>
         </div>
       </div>
     </a>
   </div>
 
   <div class="col-12 col-md-6 col-xl-4">
-    <a href="{{ url_for('main.settings_roles') }}" class="text-decoration-none">
+    <a href="{{ url_for('settings.wo_presets_index') }}" class="text-decoration-none">
       <div class="card h-100">
         <div class="card-body">
-          <h2 class="h6 mb-2">Roles & Permissions</h2>
-          <p class="text-muted mb-0">Create roles and assign permissions.</p>
+          <h2 class="h6 mb-2">Service Templates</h2>
+          <p class="text-muted mb-0">Reusable service packages with labor, parts, and pricing.</p>
         </div>
       </div>
     </a>
   </div>
+</div>
 
+<!-- ── Parts & Pricing ── -->
+<h2 class="h6 text-muted text-uppercase mt-4 mb-2">Parts & Pricing</h2>
+<div class="row g-3">
   <div class="col-12 col-md-6 col-xl-4">
-    <a href="{{ url_for('main.settings_workflows') }}" class="text-decoration-none">
+    <a href="{{ url_for('settings.parts_settings_index') }}" class="text-decoration-none">
       <div class="card h-100">
         <div class="card-body">
-          <h2 class="h6 mb-2">Workflows</h2>
-          <p class="text-muted mb-0">Work order statuses, numbering, defaults.</p>
+          <h2 class="h6 mb-2">Parts & Pricing</h2>
+          <p class="text-muted mb-0">Categories, storage locations, pricing rules, and sales tax.</p>
         </div>
       </div>
     </a>
   </div>
+</div>
 
+<!-- ── Communications ── -->
+<h2 class="h6 text-muted text-uppercase mt-4 mb-2">Communications</h2>
+<div class="row g-3">
   <div class="col-12 col-md-6 col-xl-4">
     <a href="{{ url_for('main.settings_notifications') }}" class="text-decoration-none">
       <div class="card h-100">
@@ -65,53 +104,5 @@
       </div>
     </a>
   </div>
-
-  <div class="col-12 col-md-6 col-xl-4">
-    <a href="{{ url_for('settings.locations_index') }}" class="text-decoration-none">
-      <div class="card h-100">
-        <div class="card-body">
-          <h2 class="h6 mb-2">Locations</h2>
-          <p class="text-muted mb-0">Manage shops/branches and switch active shop.</p>
-        </div>
-      </div>
-    </a>
-  </div>
-
-  <!-- NEW: Parts Settings -->
-  <div class="col-12 col-md-6 col-xl-4">
-    <a href="{{ url_for('settings.parts_settings_index') }}" class="text-decoration-none">
-      <div class="card h-100">
-        <div class="card-body">
-          <h2 class="h6 mb-2">Parts Settings</h2>
-          <p class="text-muted mb-0">Configure parts-related preferences and defaults.</p>
-        </div>
-      </div>
-    </a>
-  </div>
-
-  <!-- NEW: Work Orders Settings -->
-  <div class="col-12 col-md-6 col-xl-4">
-    <a href="{{ url_for('settings.work_orders_index') }}" class="text-decoration-none">
-      <div class="card h-100">
-        <div class="card-body">
-          <h2 class="h6 mb-2">Work Orders</h2>
-          <p class="text-muted mb-0">Configure work order settings and preferences.</p>
-        </div>
-      </div>
-    </a>
-  </div>
-
-  <!-- Work Order Presets -->
-  <div class="col-12 col-md-6 col-xl-4">
-    <a href="{{ url_for('settings.wo_presets_index') }}" class="text-decoration-none">
-      <div class="card h-100">
-        <div class="card-body">
-          <h2 class="h6 mb-2">Work Order Presets</h2>
-          <p class="text-muted mb-0">Reusable service templates with labor, parts and fixed pricing.</p>
-        </div>
-      </div>
-    </a>
-  </div>
-
 </div>
 {% endblock %}

@@ -14,7 +14,6 @@ from app.utils.auth import login_required, SESSION_USER_ID, SESSION_TENANT_ID
 from app.utils.permissions import permission_required, filter_nav_items
 from app.blueprints.main.routes import NAV_ITEMS
 from app.utils.layout import build_app_layout_context
-from app.utils.sales_tax import get_zip_sales_tax_rate, get_custom_shop_sales_tax_settings, get_shop_zip_code
 
 
 COMMON_TIMEZONES = [
@@ -492,12 +491,9 @@ def locations_index():
 
     # -----------------------------
     # Update timezone for active shop (POST)
-    # Also handle sales tax rate updates
     # -----------------------------
     if request.method == "POST":
         selected_tz = (request.form.get("timezone") or "").strip()
-        custom_tax_rate_str = (request.form.get("custom_tax_rate") or "").strip()
-        reset_tax_rate = request.form.get("reset_tax_rate") == "true"
         
         if not active_shop_oid:
             flash("Active shop is not selected.", "error")
@@ -599,45 +595,6 @@ def locations_index():
                 )
 
             flash("Timezone updated for active shop.", "success")
-
-        # Handle Tax Rate Update/Reset
-        if reset_tax_rate and shop_db is not None:
-            # Delete custom tax rate setting to revert to API-based lookup
-            shop_db.shop_settings.delete_one({"key": "sales_tax_rate"})
-            flash("Sales tax rate reset to API-based lookup.", "success")
-        elif custom_tax_rate_str:
-            # Save custom tax rate
-            try:
-                custom_rate_percent = float(custom_tax_rate_str)
-                if custom_rate_percent < 0 or custom_rate_percent > 100:
-                    flash("Tax rate must be between 0 and 100 (%).", "error")
-                    return redirect(url_for("settings.locations_index"))
-
-                custom_rate = custom_rate_percent / 100.0
-                
-                if shop_db is not None:
-                    shop_db.shop_settings.update_one(
-                        {"key": "sales_tax_rate"},
-                        {
-                            "$set": {
-                                "combined_rate": custom_rate,
-                                "is_active": True,
-                                "updated_at": now,
-                                "updated_by": user.get("_id"),
-                            },
-                            "$setOnInsert": {
-                                "created_at": now,
-                                "created_by": user.get("_id"),
-                            },
-                        },
-                        upsert=True,
-                    )
-                    flash(f"Custom sales tax rate set to {custom_rate * 100:.2f}%.", "success")
-                else:
-                    flash("Shop database not configured.", "error")
-            except ValueError:
-                flash("Invalid tax rate format. Please enter a decimal number.", "error")
-                return redirect(url_for("settings.locations_index"))
 
         return redirect(url_for("settings.locations_index"))
 
@@ -772,32 +729,6 @@ def locations_index():
             "zip": str(active_shop.get("zip") or "").strip(),
         }
 
-    # Fetch tax rate information for active shop
-    api_tax_rate = None
-    custom_tax_rate = None
-    
-    if active_shop:
-        # Get API-based tax rate from ZIP
-        zip_code = get_shop_zip_code(active_shop)
-        if zip_code:
-            api_rate_doc = get_zip_sales_tax_rate(master, zip_code)
-            if api_rate_doc:
-                api_tax_rate = api_rate_doc.get("combined_rate")
-        
-        # Get custom tax rate from shop DB
-        db_name = (
-            active_shop.get("db_name")
-            or active_shop.get("database")
-            or active_shop.get("db")
-            or active_shop.get("mongo_db")
-            or active_shop.get("shop_db")
-        )
-        if db_name:
-            shop_db = get_mongo_client()[str(db_name)]
-            custom_settings = get_custom_shop_sales_tax_settings(shop_db)
-            if custom_settings:
-                custom_tax_rate = custom_settings.get("combined_rate")
-
     return _render_settings_page(
         "public/settings/locations.html",
         shops=shops,
@@ -805,8 +736,6 @@ def locations_index():
         active_shop_info=active_shop_info,
         current_timezone=current_timezone,
         timezone_options=timezone_options,
-        api_tax_rate=api_tax_rate,
-        custom_tax_rate=custom_tax_rate,
     )
 
 
