@@ -225,7 +225,6 @@
                     <td class="text-end">{{ item.mileage }}</td>
                     <td>{{ item.created_at }}</td>
                     <td class="text-end">
-                      {{ attachments_btn(entity_type="unit", entity_id=item.id) }}
                       <a class="btn btn-sm btn-outline-primary" href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=item.id) }}">Open</a>
                     </td>
                   </tr>

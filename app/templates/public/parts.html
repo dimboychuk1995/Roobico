@@ -157,7 +157,6 @@
                                   data-bs-toggle="modal" data-bs-target="#createPartModal">
                       Edit
                     </button>
-                    {{ attachments_btn(entity_type="part", entity_id=p._id|string) }}
                     <form method="post" action="{{ url_for('parts.parts_deactivate', part_id=p._id) }}" class="d-inline">
                       <button class="btn btn-sm btn-outline-danger"
                               onclick="return confirm('Deactivate this part?');">
@@ -307,7 +306,6 @@
                               data-bs-toggle="modal" data-bs-target="#orderModal">
                         <i class="bi bi-pencil me-1"></i> Edit
                       </button>
-                      {{ attachments_btn(entity_type="parts_order", entity_id=o.id) }}
                       <button type="button" class="btn btn-sm btn-outline-danger deleteOrderBtn" 
                               data-order-id="{{ o.id }}"
                               title="Delete order">
@@ -426,12 +424,8 @@
                     <td>{{ p.created_at }}</td>
                     <td>{{ p.notes if p.notes else '-' }}</td>
                     <td class="text-end">
+                      {{ attachments_btn(entity_type="parts_order_payment", entity_id=p.id) }}
                       <button type="button" class="btn btn-sm btn-outline-danger js-delete-parts-payment" data-payment-id="{{ p.id }}" title="Delete payment">Delete</button>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td colspan="8" class="p-0 border-0">
-                      <div class="px-3 py-2">{{ attachments_block(entity_type="parts_order_payment", entity_id=p.id, compact=true) }}</div>
                     </td>
                   </tr>
                 {% endfor %}
@@ -782,6 +776,12 @@
               </div>
             </div>
 
+            <div class="col-12" id="partAttachmentsGroup" style="display:none;">
+              <div class="border-top pt-3 mt-2">
+                {{ attachments_block(entity_type="part", entity_id="", heading="Attachments", compact=true) }}
+              </div>
+            </div>
+
           </div>
         </div>
 
@@ -953,6 +953,12 @@
         </div>
 
         <input type="hidden" id="createdOrderId" value="">
+
+        <div id="orderAttachmentsGroup" class="mt-3 d-none">
+          <div class="border-top pt-3">
+            {{ attachments_block(entity_type="parts_order", entity_id="", heading="Attachments", compact=true) }}
+          </div>
+        </div>
       </div>
 
       <div class="modal-footer">

@@ -352,6 +352,24 @@
       if (els.contactsForm && window.SmallShopContacts) {
         window.SmallShopContacts.setContacts(els.contactsForm, Array.isArray(vendor.contacts) ? vendor.contacts : []);
       }
+
+      // Show attachments block when editing
+      var attGroup = document.getElementById('vendorAttachmentsGroup');
+      if (attGroup) {
+        var vid = vendor._id || vendorId;
+        if (vid) {
+          attGroup.style.display = '';
+          var attBlock = attGroup.querySelector('.attachments-block');
+          if (attBlock) {
+            attBlock.setAttribute('data-entity-id', vid);
+            var ctrl = window.AttachmentsGetBlock ? window.AttachmentsGetBlock(attBlock) : null;
+            if (ctrl) { ctrl.setEntityId(vid); ctrl.load(); }
+            else if (window.AttachmentsInit) window.AttachmentsInit();
+          }
+        } else {
+          attGroup.style.display = 'none';
+        }
+      }
     } catch (err) {
       appAlert("Network error while loading vendor data", 'error');
     }
@@ -406,6 +424,9 @@
         if (current.contactsForm && window.SmallShopContacts) {
           window.SmallShopContacts.setContacts(current.contactsForm, []);
         }
+        // Hide attachments when creating
+        var attGroup = document.getElementById('vendorAttachmentsGroup');
+        if (attGroup) attGroup.style.display = 'none';
       });
     }
 

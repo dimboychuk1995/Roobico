@@ -52,7 +52,7 @@
 
 
 {# ── Button (table cell / inline) ──────────────────────────────────── #}
-{% macro attachments_btn(entity_type, entity_id, parent_id="", label="", css_class="btn btn-sm btn-outline-secondary") %}
+{% macro attachments_btn(entity_type, entity_id, parent_id="", label="Attachments", css_class="btn btn-sm btn-outline-secondary") %}
 <button type="button"
         class="{{ css_class }} js-open-att-modal"
         data-entity-type="{{ entity_type }}"
@@ -61,7 +61,7 @@
         data-bs-toggle="modal"
         data-bs-target="#attachmentsModal"
         title="Attachments">
-  <i class="bi bi-paperclip"></i>{% if label %} {{ label }}{% endif %}
+  <i class="bi bi-paperclip me-1"></i>{{ label }}
 </button>
 {% endmacro %}
 

@@ -1,5 +1,5 @@
 {% extends "layouts/app_base.html" %}
-{% from "components/attachments.html" import attachments_btn, attachments_modal %}
+{% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
 
 {% block page_title %}Vendors{% endblock %}
 
@@ -99,7 +99,6 @@
 
               <td class="text-end">
                 <div class="d-inline-flex gap-1">
-                  {{ attachments_btn(entity_type="vendor", entity_id=v['_id']|string) }}
                   {% if "vendors.edit" in user_permissions %}
                     <button type="button" class="btn btn-sm btn-outline-primary editVendorBtn" 
                             data-vendor-id="{{ v['_id'] }}"
@@ -204,6 +203,12 @@
                 <label class="form-check-label" for="vendorIsActive">
                   Active vendor
                 </label>
+              </div>
+            </div>
+
+            <div class="col-12" id="vendorAttachmentsGroup" style="display:none;">
+              <div class="border-top pt-3 mt-2">
+                {{ attachments_block(entity_type="vendor", entity_id="", heading="Attachments", compact=true) }}
               </div>
             </div>
           </div>

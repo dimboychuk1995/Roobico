@@ -382,24 +382,23 @@
 				const amount = Number(p.amount || 0);
 				const method = String(p.payment_method || "cash");
 				const notes = String(p.notes || "");
-				const attHtml = (typeof window.AttachmentsBuildBlock === "function")
-					? window.AttachmentsBuildBlock("parts_order_payment", pid) : "";
 				return `
 					<tr>
 						<td>${escapeHtml(dateLabel)}</td>
 						<td class="text-end fw-semibold">$${Number.isFinite(amount) ? amount.toFixed(2) : "0.00"}</td>
 						<td>${escapeHtml(method)}</td>
 						<td>${notes ? escapeHtml(notes) : "-"}</td>
-						<td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger js-delete-order-payment-inline" data-order-id="${escapeHtml(orderId)}" data-payment-id="${escapeHtml(pid)}">Delete</button></td>
+						<td class="text-end">
+							<button type="button" class="btn btn-sm btn-outline-secondary js-open-att-modal me-1" data-entity-type="parts_order_payment" data-entity-id="${escapeHtml(pid)}" data-bs-toggle="modal" data-bs-target="#attachmentsModal" title="Attachments"><i class="bi bi-paperclip me-1"></i>Attachments</button>
+							<button type="button" class="btn btn-sm btn-outline-danger js-delete-order-payment-inline" data-order-id="${escapeHtml(orderId)}" data-payment-id="${escapeHtml(pid)}">Delete</button>
+						</td>
 					</tr>
-					<tr><td colspan="5" class="p-0 border-0"><div class="px-3 py-2">${attHtml}</div></td></tr>
 				`;
 			}).join("");
 
 			// Re-init sorting for refreshed payments table
 			var payTbl = orderMetaPaymentsBody && orderMetaPaymentsBody.closest("table");
 			if (payTbl && window.TableSort) window.TableSort.refresh(payTbl);
-			if (typeof window.AttachmentsInit === "function") window.AttachmentsInit();
 		}
 
 		function isPartsPageAlive() {
@@ -541,6 +540,23 @@
 			orderCreatedBox.classList.add("d-none");
 			createOrderBtn.textContent = "Save";
 			renderOrderTimeline(orderId, order);
+
+			// Show attachments block when editing order
+			var attGroup = document.getElementById('orderAttachmentsGroup');
+			if (attGroup) {
+				if (orderId) {
+					attGroup.classList.remove('d-none');
+					var attBlock = attGroup.querySelector('.attachments-block');
+					if (attBlock) {
+						attBlock.setAttribute('data-entity-id', orderId);
+						var ctrl = window.AttachmentsGetBlock ? window.AttachmentsGetBlock(attBlock) : null;
+						if (ctrl) { ctrl.setEntityId(orderId); ctrl.load(); }
+						else if (window.AttachmentsInit) window.AttachmentsInit();
+					}
+				} else {
+					attGroup.classList.add('d-none');
+				}
+			}
 		}
 
 		function parseJsonAttr(raw) {
@@ -1388,7 +1404,12 @@
 			if (!isPartsPageAlive()) return;
 			const trigger = e.relatedTarget;
 			const editBtn = trigger ? trigger.closest(".editOrderBtn") : null;
-			if (!editBtn) return;
+			if (!editBtn) {
+				// Creating new order — hide attachments
+				var attGroup = document.getElementById('orderAttachmentsGroup');
+				if (attGroup) attGroup.classList.add('d-none');
+				return;
+			}
 			const orderId = String(editBtn.getAttribute("data-order-id") || "").trim();
 			if (!orderId) return;
 			const inlineOrder = parseJsonAttr(editBtn.getAttribute("data-order-json"));
@@ -1563,6 +1584,23 @@
 			if (sellingPriceCheckbox) sellingPriceCheckbox.checked = !!item.has_selling_price;
 			if (sellingPriceInput) sellingPriceInput.value = item.selling_price ?? 0;
 			syncSellingPriceVisibility();
+
+			// Show attachments block when editing
+			var attGroup = document.getElementById('partAttachmentsGroup');
+			if (attGroup) {
+				if (partId) {
+					attGroup.style.display = '';
+					var attBlock = attGroup.querySelector('.attachments-block');
+					if (attBlock) {
+						attBlock.setAttribute('data-entity-id', partId);
+						var ctrl = window.AttachmentsGetBlock ? window.AttachmentsGetBlock(attBlock) : null;
+						if (ctrl) { ctrl.setEntityId(partId); ctrl.load(); }
+						else if (window.AttachmentsInit) window.AttachmentsInit();
+					}
+				} else {
+					attGroup.style.display = 'none';
+				}
+			}
 		}
 
 		async function loadPartIntoEditModal(partId) {
@@ -1633,7 +1671,12 @@
 		createPartModal.addEventListener('show.bs.modal', function(e) {
 			const trigger = e.relatedTarget;
 			const editBtn = trigger ? trigger.closest('.editPartBtn') : null;
-			if (!editBtn) return;
+			if (!editBtn) {
+				// Creating new part — hide attachments
+				var attGroup = document.getElementById('partAttachmentsGroup');
+				if (attGroup) attGroup.style.display = 'none';
+				return;
+			}
 			const partId = String(editBtn.getAttribute('data-part-id') || '').trim();
 			if (!partId) return;
 			const inlineData = parsePartJsonAttr(editBtn.getAttribute('data-part-json'));
