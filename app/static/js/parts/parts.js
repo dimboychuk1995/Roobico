@@ -382,6 +382,8 @@
 				const amount = Number(p.amount || 0);
 				const method = String(p.payment_method || "cash");
 				const notes = String(p.notes || "");
+				const attHtml = (typeof window.AttachmentsBuildBlock === "function")
+					? window.AttachmentsBuildBlock("parts_order_payment", pid) : "";
 				return `
 					<tr>
 						<td>${escapeHtml(dateLabel)}</td>
@@ -390,12 +392,14 @@
 						<td>${notes ? escapeHtml(notes) : "-"}</td>
 						<td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger js-delete-order-payment-inline" data-order-id="${escapeHtml(orderId)}" data-payment-id="${escapeHtml(pid)}">Delete</button></td>
 					</tr>
+					<tr><td colspan="5" class="p-0 border-0"><div class="px-3 py-2">${attHtml}</div></td></tr>
 				`;
 			}).join("");
 
 			// Re-init sorting for refreshed payments table
 			var payTbl = orderMetaPaymentsBody && orderMetaPaymentsBody.closest("table");
 			if (payTbl && window.TableSort) window.TableSort.refresh(payTbl);
+			if (typeof window.AttachmentsInit === "function") window.AttachmentsInit();
 		}
 
 		function isPartsPageAlive() {

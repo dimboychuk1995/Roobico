@@ -110,6 +110,10 @@ def ensure_shop_collections_indexes(shop_db):
     _safe_create_index(shop_db.counters, [("_id", ASCENDING)], name="idx_counters_id")
     _safe_create_index(shop_db.settings, [("shop_id", ASCENDING)], name="idx_settings_shop")
 
+    # Attachments (photos / PDFs stored as BSON Binary)
+    _safe_create_index(shop_db.attachments, [("entity_type", ASCENDING), ("entity_id", ASCENDING), ("uploaded_at", DESCENDING)], name="idx_attachments_entity_type_id")
+    _safe_create_index(shop_db.attachments, [("parent_id", ASCENDING)], name="idx_attachments_parent_id", sparse=True)
+
 
 def ensure_all_shop_databases_indexes(client, master_db):
     shops_cursor = master_db.shops.find(

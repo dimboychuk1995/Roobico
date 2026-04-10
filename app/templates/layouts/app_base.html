@@ -5,6 +5,7 @@
 {% block extra_styles %}
   {{ super() }}
   <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css', v='20260312-dashboard-async-stable') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/attachments.css', v='20260409') }}">
 {% endblock %}
 
 {% block content %}
@@ -360,4 +361,5 @@
   });
 })();
 </script>
+<script src="{{ url_for('static', filename='js/attachments.js', v='20260409') }}"></script>
 {% endblock %}

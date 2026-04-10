@@ -1,0 +1,115 @@
+{#
+  Reusable attachments components.
+
+  1) attachments_block — inline panel for embedding inside modals/pages
+  2) attachments_modal — standalone modal, opened via JS from any button
+  3) attachments_btn   — small button to trigger the modal for an entity
+
+  Usage:
+    from "components/attachments.html" import attachments_block, attachments_modal, attachments_btn
+
+    Inline block:
+    attachments_block(entity_type="part", entity_id=part_id)
+
+    Button + shared modal (once per page):
+    attachments_btn(entity_type="vendor", entity_id=v_id, label="Files")
+    attachments_modal()
+#}
+
+{# ── Inline block ──────────────────────────────────────────────────── #}
+{% macro attachments_block(entity_type, entity_id, parent_id="", heading="Attachments", compact=false) %}
+<div class="attachments-block {% if compact %}attachments-compact{% endif %}"
+     data-entity-type="{{ entity_type }}"
+     data-entity-id="{{ entity_id }}"
+     {% if parent_id %}data-parent-id="{{ parent_id }}"{% endif %}>
+
+  <div class="d-flex align-items-center justify-content-between {% if not compact %}mb-2{% endif %}">
+    <h6 class="mb-0 {% if compact %}small fw-semibold{% endif %}">
+      <i class="bi bi-paperclip me-1"></i>{{ heading }}
+      <span class="att-count badge bg-secondary ms-1" style="display:none;">0</span>
+    </h6>
+    <label class="btn btn-sm {% if compact %}btn-outline-secondary{% else %}btn-outline-primary{% endif %} mb-0 att-upload-btn">
+      <i class="bi bi-upload me-1"></i>Upload
+      <input type="file" class="att-file-input d-none" multiple accept="image/*,.pdf">
+    </label>
+  </div>
+
+  <div class="att-progress my-2" style="display:none;">
+    <div class="progress" style="height:4px;">
+      <div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%"></div>
+    </div>
+    <small class="text-muted">Uploading…</small>
+  </div>
+
+  <div class="att-gallery d-flex flex-wrap gap-2 {% if not compact %}mt-2{% endif %}">
+  </div>
+
+  <div class="att-empty text-muted small {% if not compact %}mt-1{% endif %}" style="display:none;">
+    No attachments yet.
+  </div>
+</div>
+{% endmacro %}
+
+
+{# ── Button (table cell / inline) ──────────────────────────────────── #}
+{% macro attachments_btn(entity_type, entity_id, parent_id="", label="", css_class="btn btn-sm btn-outline-secondary") %}
+<button type="button"
+        class="{{ css_class }} js-open-att-modal"
+        data-entity-type="{{ entity_type }}"
+        data-entity-id="{{ entity_id }}"
+        {% if parent_id %}data-parent-id="{{ parent_id }}"{% endif %}
+        data-bs-toggle="modal"
+        data-bs-target="#attachmentsModal"
+        title="Attachments">
+  <i class="bi bi-paperclip"></i>{% if label %} {{ label }}{% endif %}
+</button>
+{% endmacro %}
+
+
+{# ── Modal (include once per page) ─────────────────────────────────── #}
+{% macro attachments_modal() %}
+<div class="modal fade" id="attachmentsModal" tabindex="-1" aria-labelledby="attachmentsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="attachmentsModalLabel">
+          <i class="bi bi-paperclip me-1"></i>Attachments
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="attachments-block"
+             id="attModalBlock"
+             data-entity-type=""
+             data-entity-id=""
+             data-parent-id="">
+
+          <div class="d-flex align-items-center justify-content-between mb-3">
+            <div>
+              <span class="att-count badge bg-secondary" style="display:none;">0</span>
+              <span class="att-empty text-muted small" style="display:none;">No attachments yet.</span>
+            </div>
+            <label class="btn btn-outline-primary mb-0 att-upload-btn">
+              <i class="bi bi-upload me-1"></i>Upload files
+              <input type="file" class="att-file-input d-none" multiple accept="image/*,.pdf">
+            </label>
+          </div>
+
+          <div class="att-progress my-2" style="display:none;">
+            <div class="progress" style="height:4px;">
+              <div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%"></div>
+            </div>
+            <small class="text-muted">Uploading…</small>
+          </div>
+
+          <div class="att-gallery d-flex flex-wrap gap-2">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endmacro %}

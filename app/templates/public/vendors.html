@@ -1,4 +1,5 @@
 {% extends "layouts/app_base.html" %}
+{% from "components/attachments.html" import attachments_btn, attachments_modal %}
 
 {% block page_title %}Vendors{% endblock %}
 
@@ -98,6 +99,7 @@
 
               <td class="text-end">
                 <div class="d-inline-flex gap-1">
+                  {{ attachments_btn(entity_type="vendor", entity_id=v['_id']|string) }}
                   {% if "vendors.edit" in user_permissions %}
                     <button type="button" class="btn btn-sm btn-outline-primary editVendorBtn" 
                             data-vendor-id="{{ v['_id'] }}"
@@ -322,4 +324,7 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/vendors/vendors.js') }}"></script>
+
+{{ attachments_modal() }}
+
 {% endblock %}

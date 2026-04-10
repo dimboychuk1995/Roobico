@@ -1,4 +1,5 @@
 {% extends "layouts/app_base.html" %}
+{% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
 {% block page_title %}Customer Details{% endblock %}
 
 {% block app_content %}
@@ -10,6 +11,7 @@
 
   <div class="d-flex gap-2">
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('customers.customers_page') }}">Back to Customers</a>
+    {{ attachments_btn(entity_type="customer", entity_id=customer_id, label="Files") }}
     <a class="btn btn-primary btn-sm" href="{{ url_for('work_orders.work_order_details_page', customer_id=customer_id) }}">Create Work Order</a>
   </div>
 </div>
@@ -223,6 +225,7 @@
                     <td class="text-end">{{ item.mileage }}</td>
                     <td>{{ item.created_at }}</td>
                     <td class="text-end">
+                      {{ attachments_btn(entity_type="unit", entity_id=item.id) }}
                       <a class="btn btn-sm btn-outline-primary" href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=item.id) }}">Open</a>
                     </td>
                   </tr>
@@ -301,6 +304,11 @@
                     <td>{{ item.created_at }}</td>
                     <td class="text-end">
                       <button type="button" class="btn btn-sm btn-outline-danger js-delete-work-order-payment" data-payment-id="{{ item.id }}" title="Delete payment">Delete</button>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td colspan="6" class="p-0 border-0">
+                      <div class="px-3 py-2">{{ attachments_block(entity_type="customer_payment", entity_id=item.id, compact=true) }}</div>
                     </td>
                   </tr>
                 {% endfor %}
@@ -554,4 +562,7 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/customers/customers.js', v='20260316-payments-delete') }}"></script>
+
+{{ attachments_modal() }}
+
 {% endblock %}

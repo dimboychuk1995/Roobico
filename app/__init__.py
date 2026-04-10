@@ -75,6 +75,7 @@ def create_app():
     from app.blueprints.customers import customers_bp
     from app.blueprints.work_orders import work_orders_bp
     from app.blueprints.calendar import calendar_bp
+    from app.blueprints.attachments import attachments_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(reports_bp)
@@ -87,5 +88,6 @@ def create_app():
     app.register_blueprint(parts_bp)
     app.register_blueprint(customers_bp)
     app.register_blueprint(work_orders_bp)
+    app.register_blueprint(attachments_bp)
 
     return app

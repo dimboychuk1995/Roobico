@@ -1,4 +1,5 @@
 {% extends "layouts/app_base.html" %}
+{% from "components/attachments.html" import attachments_btn, attachments_modal %}
 {% block page_title %}Customers{% endblock %}
 
 {% block app_content %}
@@ -87,6 +88,7 @@
                 <td class="text-end fw-semibold">${{ "%.2f"|format(c.current_balance or 0) }}</td>
 
                 <td class="text-end">
+                  {{ attachments_btn(entity_type="customer", entity_id=cid) }}
                   <a class="btn btn-sm btn-outline-primary" href="{{ url_for('customers.customer_details_page', customer_id=cid) }}">Open</a>
                 </td>
               </tr>
@@ -179,5 +181,7 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/customers/customers.js', v='20260316-payments-delete') }}"></script>
+
+{{ attachments_modal() }}
 
 {% endblock %}

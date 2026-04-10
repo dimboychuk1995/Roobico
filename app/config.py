@@ -11,6 +11,9 @@ class Config:
     # Master DB where we store tenants/users/shops
     MASTER_DB_NAME = os.environ.get("MASTER_DB_NAME") or os.environ.get("MONGO_DB") or "master_db"
 
+    # Max upload size (16 MB — matches MongoDB BSON document limit)
+    MAX_CONTENT_LENGTH = 16 * 1024 * 1024
+
     # ── Email (SMTP) ──────────────────────────────────────────────────────────
     # Set these in .env to enable "Email Work Order" and "Email Receipt" features.
     #   SMTP_HOST        smtp server host      (default: smtp.gmail.com)

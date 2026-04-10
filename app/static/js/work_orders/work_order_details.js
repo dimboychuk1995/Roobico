@@ -2487,6 +2487,8 @@
           const method = String(p.payment_method || "cash");
           const notes = String(p.notes || "");
           const dateLabel = p.payment_date_label || formatDateLabel(p.payment_date || p.created_at);
+          const attHtml = (typeof window.AttachmentsBuildBlock === "function")
+            ? window.AttachmentsBuildBlock("work_order_payment", pid) : "";
           return `
             <tr>
               <td>${escapeText(dateLabel)}</td>
@@ -2498,12 +2500,14 @@
                 <button type="button" class="btn btn-sm btn-outline-danger js-delete-wo-payment-inline" data-payment-id="${escapeText(pid)}">Delete</button>
               </td>
             </tr>
+            <tr><td colspan="5" class="p-0 border-0"><div class="px-3 py-2">${attHtml}</div></td></tr>
           `;
         }).join("");
 
         // Re-init sorting for refreshed payments table
         var payTbl = woMetaPaymentsBody.closest("table");
         if (payTbl && window.TableSort) window.TableSort.refresh(payTbl);
+        if (typeof window.AttachmentsInit === "function") window.AttachmentsInit();
       } catch (err) {
         workOrderDatesBlock.style.display = "";
         woMetaPaymentsBody.innerHTML = `<tr><td colspan="5" class="text-danger">Failed to load payment data.</td></tr>`;

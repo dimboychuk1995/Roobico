@@ -1,4 +1,5 @@
 {% extends "layouts/app_base.html" %}
+{% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
 
 {% block page_title %}Parts{% endblock %}
 
@@ -156,6 +157,7 @@
                                   data-bs-toggle="modal" data-bs-target="#createPartModal">
                       Edit
                     </button>
+                    {{ attachments_btn(entity_type="part", entity_id=p._id|string) }}
                     <form method="post" action="{{ url_for('parts.parts_deactivate', part_id=p._id) }}" class="d-inline">
                       <button class="btn btn-sm btn-outline-danger"
                               onclick="return confirm('Deactivate this part?');">
@@ -305,6 +307,7 @@
                               data-bs-toggle="modal" data-bs-target="#orderModal">
                         <i class="bi bi-pencil me-1"></i> Edit
                       </button>
+                      {{ attachments_btn(entity_type="parts_order", entity_id=o.id) }}
                       <button type="button" class="btn btn-sm btn-outline-danger deleteOrderBtn" 
                               data-order-id="{{ o.id }}"
                               title="Delete order">
@@ -426,6 +429,11 @@
                       <button type="button" class="btn btn-sm btn-outline-danger js-delete-parts-payment" data-payment-id="{{ p.id }}" title="Delete payment">Delete</button>
                     </td>
                   </tr>
+                  <tr>
+                    <td colspan="8" class="p-0 border-0">
+                      <div class="px-3 py-2">{{ attachments_block(entity_type="parts_order_payment", entity_id=p.id, compact=true) }}</div>
+                    </td>
+                  </tr>
                 {% endfor %}
               </tbody>
             </table>
@@ -487,6 +495,7 @@
                   <th data-sort-field="core_cost" class="text-end" style="width: 130px;">Core Cost</th>
                   <th data-sort-field="quantity" class="text-end" style="width: 130px;">Quantity</th>
                   <th data-sort-field="updated_at" style="width: 180px;">Updated</th>
+                  <th class="text-end no-sort" style="width: 80px;">Files</th>
                 </tr>
               </thead>
               <tbody>
@@ -497,6 +506,7 @@
                     <td class="text-end">${{ "%.2f"|format(c.core_cost or 0) }}</td>
                     <td class="text-end fw-semibold">{{ c.quantity or 0 }}</td>
                     <td>{{ c.updated_at }}</td>
+                    <td class="text-end">{{ attachments_btn(entity_type="core", entity_id=c.id|string if c.id is defined else c._id|string) }}</td>
                   </tr>
                 {% endfor %}
               </tbody>
@@ -1029,5 +1039,7 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/parts/parts.js', v='20260317-parts-receive-vendor-bill') }}"></script>
+
+{{ attachments_modal() }}
 
 {% endblock %}
