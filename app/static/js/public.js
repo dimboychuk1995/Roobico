@@ -124,26 +124,59 @@
 			return false;
 		}
 
-		currentMainCol.innerHTML = newMainCol.innerHTML;
-
-		var scripts = currentMainCol.querySelectorAll("script");
-		for (var i = 0; i < scripts.length; i += 1) {
-			var oldScript = scripts[i];
-			var newScript = document.createElement("script");
-			for (var a = 0; a < oldScript.attributes.length; a += 1) {
-				var attr = oldScript.attributes[a];
-				newScript.setAttribute(attr.name, attr.value);
+		// Inject any new <link rel="stylesheet"> from the fetched page's <head>
+		var cssPromises = [];
+		var newLinks = doc.querySelectorAll('head link[rel="stylesheet"]');
+		for (var li = 0; li < newLinks.length; li += 1) {
+			var href = newLinks[li].getAttribute("href");
+			if (!href) continue;
+			var hrefBase = href.split("?")[0];
+			var exists = false;
+			var currentLinks = document.querySelectorAll('head link[rel="stylesheet"]');
+			for (var ci = 0; ci < currentLinks.length; ci += 1) {
+				var existingHref = (currentLinks[ci].getAttribute("href") || "").split("?")[0];
+				if (existingHref === hrefBase) { exists = true; break; }
 			}
-			newScript.text = oldScript.text || oldScript.textContent || "";
-			oldScript.parentNode.replaceChild(newScript, oldScript);
+			if (!exists) {
+				var link = document.createElement("link");
+				link.rel = "stylesheet";
+				link.href = href;
+				cssPromises.push(new Promise(function (resolve) {
+					link.onload = resolve;
+					link.onerror = resolve;
+				}));
+				document.head.appendChild(link);
+			}
 		}
 
-		if (doc && typeof doc.title === "string" && doc.title) {
-			document.title = doc.title;
+		function finishReplace() {
+			currentMainCol.innerHTML = newMainCol.innerHTML;
+
+			var scripts = currentMainCol.querySelectorAll("script");
+			for (var i = 0; i < scripts.length; i += 1) {
+				var oldScript = scripts[i];
+				var newScript = document.createElement("script");
+				for (var a = 0; a < oldScript.attributes.length; a += 1) {
+					var attr = oldScript.attributes[a];
+					newScript.setAttribute(attr.name, attr.value);
+				}
+				newScript.text = oldScript.text || oldScript.textContent || "";
+				oldScript.parentNode.replaceChild(newScript, oldScript);
+			}
+
+			if (doc && typeof doc.title === "string" && doc.title) {
+				document.title = doc.title;
+			}
+
+			window.dispatchEvent(new CustomEvent("smallshop:content-replaced"));
+			bindAutoSearchForms();
 		}
 
-		window.dispatchEvent(new CustomEvent("smallshop:content-replaced"));
-		bindAutoSearchForms();
+		if (cssPromises.length > 0) {
+			Promise.all(cssPromises).then(finishReplace);
+		} else {
+			finishReplace();
+		}
 		return true;
 	}
 
