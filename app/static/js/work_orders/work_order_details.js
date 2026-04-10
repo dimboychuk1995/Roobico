@@ -1381,6 +1381,25 @@
     const laborAssignmentsInput = blockEl.querySelector(".labor-assignments-json");
     if (laborAssignmentsInput) laborAssignmentsInput.name = `labors[${idx}][assigned_mechanics_json]`;
 
+    // Renumber labor attachment collapse and parent_id
+    const attCollapse = blockEl.querySelector(".labor-att-collapse");
+    const attToggle = blockEl.querySelector(".labor-att-toggle");
+    if (attCollapse) {
+      const collapseId = "laborAttCollapse" + idx;
+      attCollapse.id = collapseId;
+      if (attToggle) {
+        attToggle.setAttribute("data-bs-target", "#" + collapseId);
+        attToggle.setAttribute("aria-controls", collapseId);
+      }
+    }
+    const attBlock = blockEl.querySelector(".labor-att-block");
+    if (attBlock) {
+      attBlock.dataset.parentId = String(idx);
+      if (attBlock._attBlock) {
+        attBlock._attBlock.parentId = String(idx);
+      }
+    }
+
     const tbody = blockEl.querySelector(".partsTbody");
     const rows = Array.from(tbody.querySelectorAll("tr.parts-row"));
     rows.forEach((tr, rIdx) => {
@@ -1436,6 +1455,24 @@
     if (miscTbody) miscTbody.innerHTML = "";
     const miscWrap = clone.querySelector(".miscChargesEditWrap");
     if (miscWrap) miscWrap.style.display = "none";
+
+    // Reset labor attachments collapse for new block
+    const attCollapse = clone.querySelector(".labor-att-collapse");
+    const attToggle = clone.querySelector(".labor-att-toggle");
+    if (attCollapse) {
+      attCollapse.classList.remove("show");
+      attCollapse.id = "";  // will be set by renumberBlock
+    }
+    if (attToggle) {
+      attToggle.setAttribute("aria-expanded", "false");
+      attToggle.removeAttribute("data-bs-target");
+      attToggle.removeAttribute("aria-controls");
+    }
+    // Clear cloned gallery
+    const attGallery = clone.querySelector(".att-gallery");
+    if (attGallery) attGallery.innerHTML = "";
+    const attCountBadge = clone.querySelector(".labor-att-toggle .att-count");
+    if (attCountBadge) { attCountBadge.textContent = "0"; attCountBadge.style.display = "none"; }
 
     const tbody = clone.querySelector(".partsTbody");
     tbody.innerHTML = "";
@@ -2434,6 +2471,7 @@
     const vinLoadingSpinner = $("vinLoadingSpinner");
     const unitMileageInput = $("unitMileageInput");
     const unitMileageHidden = $("unitMileageHidden");
+    let mileageConfirmed = false;
     const workOrderDateInput = $("workOrderDateInput");
     const paymentDateInput = $("paymentDateInput");
     const workOrderDatesBlock = $("workOrderDatesBlock");
@@ -2708,6 +2746,14 @@
     function submitCreate() {
       if (!woForm) return;
 
+      // ✅ Validate mileage was confirmed by user
+      if (!mileageConfirmed && unitMileageInput && unitMileageInput.value) {
+        unitMileageInput.focus();
+        unitMileageInput.select();
+        toast("Please confirm the mileage by re-entering it.");
+        return;
+      }
+
       // ✅ перед отправкой формы на create кладём totals_json
       const totals = serializeTotals(blocksContainer);
       upsertHiddenJsonInput(woForm, "totals_json", totals);
@@ -2974,8 +3020,9 @@
       }
       
       // Clear mileage when customer changes
-      if (unitMileageInput) unitMileageInput.value = "";
+      if (unitMileageInput) { unitMileageInput.value = ""; unitMileageInput.style.color = ""; }
       if (unitMileageHidden) unitMileageHidden.value = "";
+      mileageConfirmed = false;
 
       setEditorEnabled(false);
 
@@ -3000,21 +3047,29 @@
       
       // Clear mileage if no unit selected
       if (!unitId) {
-        if (unitMileageInput) unitMileageInput.value = "";
+        if (unitMileageInput) { unitMileageInput.value = ""; unitMileageInput.style.color = ""; }
         if (unitMileageHidden) unitMileageHidden.value = "";
+        mileageConfirmed = false;
         return;
       }
       
       // Fetch and display current mileage
       const unitDetails = await fetchUnitDetails(unitId);
       if (unitDetails) {
-        if (unitMileageInput) unitMileageInput.value = unitDetails.mileage || "";
+        if (unitMileageInput) {
+          unitMileageInput.value = unitDetails.mileage || "";
+          // Mark as unconfirmed (gray) — user must re-enter
+          unitMileageInput.style.color = unitDetails.mileage ? "#aaa" : "";
+        }
         if (unitMileageHidden) unitMileageHidden.value = unitDetails.mileage || "";
+        mileageConfirmed = !unitDetails.mileage; // if no DB value, nothing to confirm
       }
     });
 
     // Update hidden mileage field when user changes the mileage input
-    unitMileageInput?.addEventListener("change", function () {
+    unitMileageInput?.addEventListener("input", function () {
+      mileageConfirmed = true;
+      unitMileageInput.style.color = "";
       const mileageValue = String(unitMileageInput.value || "").trim();
       if (unitMileageHidden) unitMileageHidden.value = mileageValue;
     });
@@ -3197,6 +3252,11 @@
       applyDefaultLaborRateToBlock(cloned, defaultRateCode, true);
 
       recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
+
+      // Re-init attachments for the new labor block
+      if (typeof window.AttachmentsInit === "function") {
+        window.AttachmentsInit();
+      }
     });
 
     // ---------- created/paid state ----------
@@ -3465,8 +3525,10 @@
           if (unitDetails) {
             if (unitMileageInput) {
               unitMileageInput.value = unitDetails.mileage || "";
+              unitMileageInput.style.color = "";
               if (unitMileageHidden) unitMileageHidden.value = unitDetails.mileage || "";
             }
+            mileageConfirmed = true; // already-created WO — no need to re-confirm
           }
         }
       })();

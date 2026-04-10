@@ -214,7 +214,7 @@
               </thead>
               <tbody>
                 {% for item in tab_items %}
-                  <tr class="js-unit-row" data-href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=item.id) }}" role="button" tabindex="0" style="cursor:pointer;">
+                  <tr class="js-unit-row" data-href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=item.id) }}" role="button" tabindex="0">
                     <td class="fw-semibold">
                       <a href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=item.id) }}" class="text-decoration-none">
                         {{ item.unit_number }}

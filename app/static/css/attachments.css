@@ -86,7 +86,8 @@
   opacity: 0;
   transition: opacity 0.15s;
 }
-.att-item:hover .att-delete-btn {
+.att-item:hover .att-delete-btn,
+.att-item:focus-within .att-delete-btn {
   opacity: 1;
 }
 

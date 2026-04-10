@@ -1513,6 +1513,7 @@ def get_core_charge_default(shop_db, shop_id: ObjectId) -> bool:
 
 
 def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
+    from bson import ObjectId as _ObjId
     customers = get_customers(shop_db)
     mechanics = get_assignable_mechanics(shop)
 
@@ -1521,6 +1522,9 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
         units = get_units(shop_db, customer_id)
         if unit_id and not any(u["id"] == str(unit_id) for u in units):
             unit_id = None
+
+    # Generate a temporary ObjectId for attachment uploads before WO is created
+    pending_attachment_id = str(_ObjId()) if not (form_state or {}).get("work_order_created") else ""
 
     ctx = {
         "sales_tax_context": _get_shop_sales_tax_context(shop, shop_db),
@@ -1550,6 +1554,7 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
         "initial_labors": (form_state or {}).get("initial_labors") or [],
         "initial_totals": normalize_totals_payload((form_state or {}).get("initial_totals") or {}),
         "work_order_status": (form_state or {}).get("work_order_status") or "open",
+        "pending_attachment_id": pending_attachment_id,
     }
 
     return _render_app_page("public/work_orders/work_order_details.html", **ctx)
@@ -2341,6 +2346,15 @@ def create_work_order():
     }
 
     res = shop_db.work_orders.insert_one(doc)
+    new_wo_id = res.inserted_id
+
+    # ✅ Reassign pending attachments to the real work order ID
+    pending_att_id = oid(request.form.get("pending_attachment_id"))
+    if pending_att_id:
+        shop_db.attachments.update_many(
+            {"entity_id": pending_att_id},
+            {"$set": {"entity_id": new_wo_id}},
+        )
 
     # Sync cores collection using unpaid-core logic from this work order.
     core_sync = sync_work_order_cores(shop_db, shop, [], labors, user_id)
@@ -2360,7 +2374,7 @@ def create_work_order():
         for err in core_sync["errors"]:
             flash(f"Core sync warning: {err}", "warning")
 
-    return redirect(url_for("work_orders.work_order_details_page", work_order_id=str(res.inserted_id)))
+    return redirect(url_for("work_orders.work_order_details_page", work_order_id=str(new_wo_id)))
 
 
 # -----------------------------

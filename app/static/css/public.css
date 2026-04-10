@@ -270,10 +270,40 @@ small,
 .sortable-th {
   position: relative;
   white-space: nowrap;
+  cursor: pointer;
 }
 
 .sortable-th:hover {
   background: rgba(0,0,0,0.04);
+}
+
+/* ── Clickable table rows ── */
+tr[role="button"] {
+  cursor: pointer;
+}
+
+tr[role="button"]:hover > td {
+  background-color: rgba(31, 107, 67, 0.06);
+}
+
+tr[role="button"]:focus-visible {
+  outline: 2px solid rgba(31, 107, 67, 0.35);
+  outline-offset: -2px;
+}
+
+/* ── Card links (settings / reports grids) ── */
+a.text-decoration-none > .card {
+  transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+a.text-decoration-none:hover > .card {
+  border-color: #8fb89a;
+  box-shadow: 0 8px 20px rgba(31, 107, 67, 0.12);
+}
+
+a.text-decoration-none:focus-visible > .card {
+  outline: 2px solid rgba(31, 107, 67, 0.4);
+  outline-offset: 2px;
 }
 
 .sort-indicator {

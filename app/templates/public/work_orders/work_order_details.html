@@ -101,11 +101,104 @@
     background: #e8eee6;
     color: var(--text);
   }
+
+  /* ── Work-order page layout ── */
+  .wo-header {
+    background: linear-gradient(135deg, #e8f2eb 0%, #dceee2 100%);
+    border: 1px solid #b8ccb9;
+  }
+
+  .wo-section {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+    padding: 1rem 1.25rem;
+    box-shadow: var(--shadow-soft);
+  }
+  .wo-section-muted {
+    background: var(--surface-soft);
+  }
+
+  .wo-section .wo-section-title {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+    margin-bottom: 0.75rem;
+  }
+
+  /* Totals chips */
+  .wo-totals-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    align-items: stretch;
+    justify-content: center;
+  }
+  .wo-totals-chip {
+    border: 1px solid #d7e0d6;
+    border-radius: var(--radius-sm);
+    background: var(--surface-soft);
+    padding: 0.5rem 0.75rem;
+    font-size: 0.82rem;
+    color: var(--text);
+    line-height: 1.55;
+  }
+  .wo-totals-chip strong {
+    color: var(--primary-deep);
+  }
+  .wo-totals-chip.wo-grand-total {
+    background: linear-gradient(135deg, #e4f0e7 0%, #d4e6d8 100%);
+    border-color: #a8c8b0;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    font-size: 0.95rem;
+  }
+  .wo-totals-chip.wo-grand-total strong {
+    font-size: 1.1rem;
+  }
+
+  /* Labor card override */
+  .wo-labor.card {
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .wo-labor .wo-labor-header {
+    border-bottom: 1px solid var(--border);
+  }
+  .wo-labor .wo-labor-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: stretch;
+    margin-top: 0.5rem;
+  }
+  .wo-labor .wo-labor-summary .wo-totals-chip {
+    font-size: 0.78rem;
+    padding: 0.35rem 0.6rem;
+  }
+
+  /* Footer action bar */
+  .wo-footer-bar {
+    border-top: 2px solid var(--border);
+    padding-top: 1rem;
+    margin-top: 1.5rem;
+  }
+
+  /* Collapse chevron rotation */
+  [data-bs-toggle="collapse"] .bi-chevron-down {
+    transition: transform 0.2s ease;
+  }
+  [data-bs-toggle="collapse"][aria-expanded="true"] .bi-chevron-down {
+    transform: rotate(180deg);
+  }
 </style>
 <div class="card shadow border-0">
   <div class="card-body">
 
-    <div class="d-flex align-items-center justify-content-between mb-4 p-3 rounded-3 border border-success-subtle bg-success-subtle">
+    <div class="d-flex align-items-center justify-content-between mb-4 p-3 rounded-3 wo-header">
       <div>
         <h1 class="h4 mb-1">{% if wo_number %}Work Order #{{ wo_number }}{% else %}Create Work Order{% endif %}</h1>
         <p class="text-muted small mb-0">Create or edit labor, parts, misc charges, and payment status in one place.</p>
@@ -113,10 +206,8 @@
       <a class="btn btn-outline-secondary" href="{{ url_for('work_orders.work_orders_page') }}">Back</a>
     </div>
 
-    <div class="border border-2 border-success-subtle rounded-3 p-3 p-lg-4 mb-4 bg-success-subtle shadow-sm">
-      <div class="d-flex align-items-center justify-content-between mb-3">
-        <h2 class="h6 mb-0">Customer & Unit</h2>
-      </div>
+    <div class="wo-section mb-4">
+      <div class="wo-section-title">Customer & Unit</div>
 
       <!-- Customer select (NO reload) -->
       <div class="mb-3 mb-lg-4">
@@ -251,6 +342,9 @@
       <input type="hidden" id="selectedCustomerHidden" name="customer_id" value="{{ selected_customer_id or '' }}"/>
       <input type="hidden" id="selectedUnitHidden" name="unit_id" value="{{ selected_unit_id or '' }}"/>
       <input type="hidden" id="unitMileageHidden" name="unit_mileage" value=""/>
+      {% if pending_attachment_id %}
+      <input type="hidden" name="pending_attachment_id" value="{{ pending_attachment_id }}"/>
+      {% endif %}
 
       <!-- info -->
       <div id="selectHint" class="alert alert-info mb-4" {% if selected_unit_id %}style="display:none;"{% endif %}>
@@ -259,26 +353,24 @@
 
       <fieldset id="workOrderEditor" {% if not selected_unit_id %}disabled{% endif %}>
 
-        <div class="border border-2 border-success-subtle rounded-3 p-3 p-lg-4 mb-4 bg-success-subtle shadow-sm">
-          <div class="d-flex align-items-center justify-content-between mb-3">
-            <h2 class="h6 mb-0">Order Totals</h2>
-          </div>
+        <div class="wo-section wo-section-muted mb-4 text-center">
+          <div class="wo-section-title">Order Totals</div>
 
-        <div class="d-flex flex-wrap gap-3 align-items-stretch text-muted small">
-          <div class="border rounded px-2 py-1">
-            <div>Labor total: <strong id="laborGrandTotalDisplay">—</strong></div>
-            <div>Labor: <strong id="laborGrandBaseDisplay">—</strong></div>
-            <div id="shopSupplyGrandTotalWrap" style="display:none;">Shop supply: <strong id="shopSupplyGrandTotalDisplay">—</strong></div>
+          <div class="wo-totals-row">
+            <div class="wo-totals-chip">
+              <div>Labor total: <strong id="laborGrandTotalDisplay">—</strong></div>
+              <div>Labor: <strong id="laborGrandBaseDisplay">—</strong></div>
+              <div id="shopSupplyGrandTotalWrap" style="display:none;">Shop supply: <strong id="shopSupplyGrandTotalDisplay">—</strong></div>
+            </div>
+            <div class="wo-totals-chip">
+              <div>Parts total: <strong id="partsGrandTotalDisplay">—</strong></div>
+              <div>Parts: <strong id="partsGrandBaseDisplay">—</strong></div>
+              <div id="coreGrandTotalWrap" style="display:none;">Cores: <strong id="coreGrandTotalDisplay">—</strong></div>
+              <div id="miscGrandTotalWrap" style="display:none;">Misc: <strong id="miscGrandTotalDisplay">—</strong></div>
+              <div>Sales tax (<span id="salesTaxRateLabel">0.00%</span>): <strong id="salesTaxGrandTotalDisplay">—</strong></div>
+            </div>
+            <div class="wo-totals-chip wo-grand-total">Grand total: <strong id="grandTotalDisplay" class="ms-1">—</strong></div>
           </div>
-          <div class="border rounded px-2 py-1">
-            <div>Parts total: <strong id="partsGrandTotalDisplay">—</strong></div>
-            <div>Parts: <strong id="partsGrandBaseDisplay">—</strong></div>
-            <div id="coreGrandTotalWrap" style="display:none;">Cores: <strong id="coreGrandTotalDisplay">—</strong></div>
-            <div id="miscGrandTotalWrap" style="display:none;">Misc: <strong id="miscGrandTotalDisplay">—</strong></div>
-            <div>Sales tax (<span id="salesTaxRateLabel">0.00%</span>): <strong id="salesTaxGrandTotalDisplay">—</strong></div>
-          </div>
-          <div class="border rounded px-2 py-1 d-flex align-items-center">Grand total: <strong id="grandTotalDisplay" class="ms-1">—</strong></div>
-        </div>
         </div>
 
         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -292,18 +384,18 @@
         <div id="laborsContainer">
 
           <!-- Block template instance #0 -->
-          <div class="card border border-2 border-success-subtle mb-4 shadow-sm wo-labor" data-labor-index="0">
+          <div class="card mb-4 shadow-sm wo-labor" data-labor-index="0">
             <div class="card-body">
 
-              <div class="d-flex justify-content-between align-items-center pb-3 mb-3 border-bottom border-success-subtle">
+              <div class="d-flex justify-content-between align-items-center pb-3 mb-3 wo-labor-header">
                 <div>
                   <h2 class="h6 mb-0">Labor <span class="labor-number">1</span></h2>
-                  <div class="text-muted small mt-2 laborAssignSummary">Assigned: —</div>
-                  <div class="d-flex flex-wrap align-items-stretch gap-2 text-muted small mt-2">
-                    <div class="border rounded px-2 py-1">
+                  <div class="text-muted small mt-1 laborAssignSummary">Assigned: —</div>
+                  <div class="wo-labor-summary mt-2">
+                    <div class="wo-totals-chip">
                       <div>Labor: <strong class="laborTotalDisplay">—</strong></div>
                     </div>
-                    <div class="border rounded px-2 py-1">
+                    <div class="wo-totals-chip">
                       <div>Parts: <strong class="partsTotalDisplay">—</strong></div>
                       <div class="coreTotalWrap" style="display:none;">
                         Cores: <strong class="coreTotalDisplay">—</strong>
@@ -312,7 +404,7 @@
                         Misc: <strong class="miscTotalDisplay">—</strong>
                       </div>
                     </div>
-                    <div class="border rounded px-2 py-1 d-flex align-items-center">Labor total: <strong class="laborFullTotalDisplay ms-1">—</strong></div>
+                    <div class="wo-totals-chip" style="display:flex;align-items:center;">Labor total: <strong class="laborFullTotalDisplay ms-1">—</strong></div>
                   </div>
                 </div>
 
@@ -446,30 +538,36 @@
                   </div>
                 </div>
 
-                <!-- Per-labor attachments (shown after WO is created) -->
-                <div class="mt-4 pt-3 border-top labor-attachments-wrap" style="display:none;">
-                  <div class="attachments-block attachments-compact labor-att-block"
-                       data-entity-type="work_order_labor"
-                       data-entity-id=""
-                       data-parent-id="">
-                    <div class="d-flex align-items-center justify-content-between mb-2">
-                      <h6 class="mb-0 small fw-semibold">
-                        <i class="bi bi-paperclip me-1"></i>Labor Attachments
-                        <span class="att-count badge bg-secondary ms-1" style="display:none;">0</span>
-                      </h6>
-                      <label class="btn btn-sm btn-outline-secondary mb-0 att-upload-btn">
-                        <i class="bi bi-upload me-1"></i>Upload
-                        <input type="file" class="att-file-input d-none" multiple accept="image/*,.pdf">
-                      </label>
-                    </div>
-                    <div class="att-progress my-2" style="display:none;">
-                      <div class="progress" style="height:4px;">
-                        <div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%"></div>
+                <!-- Per-labor attachments -->
+                <div class="mt-4 pt-3 border-top labor-attachments-wrap">
+                  <div class="d-flex align-items-center justify-content-between mb-2">
+                    <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1 labor-att-toggle" type="button" data-bs-toggle="collapse" aria-expanded="false">
+                      <i class="bi bi-paperclip"></i>
+                      Labor Attachments
+                      <span class="att-count badge bg-secondary ms-1" style="display:none;">0</span>
+                      <i class="bi bi-chevron-down ms-1" style="font-size:0.7rem;"></i>
+                    </button>
+                  </div>
+                  <div class="collapse labor-att-collapse">
+                    <div class="attachments-block attachments-compact labor-att-block"
+                         data-entity-type="work_order_labor"
+                         data-entity-id=""
+                         data-parent-id="">
+                      <div class="d-flex align-items-center justify-content-end mb-2">
+                        <label class="btn btn-sm btn-outline-secondary mb-0 att-upload-btn">
+                          <i class="bi bi-upload me-1"></i>Upload
+                          <input type="file" class="att-file-input d-none" multiple accept="image/*,.pdf">
+                        </label>
                       </div>
-                      <small class="text-muted">Uploading…</small>
+                      <div class="att-progress my-2" style="display:none;">
+                        <div class="progress" style="height:4px;">
+                          <div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%"></div>
+                        </div>
+                        <small class="text-muted">Uploading…</small>
+                      </div>
+                      <div class="att-gallery d-flex flex-wrap gap-2 mt-1"></div>
+                      <div class="att-empty text-muted small mt-1" style="display:none;">No attachments yet.</div>
                     </div>
-                    <div class="att-gallery d-flex flex-wrap gap-2 mt-1"></div>
-                    <div class="att-empty text-muted small mt-1" style="display:none;">No attachments yet.</div>
                   </div>
                 </div>
               </div>
@@ -479,10 +577,10 @@
 
         </div>
 
-        <div class="border border-2 border-success-subtle rounded-3 p-3 p-lg-4 mb-4 bg-success-subtle shadow-sm">
+        <div class="wo-section mb-4">
+          <div class="wo-section-title">Work Order Date</div>
           <div class="row g-3 align-items-end">
             <div class="col-12 col-md-4 col-lg-3">
-              <label class="form-label fw-semibold" for="workOrderDateInput">Work Order Date</label>
               <input id="workOrderDateInput" name="work_order_date" type="date" class="form-control" value="{{ work_order_date or today_date_input_value or '' }}">
             </div>
           </div>
@@ -490,8 +588,8 @@
 
       </fieldset>
 
-      <div id="workOrderDatesBlock" class="border border-2 border-success-subtle rounded-3 p-3 p-lg-4 mb-4 bg-success-subtle shadow-sm" style="display:none;">
-        <div class="small text-muted mb-2">Work order timeline</div>
+      <div id="workOrderDatesBlock" class="wo-section mb-4" style="display:none;">
+        <div class="wo-section-title">Work order timeline</div>
         <div class="row g-2 mb-3">
           <div class="col-12 col-md-6">
             <div class="border rounded p-2 bg-white h-100">
@@ -523,11 +621,21 @@
       </div>
 
      <!-- Work Order Attachments (general) -->
-     <div id="woAttachmentsBlock" class="mb-4" {% if not work_order_created %}style="display:none;"{% endif %}>
-       {{ attachments_block(entity_type="work_order", entity_id=created_work_order_id or "", heading="Work Order Attachments") }}
+     <div id="woAttachmentsBlock" class="wo-section mb-4">
+       <div class="d-flex align-items-center justify-content-between">
+         <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1" type="button" data-bs-toggle="collapse" data-bs-target="#woAttCollapse" aria-expanded="false" aria-controls="woAttCollapse">
+           <i class="bi bi-paperclip"></i>
+           Work Order Attachments
+           <span class="wo-att-count badge bg-secondary ms-1" style="display:none;">0</span>
+           <i class="bi bi-chevron-down ms-1" style="font-size:0.7rem;"></i>
+         </button>
+       </div>
+       <div class="collapse mt-2" id="woAttCollapse">
+         {{ attachments_block(entity_type="work_order", entity_id=created_work_order_id or pending_attachment_id or "", heading="", compact=true) }}
+       </div>
      </div>
 
-     <div class="mt-4 pt-2 d-flex align-items-center justify-content-between gap-2 border-top flex-wrap">
+     <div class="wo-footer-bar d-flex align-items-center justify-content-between gap-2 flex-wrap">
           <div class="d-flex align-items-center gap-2 flex-wrap">
             <button id="paidWorkOrderBtn" class="btn btn-success" type="button" style="display:none;">Paid</button>
             <button id="unpaidWorkOrderBtn" class="btn btn-warning" type="button" style="display:none;">Unpaid</button>
@@ -702,34 +810,71 @@
     <script src="{{ url_for('static', filename='js/work_orders/work_order_details.js', v='20260409-v6') }}"></script>
 
     <script>
-    /* Initialize labor-level attachment blocks once WO is created */
+    /* Initialize attachment blocks — wire collapse IDs always, set entity IDs */
     (function () {
       var woId = {{ (created_work_order_id or "")|tojson }};
-      if (!woId) return;
+      var pendingId = {{ (pending_attachment_id or "")|tojson }};
+      var entityId = woId || pendingId;
 
-      /* Show the general WO attachments block */
-      var woAttBlock = document.getElementById("woAttachmentsBlock");
-      if (woAttBlock) woAttBlock.style.display = "";
-
-      /* For each labor block, wire up its attachments sub-block */
+      /* For each labor block, set unique collapse IDs and entity data */
       var labors = document.querySelectorAll(".wo-labor");
       labors.forEach(function (laborEl, idx) {
-        var wrap = laborEl.querySelector(".labor-attachments-wrap");
         var block = laborEl.querySelector(".labor-att-block");
-        if (wrap && block) {
-          wrap.style.display = "";
-          block.dataset.entityId = woId;
+        var collapseEl = laborEl.querySelector(".labor-att-collapse");
+        var toggleBtn = laborEl.querySelector(".labor-att-toggle");
+
+        /* Unique collapse id per labor */
+        var collapseId = "laborAttCollapse" + idx;
+        if (collapseEl) collapseEl.id = collapseId;
+        if (toggleBtn) {
+          toggleBtn.setAttribute("data-bs-target", "#" + collapseId);
+          toggleBtn.setAttribute("aria-controls", collapseId);
+        }
+
+        if (entityId && block) {
+          block.dataset.entityId = entityId;
           block.dataset.parentId = String(idx);
-          if (typeof window.AttachmentsInit === "function") {
-            /* Will be called when attachments.js DOMContentLoaded fires */
-          }
         }
       });
 
       /* Re-init all attachments blocks (including labor ones just configured) */
-      if (typeof window.AttachmentsInit === "function") {
+      if (entityId && typeof window.AttachmentsInit === "function") {
         window.AttachmentsInit();
       }
+
+      /* Sync att-count from inner block to toggle button for labor blocks */
+      function syncLaborAttCounts() {
+        document.querySelectorAll(".labor-attachments-wrap").forEach(function (wrap) {
+          var innerCount = wrap.querySelector(".labor-att-block .att-count");
+          var toggleCount = wrap.querySelector(".labor-att-toggle .att-count");
+          if (innerCount && toggleCount) {
+            toggleCount.textContent = innerCount.textContent;
+            toggleCount.style.display = innerCount.style.display;
+          }
+        });
+      }
+
+      /* Sync att-count for WO-level block */
+      function syncWoAttCount() {
+        var woBlock = document.querySelector("#woAttCollapse .attachments-block .att-count");
+        var woToggle = document.querySelector("#woAttachmentsBlock .wo-att-count");
+        if (woBlock && woToggle) {
+          woToggle.textContent = woBlock.textContent;
+          woToggle.style.display = woBlock.style.display;
+        }
+      }
+
+      /* Watch for DOM changes in att-count badges */
+      var observer = new MutationObserver(function () {
+        syncLaborAttCounts();
+        syncWoAttCount();
+      });
+      document.querySelectorAll(".att-count").forEach(function (el) {
+        observer.observe(el, { childList: true, attributes: true, attributeFilter: ["style"] });
+      });
+
+      /* Initial sync */
+      setTimeout(function () { syncLaborAttCounts(); syncWoAttCount(); }, 500);
     })();
     </script>
 

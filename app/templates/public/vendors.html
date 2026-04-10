@@ -56,7 +56,7 @@
           </thead>
           <tbody>
             {% for v in vendors %}
-            <tr class="vendorOrdersRow" data-vendor-id="{{ v['_id'] }}" data-vendor-name="{{ (v.get('name') or 'Vendor')|e }}" role="button" tabindex="0" style="cursor:pointer;">
+            <tr class="vendorOrdersRow" data-vendor-id="{{ v['_id'] }}" data-vendor-name="{{ (v.get('name') or 'Vendor')|e }}" role="button" tabindex="0">
               <td>
                 <button
                   type="button"
