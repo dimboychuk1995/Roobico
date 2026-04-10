@@ -172,8 +172,12 @@ def api_download(attachment_id):
     response = make_response(bytes(doc["data"]))
     response.headers["Content-Type"] = doc.get("content_type", "application/octet-stream")
 
-    # Inline for images, attachment for PDFs
-    disposition = "inline" if (doc.get("content_type") or "").startswith("image/") else "attachment"
+    # Inline for images and PDFs so browser displays them; attachment for other types
+    content_type = doc.get("content_type") or "application/octet-stream"
+    if content_type.startswith("image/") or content_type == "application/pdf":
+        disposition = "inline"
+    else:
+        disposition = "attachment"
     filename = doc.get("filename", "file")
     response.headers["Content-Disposition"] = f'{disposition}; filename="{filename}"'
     response.headers["Cache-Control"] = "private, max-age=3600"

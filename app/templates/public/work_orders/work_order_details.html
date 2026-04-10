@@ -540,7 +540,7 @@
 
                 <!-- Per-labor attachments -->
                 <div class="mt-4 pt-3 border-top labor-attachments-wrap">
-                  <div class="d-flex align-items-center justify-content-between mb-2">
+                  <div class="d-flex align-items-center justify-content-between">
                     <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1 labor-att-toggle" type="button" data-bs-toggle="collapse" aria-expanded="false">
                       <i class="bi bi-paperclip"></i>
                       Labor Attachments
@@ -548,12 +548,16 @@
                       <i class="bi bi-chevron-down ms-1" style="font-size:0.7rem;"></i>
                     </button>
                   </div>
-                  <div class="collapse labor-att-collapse">
+                  <div class="collapse mt-2 labor-att-collapse">
                     <div class="attachments-block attachments-compact labor-att-block"
                          data-entity-type="work_order_labor"
                          data-entity-id=""
                          data-parent-id="">
-                      <div class="d-flex align-items-center justify-content-end mb-2">
+                      <div class="d-flex align-items-center justify-content-between">
+                        <h6 class="mb-0 small fw-semibold">
+                          <i class="bi bi-paperclip me-1"></i>
+                          <span class="att-count badge bg-secondary ms-1" style="display:none;">0</span>
+                        </h6>
                         <label class="btn btn-sm btn-outline-secondary mb-0 att-upload-btn">
                           <i class="bi bi-upload me-1"></i>Upload
                           <input type="file" class="att-file-input d-none" multiple accept="image/*,.pdf">
@@ -565,8 +569,8 @@
                         </div>
                         <small class="text-muted">Uploading…</small>
                       </div>
-                      <div class="att-gallery d-flex flex-wrap gap-2 mt-1"></div>
-                      <div class="att-empty text-muted small mt-1" style="display:none;">No attachments yet.</div>
+                      <div class="att-gallery d-flex flex-wrap gap-2"></div>
+                      <div class="att-empty text-muted small" style="display:none;">No attachments yet.</div>
                     </div>
                   </div>
                 </div>
@@ -600,7 +604,7 @@
         </div>
 
         <div>
-          <div class="small text-muted mb-1">Paid</div>
+          <div class="small text-muted mb-1" id="woPaymentStatusLabel">Payments</div>
           <div class="table-responsive">
             <table class="table table-sm align-middle mb-0 sortable">
               <thead>
@@ -795,6 +799,10 @@
               <label class="form-label">Notes (optional)</label>
               <textarea id="paymentNotesInput" class="form-control" rows="2" placeholder="e.g., Check #12345, etc."></textarea>
             </div>
+
+            <div id="paymentAttBlock">
+              {{ attachments_block(entity_type="work_order_payment", entity_id="", heading="Attachments", compact=true) }}
+            </div>
           </div>
 
           <div class="modal-footer">
@@ -848,8 +856,12 @@
           var innerCount = wrap.querySelector(".labor-att-block .att-count");
           var toggleCount = wrap.querySelector(".labor-att-toggle .att-count");
           if (innerCount && toggleCount) {
-            toggleCount.textContent = innerCount.textContent;
-            toggleCount.style.display = innerCount.style.display;
+            if (toggleCount.textContent !== innerCount.textContent) {
+              toggleCount.textContent = innerCount.textContent;
+            }
+            if (toggleCount.style.display !== innerCount.style.display) {
+              toggleCount.style.display = innerCount.style.display;
+            }
           }
         });
       }
@@ -859,8 +871,12 @@
         var woBlock = document.querySelector("#woAttCollapse .attachments-block .att-count");
         var woToggle = document.querySelector("#woAttachmentsBlock .wo-att-count");
         if (woBlock && woToggle) {
-          woToggle.textContent = woBlock.textContent;
-          woToggle.style.display = woBlock.style.display;
+          if (woToggle.textContent !== woBlock.textContent) {
+            woToggle.textContent = woBlock.textContent;
+          }
+          if (woToggle.style.display !== woBlock.style.display) {
+            woToggle.style.display = woBlock.style.display;
+          }
         }
       }
 

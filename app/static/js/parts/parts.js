@@ -327,6 +327,11 @@
 		const partsOrderPaymentDateInput = document.getElementById("partsOrderPaymentDateInput");
 		const partsOrderPaymentNotesInput = document.getElementById("partsOrderPaymentNotesInput");
 		const partsOrderPaymentSubmitBtn = document.getElementById("partsOrderPaymentSubmitBtn");
+		let _partsPaymentPendingAttId = "";
+
+		function _genTempId() {
+			var h = ''; for (var i = 0; i < 24; i++) h += Math.floor(Math.random() * 16).toString(16); return h;
+		}
 
 		function formatDateTime(v) {
 			if (!v) return "-";
@@ -438,6 +443,21 @@
 				setDateInputLocked(partsOrderPaymentDateInput, isReceivedOrder);
 			}
 			partsOrderPaymentNotesInput.value = "";
+
+			// Init attachment block with temp ID
+			_partsPaymentPendingAttId = _genTempId();
+			var attWrap = document.getElementById("partsPaymentAttBlock");
+			var attEl = attWrap ? attWrap.querySelector(".attachments-block") : null;
+			if (attEl) {
+				attEl.dataset.entityId = _partsPaymentPendingAttId;
+				if (attEl._attBlock) {
+					attEl._attBlock.setEntityId(_partsPaymentPendingAttId);
+					attEl._attBlock.items = [];
+					attEl._attBlock.render();
+				} else if (typeof window.AttachmentsInit === "function") {
+					window.AttachmentsInit();
+				}
+			}
 
 			if (!partsOrderPaymentModalEl) return;
 			const modal = bootstrap.Modal.getOrCreateInstance(partsOrderPaymentModalEl);
@@ -671,7 +691,7 @@
 				const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/payment`, {
 					method: "POST",
 					headers: { "Content-Type": "application/json", "Accept": "application/json" },
-					body: JSON.stringify({ amount, payment_method: method, payment_date: paymentDate, notes }),
+					body: JSON.stringify({ amount, payment_method: method, payment_date: paymentDate, notes, pending_attachment_id: _partsPaymentPendingAttId || "" }),
 				});
 				const data = await res.json();
 				if (!res.ok || !data || !data.ok) {

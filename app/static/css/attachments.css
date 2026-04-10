@@ -25,6 +25,10 @@
   width: 90px;
 }
 
+.att-item .att-thumb-link {
+  display: block;
+  text-decoration: none;
+}
 .att-item .att-thumb {
   display: block;
   width: 100%;
@@ -89,6 +93,12 @@
 .att-item:hover .att-delete-btn,
 .att-item:focus-within .att-delete-btn {
   opacity: 1;
+}
+
+/* Read-only mode — hide upload & delete controls */
+.att-readonly .att-upload-btn,
+.att-readonly .att-delete-btn {
+  display: none !important;
 }
 
 /* Lightbox overlay */

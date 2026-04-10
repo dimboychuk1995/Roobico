@@ -1786,6 +1786,16 @@ def parts_api_orders_payment(order_id: str):
         "created_by": user_oid,
     }
     result = payments_coll.insert_one(doc)
+    payment_id = result.inserted_id
+
+    # Reassign pending attachments to the real payment ID
+    pending_att_id = _oid(data.get("pending_attachment_id"))
+    if pending_att_id:
+        shop_db = orders_coll.database
+        shop_db.attachments.update_many(
+            {"entity_id": pending_att_id},
+            {"$set": {"entity_id": payment_id}},
+        )
 
     refreshed_order = orders_coll.find_one({"_id": oid})
     _sync_parts_order_payment_state(orders_coll, payments_coll, refreshed_order or {}, user_oid, now)
@@ -1796,7 +1806,7 @@ def parts_api_orders_payment(order_id: str):
     return jsonify(
         {
             "ok": True,
-            "payment_id": str(result.inserted_id),
+            "payment_id": str(payment_id),
             "amount_paid": float(refreshed_summary.get("paid_amount") or 0.0),
             "remaining_balance": float(refreshed_summary.get("remaining_balance") or 0.0),
             "payment_status": refreshed_summary.get("payment_status") or "unpaid",

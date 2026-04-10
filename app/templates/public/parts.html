@@ -621,6 +621,10 @@
           <label class="form-label">Notes</label>
           <textarea id="partsOrderPaymentNotesInput" class="form-control" rows="2" placeholder="Optional"></textarea>
         </div>
+
+        <div class="mt-3" id="partsPaymentAttBlock">
+          {{ attachments_block(entity_type="parts_order_payment", entity_id="", heading="Attachments", compact=true) }}
+        </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>

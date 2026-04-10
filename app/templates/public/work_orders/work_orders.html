@@ -1,4 +1,5 @@
 {% extends "layouts/app_base.html" %}
+{% from "components/attachments.html" import attachments_block %}
 
 {% block page_title %}Work Orders{% endblock %}
 
@@ -371,6 +372,10 @@
         <div class="mb-3">
           <label class="form-label">Notes (optional)</label>
           <textarea id="paymentListNotesInput" class="form-control" rows="2" placeholder="e.g., Check #12345, etc."></textarea>
+        </div>
+
+        <div id="paymentListAttBlock">
+          {{ attachments_block(entity_type="work_order_payment", entity_id="", heading="Attachments", compact=true) }}
         </div>
       </div>
 

@@ -76,10 +76,6 @@
           if (id) self.deleteItem(id);
           return;
         }
-        var thumb = e.target.closest(".att-thumb");
-        if (thumb) {
-          openLightbox(thumb.dataset.fullSrc || thumb.src);
-        }
       });
     }
 
@@ -186,7 +182,9 @@
       html += '<button type="button" class="att-delete-btn" data-att-id="' + escapeHtml(it.id) + '" title="Delete">&times;</button>';
 
       if (it.is_image) {
-        html += '<img class="att-thumb" src="' + escapeHtml(downloadUrl) + '" data-full-src="' + escapeHtml(downloadUrl) + '" alt="' + escapeHtml(it.filename) + '" loading="lazy">';
+        html += '<a href="' + escapeHtml(downloadUrl) + '" target="_blank" rel="noopener noreferrer" class="att-thumb-link">';
+        html += '<img class="att-thumb" src="' + escapeHtml(downloadUrl) + '" alt="' + escapeHtml(it.filename) + '" loading="lazy">';
+        html += '</a>';
       } else {
         html += '<a class="att-pdf-thumb" href="' + escapeHtml(downloadUrl) + '" target="_blank" rel="noopener noreferrer" title="' + escapeHtml(it.filename) + '"><i class="bi bi-file-earmark-pdf-fill"></i></a>';
       }

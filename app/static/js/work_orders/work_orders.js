@@ -69,7 +69,12 @@
 
   let currentWorkOrderId = null;
   let paymentsLoaded = false;
+  let _paymentListPendingAttId = "";
   const body = document.body;
+
+  function _genTempId() {
+    var h = ''; for (var i = 0; i < 24; i++) h += Math.floor(Math.random() * 16).toString(16); return h;
+  }
 
   // ========== MARK PAID BUTTON LOGIC ==========
   if (!body || body.dataset.workOrdersMarkPaidBound !== "1") {
@@ -105,6 +110,22 @@
 
       // Show modal
       const modal = new bootstrap.Modal(document.getElementById("paymentModalList"));
+
+      // Init attachment block with temp ID
+      _paymentListPendingAttId = _genTempId();
+      var attWrap = document.getElementById("paymentListAttBlock");
+      var attEl = attWrap ? attWrap.querySelector(".attachments-block") : null;
+      if (attEl) {
+        attEl.dataset.entityId = _paymentListPendingAttId;
+        if (attEl._attBlock) {
+          attEl._attBlock.setEntityId(_paymentListPendingAttId);
+          attEl._attBlock.items = [];
+          attEl._attBlock.render();
+        } else if (typeof window.AttachmentsInit === "function") {
+          window.AttachmentsInit();
+        }
+      }
+
       modal.show();
     } catch (err) {
       appAlert(err.message || "Failed to load payment info.", 'error');
@@ -145,6 +166,7 @@
         payment_method: paymentMethod,
         notes,
         payment_date: paymentDate,
+        pending_attachment_id: _paymentListPendingAttId || "",
       });
 
       // Close modal

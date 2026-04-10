@@ -2224,6 +2224,16 @@
       if (addLaborBtn) addLaborBtn.disabled = true;
       document.querySelectorAll(".removeLaborBtn").forEach(b => { b.disabled = true; });
     }
+
+    // WO attachments block is outside the fieldset — toggle readonly separately
+    const woAttBlock = document.getElementById("woAttachmentsBlock");
+    if (woAttBlock) {
+      if (isEditing) {
+        woAttBlock.classList.remove("att-readonly");
+      } else {
+        woAttBlock.classList.add("att-readonly");
+      }
+    }
   }
 
   function setButtonsState(mode, els) {
@@ -2514,6 +2524,15 @@
         }
 
         const payments = Array.isArray(data.payments) ? data.payments : [];
+
+        // Update payment status label
+        var payLabel = document.getElementById("woPaymentStatusLabel");
+        if (payLabel) {
+          if (!payments.length) payLabel.textContent = "Payments";
+          else if (data.status === "paid") payLabel.textContent = "Paid";
+          else payLabel.textContent = "Partially Paid";
+        }
+
         if (!payments.length) {
           woMetaPaymentsBody.innerHTML = `<tr><td colspan="5" class="text-muted">No payments.</td></tr>`;
           return;
@@ -3368,6 +3387,23 @@
 
         // Show modal
         const modal = new bootstrap.Modal(document.getElementById("paymentModal"));
+
+        // Init attachment block with temp ID
+        var paymentAttWrap = document.getElementById("paymentAttBlock");
+        var paymentAttEl = paymentAttWrap ? paymentAttWrap.querySelector(".attachments-block") : null;
+        var paymentPendingAttId = _genTempId();
+        _paymentPendingAttId = paymentPendingAttId;
+        if (paymentAttEl) {
+          paymentAttEl.dataset.entityId = paymentPendingAttId;
+          if (paymentAttEl._attBlock) {
+            paymentAttEl._attBlock.setEntityId(paymentPendingAttId);
+            paymentAttEl._attBlock.items = [];
+            paymentAttEl._attBlock.render();
+          } else if (typeof window.AttachmentsInit === "function") {
+            window.AttachmentsInit();
+          }
+        }
+
         modal.show();
       } catch (e) {
         toast(e.message || "Failed to load payment info.");
@@ -3537,6 +3573,11 @@
     }
 
     // Payment modal handler
+    function _genTempId() {
+      var h = ''; for (var i = 0; i < 24; i++) h += Math.floor(Math.random() * 16).toString(16); return h;
+    }
+    var _paymentPendingAttId = "";
+
     const paymentSubmitBtn = $("paymentSubmitBtn");
     paymentSubmitBtn?.addEventListener("click", async function () {
       if (!isCreated || !workOrderId) return;
@@ -3569,7 +3610,8 @@
             amount,
             payment_method: paymentMethod,
             notes,
-            payment_date: paymentDate
+            payment_date: paymentDate,
+            pending_attachment_id: _paymentPendingAttId || ""
           })
         });
 

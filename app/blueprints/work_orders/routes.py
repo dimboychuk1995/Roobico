@@ -2772,6 +2772,14 @@ def api_work_order_payment(work_order_id):
     payment_result = shop_db.work_order_payments.insert_one(payment_doc)
     payment_id = payment_result.inserted_id
 
+    # Reassign pending attachments to the real payment ID
+    pending_att_id = oid(data.get("pending_attachment_id"))
+    if pending_att_id:
+        shop_db.attachments.update_many(
+            {"entity_id": pending_att_id},
+            {"$set": {"entity_id": payment_id}},
+        )
+
     refreshed_wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True}) or wo
     payment_summary = _sync_work_order_payment_state(shop_db, refreshed_wo, user_id, now) or {
         "status": "open",
