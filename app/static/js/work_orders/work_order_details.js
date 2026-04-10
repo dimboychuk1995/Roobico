@@ -2518,6 +2518,7 @@
         }
 
         customerEmail = String(data.customer_email || "").trim();
+        customerContacts = Array.isArray(data.customer_contacts) ? data.customer_contacts : [];
         workOrderDatesBlock.style.display = "";
         if (woMetaCreated) {
           woMetaCreated.textContent = data.created_at_label || formatDateLabel(data.created_at);
@@ -3458,50 +3459,175 @@
       }
     });
 
-    async function askEmailAddress(defaultEmail, title) {
-      const result = await Swal.fire({
-        title: title || "Send Email",
-        input: "email",
-        inputValue: defaultEmail || "",
-        inputPlaceholder: "customer@example.com",
-        showCancelButton: true,
-        confirmButtonText: "Send",
-        confirmButtonColor: "#1f6b43",
-        cancelButtonColor: "#6c757d",
-        showClass: { popup: "", backdrop: "" },
-        hideClass: { popup: "", backdrop: "" },
+    // ── Email contacts modal logic ──
+    let customerContacts = [];
+    const emailModal = document.getElementById("emailContactsModal");
+    const emailModalTitle = document.getElementById("emailContactsModalTitle");
+    const emailContactsList = document.getElementById("emailContactsList");
+    const emailSendBtn = document.getElementById("emailContactsSendBtn");
+    const emailAddToggle = document.getElementById("emailAddContactToggle");
+    const emailNewForm = document.getElementById("emailNewContactForm");
+    const emailNewAddBtn = document.getElementById("emailNewContactAdd");
+    let _emailSendCallback = null;
+    let _emailAdditionalRecipients = []; // recipients added via "Add New Contact" form
+
+    function renderEmailContacts() {
+      if (!emailContactsList) return;
+      const all = customerContacts.concat(_emailAdditionalRecipients);
+      if (!all.length) {
+        emailContactsList.innerHTML = '<p class="text-muted small mb-0">No contacts found.</p>';
+        return;
+      }
+      let html = "";
+      all.forEach(function (c, i) {
+        const name = [c.first_name || "", c.last_name || ""].join(" ").trim();
+        const email = c.email || "";
+        if (!email) return;
+        const checked = c.is_main || c._added ? "checked" : "";
+        const label = name ? name + " — " + email : email;
+        const badge = c.is_main ? ' <span class="badge bg-primary ms-1" style="font-size:0.65rem;">Main</span>' : "";
+        const addedBadge = c._added ? ' <span class="badge bg-success ms-1" style="font-size:0.65rem;">New</span>' : "";
+        html += '<div class="form-check mb-2">' +
+          '<input class="form-check-input email-contact-check" type="checkbox" id="emailContact' + i + '" value="' + email.replace(/"/g, "&quot;") + '" ' + checked + '>' +
+          '<label class="form-check-label" for="emailContact' + i + '">' + label + badge + addedBadge + '</label>' +
+          '</div>';
       });
-      if (!result.isConfirmed) return null;
-      return String(result.value || "").trim();
+      emailContactsList.innerHTML = html;
+    }
+
+    function openEmailModal(title, callback) {
+      if (!emailModal) return;
+      _emailSendCallback = callback;
+      _emailAdditionalRecipients = [];
+      if (emailModalTitle) emailModalTitle.innerHTML = '<i class="bi bi-envelope me-2"></i>' + (title || "Send Email");
+      if (emailNewForm) emailNewForm.style.display = "none";
+      // Clear new contact form
+      var fields = ["emailNewFirstName", "emailNewLastName", "emailNewEmail", "emailNewPhone"];
+      fields.forEach(function (id) { var el = document.getElementById(id); if (el) el.value = ""; });
+      var saveCheck = document.getElementById("emailNewSaveContact");
+      if (saveCheck) saveCheck.checked = true;
+
+      renderEmailContacts();
+      var bsModal = new bootstrap.Modal(emailModal);
+      bsModal.show();
+    }
+
+    function getSelectedEmails() {
+      var checked = emailContactsList ? emailContactsList.querySelectorAll(".email-contact-check:checked") : [];
+      var emails = [];
+      checked.forEach(function (cb) {
+        var v = cb.value.trim().toLowerCase();
+        if (v && emails.indexOf(v) === -1) emails.push(v);
+      });
+      return emails;
+    }
+
+    function getNewContactForSave() {
+      // Return the last added new contact if "Save to customer" was checked
+      for (var i = _emailAdditionalRecipients.length - 1; i >= 0; i--) {
+        if (_emailAdditionalRecipients[i]._save) return _emailAdditionalRecipients[i];
+      }
+      return null;
+    }
+
+    if (emailAddToggle && emailNewForm) {
+      emailAddToggle.addEventListener("click", function () {
+        emailNewForm.style.display = emailNewForm.style.display === "none" ? "" : "none";
+        if (emailNewForm.style.display !== "none") {
+          var emailInput = document.getElementById("emailNewEmail");
+          if (emailInput) emailInput.focus();
+        }
+      });
+    }
+
+    if (emailNewAddBtn) {
+      emailNewAddBtn.addEventListener("click", function () {
+        var emailInput = document.getElementById("emailNewEmail");
+        var email = (emailInput ? emailInput.value : "").trim().toLowerCase();
+        if (!email || email.indexOf("@") === -1) {
+          toast("Please enter a valid email address.");
+          if (emailInput) emailInput.focus();
+          return;
+        }
+        // Check duplicates
+        var allEmails = customerContacts.map(function (c) { return (c.email || "").toLowerCase(); })
+          .concat(_emailAdditionalRecipients.map(function (c) { return (c.email || "").toLowerCase(); }));
+        if (allEmails.indexOf(email) !== -1) {
+          toast("This email is already in the list.");
+          return;
+        }
+        var saveCheck = document.getElementById("emailNewSaveContact");
+        _emailAdditionalRecipients.push({
+          first_name: (document.getElementById("emailNewFirstName") || {}).value || "",
+          last_name: (document.getElementById("emailNewLastName") || {}).value || "",
+          email: email,
+          phone: (document.getElementById("emailNewPhone") || {}).value || "",
+          _added: true,
+          _save: saveCheck ? saveCheck.checked : false,
+        });
+        // Clear form
+        ["emailNewFirstName", "emailNewLastName", "emailNewEmail", "emailNewPhone"].forEach(function (id) {
+          var el = document.getElementById(id); if (el) el.value = "";
+        });
+        if (emailNewForm) emailNewForm.style.display = "none";
+        renderEmailContacts();
+      });
+    }
+
+    if (emailSendBtn) {
+      emailSendBtn.addEventListener("click", function () {
+        var emails = getSelectedEmails();
+        if (!emails.length) {
+          toast("Please select at least one recipient.");
+          return;
+        }
+        if (emailModal) {
+          var bsModal = bootstrap.Modal.getInstance(emailModal);
+          if (bsModal) bsModal.hide();
+        }
+        if (typeof _emailSendCallback === "function") {
+          _emailSendCallback(emails, getNewContactForSave());
+        }
+      });
     }
 
     if (emailBtn) {
       emailBtn.addEventListener("click", async function () {
         if (!isCreated || !workOrderId) return;
-        const addr = await askEmailAddress(customerEmail, "Send Work Order");
-        if (!addr) return;
 
-        emailBtn.disabled = true;
-        const originalText = emailBtn.textContent;
-        emailBtn.textContent = "Sending…";
+        openEmailModal("Send Work Order", async function (emails, newContact) {
+          emailBtn.disabled = true;
+          const originalText = emailBtn.textContent;
+          emailBtn.textContent = "Sending…";
 
-        try {
-          const res = await fetch(`/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/send-email`, {
-            method: "POST",
-            headers: { "Accept": "application/json", "Content-Type": "application/json" },
-            body: JSON.stringify({ email: addr }),
-          });
-          const data = await res.json();
-          if (!res.ok || !data || !data.ok) {
-            throw new Error((data && (data.error || data.message)) || "Failed to send email");
+          try {
+            const payload = { emails: emails };
+            if (newContact && newContact._save) {
+              payload.new_contact = {
+                first_name: newContact.first_name,
+                last_name: newContact.last_name,
+                email: newContact.email,
+                phone: newContact.phone,
+              };
+            }
+            const res = await fetch(`/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/send-email`, {
+              method: "POST",
+              headers: { "Accept": "application/json", "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            const data = await res.json();
+            if (!res.ok || !data || !data.ok) {
+              throw new Error((data && (data.error || data.message)) || "Failed to send email");
+            }
+            const sentList = Array.isArray(data.sent_to) ? data.sent_to.join(", ") : data.sent_to;
+            toast("Work order sent to " + sentList, "success");
+          } catch (err) {
+            toast(err.message || "Failed to send email.", "error");
+          } finally {
+            emailBtn.disabled = false;
+            emailBtn.textContent = originalText;
           }
-          toast(`Work order sent to ${data.sent_to}`, "success");
-        } catch (err) {
-          toast(err.message || "Failed to send email.", "error");
-        } finally {
-          emailBtn.disabled = false;
-          emailBtn.textContent = originalText;
-        }
+        });
       });
     }
 
@@ -3513,29 +3639,38 @@
       const paymentId = String(btn.dataset.paymentId || "").trim();
       if (!paymentId) return;
 
-      const addr = await askEmailAddress(customerEmail, "Send Payment Receipt");
-      if (!addr) return;
+      openEmailModal("Send Payment Receipt", async function (emails, newContact) {
+        const originalText = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "Sending…";
 
-      const originalText = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = "Sending…";
-
-      try {
-        const res = await fetch(`/work_orders/api/payments/${encodeURIComponent(paymentId)}/send-receipt`, {
-          method: "POST",
-          headers: { "Accept": "application/json", "Content-Type": "application/json" },
-          body: JSON.stringify({ email: addr }),
-        });
-        const data = await res.json();
-        if (!res.ok || !data || !data.ok) {
-          throw new Error((data && (data.error || data.message)) || "Failed to send receipt");
+        try {
+          const payload = { emails: emails };
+          if (newContact && newContact._save) {
+            payload.new_contact = {
+              first_name: newContact.first_name,
+              last_name: newContact.last_name,
+              email: newContact.email,
+              phone: newContact.phone,
+            };
+          }
+          const res = await fetch(`/work_orders/api/payments/${encodeURIComponent(paymentId)}/send-receipt`, {
+            method: "POST",
+            headers: { "Accept": "application/json", "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (!res.ok || !data || !data.ok) {
+            throw new Error((data && (data.error || data.message)) || "Failed to send receipt");
+          }
+          const sentList = Array.isArray(data.sent_to) ? data.sent_to.join(", ") : data.sent_to;
+          toast("Receipt sent to " + sentList, "success");
+        } catch (err) {
+          toast(err.message || "Failed to send receipt.", "error");
+          btn.disabled = false;
+          btn.textContent = originalText;
         }
-        toast(`Receipt sent to ${data.sent_to}`, "success");
-      } catch (err) {
-        toast(err.message || "Failed to send receipt.", "error");
-        btn.disabled = false;
-        btn.textContent = originalText;
-      }
+      });
     });
 
     // initial state

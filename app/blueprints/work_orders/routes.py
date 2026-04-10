@@ -21,7 +21,7 @@ from app.utils.display_datetime import (
     shop_local_date_to_utc,
 )
 from app.utils.date_filters import build_date_range_filters
-from app.utils.contacts import get_main_contact_email, get_main_contact_name, get_main_contact_phone
+from app.utils.contacts import get_contacts, get_main_contact_email, get_main_contact_name, get_main_contact_phone, normalize_contacts
 from app.utils.email_sender import send_email
 from app.utils.pdf_utils import render_html_to_pdf
 from app.utils.sales_tax import get_shop_zip_code, get_zip_sales_tax_rate
@@ -2835,8 +2835,9 @@ def api_get_work_order_payments(work_order_id):
         for p in payments
     ]
 
-    customer = shop_db.customers.find_one({"_id": wo.get("customer_id")}, {"email": 1, "contacts": 1}) or {}
+    customer = shop_db.customers.find_one({"_id": wo.get("customer_id")}, {"email": 1, "contacts": 1, "first_name": 1, "last_name": 1, "phone": 1}) or {}
     customer_email = get_main_contact_email(customer, entity_type="customer")
+    customer_contacts = get_contacts(customer, entity_type="customer")
 
     return jsonify({
         "ok": True,
@@ -2849,6 +2850,7 @@ def api_get_work_order_payments(work_order_id):
         "remaining_balance": summary["remaining_balance"],
         "status": summary["status"],
         "customer_email": customer_email,
+        "customer_contacts": customer_contacts,
         "payments": payment_list
     }), 200
 
@@ -2995,10 +2997,17 @@ def api_get_all_payments():
     if created_at_filter:
         payments_query = append_and_filter(payments_query, created_at_filter)
 
-    payments = list(
-        shop_db.work_order_payments.find(payments_query)
-        .sort([("payment_date", -1), ("created_at", -1)])
-        .limit(500)
+    page, per_page = get_pagination_params(
+        request.args, default_per_page=50, max_per_page=200,
+        page_key="payments_page", per_page_key="payments_per_page",
+    )
+
+    payments, payments_pagination = paginate_find(
+        shop_db.work_order_payments,
+        payments_query,
+        sort=[("payment_date", -1), ("created_at", -1)],
+        page=page,
+        per_page=per_page,
     )
 
     work_order_ids = [p.get("work_order_id") for p in payments if p.get("work_order_id")]
@@ -3032,6 +3041,16 @@ def api_get_all_payments():
             if c_id:
                 customers_map[c_id] = customer_label(c)
 
+    # Batch-fetch attachment counts for all payments on this page.
+    payment_ids = [p["_id"] for p in payments if p.get("_id")]
+    att_counts_map: dict = {}
+    if payment_ids:
+        for doc in shop_db.attachments.aggregate([
+            {"$match": {"entity_type": "work_order_payment", "entity_id": {"$in": payment_ids}}},
+            {"$group": {"_id": "$entity_id", "count": {"$sum": 1}}},
+        ]):
+            att_counts_map[doc["_id"]] = doc["count"]
+
     payment_list = [
         {
             "id": str(p.get("_id")),
@@ -3043,13 +3062,15 @@ def api_get_all_payments():
             "notes": p.get("notes") or "",
             "payment_date": (p.get("payment_date") or p.get("created_at")).isoformat() if (p.get("payment_date") or p.get("created_at")) else "",
             "created_at": p.get("created_at").isoformat() if p.get("created_at") else "",
+            "att_count": att_counts_map.get(p.get("_id"), 0),
         }
         for p in payments
     ]
 
     return jsonify({
         "ok": True,
-        "payments": payment_list
+        "payments": payment_list,
+        "pagination": payments_pagination,
     }), 200
 
 
@@ -3196,6 +3217,41 @@ def api_work_order_delete(work_order_id):
 
 
 # ---------------------------------------------------------------------------
+# Email helpers
+# ---------------------------------------------------------------------------
+
+def _save_new_contact_to_customer(shop_db, customer_id, new_contact):
+    """Append a new contact to a customer's contacts array."""
+    if not isinstance(new_contact, dict):
+        return
+    email = str(new_contact.get("email") or "").strip().lower()
+    if not email or "@" not in email:
+        return
+
+    customer = shop_db.customers.find_one({"_id": customer_id})
+    if not customer:
+        return
+
+    existing = get_contacts(customer, entity_type="customer")
+    # Don't add duplicate emails
+    if any(c.get("email", "").lower() == email for c in existing):
+        return
+
+    existing.append({
+        "first_name": str(new_contact.get("first_name") or "").strip(),
+        "last_name": str(new_contact.get("last_name") or "").strip(),
+        "phone": str(new_contact.get("phone") or "").strip(),
+        "email": email,
+        "is_main": False,
+    })
+
+    shop_db.customers.update_one(
+        {"_id": customer_id},
+        {"$set": {"contacts": normalize_contacts(existing)}},
+    )
+
+
+# ---------------------------------------------------------------------------
 # Email routes
 # ---------------------------------------------------------------------------
 
@@ -3216,9 +3272,21 @@ def api_send_work_order_email(work_order_id):
         return jsonify({"ok": False, "error": "Work order not found"}), 404
 
     data = request.get_json(silent=True) or {}
-    to_email = str(data.get("email") or "").strip().lower()
-    if not to_email or "@" not in to_email:
-        return jsonify({"ok": False, "error": "Valid email address required"}), 400
+
+    # Accept either single "email" or "emails" array
+    raw_emails = data.get("emails") or []
+    if not raw_emails:
+        single = str(data.get("email") or "").strip().lower()
+        if single:
+            raw_emails = [single]
+    to_emails = [e.strip().lower() for e in raw_emails if isinstance(e, str) and "@" in e.strip()]
+    if not to_emails:
+        return jsonify({"ok": False, "error": "At least one valid email address required"}), 400
+
+    # Optionally save new contact to customer
+    new_contact = data.get("new_contact")
+    if isinstance(new_contact, dict) and wo.get("customer_id"):
+        _save_new_contact_to_customer(shop_db, wo["customer_id"], new_contact)
 
     customer = shop_db.customers.find_one({"_id": wo.get("customer_id")}) or {}
     cust_name = customer_label(customer)
@@ -3355,11 +3423,11 @@ def api_send_work_order_email(work_order_id):
         }]
 
     try:
-        send_email(to_email, subject, html_body, attachments=attachments)
+        send_email(to_emails, subject, html_body, attachments=attachments)
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
-    return jsonify({"ok": True, "sent_to": to_email}), 200
+    return jsonify({"ok": True, "sent_to": to_emails}), 200
 
 
 @work_orders_bp.post("/work_orders/api/payments/<payment_id>/send-receipt")
@@ -3379,11 +3447,24 @@ def api_send_payment_receipt(payment_id):
         return jsonify({"ok": False, "error": "Payment not found"}), 404
 
     data = request.get_json(silent=True) or {}
-    to_email = str(data.get("email") or "").strip().lower()
-    if not to_email or "@" not in to_email:
-        return jsonify({"ok": False, "error": "Valid email address required"}), 400
+
+    # Accept either single "email" or "emails" array
+    raw_emails = data.get("emails") or []
+    if not raw_emails:
+        single = str(data.get("email") or "").strip().lower()
+        if single:
+            raw_emails = [single]
+    to_emails = [e.strip().lower() for e in raw_emails if isinstance(e, str) and "@" in e.strip()]
+    if not to_emails:
+        return jsonify({"ok": False, "error": "At least one valid email address required"}), 400
 
     wo = shop_db.work_orders.find_one({"_id": payment.get("work_order_id")}) or {}
+
+    # Optionally save new contact to customer
+    new_contact = data.get("new_contact")
+    if isinstance(new_contact, dict) and wo.get("customer_id"):
+        _save_new_contact_to_customer(shop_db, wo["customer_id"], new_contact)
+
     customer = shop_db.customers.find_one({"_id": wo.get("customer_id")}) or {}
     unit = shop_db.units.find_one({"_id": wo.get("unit_id")}) or {}
 
@@ -3434,11 +3515,11 @@ def api_send_payment_receipt(payment_id):
     )
 
     try:
-        send_email(to_email, subject, html_body)
+        send_email(to_emails, subject, html_body)
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
-    return jsonify({"ok": True, "sent_to": to_email}), 200
+    return jsonify({"ok": True, "sent_to": to_emails}), 200
 
 
 # ──────────────── WO Presets API ────────────────

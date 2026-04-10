@@ -11,6 +11,8 @@
 		"cores_per_page",
 		"estimates_page",
 		"estimates_per_page",
+		"payments_page",
+		"payments_per_page",
 	];
 	var activeSearchController = null;
 	var activeNavigationController = null;
@@ -99,6 +101,14 @@
 			formData.set("q", qValue);
 		} else {
 			formData.delete("q");
+		}
+
+		// When the user is searching and hasn't explicitly touched date controls,
+		// strip default date params so the backend auto-expands to all_time.
+		if (qValue && !form._dateUserTouched) {
+			formData.delete("date_preset");
+			formData.delete("date_from");
+			formData.delete("date_to");
 		}
 
 		var params = new URLSearchParams();
@@ -332,14 +342,19 @@
 			}
 
 			var html = await response.text();
+
+			// Update URL BEFORE replacing content so that any code triggered
+			// by the "content-replaced" event (e.g. loadPaymentsData) reads
+			// the correct window.location.search with q / date params.
+			var hash = window.location.hash || "";
+			window.history.replaceState({}, "", url.pathname + url.search + hash);
+
 			var replaced = replaceMainContent(html);
 			if (!replaced) {
 				window.location.assign(url.toString());
 				return;
 			}
 
-			var hash = window.location.hash || "";
-			window.history.replaceState({}, "", url.pathname + url.search + hash);
 			restoreInputFocusState(focusState);
 		} catch (error) {
 			if (error && error.name === "AbortError") {
@@ -472,6 +487,12 @@
 		var actionPath = getFormActionPath(form);
 		var useAjaxSearch = !/^\/parts(\/|$)/.test(actionPath);
 
+		// Track whether the user explicitly touched date controls during
+		// this form session.  If the URL already carries date params the
+		// user (or a prior search) set them deliberately – treat as touched.
+		var _urlParams = new URLSearchParams(window.location.search);
+		form._dateUserTouched = _urlParams.has("date_preset") || _urlParams.has("date_from") || _urlParams.has("date_to");
+
 		ensureSearchButton(form, input);
 
 		function submitIfChanged() {
@@ -506,9 +527,11 @@
 				return;
 			}
 			if (target.name === "date_preset") {
+				form._dateUserTouched = true;
 				applyDatePresetToForm(form, target.value);
 			}
 			if (target.name === "date_from" || target.name === "date_to") {
+				form._dateUserTouched = true;
 				var presetSelect = form.querySelector('select[name="date_preset"]');
 				if (presetSelect && presetSelect.value !== "custom") {
 					presetSelect.value = "custom";

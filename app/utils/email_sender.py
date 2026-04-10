@@ -9,13 +9,15 @@ from email.mime.text import MIMEText
 
 
 def send_email(
-    to_address: str,
+    to_address: str | list[str],
     subject: str,
     html_body: str,
     attachments: list[dict] | None = None,
 ) -> None:
     """
     Send an HTML email via SMTP with STARTTLS.
+
+    to_address: single email string or list of email strings.
 
     Configure via environment variables in .env:
         SMTP_HOST        – SMTP server host          (default: smtp.gmail.com)
@@ -30,6 +32,14 @@ def send_email(
 
     Raises RuntimeError on configuration error or sending failure.
     """
+    if isinstance(to_address, str):
+        recipients = [to_address]
+    else:
+        recipients = list(to_address)
+    recipients = [a.strip() for a in recipients if a and a.strip()]
+    if not recipients:
+        raise RuntimeError("No recipient email addresses provided.")
+
     host       = os.environ.get("SMTP_HOST", "smtp.gmail.com")
     port       = int(os.environ.get("SMTP_PORT", "587"))
     user       = os.environ.get("SMTP_USER", "")
@@ -63,7 +73,7 @@ def send_email(
 
     msg["Subject"] = subject
     msg["From"]    = f"{from_name} <{from_addr}>" if from_name else from_addr
-    msg["To"]      = to_address
+    msg["To"]      = ", ".join(recipients)
 
     try:
         with smtplib.SMTP(host, port, timeout=20) as server:
@@ -72,7 +82,7 @@ def send_email(
             server.ehlo()
             if user and password:
                 server.login(user, password)
-            server.sendmail(from_addr, [to_address], msg.as_string())
+            server.sendmail(from_addr, recipients, msg.as_string())
     except smtplib.SMTPAuthenticationError as exc:
         raise RuntimeError(
             "SMTP authentication failed – check SMTP_USER / SMTP_PASS in .env"

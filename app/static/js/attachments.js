@@ -227,7 +227,8 @@
 
     // Wire up modal buttons (.js-open-att-modal)
     var modalEl = document.getElementById("attachmentsModal");
-    if (modalEl) {
+    if (modalEl && !modalEl._attModalBound) {
+      modalEl._attModalBound = true;
       modalEl.addEventListener("show.bs.modal", function (event) {
         var trigger = event.relatedTarget;
         if (!trigger) return;
@@ -290,4 +291,7 @@
   } else {
     initAllBlocks();
   }
+
+  // Re-init after AJAX content replacement (modal DOM may have been replaced).
+  window.addEventListener("smallshop:content-replaced", initAllBlocks);
 })();

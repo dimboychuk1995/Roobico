@@ -201,8 +201,13 @@
   }
 
   // ========== PAYMENTS TAB LOGIC ==========
-  
-  async function loadPaymentsData() {
+
+  let _paymentsCurrentPage = 1;
+
+  async function loadPaymentsData(page) {
+    if (typeof page === "number" && page >= 1) {
+      _paymentsCurrentPage = page;
+    }
     const loadingEl = document.getElementById("payments-loading");
     const contentEl = document.getElementById("payments-content");
     const emptyEl = document.getElementById("payments-empty");
@@ -222,9 +227,8 @@
       if (datePreset) apiParams.set("date_preset", datePreset);
       if (dateFrom) apiParams.set("date_from", dateFrom);
       if (dateTo) apiParams.set("date_to", dateTo);
-      const endpoint = apiParams.toString()
-        ? `/work_orders/api/work_orders/all-payments?${apiParams.toString()}`
-        : "/work_orders/api/work_orders/all-payments";
+      apiParams.set("payments_page", String(_paymentsCurrentPage));
+      const endpoint = `/work_orders/api/work_orders/all-payments?${apiParams.toString()}`;
 
       const response = await fetch(endpoint, {
         method: "GET",
@@ -244,9 +248,10 @@
       }
 
       allPaymentsData = data.payments || [];
+      const pg = data.pagination || {};
       loadingEl.classList.add("d-none");
 
-      if (allPaymentsData.length === 0) {
+      if (allPaymentsData.length === 0 && (_paymentsCurrentPage <= 1)) {
         emptyEl.classList.remove("d-none");
         return;
       }
@@ -278,6 +283,7 @@
           const amount = parseFloat(payment.amount) || 0;
           const method = String(payment.payment_method || "cash").toLowerCase();
           const notes = String(payment.notes || "").trim();
+          const paymentId = String(payment.id || "");
 
           html += `
             <tr>
@@ -287,7 +293,7 @@
               <td><span class="badge bg-secondary">${method}</span></td>
               <td><small>${createdAt}</small></td>
               <td>${notes ? `<small>${notes}</small>` : "<small class='text-muted'>—</small>"}</td>
-              <td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger js-delete-work-order-payment" data-payment-id="${String(payment.id || "")}" title="Delete payment">Delete</button></td>
+              <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary js-open-att-modal me-1" data-entity-type="work_order_payment" data-entity-id="${paymentId}" data-bs-toggle="modal" data-bs-target="#attachmentsModal" title="Attachments"><i class="bi bi-paperclip me-1"></i>Attachments</button><button type="button" class="btn btn-sm btn-outline-danger js-delete-work-order-payment" data-payment-id="${paymentId}" title="Delete payment">Delete</button></td>
             </tr>
           `;
         } catch (itemErr) {
@@ -301,6 +307,31 @@
         </div>
       `;
 
+      // Pagination controls
+      if (pg.pages && pg.pages > 1) {
+        const prevDisabled = !pg.has_prev ? " disabled" : "";
+        const nextDisabled = !pg.has_next ? " disabled" : "";
+        html += `
+          <div class="wo-pagination-row mt-3">
+            <div class="small text-muted wo-pagination-meta">
+              Page ${pg.page} of ${pg.pages} &middot; ${pg.total} total
+            </div>
+            <div class="wo-pagination-actions">
+              <div class="btn-group btn-group-sm" role="group" aria-label="Payments pagination">
+                <button type="button" class="btn btn-outline-secondary js-payments-page${prevDisabled}" data-page="${pg.prev_page}"${prevDisabled ? ' tabindex="-1"' : ""}>Prev</button>
+                <button type="button" class="btn btn-outline-secondary js-payments-page${nextDisabled}" data-page="${pg.next_page}"${nextDisabled ? ' tabindex="-1"' : ""}>Next</button>
+              </div>
+            </div>
+          </div>
+        `;
+      } else if (pg.total) {
+        html += `
+          <div class="mt-3">
+            <div class="small text-muted">${pg.total} total</div>
+          </div>
+        `;
+      }
+
       contentEl.innerHTML = html;
       contentEl.classList.remove("d-none");
       paymentsLoaded = true;
@@ -311,6 +342,14 @@
       emptyEl.innerHTML = `<div class="alert alert-danger mb-0">Error loading payments: ${err.message}</div>`;
     }
   }
+
+  // Pagination click handler for payments
+  document.addEventListener("click", function (e) {
+    const btn = e.target.closest(".js-payments-page");
+    if (!btn || btn.classList.contains("disabled")) return;
+    const page = parseInt(btn.dataset.page, 10);
+    if (page >= 1) loadPaymentsData(page);
+  });
 
   // Listen for Payments tab activation
   if (!body || body.dataset.workOrdersPaymentsTabBound !== "1") {
@@ -443,6 +482,7 @@
     window.addEventListener("load", restoreSavedTab);
     window.addEventListener("smallshop:content-replaced", function () {
       paymentsLoaded = false;
+      _paymentsCurrentPage = 1;
       restoreSavedTab();
     });
   }

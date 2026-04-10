@@ -813,6 +813,60 @@
       </div>
     </div>
 
+    <!-- Email Contacts Modal -->
+    <div class="modal fade" id="emailContactsModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="emailContactsModalTitle"><i class="bi bi-envelope me-2"></i>Send Email</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div id="emailContactsList">
+              <!-- Contacts will be rendered by JS -->
+            </div>
+            <hr class="my-3">
+            <div id="emailNewContactWrap">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="emailAddContactToggle">
+                <i class="bi bi-plus-circle me-1"></i>Add New Contact
+              </button>
+              <div id="emailNewContactForm" style="display:none;" class="mt-3 border rounded p-3 bg-light">
+                <div class="row g-2 mb-2">
+                  <div class="col-6">
+                    <input type="text" class="form-control form-control-sm" id="emailNewFirstName" placeholder="First name">
+                  </div>
+                  <div class="col-6">
+                    <input type="text" class="form-control form-control-sm" id="emailNewLastName" placeholder="Last name">
+                  </div>
+                </div>
+                <div class="row g-2 mb-2">
+                  <div class="col-7">
+                    <input type="email" class="form-control form-control-sm" id="emailNewEmail" placeholder="Email *" required>
+                  </div>
+                  <div class="col-5">
+                    <input type="text" class="form-control form-control-sm" id="emailNewPhone" placeholder="Phone">
+                  </div>
+                </div>
+                <div class="form-check mb-2">
+                  <input type="checkbox" class="form-check-input" id="emailNewSaveContact" checked>
+                  <label class="form-check-label small" for="emailNewSaveContact">Save contact to customer</label>
+                </div>
+                <button type="button" class="btn btn-sm btn-primary" id="emailNewContactAdd">
+                  <i class="bi bi-plus me-1"></i>Add to Recipients
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-primary" id="emailContactsSendBtn">
+              <i class="bi bi-send me-1"></i>Send
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="{{ url_for('static', filename='js/work_orders/work_order_details.js', v='20260409-v6') }}"></script>
