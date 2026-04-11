@@ -469,7 +469,6 @@ def customers_page():
         per_page,
     )
 
-    _attach_customers_current_balances(customers, coll.database, shop["_id"])
     for customer in customers:
         _decorate_customer(customer)
 
@@ -485,6 +484,57 @@ def customers_page():
         sort_by=sort_by,
         sort_dir=sort_dir,
     )
+
+
+@customers_bp.get("/customers/api/balances")
+@login_required
+@permission_required("customers.view")
+def customers_balances_api():
+    coll, shop, master = _customers_collection()
+    if coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop not configured"}), 400
+
+    raw_ids = request.args.getlist("ids")
+    if not raw_ids:
+        raw_ids = request.args.get("ids", "").split(",")
+
+    customer_ids = []
+    for raw in raw_ids:
+        cid = _oid(raw.strip())
+        if cid:
+            customer_ids.append(cid)
+
+    if not customer_ids:
+        return jsonify({"ok": True, "balances": {}})
+
+    shop_db = coll.database
+    work_orders = list(
+        shop_db.work_orders.find(
+            {
+                "shop_id": shop["_id"],
+                "customer_id": {"$in": customer_ids},
+                "is_active": True,
+            },
+            {"_id": 1, "customer_id": 1, "totals": 1, "grand_total": 1},
+        )
+    )
+
+    work_order_ids = [wo.get("_id") for wo in work_orders if wo.get("_id")]
+    paid_map = _build_paid_map(shop_db.work_order_payments, work_order_ids)
+
+    balances = {str(cid): 0.0 for cid in customer_ids}
+    for wo in work_orders:
+        cid = wo.get("customer_id")
+        wo_id = wo.get("_id")
+        if not cid or not wo_id:
+            continue
+        grand_total = _order_grand_total(wo)
+        paid_amount = _round2(paid_map.get(wo_id, 0.0))
+        remaining = _round2(grand_total - paid_amount)
+        if remaining > 0:
+            balances[str(cid)] = _round2(balances.get(str(cid), 0.0) + remaining)
+
+    return jsonify({"ok": True, "balances": balances})
 
 
 @customers_bp.get("/customers/<customer_id>")
@@ -559,7 +609,7 @@ def customer_details_page(customer_id):
         "is_active": customer.get("is_active", True),
         "created_at": _fmt_dt_label(customer.get("created_at")),
         "updated_at": _fmt_dt_label(customer.get("updated_at")),
-        "current_balance": _customer_current_balance(shop_db, shop["_id"], cid),
+        "current_balance": None,
         "default_labor_rate_name": selected_rate_name,
     }
 

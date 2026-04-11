@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from bson import ObjectId
-from flask import make_response, render_template, request, session
+from flask import jsonify, make_response, render_template, request, session
 
 from app.blueprints.main.routes import NAV_ITEMS
 from app.blueprints.reports import reports_bp
@@ -497,7 +497,7 @@ def _report_vendor_balances(shop_db, shop_id, date_ctx):
     }
 
 
-def _build_standard_reports_context(selected_tab: str, args):
+def _build_standard_reports_context(selected_tab: str, args, *, skip_report_data: bool = False):
     master = get_master_db()
     shop = _get_active_shop(master)
 
@@ -536,6 +536,23 @@ def _build_standard_reports_context(selected_tab: str, args):
     include_customer_ids = [x for x in include_customer_ids if str(x) not in exclude_set]
 
     customer_options, customer_map = _get_customer_options(shop_db, shop["_id"])
+
+    if skip_report_data:
+        return {
+            "ok": True,
+            "layout_nav": layout_nav,
+            "selected_tab": selected_tab,
+            "date_preset": date_ctx.get("date_preset") or "this_month",
+            "date_from": date_ctx.get("date_from") or "",
+            "date_to": date_ctx.get("date_to") or "",
+            "customer_options": customer_options,
+            "include_customer_ids": [str(x) for x in include_customer_ids],
+            "exclude_customer_ids": [str(x) for x in exclude_customer_ids],
+            "show_customer_filters": selected_tab in CUSTOMER_FILTER_TABS,
+            "report_data": {"title": "", "summary": {}, "rows": []},
+            "shop_name": str(shop.get("name") or "-"),
+            "generated_at": _now_utc(),
+        }
 
     if selected_tab == "sales_summary":
         report_data = _report_sales_summary(
@@ -602,7 +619,7 @@ def reports_index():
 @reports_bp.get("/standard/<report_key>")
 @login_required
 def standard_report_page(report_key: str):
-    ctx = _build_standard_reports_context(report_key, request.args)
+    ctx = _build_standard_reports_context(report_key, request.args, skip_report_data=True)
 
     if not ctx.get("ok"):
         return render_internal_page(
@@ -636,6 +653,26 @@ def standard_report_page(report_key: str):
         report_data=ctx["report_data"],
         generated_at=ctx["generated_at"],
         shop_name=ctx["shop_name"],
+    )
+
+
+@reports_bp.get("/api/standard/<report_key>")
+@login_required
+def standard_report_api(report_key: str):
+    ctx = _build_standard_reports_context(report_key, request.args)
+    if not ctx.get("ok"):
+        return jsonify(ok=False, error=ctx.get("error") or "Unable to build report."), 400
+
+    rd = ctx["report_data"]
+    return jsonify(
+        ok=True,
+        selected_tab=ctx["selected_tab"],
+        shop_name=ctx["shop_name"],
+        report_data={
+            "title": rd.get("title") or "",
+            "summary": rd.get("summary") or {},
+            "rows": rd.get("rows") or [],
+        },
     )
 
 

@@ -159,35 +159,7 @@ def vendors_page():
         per_page,
     )
 
-    vendor_ids = [v.get("_id") for v in vendors if v.get("_id")]
-    balance_map = {}
-    if vendor_ids:
-        orders_coll = coll.database.parts_orders
-        pipeline = [
-            {
-                "$match": {
-                    "shop_id": shop["_id"],
-                    "vendor_id": {"$in": vendor_ids},
-                    "is_active": {"$ne": False},
-                }
-            },
-            {
-                "$group": {
-                    "_id": "$vendor_id",
-                    "balance_total": {"$sum": {"$ifNull": ["$remaining_balance", 0]}},
-                }
-            },
-        ]
-        for row in orders_coll.aggregate(pipeline):
-            if not isinstance(row, dict):
-                continue
-            vid = row.get("_id")
-            if not vid:
-                continue
-            balance_map[vid] = round(_to_float(row.get("balance_total"), 0.0), 2)
-
     for vendor in vendors:
-        vendor["balance"] = float(balance_map.get(vendor.get("_id"), 0.0))
         _decorate_vendor(vendor)
 
     return _render_app_page(
@@ -199,6 +171,47 @@ def vendors_page():
         sort_by=(request.args.get("sort_by") or "").strip(),
         sort_dir=(request.args.get("sort_dir") or "").strip(),
     )
+
+
+@vendors_bp.get("/api/balances")
+@login_required
+@permission_required("vendors.view")
+def vendors_api_balances():
+    coll, shop, _master = _vendors_collection()
+    if coll is None or shop is None:
+        return jsonify(ok=False, error="Shop not configured"), 400
+
+    raw_ids = request.args.getlist("ids")
+    oids = [o for o in (_oid(r) for r in raw_ids) if o]
+    if not oids:
+        return jsonify(ok=True, balances={})
+
+    orders_coll = coll.database.parts_orders
+    pipeline = [
+        {
+            "$match": {
+                "shop_id": shop["_id"],
+                "vendor_id": {"$in": oids},
+                "is_active": {"$ne": False},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$vendor_id",
+                "balance_total": {"$sum": {"$ifNull": ["$remaining_balance", 0]}},
+            }
+        },
+    ]
+    balance_map = {}
+    for row in orders_coll.aggregate(pipeline):
+        if not isinstance(row, dict):
+            continue
+        vid = row.get("_id")
+        if not vid:
+            continue
+        balance_map[str(vid)] = round(_to_float(row.get("balance_total"), 0.0), 2)
+
+    return jsonify(ok=True, balances=balance_map)
 
 
 @vendors_bp.post("/create")

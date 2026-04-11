@@ -87,7 +87,7 @@
 
               <td>{{ v.get('address') or '—' }}</td>
 
-              <td class="text-end">${{ "%.2f"|format(v.get('balance') or 0) }}</td>
+              <td class="text-end js-vendor-balance" data-vendor-id="{{ v['_id'] }}"><span class="spinner-border spinner-border-sm text-muted" style="width:.75rem;height:.75rem;" role="status"></span></td>
 
               <td class="text-end">
                 {% if v.get('is_active', True) %}

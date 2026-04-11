@@ -19,7 +19,9 @@
   <div class="card-body d-flex flex-wrap align-items-center gap-3">
     <div>
       <div class="small text-muted">Current Balance</div>
-      <div class="h5 mb-0">${{ "%.2f"|format(customer.current_balance or 0) }}</div>
+      <div class="h5 mb-0 js-customer-detail-balance" data-customer-id="{{ customer.id }}">
+        <span class="spinner-border spinner-border-sm text-muted" style="width:.75rem;height:.75rem;" role="status"></span>
+      </div>
     </div>
     <div>
       <div class="small text-muted">Status</div>

@@ -483,7 +483,98 @@
     window.addEventListener("smallshop:content-replaced", function () {
       paymentsLoaded = false;
       _paymentsCurrentPage = 1;
+      _estimatesLoaded = false;
       restoreSavedTab();
+    });
+  }
+
+  // ========== LAZY LOAD ESTIMATES TAB ==========
+  var _estimatesLoaded = false;
+
+  function _esc(val) {
+    return String(val == null ? "" : val)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  function _money(n) {
+    var x = Number(n || 0);
+    return Number.isFinite(x) ? x.toFixed(2) : "0.00";
+  }
+
+  function loadEstimates() {
+    if (_estimatesLoaded) return;
+    _estimatesLoaded = true;
+
+    var loadingEl = document.getElementById("estimates-loading");
+    var contentEl = document.getElementById("estimates-content");
+    var emptyEl = document.getElementById("estimates-empty");
+    var tbody = document.getElementById("estimates-tbody");
+    var paginationEl = document.getElementById("estimates-pagination");
+
+    if (!tbody) return;
+
+    if (loadingEl) loadingEl.classList.remove("d-none");
+    if (contentEl) contentEl.classList.add("d-none");
+    if (emptyEl) emptyEl.classList.add("d-none");
+
+    var params = new URLSearchParams(window.location.search);
+    params.delete("tab");
+    params.delete("page");
+    params.delete("per_page");
+
+    fetch("/work_orders/api/estimates?" + params.toString(), {
+      method: "GET",
+      headers: { "Accept": "application/json" }
+    })
+      .then(function (res) { return res.json(); })
+      .then(function (data) {
+        if (loadingEl) loadingEl.classList.add("d-none");
+
+        if (!data || !data.ok || !data.estimates || !data.estimates.length) {
+          if (emptyEl) emptyEl.classList.remove("d-none");
+          return;
+        }
+
+        tbody.innerHTML = "";
+        data.estimates.forEach(function (e) {
+          var tr = document.createElement("tr");
+          tr.innerHTML =
+            '<td><span class="badge bg-secondary">' + _esc(e.wo_number || "-") + '</span></td>' +
+            '<td>' + _esc(e.customer) + '</td>' +
+            '<td>' + _esc(e.date) + '</td>' +
+            '<td>' + _esc(e.unit) + '</td>' +
+            '<td><span class="badge bg-info text-dark">' + _esc((e.status || "estimate").charAt(0).toUpperCase() + (e.status || "estimate").slice(1)) + '</span></td>' +
+            '<td class="text-end">$' + _money(e.labor_total) + '</td>' +
+            '<td class="text-end">$' + _money(e.parts_total) + '</td>' +
+            '<td class="text-end">$' + _money(e.sales_tax_total) + '</td>' +
+            '<td class="text-end fw-semibold">$' + _money(e.grand_total) + '</td>' +
+            '<td class="text-end"><a class="btn btn-outline-primary btn-sm" href="/work_orders/details?work_order_id=' + _esc(e.id) + '" target="_blank" rel="noopener noreferrer">Edit</a></td>';
+          tbody.appendChild(tr);
+        });
+
+        if (contentEl) contentEl.classList.remove("d-none");
+
+        var pg = data.pagination;
+        if (paginationEl && pg && pg.pages > 1) {
+          paginationEl.innerHTML =
+            '<div class="small text-muted">Page ' + pg.page + ' of ' + pg.pages + ' · ' + pg.total + ' total</div>';
+        }
+      })
+      .catch(function () {
+        if (loadingEl) loadingEl.classList.add("d-none");
+        if (emptyEl) {
+          emptyEl.textContent = "Failed to load estimates.";
+          emptyEl.classList.remove("d-none");
+        }
+      });
+  }
+
+  var estimatesTab = document.getElementById("tab-estimates");
+  if (estimatesTab) {
+    estimatesTab.addEventListener("shown.bs.tab", loadEstimates);
+    estimatesTab.addEventListener("click", function () {
+      setTimeout(loadEstimates, 50);
     });
   }
 

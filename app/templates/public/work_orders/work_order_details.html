@@ -212,7 +212,7 @@
       <!-- Customer select (NO reload) -->
       <div class="mb-3 mb-lg-4">
         <label class="form-label fw-semibold">Customer</label>
-        <select id="customerSelect" name="customer_id" class="form-select work-order-enhanced-select" data-select-placeholder="-- Select customer --" required>
+        <select id="customerSelect" name="customer_id" class="form-select work-order-enhanced-select" data-select-placeholder="-- Select customer --" data-customers-api="/work_orders/api/customers" required>
           <option value="">-- Select customer --</option>
           {% for c in customers %}
             <option value="{{ c.id }}" {% if c.id == selected_customer_id %}selected{% endif %}>
@@ -220,6 +220,12 @@
             </option>
           {% endfor %}
         </select>
+        {% if not customers or customers|length == 0 %}
+        <div class="small text-muted mt-1" id="customerSelectLoading">
+          <span class="spinner-border spinner-border-sm" style="width:.6rem;height:.6rem;" role="status"></span>
+          Loading customers...
+        </div>
+        {% endif %}
       </div>
 
       <!-- Unit select (NO reload) -->

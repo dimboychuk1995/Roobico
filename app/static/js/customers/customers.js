@@ -157,6 +157,7 @@
     }
 
     detailRow.classList.remove("d-none");
+
     btn.querySelector("i").className = "bi bi-chevron-up me-1";
     btn.lastChild.textContent = "Hide labor details";
 
@@ -186,4 +187,67 @@
       content.innerHTML = '<span class="text-danger small">Network error</span>';
     }
   });
+})();
+
+/* ── Lazy-load customer balances ── */
+(function () {
+  "use strict";
+
+  // Customer list page: load balances for all visible customers
+  var cells = document.querySelectorAll(".js-customer-balance");
+  if (cells.length) {
+    var ids = [];
+    cells.forEach(function (cell) {
+      var cid = cell.getAttribute("data-customer-id");
+      if (cid) ids.push(cid);
+    });
+
+    if (ids.length) {
+      var params = new URLSearchParams();
+      ids.forEach(function (id) { params.append("ids", id); });
+
+      fetch("/customers/api/balances?" + params.toString(), {
+        method: "GET",
+        headers: { "Accept": "application/json" }
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (!data || !data.ok) return;
+          var balances = data.balances || {};
+          cells.forEach(function (cell) {
+            var cid = cell.getAttribute("data-customer-id");
+            var val = Number(balances[cid] || 0);
+            cell.textContent = "$" + val.toFixed(2);
+          });
+        })
+        .catch(function () {
+          cells.forEach(function (cell) {
+            cell.textContent = "$—";
+          });
+        });
+    }
+  }
+
+  // Customer details page: load balance for single customer
+  var detailCell = document.querySelector(".js-customer-detail-balance");
+  if (detailCell) {
+    var cid = detailCell.getAttribute("data-customer-id");
+    if (cid) {
+      var params = new URLSearchParams();
+      params.append("ids", cid);
+      fetch("/customers/api/balances?" + params.toString(), {
+        method: "GET",
+        headers: { "Accept": "application/json" }
+      })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (!data || !data.ok) return;
+          var val = Number((data.balances || {})[cid] || 0);
+          detailCell.textContent = "$" + val.toFixed(2);
+        })
+        .catch(function () {
+          detailCell.textContent = "$—";
+        });
+    }
+  }
 })();

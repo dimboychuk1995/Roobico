@@ -1,3 +1,5 @@
+import time
+
 from flask import Flask, g, session
 from bson import ObjectId
 
@@ -15,6 +17,7 @@ def create_app():
     # каждый запрос: если есть сессия — поднимем g.user и g.tenant
     @app.before_request
     def load_current_context():
+        g._request_start_time = time.perf_counter()
         g.request_id = build_request_id()
         g._audit_journal_written = False
         g.user = None
@@ -55,6 +58,10 @@ def create_app():
 
     @app.after_request
     def journal_after_request(response):
+        elapsed = (time.perf_counter() - getattr(g, '_request_start_time', time.perf_counter())) * 1000
+        from flask import request as _req
+        if elapsed > 50:
+            app.logger.info(f"[PERF] {_req.method} {_req.path} → {response.status_code} in {elapsed:.0f}ms")
         write_audit_journal(response=response)
         return response
 

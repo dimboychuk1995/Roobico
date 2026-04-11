@@ -1514,8 +1514,30 @@ def get_core_charge_default(shop_db, shop_id: ObjectId) -> bool:
 
 def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
     from bson import ObjectId as _ObjId
-    customers = get_customers(shop_db)
     mechanics = get_assignable_mechanics(shop)
+
+    # Only load the selected customer for initial render; full list loaded via JS
+    selected_customer = None
+    if customer_id:
+        c = shop_db.customers.find_one({"_id": customer_id, "is_active": True})
+        if c:
+            rate_rows = list(shop_db.labor_rates.find({"is_active": True}, {"_id": 1, "code": 1}))
+            rates_by_id = {r.get("_id"): str(r.get("code") or "").strip() for r in rate_rows if r.get("_id")}
+            def _resolve_rate(value):
+                if isinstance(value, ObjectId):
+                    return rates_by_id.get(value, "")
+                legacy = str(value or "").strip().lower()
+                if legacy == "standart":
+                    return "standard"
+                return legacy
+            selected_customer = {
+                "id": str(c["_id"]),
+                "label": customer_label(c),
+                "default_labor_rate": _resolve_rate(c.get("default_labor_rate")),
+                "taxable": bool(c.get("taxable", False)),
+            }
+
+    customers = [selected_customer] if selected_customer else []
 
     units = []
     if customer_id:
@@ -2013,31 +2035,12 @@ def work_orders_page():
         created_to_exclusive=created_to_exclusive,
     )
 
-    estimates_page, estimates_per_page = get_pagination_params(
-        request.args,
-        default_per_page=20,
-        max_per_page=100,
-        page_key="estimates_page",
-        per_page_key="estimates_per_page",
-    )
-    estimates, estimates_pagination = get_estimates_list(
-        shop_db,
-        shop["_id"],
-        estimates_page,
-        estimates_per_page,
-        q=q,
-        created_from=created_from,
-        created_to_exclusive=created_to_exclusive,
-    )
-
     return _render_app_page(
         "public/work_orders/work_orders.html",
         active_page="work_orders",
         work_orders=work_orders,
         pagination=pagination,
         work_orders_totals=work_orders_totals,
-        estimates=estimates,
-        estimates_pagination=estimates_pagination,
         q=q,
         paid_status=paid_status,
         date_from=date_from,
@@ -2047,6 +2050,59 @@ def work_orders_page():
         sort_by=(request.args.get("sort_by") or "").strip(),
         sort_dir=(request.args.get("sort_dir") or "").strip(),
     )
+
+
+@work_orders_bp.get("/work_orders/api/estimates")
+@login_required
+@permission_required("work_orders.view")
+def estimates_api():
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "Shop database not configured."}), 400
+
+    q = (request.args.get("q") or "").strip()
+    date_filters = get_date_range_filters(request.args)
+    created_from = date_filters["created_from"]
+    created_to_exclusive = date_filters["created_to_exclusive"]
+
+    page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
+
+    estimates, pagination = get_estimates_list(
+        shop_db,
+        shop["_id"],
+        page,
+        per_page,
+        q=q,
+        created_from=created_from,
+        created_to_exclusive=created_to_exclusive,
+    )
+
+    return jsonify({
+        "ok": True,
+        "estimates": estimates,
+        "pagination": {
+            "page": pagination.page if hasattr(pagination, "page") else pagination.get("page", 1),
+            "pages": pagination.pages if hasattr(pagination, "pages") else pagination.get("pages", 1),
+            "total": pagination.total if hasattr(pagination, "total") else pagination.get("total", 0),
+            "has_prev": pagination.has_prev if hasattr(pagination, "has_prev") else pagination.get("has_prev", False),
+            "has_next": pagination.has_next if hasattr(pagination, "has_next") else pagination.get("has_next", False),
+            "prev_page": pagination.prev_page if hasattr(pagination, "prev_page") else pagination.get("prev_page", 1),
+            "next_page": pagination.next_page if hasattr(pagination, "next_page") else pagination.get("next_page", 1),
+            "per_page": pagination.per_page if hasattr(pagination, "per_page") else pagination.get("per_page", 20),
+        },
+    })
+
+
+@work_orders_bp.get("/work_orders/api/customers")
+@login_required
+@permission_required("work_orders.view")
+def customers_api():
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "Shop database not configured."}), 400
+
+    customers = get_customers(shop_db)
+    return jsonify({"ok": True, "customers": customers})
 
 
 @work_orders_bp.get("/work_orders/details")

@@ -633,4 +633,27 @@
   bindGlobalDelegationOnce();
   bindPageLocalHandlers();
 
+  /* ── lazy-load vendor balances ── */
+  (function () {
+    var cells = document.querySelectorAll(".js-vendor-balance");
+    if (!cells.length) return;
+    var ids = [];
+    cells.forEach(function (c) { ids.push(c.getAttribute("data-vendor-id")); });
+    var qs = ids.map(function (id) { return "ids=" + encodeURIComponent(id); }).join("&");
+    fetch("/vendors/api/balances?" + qs)
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (!data.ok) return;
+        var bal = data.balances || {};
+        cells.forEach(function (c) {
+          var id = c.getAttribute("data-vendor-id");
+          var v = parseFloat(bal[id]);
+          c.textContent = "$" + (isNaN(v) ? "0.00" : v.toFixed(2));
+        });
+      })
+      .catch(function () {
+        cells.forEach(function (c) { c.textContent = "$0.00"; });
+      });
+  })();
+
 })();

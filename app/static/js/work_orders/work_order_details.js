@@ -2502,6 +2502,49 @@
     rebuildEnhancedSelect(customerSel);
     rebuildEnhancedSelect(unitSel);
 
+    // Lazy-load full customers list if needed
+    (function () {
+      var apiUrl = customerSel && customerSel.getAttribute("data-customers-api");
+      if (!apiUrl) return; // customers already fully rendered
+      var selectedVal = customerSel.value || "";
+      var loadingHint = document.getElementById("customerSelectLoading");
+
+      fetch(apiUrl, { method: "GET", headers: { "Accept": "application/json" } })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          if (loadingHint) loadingHint.remove();
+          if (!data || !data.ok || !data.customers) return;
+
+          // Update customersData for JS lookups
+          var scriptEl = document.getElementById("customersData");
+          if (scriptEl) scriptEl.textContent = JSON.stringify(data.customers);
+          // Also update the live reference
+          customersData.length = 0;
+          data.customers.forEach(function (c) { customersData.push(c); });
+
+          // Rebuild dropdown options
+          var existingIds = new Set();
+          for (var i = 0; i < customerSel.options.length; i++) {
+            if (customerSel.options[i].value) existingIds.add(customerSel.options[i].value);
+          }
+          data.customers.forEach(function (c) {
+            if (!existingIds.has(c.id)) {
+              var opt = document.createElement("option");
+              opt.value = c.id;
+              opt.textContent = c.label;
+              customerSel.appendChild(opt);
+            }
+          });
+
+          // Restore value and rebuild Select2
+          customerSel.value = selectedVal;
+          rebuildEnhancedSelect(customerSel);
+        })
+        .catch(function () {
+          if (loadingHint) loadingHint.textContent = "Failed to load customers";
+        });
+    })();
+
     let targetAssignBlock = null;
 
     async function loadWorkOrderTimeline() {
