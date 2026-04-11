@@ -83,3 +83,107 @@
     }
   });
 })();
+
+/* ── Expand / collapse work order labors on unit details ── */
+(function () {
+  "use strict";
+
+  if (document.body && document.body.dataset.woLaborsExpandBound === "1") return;
+  if (document.body) document.body.dataset.woLaborsExpandBound = "1";
+
+  var _woLaborsCache = {};
+
+  function _esc(val) {
+    return String(val == null ? "" : val)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+  }
+
+  function _money(n) {
+    var x = Number(n || 0);
+    return Number.isFinite(x) ? x.toFixed(2) : "0.00";
+  }
+
+  function _renderLaborsHtml(labors) {
+    if (!labors || !labors.length) {
+      return '<span class="text-muted small">No labors in this work order.</span>';
+    }
+    var html = "";
+    for (var i = 0; i < labors.length; i++) {
+      var lb = labors[i];
+      html += '<div class="mb-2">';
+      html += '<div class="fw-semibold small">';
+      html += _esc(lb.description || "Labor " + (i + 1));
+      if (lb.hours) html += ' <span class="text-muted">(' + _esc(lb.hours) + ' hrs)</span>';
+      html += ' <span class="text-muted">— $' + _money(lb.labor_total) + '</span>';
+      html += '</div>';
+
+      var parts = lb.parts || [];
+      if (parts.length) {
+        html += '<table class="table table-sm table-borderless mb-0 ms-3" style="max-width:600px;">';
+        html += '<thead><tr class="small text-muted"><th>Part #</th><th>Description</th><th class="text-end">Qty</th><th class="text-end">Price</th></tr></thead><tbody>';
+        for (var j = 0; j < parts.length; j++) {
+          var p = parts[j];
+          html += '<tr class="small">';
+          html += '<td>' + _esc(p.part_number || "-") + '</td>';
+          html += '<td>' + _esc(p.description || "-") + '</td>';
+          html += '<td class="text-end">' + (p.qty || 0) + '</td>';
+          html += '<td class="text-end">$' + _money(p.price) + '</td>';
+          html += '</tr>';
+        }
+        html += '</tbody></table>';
+      }
+      html += '</div>';
+    }
+    return html;
+  }
+
+  document.addEventListener("click", async function (event) {
+    var btn = event.target.closest(".js-expand-wo-labors");
+    if (!btn) return;
+
+    var woId = btn.getAttribute("data-wo-id");
+    if (!woId) return;
+
+    var detailRow = document.querySelector('tr.js-wo-labors-row[data-wo-id="' + woId + '"]');
+    if (!detailRow) return;
+
+    var isOpen = !detailRow.classList.contains("d-none");
+    if (isOpen) {
+      detailRow.classList.add("d-none");
+      btn.querySelector("i").className = "bi bi-chevron-down me-1";
+      btn.lastChild.textContent = "Show labor details";
+      return;
+    }
+
+    detailRow.classList.remove("d-none");
+    btn.querySelector("i").className = "bi bi-chevron-up me-1";
+    btn.lastChild.textContent = "Hide labor details";
+
+    var content = detailRow.querySelector(".js-wo-labors-content");
+    if (!content) return;
+
+    if (_woLaborsCache[woId]) {
+      content.innerHTML = _renderLaborsHtml(_woLaborsCache[woId]);
+      return;
+    }
+
+    content.innerHTML = '<span class="text-muted small">Loading...</span>';
+
+    try {
+      var res = await fetch("/customers/api/work_orders/" + encodeURIComponent(woId) + "/labors", {
+        method: "GET",
+        headers: { "Accept": "application/json" }
+      });
+      var data = await res.json();
+      if (!res.ok || !data || !data.ok) {
+        content.innerHTML = '<span class="text-danger small">' + _esc(data && data.error || "Failed to load labors") + '</span>';
+        return;
+      }
+      _woLaborsCache[woId] = data.labors || [];
+      content.innerHTML = _renderLaborsHtml(_woLaborsCache[woId]);
+    } catch (err) {
+      content.innerHTML = '<span class="text-danger small">Network error</span>';
+    }
+  });
+})();

@@ -1304,10 +1304,96 @@
 		const partHistoryMeta = document.getElementById("partHistoryMeta");
 		const partHistoryOrdersBody = document.getElementById("partHistoryOrdersBody");
 		const partHistoryWorkOrdersBody = document.getElementById("partHistoryWorkOrdersBody");
+		const partHistoryDateFrom = document.getElementById("partHistoryDateFrom");
+		const partHistoryDateTo = document.getElementById("partHistoryDateTo");
+		const partHistoryDatePreset = document.getElementById("partHistoryDatePreset");
+		const partHistoryFilterRow = document.getElementById("partHistoryFilterRow");
+
+		// Cache raw history data for client-side date filtering
+		let _historyOrders = [];
+		let _historyWorkOrders = [];
+		let _historyPart = {};
 
 		function money(n) {
 			const x = Number(n || 0);
 			return Number.isFinite(x) ? x.toFixed(2) : "0.00";
+		}
+
+		function _getHistoryDateVal(el) {
+			if (!el) return "";
+			if (el._flatpickr) {
+				var d = el._flatpickr.selectedDates;
+				return d && d.length ? el._flatpickr.formatDate(d[0], "Y-m-d") : "";
+			}
+			return el.value || "";
+		}
+
+		function _renderHistoryTables(orders, workOrders) {
+			var from = _getHistoryDateVal(partHistoryDateFrom);
+			var to = _getHistoryDateVal(partHistoryDateTo);
+
+			var filteredOrders = orders;
+			var filteredWO = workOrders;
+
+			if (from || to) {
+				filteredOrders = orders.filter(function (r) {
+					var d = (r.created_at || "").slice(0, 10);
+					if (!d) return true;
+					if (from && d < from) return false;
+					if (to && d > to) return false;
+					return true;
+				});
+				filteredWO = workOrders.filter(function (r) {
+					var d = (r.created_at || "").slice(0, 10);
+					if (!d) return true;
+					if (from && d < from) return false;
+					if (to && d > to) return false;
+					return true;
+				});
+			}
+
+			partHistoryMeta.textContent = `${_historyPart.part_number || ""}${_historyPart.description ? ` — ${_historyPart.description}` : ""} | Orders: ${filteredOrders.length}, Work Orders: ${filteredWO.length}`;
+
+			if (filteredOrders.length === 0) {
+				partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No orders found for this part.</td></tr>`;
+			} else {
+				partHistoryOrdersBody.innerHTML = filteredOrders.map(function (row) {
+					var orderNum = row.order_number || (row.order_id ? "#" + row.order_id.slice(-6) : "-");
+					return '<tr>' +
+						'<td><span class="badge bg-secondary">' + orderNum + '</span></td>' +
+						'<td>' + escapeHtml(row.status || "-") + '</td>' +
+						'<td>' + escapeHtml(row.vendor || "-") + '</td>' +
+						'<td class="text-end">' + Number(row.quantity || 0) + '</td>' +
+						'<td class="text-end">$' + money(row.price) + '</td>' +
+						'<td class="small">' + escapeHtml(formatDateTime(row.created_at)) + '</td>' +
+						'<td class="small">' + escapeHtml(formatDateTime(row.received_at)) + '</td>' +
+						'</tr>';
+				}).join("");
+			}
+
+			if (filteredWO.length === 0) {
+				partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No work orders found for this part.</td></tr>`;
+			} else {
+				partHistoryWorkOrdersBody.innerHTML = filteredWO.map(function (row) {
+					var woNum = row.wo_number || (row.work_order_id ? "#" + row.work_order_id.slice(-6) : "-");
+					return '<tr style="cursor: pointer;" class="workOrderHistoryRow" data-wo-id="' + row.work_order_id + '">' +
+						'<td><span class="badge bg-secondary">' + woNum + '</span></td>' +
+						'<td>' + escapeHtml(row.status || "-") + '</td>' +
+						'<td>' + escapeHtml(row.customer || "-") + '</td>' +
+						'<td>' + escapeHtml(row.unit || "-") + '</td>' +
+						'<td class="text-end">' + Number(row.used_qty || 0) + '</td>' +
+						'<td class="text-end">$' + money(row.grand_total) + '</td>' +
+						'<td class="small">' + escapeHtml(formatDateTime(row.created_at)) + '</td>' +
+						'</tr>';
+				}).join("");
+			}
+
+			if (window.TableSort) {
+				var oTbl = partHistoryOrdersBody && partHistoryOrdersBody.closest("table");
+				var wTbl = partHistoryWorkOrdersBody && partHistoryWorkOrdersBody.closest("table");
+				if (oTbl) window.TableSort.refresh(oTbl);
+				if (wTbl) window.TableSort.refresh(wTbl);
+			}
 		}
 
 		async function loadPartHistory(partId) {
@@ -1331,57 +1417,11 @@
 					return;
 				}
 
-				const part = data.part || {};
-				const orders = Array.isArray(data.orders) ? data.orders : [];
-				const workOrders = Array.isArray(data.work_orders) ? data.work_orders : [];
+				_historyPart = data.part || {};
+				_historyOrders = Array.isArray(data.orders) ? data.orders : [];
+				_historyWorkOrders = Array.isArray(data.work_orders) ? data.work_orders : [];
 
-				partHistoryMeta.textContent = `${part.part_number || ""}${part.description ? ` — ${part.description}` : ""} | Orders: ${orders.length}, Work Orders: ${workOrders.length}`;
-
-				if (orders.length === 0) {
-					partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No orders found for this part.</td></tr>`;
-				} else {
-				partHistoryOrdersBody.innerHTML = orders.map((row) => {
-					const orderNum = row.order_number || (row.order_id ? `#${row.order_id.slice(-6)}` : "-");
-					return `
-					<tr>
-						<td><span class="badge bg-secondary">${orderNum}</span></td>
-						<td>${escapeHtml(row.status || "-")}</td>
-						<td>${escapeHtml(row.vendor || "-")}</td>
-						<td class="text-end">${Number(row.quantity || 0)}</td>
-						<td class="text-end">$${money(row.price)}</td>
-						<td class="small">${escapeHtml(formatDateTime(row.created_at))}</td>
-						<td class="small">${escapeHtml(formatDateTime(row.received_at))}</td>
-					</tr>
-				`;
-				}).join("");
-				}
-
-				if (workOrders.length === 0) {
-					partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No work orders found for this part.</td></tr>`;
-				} else {
-				partHistoryWorkOrdersBody.innerHTML = workOrders.map((row) => {
-					const woNum = row.wo_number || (row.work_order_id ? `#${row.work_order_id.slice(-6)}` : "-");
-					return `
-					<tr style="cursor: pointer;" class="workOrderHistoryRow" data-wo-id="${row.work_order_id}">
-						<td><span class="badge bg-secondary">${woNum}</span></td>
-						<td>${escapeHtml(row.status || "-")}</td>
-						<td>${escapeHtml(row.customer || "-")}</td>
-						<td>${escapeHtml(row.unit || "-")}</td>
-						<td class="text-end">${Number(row.used_qty || 0)}</td>
-						<td class="text-end">$${money(row.grand_total)}</td>
-						<td class="small">${escapeHtml(formatDateTime(row.created_at))}</td>
-					</tr>
-				`;
-				}).join("");
-				}
-
-				// Re-init sorting for refreshed history tables
-				if (window.TableSort) {
-					var oTbl = partHistoryOrdersBody && partHistoryOrdersBody.closest("table");
-					var wTbl = partHistoryWorkOrdersBody && partHistoryWorkOrdersBody.closest("table");
-					if (oTbl) window.TableSort.refresh(oTbl);
-					if (wTbl) window.TableSort.refresh(wTbl);
-				}
+				_renderHistoryTables(_historyOrders, _historyWorkOrders);
 			} catch (err) {
 				partHistoryMeta.textContent = "Network error while loading history";
 				partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
@@ -1411,7 +1451,52 @@
 			if (partHistoryMeta) partHistoryMeta.textContent = "Loading...";
 			if (partHistoryOrdersBody) partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
 			if (partHistoryWorkOrdersBody) partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
+			_historyOrders = [];
+			_historyWorkOrders = [];
+			_historyPart = {};
+			if (partHistoryDateFrom && partHistoryDateFrom._flatpickr) partHistoryDateFrom._flatpickr.clear();
+			if (partHistoryDateTo && partHistoryDateTo._flatpickr) partHistoryDateTo._flatpickr.clear();
+			if (partHistoryDatePreset) partHistoryDatePreset.value = "all_time";
 		});
+
+		partHistoryModal?.addEventListener("shown.bs.modal", function () {
+			if (typeof window.initDatePickers === "function") {
+				window.initDatePickers(partHistoryModal);
+			}
+		});
+
+		// Date filter change handlers
+		function _onHistoryDateChange() {
+			if (_historyOrders.length || _historyWorkOrders.length) {
+				_renderHistoryTables(_historyOrders, _historyWorkOrders);
+			}
+		}
+
+		if (partHistoryDatePreset) {
+			partHistoryDatePreset.addEventListener("change", function () {
+				if (typeof window.applyDatePresetToForm === "function") {
+					window.applyDatePresetToForm(partHistoryFilterRow, partHistoryDatePreset.value);
+				}
+				_onHistoryDateChange();
+			});
+		}
+
+		if (partHistoryDateFrom) {
+			partHistoryDateFrom.addEventListener("change", function () {
+				if (partHistoryDatePreset && partHistoryDatePreset.value !== "custom") {
+					partHistoryDatePreset.value = "custom";
+				}
+				_onHistoryDateChange();
+			});
+		}
+		if (partHistoryDateTo) {
+			partHistoryDateTo.addEventListener("change", function () {
+				if (partHistoryDatePreset && partHistoryDatePreset.value !== "custom") {
+					partHistoryDatePreset.value = "custom";
+				}
+				_onHistoryDateChange();
+			});
+		}
 
 		partHistoryModal?.addEventListener("show.bs.modal", function (e) {
 			const trigger = e.relatedTarget;

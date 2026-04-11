@@ -31,16 +31,42 @@
   <div class="card">
     <div class="card-body">
       {% if active_tab == 'work_orders' %}
-        <form method="get" class="row g-2 align-items-center mb-3">
+        <form method="get" class="row g-2 align-items-center mb-3 wo-filter-form">
           <input type="hidden" name="tab" value="work_orders" />
           <div class="col-12 col-md-8 col-lg-6">
             <input type="text" name="q" class="form-control form-control-sm" placeholder="Search work orders by any field..." value="{{ q or '' }}" />
           </div>
-          {% if q %}
-            <div class="col-auto">
-              <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=unit.id, tab='work_orders') }}">Reset</a>
+          <div class="col-12">
+            <div class="row g-2 align-items-center wo-date-row">
+              <div class="col-12 col-md-4 col-lg-3">
+                <select name="date_preset" class="form-select form-select-sm date-preset-select" aria-label="Date range preset">
+                  <option value="today" {% if date_preset == 'today' %}selected{% endif %}>Today</option>
+                  <option value="yesterday" {% if date_preset == 'yesterday' %}selected{% endif %}>Yesterday</option>
+                  <option value="this_week" {% if date_preset == 'this_week' %}selected{% endif %}>This Week</option>
+                  <option value="last_week" {% if date_preset == 'last_week' %}selected{% endif %}>Last Week</option>
+                  <option value="this_month" {% if date_preset == 'this_month' %}selected{% endif %}>This Month</option>
+                  <option value="last_month" {% if date_preset == 'last_month' %}selected{% endif %}>Last Month</option>
+                  <option value="this_quarter" {% if date_preset == 'this_quarter' %}selected{% endif %}>This Quarter</option>
+                  <option value="last_quarter" {% if date_preset == 'last_quarter' %}selected{% endif %}>Last Quarter</option>
+                  <option value="this_year" {% if date_preset == 'this_year' %}selected{% endif %}>This Year</option>
+                  <option value="last_year" {% if date_preset == 'last_year' %}selected{% endif %}>Last Year</option>
+                  <option value="all_time" {% if (date_preset or 'all_time') == 'all_time' %}selected{% endif %}>All Time</option>
+                  <option value="custom" {% if date_preset == 'custom' %}selected{% endif %}>Custom Range</option>
+                </select>
+              </div>
+              <div class="col-12 col-md-6 col-lg-5">
+                <div class="input-group input-group-sm date-range-group" aria-label="Date range">
+                  <span class="input-group-text">From</span>
+                  <input type="date" name="date_from" class="form-control date-filter-input" value="{{ date_from or '' }}" aria-label="Start date" />
+                  <span class="input-group-text">To</span>
+                  <input type="date" name="date_to" class="form-control date-filter-input" value="{{ date_to or '' }}" aria-label="End date" />
+                </div>
+              </div>
+              <div class="col-12 col-md-2 col-lg d-flex align-items-center justify-content-lg-end justify-content-center wo-reset-wrap">
+                <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=unit.id, tab='work_orders') }}">Reset</a>
+              </div>
             </div>
-          {% endif %}
+          </div>
         </form>
 
         {% if tab_items and tab_items|length > 0 %}
@@ -73,7 +99,20 @@
                     <td class="text-end fw-semibold">${{ "%.2f"|format(item.remaining_balance or 0) }}</td>
                     <td>{{ item.created_at }}</td>
                     <td class="text-end">
-                      <a class="btn btn-sm btn-outline-primary" href="{{ url_for('work_orders.work_order_details_page', work_order_id=item.id) }}" target="_blank" rel="noopener noreferrer">Open</a>
+                      <div class="d-flex gap-1 justify-content-end flex-nowrap">
+                        <button type="button" class="btn btn-sm btn-outline-secondary js-expand-wo-labors"
+                                data-wo-id="{{ item.id }}" title="Show labor details">
+                          <i class="bi bi-chevron-down me-1"></i>Show labor details
+                        </button>
+                        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('work_orders.work_order_details_page', work_order_id=item.id) }}" target="_blank" rel="noopener noreferrer">Open</a>
+                      </div>
+                    </td>
+                  </tr>
+                  <tr class="d-none js-wo-labors-row" data-wo-id="{{ item.id }}">
+                    <td colspan="7" class="p-0">
+                      <div class="bg-light border-top px-3 py-2 js-wo-labors-content">
+                        <span class="text-muted small">Loading...</span>
+                      </div>
                     </td>
                   </tr>
                 {% endfor %}
@@ -85,81 +124,113 @@
         {% endif %}
 
       {% else %}
-        <div class="row g-3">
-          <div class="col-12 col-md-6">
-            <div class="border rounded p-3 h-100">
-              <div class="small text-muted">Unit Number</div>
-              <div class="fw-semibold">{{ unit.unit_number }}</div>
+        <form method="post" action="{{ url_for('customers.customer_unit_update', customer_id=customer_id, unit_id=unit.id) }}">
+          <div class="row g-3">
+            <div class="col-12 col-md-6">
+              <label class="form-label small text-muted mb-1" for="unit_number">Unit Number</label>
+              <input type="text" class="form-control form-control-sm" id="unit_number" name="unit_number" value="{{ unit.raw_unit_number }}" />
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label small text-muted mb-1" for="vin">VIN</label>
+              <input type="text" class="form-control form-control-sm" id="vin" name="vin" value="{{ unit.raw_vin }}" />
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label small text-muted mb-1" for="year">Year</label>
+              <input type="number" class="form-control form-control-sm" id="year" name="year" value="{{ unit.raw_year }}" />
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label small text-muted mb-1" for="make">Make</label>
+              <input type="text" class="form-control form-control-sm" id="make" name="make" value="{{ unit.raw_make }}" />
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label small text-muted mb-1" for="model">Model</label>
+              <input type="text" class="form-control form-control-sm" id="model" name="model" value="{{ unit.raw_model }}" />
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label small text-muted mb-1" for="type">Type</label>
+              <input type="text" class="form-control form-control-sm" id="type" name="type" value="{{ unit.raw_type }}" />
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label small text-muted mb-1" for="mileage">Mileage</label>
+              <input type="number" class="form-control form-control-sm" id="mileage" name="mileage" value="{{ unit.raw_mileage }}" />
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-muted">Created</div>
+                <div class="fw-semibold">{{ unit.created_at }}</div>
+              </div>
+            </div>
+            <div class="col-12 col-md-6">
+              <div class="border rounded p-3 h-100">
+                <div class="small text-muted">Updated</div>
+                <div class="fw-semibold">{{ unit.updated_at }}</div>
+              </div>
             </div>
           </div>
-          <div class="col-12 col-md-6">
-            <div class="border rounded p-3 h-100">
-              <div class="small text-muted">VIN</div>
-              <div class="fw-semibold">{{ unit.vin }}</div>
-            </div>
+          <div class="mt-3 d-flex gap-2">
+            <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
+            <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#deactivateUnitModal">Deactivate Unit</button>
           </div>
-          <div class="col-12 col-md-4">
-            <div class="border rounded p-3 h-100">
-              <div class="small text-muted">Year</div>
-              <div class="fw-semibold">{{ unit.year }}</div>
-            </div>
-          </div>
-          <div class="col-12 col-md-4">
-            <div class="border rounded p-3 h-100">
-              <div class="small text-muted">Make</div>
-              <div class="fw-semibold">{{ unit.make }}</div>
-            </div>
-          </div>
-          <div class="col-12 col-md-4">
-            <div class="border rounded p-3 h-100">
-              <div class="small text-muted">Model</div>
-              <div class="fw-semibold">{{ unit.model }}</div>
-            </div>
-          </div>
-          <div class="col-12 col-md-6">
-            <div class="border rounded p-3 h-100">
-              <div class="small text-muted">Type</div>
-              <div class="fw-semibold">{{ unit.type }}</div>
-            </div>
-          </div>
-          <div class="col-12 col-md-6">
-            <div class="border rounded p-3 h-100">
-              <div class="small text-muted">Mileage</div>
-              <div class="fw-semibold">{{ unit.mileage }}</div>
-            </div>
-          </div>
-          <div class="col-12 col-md-6">
-            <div class="border rounded p-3 h-100">
-              <div class="small text-muted">Created</div>
-              <div class="fw-semibold">{{ unit.created_at }}</div>
-            </div>
-          </div>
-          <div class="col-12 col-md-6">
-            <div class="border rounded p-3 h-100">
-              <div class="small text-muted">Updated</div>
-              <div class="fw-semibold">{{ unit.updated_at }}</div>
-            </div>
-          </div>
+        </form>
+
+        <div class="mt-4">
+          {{ attachments_block(entity_type="unit", entity_id=unit.id) }}
         </div>
       {% endif %}
 
-      {% if active_tab == 'work_orders' and pagination and pagination.pages > 1 %}
-        <div class="d-flex align-items-center justify-content-between mt-3">
-          <div class="small text-muted">
+      {% if active_tab == 'work_orders' and pagination %}
+        <div class="wo-pagination-row mt-3">
+          <div class="small text-muted wo-pagination-meta">
             Page {{ pagination.page }} of {{ pagination.pages }} · {{ pagination.total }} total
           </div>
-          <div class="btn-group btn-group-sm" role="group" aria-label="Unit work orders pagination">
-            <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-              href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=unit.id, tab='work_orders', page=pagination.prev_page, per_page=pagination.per_page, q=q, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
-            <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-              href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=unit.id, tab='work_orders', page=pagination.next_page, per_page=pagination.per_page, q=q, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
+          <div class="wo-totals-center wo-pagination-totals">
+            <div class="wo-totals-box">
+              <span>Labor: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('labor_total', 0)) }}</strong></span>
+              <span>Parts: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('parts_total', 0)) }}</strong></span>
+              <span>Total: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('grand_total', 0)) }}</strong></span>
+              <span>Paid: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('paid_total', 0)) }}</strong></span>
+              <span>Remaining: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('remaining_total', 0)) }}</strong></span>
+            </div>
           </div>
+          {% if pagination.pages > 1 %}
+            <div class="btn-group btn-group-sm wo-pagination-actions" role="group" aria-label="Unit work orders pagination">
+              <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
+                href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=unit.id, tab='work_orders', page=pagination.prev_page, per_page=pagination.per_page, q=q, date_preset=date_preset, date_from=date_from, date_to=date_to, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
+              <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
+                href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=unit.id, tab='work_orders', page=pagination.next_page, per_page=pagination.per_page, q=q, date_preset=date_preset, date_from=date_from, date_to=date_to, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
+            </div>
+          {% else %}
+            <div class="wo-pagination-actions"></div>
+          {% endif %}
         </div>
       {% endif %}
     </div>
   </div>
 </div>
 
+<!-- Deactivate Unit Confirmation Modal -->
+<div class="modal fade" id="deactivateUnitModal" tabindex="-1" aria-labelledby="deactivateUnitModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="deactivateUnitModalLabel">Deactivate Unit</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        Are you sure you want to deactivate <strong>{{ unit.label }}</strong>? This unit will no longer appear in active lists.
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <form method="post" action="{{ url_for('customers.customer_unit_deactivate', customer_id=customer_id, unit_id=unit.id) }}" class="d-inline">
+          <button type="submit" class="btn btn-sm btn-danger">Deactivate</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
 {{ attachments_modal() }}
+
+<script src="{{ url_for('static', filename='js/customers/customers.js', v='20260410-wo-labors') }}"></script>
 
 {% endblock %}

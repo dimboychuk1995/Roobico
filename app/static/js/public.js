@@ -800,6 +800,8 @@
 		}
 	}
 
+	window.initDatePickers = initDatePickers;
+	window.applyDatePresetToForm = applyDatePresetToForm;
 	window.dispatchEvent(new CustomEvent("smallshop:public-ready"));
 
 	document.addEventListener("DOMContentLoaded", function () {

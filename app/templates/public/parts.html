@@ -146,12 +146,13 @@
                       <button class="btn btn-sm btn-outline-success">Restore</button>
                     </form>
                   {% else %}
+                    <div class="d-flex gap-1 justify-content-end flex-nowrap">
                     <button type="button" class="btn btn-sm btn-outline-secondary partHistoryBtn"
                             data-part-id="{{ p._id }}" data-part-number="{{ p.part_number }}"
                             data-bs-toggle="modal" data-bs-target="#partHistoryModal">
                       History
                     </button>
-                                <button type="button" class="btn btn-sm btn-outline-primary editPartBtn"
+                    <button type="button" class="btn btn-sm btn-outline-primary editPartBtn"
                                   data-part-id="{{ p._id }}"
                                   data-part-json="{{ (p.edit_payload or {}) | tojson | forceescape }}"
                                   data-bs-toggle="modal" data-bs-target="#createPartModal">
@@ -163,6 +164,7 @@
                         Deactivate
                       </button>
                     </form>
+                    </div>
                   {% endif %}
                 </td>
               </tr>
@@ -986,7 +988,7 @@
 
 <!-- Part History Modal -->
 <div class="modal fade" id="partHistoryModal" tabindex="-1" aria-labelledby="partHistoryModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" style="max-width: 95%;">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="partHistoryModalLabel">Part history</h5>
@@ -994,6 +996,32 @@
       </div>
       <div class="modal-body">
         <div id="partHistoryMeta" class="text-muted small mb-3">Loading...</div>
+        <div class="row g-2 align-items-center mb-3 wo-filter-form" id="partHistoryFilterRow">
+          <div class="col-12 col-md-4 col-lg-3">
+            <select id="partHistoryDatePreset" class="form-select form-select-sm date-preset-select" aria-label="Part history date range preset">
+              <option value="all_time" selected>All Time</option>
+              <option value="today">Today</option>
+              <option value="yesterday">Yesterday</option>
+              <option value="this_week">This Week</option>
+              <option value="last_week">Last Week</option>
+              <option value="this_month">This Month</option>
+              <option value="last_month">Last Month</option>
+              <option value="this_quarter">This Quarter</option>
+              <option value="last_quarter">Last Quarter</option>
+              <option value="this_year">This Year</option>
+              <option value="last_year">Last Year</option>
+              <option value="custom">Custom Range</option>
+            </select>
+          </div>
+          <div class="col-12 col-md-6 col-lg-5">
+            <div class="input-group input-group-sm date-range-group" aria-label="Part history date range">
+              <span class="input-group-text">From</span>
+              <input type="date" id="partHistoryDateFrom" name="date_from" class="form-control date-filter-input" aria-label="History start date" />
+              <span class="input-group-text">To</span>
+              <input type="date" id="partHistoryDateTo" name="date_to" class="form-control date-filter-input" aria-label="History end date" />
+            </div>
+          </div>
+        </div>
 
         <div class="row g-3">
           <div class="col-12 col-lg-6">

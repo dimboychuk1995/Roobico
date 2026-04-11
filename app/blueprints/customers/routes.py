@@ -878,10 +878,17 @@ def customer_unit_details_page(customer_id, unit_id):
         tab = "work_orders"
 
     q = (request.args.get("q") or "").strip()
+    date_filters = build_date_range_filters(request.args, default_preset="all_time")
+    date_from = date_filters["date_from"]
+    date_to = date_filters["date_to"]
+    date_preset = date_filters["date_preset"]
+    created_from = date_filters["created_from"]
+    created_to_exclusive = date_filters["created_to_exclusive"]
     page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
 
     tab_items = []
     pagination = None
+    work_orders_totals = {"labor_total": 0.0, "parts_total": 0.0, "grand_total": 0.0}
 
     if tab == "work_orders":
         wo_query = {
@@ -898,6 +905,26 @@ def customer_unit_details_page(customer_id, unit_id):
         )
         if wo_search:
             wo_query = {"$and": [wo_query, wo_search]}
+
+        created_at_filter = _build_preferred_date_range_filter("work_order_date", created_from, created_to_exclusive)
+        if created_at_filter:
+            wo_query = _append_and_filter(wo_query, created_at_filter)
+
+        work_orders_totals = _get_customer_work_orders_totals(shop_db, wo_query)
+
+        # Compute total paid across all matching WOs for remaining calculation
+        all_wo_ids = [
+            doc["_id"]
+            for doc in shop_db.work_orders.find(wo_query, {"_id": 1})
+        ]
+        all_paid_map = _build_paid_map(shop_db.work_order_payments, all_wo_ids)
+        total_paid = _round2(sum(all_paid_map.values()))
+        total_remaining = _round2(work_orders_totals["grand_total"] - total_paid)
+        if total_remaining < 0:
+            total_remaining = 0.0
+        work_orders_totals["paid_total"] = total_paid
+        work_orders_totals["remaining_total"] = total_remaining
+
         rows, pagination = paginate_find(
             shop_db.work_orders,
             wo_query,
@@ -952,6 +979,13 @@ def customer_unit_details_page(customer_id, unit_id):
         "mileage": unit.get("mileage") if unit.get("mileage") is not None else "-",
         "created_at": _fmt_dt_label(unit.get("created_at")),
         "updated_at": _fmt_dt_label(unit.get("updated_at")),
+        "raw_unit_number": unit.get("unit_number") or "",
+        "raw_vin": unit.get("vin") or "",
+        "raw_year": unit.get("year") if unit.get("year") is not None else "",
+        "raw_make": unit.get("make") or "",
+        "raw_model": unit.get("model") or "",
+        "raw_type": unit.get("type") or "",
+        "raw_mileage": unit.get("mileage") if unit.get("mileage") is not None else "",
     }
 
     return _render_app_page(
@@ -962,11 +996,113 @@ def customer_unit_details_page(customer_id, unit_id):
         unit=unit_view,
         active_tab=tab,
         q=q,
+        date_preset=date_preset,
+        date_from=date_from,
+        date_to=date_to,
         tab_items=tab_items,
+        work_orders_totals=work_orders_totals if tab == "work_orders" else None,
         pagination=pagination,
         sort_by=(request.args.get("sort_by") or "").strip(),
         sort_dir=(request.args.get("sort_dir") or "").strip(),
     )
+
+
+@customers_bp.post("/customers/<customer_id>/units/<unit_id>/update")
+@login_required
+@permission_required("customers.edit")
+def customer_unit_update(customer_id, unit_id):
+    coll, shop, master = _customers_collection()
+    if coll is None or shop is None:
+        flash("Shop database not configured for this shop.", "error")
+        return redirect(url_for("customers.customers_page"))
+
+    cid = _oid(customer_id)
+    uid = _oid(unit_id)
+    if not cid or not uid:
+        flash("Invalid customer or unit id.", "error")
+        return redirect(url_for("customers.customers_page"))
+
+    customer = coll.find_one({"_id": cid, "shop_id": shop["_id"]})
+    if not customer:
+        flash("Customer not found.", "error")
+        return redirect(url_for("customers.customers_page"))
+
+    shop_db = coll.database
+    unit = shop_db.units.find_one(
+        {"_id": uid, "customer_id": cid, "shop_id": shop["_id"], "is_active": True}
+    )
+    if not unit:
+        flash("Unit not found for this customer.", "error")
+        return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="units"))
+
+    def _strip(key):
+        return (request.form.get(key) or "").strip() or None
+
+    def _int(key):
+        raw = (request.form.get(key) or "").strip()
+        if not raw:
+            return None
+        try:
+            return int(raw)
+        except (ValueError, TypeError):
+            return None
+
+    update_fields = {
+        "unit_number": _strip("unit_number"),
+        "vin": _strip("vin"),
+        "make": _strip("make"),
+        "model": _strip("model"),
+        "year": _int("year"),
+        "type": _strip("type"),
+        "mileage": _int("mileage"),
+        "updated_at": utcnow(),
+        "updated_by": _oid(session.get(SESSION_USER_ID)),
+    }
+
+    shop_db.units.update_one({"_id": uid}, {"$set": update_fields})
+    flash("Unit updated.", "success")
+    return redirect(url_for("customers.customer_unit_details_page", customer_id=str(cid), unit_id=str(uid), tab="details"))
+
+
+@customers_bp.post("/customers/<customer_id>/units/<unit_id>/deactivate")
+@login_required
+@permission_required("customers.edit")
+def customer_unit_deactivate(customer_id, unit_id):
+    coll, shop, master = _customers_collection()
+    if coll is None or shop is None:
+        flash("Shop database not configured for this shop.", "error")
+        return redirect(url_for("customers.customers_page"))
+
+    cid = _oid(customer_id)
+    uid = _oid(unit_id)
+    if not cid or not uid:
+        flash("Invalid customer or unit id.", "error")
+        return redirect(url_for("customers.customers_page"))
+
+    shop_db = coll.database
+    unit = shop_db.units.find_one(
+        {"_id": uid, "customer_id": cid, "shop_id": shop["_id"], "is_active": True}
+    )
+    if not unit:
+        flash("Unit not found or already deactivated.", "error")
+        return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="units"))
+
+    now = utcnow()
+    user_oid = _oid(session.get(SESSION_USER_ID))
+
+    shop_db.units.update_one(
+        {"_id": uid},
+        {"$set": {
+            "is_active": False,
+            "updated_at": now,
+            "updated_by": user_oid,
+            "deactivated_at": now,
+            "deactivated_by": user_oid,
+        }},
+    )
+
+    flash("Unit deactivated.", "success")
+    return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="units"))
 
 
 @customers_bp.post("/customers/create")
@@ -1251,5 +1387,57 @@ def customers_api_deactivate(customer_id):
     )
 
     return jsonify({"ok": True, "message": "Customer deactivated"})
+
+
+@customers_bp.get("/customers/api/work_orders/<wo_id>/labors")
+@login_required
+@permission_required("customers.view")
+def customers_api_wo_labors(wo_id):
+    """Return labors list for a work order (lightweight, for expand-in-place)."""
+    coll, shop, master = _customers_collection()
+    if coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop not configured"}), 400
+
+    woid = _oid(wo_id)
+    if not woid:
+        return jsonify({"ok": False, "error": "Invalid work order id"}), 400
+
+    db, _ = _get_shop_db(master)
+    if db is None:
+        return jsonify({"ok": False, "error": "Database not configured"}), 400
+
+    wo = db.work_orders.find_one(
+        {"_id": woid, "shop_id": shop["_id"], "is_active": {"$ne": False}},
+        {"labors": 1},
+    )
+    if not wo:
+        return jsonify({"ok": False, "error": "Work order not found"}), 404
+
+    labors_out = []
+    for labor_block in wo.get("labors") or []:
+        if not isinstance(labor_block, dict):
+            continue
+        labor_info = labor_block.get("labor") or {}
+        parts_list = labor_block.get("parts") or []
+
+        parts_out = []
+        for p in parts_list:
+            if not isinstance(p, dict):
+                continue
+            parts_out.append({
+                "part_number": str(p.get("part_number") or ""),
+                "description": str(p.get("description") or ""),
+                "qty": p.get("qty") or 0,
+                "price": float(p.get("price") or 0),
+            })
+
+        labors_out.append({
+            "description": str(labor_info.get("description") or ""),
+            "hours": str(labor_info.get("hours") or ""),
+            "labor_total": float(labor_info.get("labor_full_total") or 0),
+            "parts": parts_out,
+        })
+
+    return jsonify({"ok": True, "labors": labors_out})
 
 
