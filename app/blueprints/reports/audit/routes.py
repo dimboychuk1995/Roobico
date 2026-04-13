@@ -21,12 +21,25 @@ STANDARD_REPORT_TABS = {
     "payments_summary",
     "customer_balances",
     "vendor_balances",
+    "parts_orders_summary",
+    "general_revenue",
 }
 
 CUSTOMER_FILTER_TABS = {
     "sales_summary",
     "payments_summary",
     "customer_balances",
+}
+
+VENDOR_FILTER_TABS = {
+    "parts_orders_summary",
+}
+
+NON_INVENTORY_AMOUNT_TYPES = {
+    "shop_supply",
+    "tools",
+    "utilities",
+    "payment_to_another_service",
 }
 
 
@@ -143,6 +156,26 @@ def _customer_label(doc: dict) -> str:
     return full_name or "-"
 
 
+def _get_vendor_options(shop_db, shop_id: ObjectId):
+    options = []
+    vendor_map = {}
+    cursor = shop_db.vendors.find(
+        {"shop_id": shop_id},
+        {"name": 1},
+    ).sort([("name", 1)])
+
+    for doc in cursor:
+        vid = doc.get("_id")
+        if not vid:
+            continue
+        label = str(doc.get("name") or "-").strip() or "-"
+        sid = str(vid)
+        vendor_map[sid] = label
+        options.append({"id": sid, "label": label})
+
+    return options, vendor_map
+
+
 def _get_customer_options(shop_db, shop_id: ObjectId):
     options = []
     customer_map = {}
@@ -174,11 +207,17 @@ def _wo_totals(wo: dict):
     totals = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
     labor = totals.get("labor_total") if totals.get("labor_total") is not None else wo.get("labor_total")
     parts = totals.get("parts_total") if totals.get("parts_total") is not None else wo.get("parts_total")
+    misc = totals.get("misc_total") or 0
     tax = totals.get("sales_tax_total") if totals.get("sales_tax_total") is not None else wo.get("sales_tax_total")
     grand = totals.get("grand_total") if totals.get("grand_total") is not None else wo.get("grand_total")
+    misc_total = _round2(misc)
+    parts_total = _round2(parts)
+    # parts_total in DB already includes misc_total, so subtract to get pure parts
+    parts_only = _round2(parts_total - misc_total)
     return {
         "labor_total": _round2(labor),
-        "parts_total": _round2(parts),
+        "parts_total": parts_only,
+        "misc_charges_total": misc_total,
         "sales_tax_total": _round2(tax),
         "grand_total": _round2(grand),
     }
@@ -211,6 +250,7 @@ def _report_sales_summary(shop_db, shop_id, date_ctx, include_customer_ids, excl
                 "orders_count": 0,
                 "labor_total": 0.0,
                 "parts_total": 0.0,
+                "misc_charges_total": 0.0,
                 "sales_tax_total": 0.0,
                 "grand_total": 0.0,
             },
@@ -219,6 +259,7 @@ def _report_sales_summary(shop_db, shop_id, date_ctx, include_customer_ids, excl
         bucket["orders_count"] += 1
         bucket["labor_total"] = _round2(bucket["labor_total"] + totals["labor_total"])
         bucket["parts_total"] = _round2(bucket["parts_total"] + totals["parts_total"])
+        bucket["misc_charges_total"] = _round2(bucket["misc_charges_total"] + totals["misc_charges_total"])
         bucket["sales_tax_total"] = _round2(bucket["sales_tax_total"] + totals["sales_tax_total"])
         bucket["grand_total"] = _round2(bucket["grand_total"] + totals["grand_total"])
 
@@ -228,6 +269,7 @@ def _report_sales_summary(shop_db, shop_id, date_ctx, include_customer_ids, excl
     total_revenue = _round2(sum(float(r.get("grand_total") or 0) for r in rows))
     total_labor = _round2(sum(float(r.get("labor_total") or 0) for r in rows))
     total_parts = _round2(sum(float(r.get("parts_total") or 0) for r in rows))
+    total_misc = _round2(sum(float(r.get("misc_charges_total") or 0) for r in rows))
     total_tax = _round2(sum(float(r.get("sales_tax_total") or 0) for r in rows))
 
     return {
@@ -238,6 +280,7 @@ def _report_sales_summary(shop_db, shop_id, date_ctx, include_customer_ids, excl
             "avg_ticket": _round2(total_revenue / total_orders) if total_orders else 0.0,
             "labor_total": total_labor,
             "parts_total": total_parts,
+            "misc_charges_total": total_misc,
             "sales_tax_total": total_tax,
         },
         "rows": rows,
@@ -497,6 +540,278 @@ def _report_vendor_balances(shop_db, shop_id, date_ctx):
     }
 
 
+def _report_parts_orders_summary(shop_db, shop_id, date_ctx, include_vendor_ids, vendor_map):
+    query = {
+        "shop_id": shop_id,
+        "is_active": {"$ne": False},
+    }
+    query = _append_and(query, _build_date_filter(date_ctx, field="created_at"))
+    if include_vendor_ids:
+        query = _append_and(query, {"vendor_id": {"$in": include_vendor_ids}})
+
+    orders = list(shop_db.parts_orders.find(query, {
+        "vendor_id": 1,
+        "items": 1,
+        "non_inventory_amounts": 1,
+        "total_amount": 1,
+        "paid_amount": 1,
+        "remaining_balance": 1,
+    }))
+
+    # Collect all part_ids to look up core charges
+    all_part_ids = set()
+    for order in orders:
+        for item in (order.get("items") or []):
+            pid = item.get("part_id")
+            if pid:
+                all_part_ids.add(pid)
+
+    core_map: dict = {}
+    if all_part_ids:
+        for part in shop_db.parts.find(
+            {"_id": {"$in": list(all_part_ids)}},
+            {"core_has_charge": 1, "core_cost": 1},
+        ):
+            if part.get("core_has_charge"):
+                core_map[part["_id"]] = max(0.0, float(part.get("core_cost") or 0))
+
+    rows_by_vendor: dict[str, dict] = {}
+
+    for order in orders:
+        vendor_id = order.get("vendor_id")
+        sid = str(vendor_id) if vendor_id else ""
+
+        bucket = rows_by_vendor.setdefault(
+            sid,
+            {
+                "vendor_id": sid,
+                "vendor_label": vendor_map.get(sid) or "-",
+                "orders_count": 0,
+                "parts_total": 0.0,
+                "cores_total": 0.0,
+                "shop_supply_total": 0.0,
+                "tools_total": 0.0,
+                "utilities_total": 0.0,
+                "payment_to_another_service_total": 0.0,
+                "non_inventory_total": 0.0,
+                "total_amount": 0.0,
+                "paid_amount": 0.0,
+                "remaining_balance": 0.0,
+            },
+        )
+        bucket["orders_count"] += 1
+
+        # Parts items total
+        items_total = 0.0
+        cores_total = 0.0
+        for item in (order.get("items") or []):
+            if not isinstance(item, dict):
+                continue
+            qty = max(0, int(item.get("quantity") or 0))
+            price = max(0.0, float(item.get("price") or 0))
+            items_total += qty * price
+            # Core charges from parts collection
+            pid = item.get("part_id")
+            if pid and pid in core_map:
+                cores_total += qty * core_map[pid]
+
+        bucket["parts_total"] = _round2(bucket["parts_total"] + items_total)
+        bucket["cores_total"] = _round2(bucket["cores_total"] + cores_total)
+
+        # Non-inventory by type
+        ni_total = 0.0
+        for line in (order.get("non_inventory_amounts") or []):
+            if not isinstance(line, dict):
+                continue
+            amount = max(0.0, float(line.get("amount") or 0))
+            ni_total += amount
+            amount_type = str(line.get("type") or "").strip().lower()
+            type_key = amount_type + "_total" if amount_type in NON_INVENTORY_AMOUNT_TYPES else ""
+            if type_key and type_key in bucket:
+                bucket[type_key] = _round2(bucket[type_key] + amount)
+
+        bucket["non_inventory_total"] = _round2(bucket["non_inventory_total"] + ni_total)
+        bucket["total_amount"] = _round2(bucket["total_amount"] + float(order.get("total_amount") or 0))
+        bucket["paid_amount"] = _round2(bucket["paid_amount"] + float(order.get("paid_amount") or 0))
+        bucket["remaining_balance"] = _round2(bucket["remaining_balance"] + float(order.get("remaining_balance") or 0))
+
+    rows = sorted(rows_by_vendor.values(), key=lambda x: x.get("total_amount", 0), reverse=True)
+
+    def _sum_field(field):
+        return _round2(sum(float(r.get(field) or 0) for r in rows))
+
+    return {
+        "title": "Parts Orders Summary",
+        "summary": {
+            "vendors_count": len(rows),
+            "orders_count": sum(int(r.get("orders_count") or 0) for r in rows),
+            "parts_total": _sum_field("parts_total"),
+            "cores_total": _sum_field("cores_total"),
+            "non_inventory_total": _sum_field("non_inventory_total"),
+            "total_amount": _sum_field("total_amount"),
+            "paid_amount": _sum_field("paid_amount"),
+            "remaining_balance": _sum_field("remaining_balance"),
+        },
+        "rows": rows,
+    }
+
+
+def _wo_parts_cost(wo: dict) -> float:
+    """Calculate actual parts cost from work order labors (qty * cost)."""
+    cost_total = 0.0
+    for block in (wo.get("labors") or []):
+        if not isinstance(block, dict):
+            continue
+        for part in (block.get("parts") or []):
+            if not isinstance(part, dict):
+                continue
+            qty = max(0, int(part.get("qty") or 0))
+            cost = max(0.0, float(part.get("cost") or 0))
+            cost_total += qty * cost
+    return _round2(cost_total)
+
+
+def _report_general_revenue(shop_db, shop_id, date_ctx):
+    # --- Sales (Work Orders) ---
+    wo_query = {
+        "shop_id": shop_id,
+        "is_active": True,
+    }
+    wo_query = _append_and(wo_query, _build_date_filter(date_ctx, field="created_at"))
+
+    wo_count = 0
+    sales_labor = 0.0
+    sales_parts_sale = 0.0
+    sales_parts_cost = 0.0
+    sales_misc = 0.0
+    sales_tax = 0.0
+    sales_revenue = 0.0
+
+    for wo in shop_db.work_orders.find(wo_query, {
+        "totals": 1, "labor_total": 1, "parts_total": 1,
+        "sales_tax_total": 1, "grand_total": 1, "labors": 1,
+    }):
+        t = _wo_totals(wo)
+        wo_count += 1
+        sales_labor += t["labor_total"]
+        sales_parts_sale += t["parts_total"]
+        sales_parts_cost += _wo_parts_cost(wo)
+        sales_misc += t["misc_charges_total"]
+        sales_tax += t["sales_tax_total"]
+        sales_revenue += t["grand_total"]
+
+    sales_labor = _round2(sales_labor)
+    sales_parts_sale = _round2(sales_parts_sale)
+    sales_parts_cost = _round2(sales_parts_cost)
+    sales_misc = _round2(sales_misc)
+    sales_tax = _round2(sales_tax)
+    sales_revenue = _round2(sales_revenue)
+
+    # --- Parts Orders ---
+    po_query = {
+        "shop_id": shop_id,
+        "is_active": {"$ne": False},
+    }
+    po_query = _append_and(po_query, _build_date_filter(date_ctx, field="created_at"))
+
+    po_count = 0
+    po_total = 0.0
+    po_non_inventory = 0.0
+    po_paid = 0.0
+    po_balance = 0.0
+
+    for order in shop_db.parts_orders.find(po_query, {
+        "total_amount": 1, "paid_amount": 1, "remaining_balance": 1,
+        "non_inventory_amounts": 1,
+    }):
+        po_count += 1
+        po_total += float(order.get("total_amount") or 0)
+        po_paid += float(order.get("paid_amount") or 0)
+        po_balance += float(order.get("remaining_balance") or 0)
+        for line in (order.get("non_inventory_amounts") or []):
+            if isinstance(line, dict):
+                po_non_inventory += max(0.0, float(line.get("amount") or 0))
+
+    po_total = _round2(po_total)
+    po_non_inventory = _round2(po_non_inventory)
+    po_paid = _round2(po_paid)
+    po_balance = _round2(po_balance)
+    po_parts_only = _round2(po_total - po_non_inventory)
+
+    # --- Combined ---
+    net_revenue = _round2(sales_revenue - po_total)
+    parts_profit = _round2(sales_parts_sale - sales_parts_cost)
+
+    rows = [
+        {
+            "category": "Sales — Labor",
+            "amount": sales_labor,
+        },
+        {
+            "category": "Sales — Parts (Sale Price)",
+            "amount": sales_parts_sale,
+        },
+        {
+            "category": "Sales — Parts (Cost)",
+            "amount": sales_parts_cost,
+        },
+        {
+            "category": "Sales — Parts Profit",
+            "amount": parts_profit,
+        },
+        {
+            "category": "Sales — Misc Charges",
+            "amount": sales_misc,
+        },
+        {
+            "category": "Sales — Tax",
+            "amount": sales_tax,
+        },
+        {
+            "category": "Sales — Total Revenue",
+            "amount": sales_revenue,
+        },
+        {
+            "category": "Parts Orders — Parts",
+            "amount": po_parts_only,
+        },
+        {
+            "category": "Parts Orders — Non-Inventory",
+            "amount": po_non_inventory,
+        },
+        {
+            "category": "Parts Orders — Total Spent",
+            "amount": po_total,
+        },
+        {
+            "category": "Parts Orders — Paid",
+            "amount": po_paid,
+        },
+        {
+            "category": "Parts Orders — Balance",
+            "amount": po_balance,
+        },
+        {
+            "category": "Net Revenue (Sales − Parts Orders)",
+            "amount": net_revenue,
+        },
+    ]
+
+    return {
+        "title": "General Revenue Report",
+        "summary": {
+            "sales_revenue": sales_revenue,
+            "parts_cost": sales_parts_cost,
+            "parts_profit": parts_profit,
+            "po_total_spent": po_total,
+            "net_revenue": net_revenue,
+            "wo_count": wo_count,
+            "po_count": po_count,
+        },
+        "rows": rows,
+    }
+
+
 def _build_standard_reports_context(selected_tab: str, args, *, skip_report_data: bool = False):
     master = get_master_db()
     shop = _get_active_shop(master)
@@ -526,7 +841,8 @@ def _build_standard_reports_context(selected_tab: str, args, *, skip_report_data
 
     date_ctx = build_date_range_filters(args, default_preset="this_month")
 
-    include_customer_ids_raw = args.getlist("include_customer_ids")
+    customer_ids_raw = (args.get("customer_ids") or "").strip()
+    include_customer_ids_raw = [v.strip() for v in customer_ids_raw.split(",") if v.strip()] if customer_ids_raw else args.getlist("include_customer_ids")
     exclude_customer_ids_raw = args.getlist("exclude_customer_ids")
 
     include_customer_ids = _to_oid_list(include_customer_ids_raw)
@@ -536,6 +852,12 @@ def _build_standard_reports_context(selected_tab: str, args, *, skip_report_data
     include_customer_ids = [x for x in include_customer_ids if str(x) not in exclude_set]
 
     customer_options, customer_map = _get_customer_options(shop_db, shop["_id"])
+
+    vendor_ids_raw = (args.get("vendor_ids") or "").strip()
+    include_vendor_ids_raw = [v.strip() for v in vendor_ids_raw.split(",") if v.strip()] if vendor_ids_raw else []
+    include_vendor_ids = _to_oid_list(include_vendor_ids_raw)
+
+    vendor_options, vendor_map = _get_vendor_options(shop_db, shop["_id"])
 
     if skip_report_data:
         return {
@@ -549,6 +871,9 @@ def _build_standard_reports_context(selected_tab: str, args, *, skip_report_data
             "include_customer_ids": [str(x) for x in include_customer_ids],
             "exclude_customer_ids": [str(x) for x in exclude_customer_ids],
             "show_customer_filters": selected_tab in CUSTOMER_FILTER_TABS,
+            "show_vendor_filters": selected_tab in VENDOR_FILTER_TABS,
+            "vendor_options": vendor_options,
+            "include_vendor_ids": [str(x) for x in include_vendor_ids],
             "report_data": {"title": "", "summary": {}, "rows": []},
             "shop_name": str(shop.get("name") or "-"),
             "generated_at": _now_utc(),
@@ -581,8 +906,22 @@ def _build_standard_reports_context(selected_tab: str, args, *, skip_report_data
             exclude_customer_ids,
             customer_map,
         )
-    else:
+    elif selected_tab == "vendor_balances":
         report_data = _report_vendor_balances(
+            shop_db,
+            shop["_id"],
+            date_ctx,
+        )
+    elif selected_tab == "parts_orders_summary":
+        report_data = _report_parts_orders_summary(
+            shop_db,
+            shop["_id"],
+            date_ctx,
+            include_vendor_ids,
+            vendor_map,
+        )
+    else:
+        report_data = _report_general_revenue(
             shop_db,
             shop["_id"],
             date_ctx,
@@ -599,6 +938,9 @@ def _build_standard_reports_context(selected_tab: str, args, *, skip_report_data
         "include_customer_ids": [str(x) for x in include_customer_ids],
         "exclude_customer_ids": [str(x) for x in exclude_customer_ids],
         "show_customer_filters": selected_tab in CUSTOMER_FILTER_TABS,
+        "show_vendor_filters": selected_tab in VENDOR_FILTER_TABS,
+        "vendor_options": vendor_options,
+        "include_vendor_ids": [str(x) for x in include_vendor_ids],
         "report_data": report_data,
         "shop_name": str(shop.get("name") or "-"),
         "generated_at": _now_utc(),
@@ -635,6 +977,9 @@ def standard_report_page(report_key: str):
             include_customer_ids=[],
             exclude_customer_ids=[],
             show_customer_filters=False,
+            show_vendor_filters=False,
+            vendor_options=[],
+            include_vendor_ids=[],
             report_data={"title": "", "summary": {}, "rows": []},
         )
 
@@ -650,6 +995,9 @@ def standard_report_page(report_key: str):
         include_customer_ids=ctx["include_customer_ids"],
         exclude_customer_ids=ctx["exclude_customer_ids"],
         show_customer_filters=ctx["show_customer_filters"],
+        show_vendor_filters=ctx["show_vendor_filters"],
+        vendor_options=ctx["vendor_options"],
+        include_vendor_ids=ctx["include_vendor_ids"],
         report_data=ctx["report_data"],
         generated_at=ctx["generated_at"],
         shop_name=ctx["shop_name"],

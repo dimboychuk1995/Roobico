@@ -33,6 +33,12 @@
       <li class="nav-item" role="presentation">
         <a class="nav-link {% if selected_tab == 'vendor_balances' %}active{% endif %}" href="{{ url_for('reports.standard_report_page', report_key='vendor_balances') }}">Vendor Balances</a>
       </li>
+      <li class="nav-item" role="presentation">
+        <a class="nav-link {% if selected_tab == 'parts_orders_summary' %}active{% endif %}" href="{{ url_for('reports.standard_report_page', report_key='parts_orders_summary') }}">Parts Orders Summary</a>
+      </li>
+      <li class="nav-item" role="presentation">
+        <a class="nav-link {% if selected_tab == 'general_revenue' %}active{% endif %}" href="{{ url_for('reports.standard_report_page', report_key='general_revenue') }}">General Revenue</a>
+      </li>
     </ul>
   </div>
 
@@ -40,7 +46,7 @@
     <div class="row g-2 align-items-end">
       <div class="col-12 col-md-3">
         <label class="form-label">Date Preset</label>
-        <select name="date_preset" class="form-select form-select-sm">
+        <select name="date_preset" class="form-select">
           <option value="all_time" {% if date_preset == 'all_time' %}selected{% endif %}>All Time</option>
           <option value="today" {% if date_preset == 'today' %}selected{% endif %}>Today</option>
           <option value="yesterday" {% if date_preset == 'yesterday' %}selected{% endif %}>Yesterday</option>
@@ -58,44 +64,77 @@
 
       <div class="col-6 col-md-2">
         <label class="form-label">Date From</label>
-        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ date_from or '' }}">
+        <input type="date" name="date_from" class="form-control" value="{{ date_from or '' }}">
       </div>
 
       <div class="col-6 col-md-2">
         <label class="form-label">Date To</label>
-        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ date_to or '' }}">
+        <input type="date" name="date_to" class="form-control" value="{{ date_to or '' }}">
       </div>
+
+      {% if show_customer_filters %}
+      <div class="col-12 col-md-3">
+        <label class="form-label">Customers</label>
+        <div class="dropdown" id="customerMultiSelect">
+          <button class="form-select text-start text-truncate" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" id="customerDropdownBtn">
+            All Customers
+          </button>
+          <div class="dropdown-menu p-2 shadow-sm" style="min-width: 100%; max-height: 350px; overflow-y: auto; border: 1px solid #c7d2ca; border-radius: var(--radius-sm, 0.375rem); background: #fbfdfb;" id="customerDropdownMenu">
+            <div class="mb-2">
+              <input type="text" class="form-control form-control-sm" placeholder="Search customers..." id="customerSearchInput" autocomplete="off">
+            </div>
+            <div class="d-flex gap-2 mb-2">
+              <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" id="customerSelectAll">Select All</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" id="customerDeselectAll">Deselect All</button>
+            </div>
+            <div id="customerCheckboxList">
+              {% for c in customer_options %}
+              <div class="form-check customer-check-item py-1">
+                <input class="form-check-input customer-checkbox" type="checkbox" value="{{ c.id }}" id="cust_{{ c.id }}" {% if not include_customer_ids or c.id in include_customer_ids %}checked{% endif %}>
+                <label class="form-check-label small" for="cust_{{ c.id }}">{{ c.label }}</label>
+              </div>
+              {% endfor %}
+            </div>
+            <input type="hidden" name="customer_ids" id="customerIdsHidden" value="">
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if show_vendor_filters %}
+      <div class="col-12 col-md-3">
+        <label class="form-label">Vendors</label>
+        <div class="dropdown" id="vendorMultiSelect">
+          <button class="form-select text-start text-truncate" type="button" data-bs-toggle="dropdown" data-bs-auto-close="outside" aria-expanded="false" id="vendorDropdownBtn">
+            All Vendors
+          </button>
+          <div class="dropdown-menu p-2 shadow-sm" style="min-width: 100%; max-height: 350px; overflow-y: auto; border: 1px solid #c7d2ca; border-radius: var(--radius-sm, 0.375rem); background: #fbfdfb;" id="vendorDropdownMenu">
+            <div class="mb-2">
+              <input type="text" class="form-control form-control-sm" placeholder="Search vendors..." id="vendorSearchInput" autocomplete="off">
+            </div>
+            <div class="d-flex gap-2 mb-2">
+              <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" id="vendorSelectAll">Select All</button>
+              <button type="button" class="btn btn-outline-secondary btn-sm flex-fill" id="vendorDeselectAll">Deselect All</button>
+            </div>
+            <div id="vendorCheckboxList">
+              {% for v in vendor_options %}
+              <div class="form-check vendor-check-item py-1">
+                <input class="form-check-input vendor-checkbox" type="checkbox" value="{{ v.id }}" id="vend_{{ v.id }}" {% if not include_vendor_ids or v.id in include_vendor_ids %}checked{% endif %}>
+                <label class="form-check-label small" for="vend_{{ v.id }}">{{ v.label }}</label>
+              </div>
+              {% endfor %}
+            </div>
+            <input type="hidden" name="vendor_ids" id="vendorIdsHidden" value="">
+          </div>
+        </div>
+      </div>
+      {% endif %}
 
       <div class="col-auto d-flex gap-1 align-items-end">
-        <button type="submit" class="btn btn-primary btn-sm">Apply</button>
-        <button type="submit" formaction="{{ url_for('reports.standard_report_pdf', report_key=selected_tab or 'sales_summary') }}" formtarget="_blank" class="btn btn-outline-dark btn-sm">Download PDF</button>
+        <button type="submit" class="btn btn-primary">Generate</button>
+        <button type="submit" formaction="{{ url_for('reports.standard_report_pdf', report_key=selected_tab or 'sales_summary') }}" formtarget="_blank" class="btn btn-outline-dark">Download PDF</button>
       </div>
     </div>
-
-    {% if show_customer_filters %}
-      <hr>
-      <div class="row g-2 align-items-start">
-        <div class="col-12 col-md-6">
-          <label class="form-label">Include Only Selected Customers</label>
-          <select name="include_customer_ids" class="form-select form-select-sm" multiple size="7">
-            {% for c in customer_options %}
-              <option value="{{ c.id }}" {% if c.id in include_customer_ids %}selected{% endif %}>{{ c.label }}</option>
-            {% endfor %}
-          </select>
-          <div class="form-text">If empty, includes all customers.</div>
-        </div>
-
-        <div class="col-12 col-md-6">
-          <label class="form-label">Exclude Selected Customers</label>
-          <select name="exclude_customer_ids" class="form-select form-select-sm" multiple size="7">
-            {% for c in customer_options %}
-              <option value="{{ c.id }}" {% if c.id in exclude_customer_ids %}selected{% endif %}>{{ c.label }}</option>
-            {% endfor %}
-          </select>
-          <div class="form-text">Exclusion has priority if the same customer is in both lists.</div>
-        </div>
-      </div>
-    {% endif %}
   </div>
 </form>
 
@@ -106,7 +145,7 @@
   </div>
   <div class="card-body">
     <!-- loading state -->
-    <div id="reportLoading" class="text-center py-4">
+    <div id="reportLoading" class="text-center py-4 d-none">
       <div class="spinner-border text-primary" role="status" style="width:2rem;height:2rem;"></div>
       <div class="text-muted mt-2">Loading report data…</div>
     </div>

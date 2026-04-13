@@ -52,6 +52,7 @@
             <th class="text-end">Orders</th>
             <th class="text-end">Labor</th>
             <th class="text-end">Parts</th>
+            <th class="text-end">Misc Charges</th>
             <th class="text-end">Tax</th>
             <th class="text-end">Revenue</th>
           </tr>
@@ -69,13 +70,33 @@
             <th class="text-end">Paid</th>
             <th class="text-end">Outstanding</th>
           </tr>
-        {% else %}
+        {% elif selected_tab == 'vendor_balances' %}
           <tr>
             <th>Vendor</th>
             <th class="text-end">Orders</th>
             <th class="text-end">Total</th>
             <th class="text-end">Paid</th>
             <th class="text-end">Outstanding</th>
+          </tr>
+        {% elif selected_tab == 'parts_orders_summary' %}
+          <tr>
+            <th>Vendor</th>
+            <th class="text-end">Orders</th>
+            <th class="text-end">Parts</th>
+            <th class="text-end">Cores</th>
+            <th class="text-end">Shop Supply</th>
+            <th class="text-end">Tools</th>
+            <th class="text-end">Utilities</th>
+            <th class="text-end">Pmt to Svc</th>
+            <th class="text-end">Non-Inv Total</th>
+            <th class="text-end">Total</th>
+            <th class="text-end">Paid</th>
+            <th class="text-end">Balance</th>
+          </tr>
+        {% else %}
+          <tr>
+            <th>Category</th>
+            <th class="text-end">Amount</th>
           </tr>
         {% endif %}
       </thead>
@@ -87,6 +108,7 @@
               <td class="text-end">{{ row.orders_count }}</td>
               <td class="text-end">${{ "%.2f"|format(row.labor_total or 0) }}</td>
               <td class="text-end">${{ "%.2f"|format(row.parts_total or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.misc_charges_total or 0) }}</td>
               <td class="text-end">${{ "%.2f"|format(row.sales_tax_total or 0) }}</td>
               <td class="text-end">${{ "%.2f"|format(row.grand_total or 0) }}</td>
             </tr>
@@ -104,13 +126,35 @@
               <td class="text-end">${{ "%.2f"|format(row.paid_total or 0) }}</td>
               <td class="text-end">${{ "%.2f"|format(row.outstanding_total or 0) }}</td>
             </tr>
-          {% else %}
+          {% elif selected_tab == 'vendor_balances' %}
             <tr>
               <td>{{ row.vendor_label }}</td>
               <td class="text-end">{{ row.orders_count }}</td>
               <td class="text-end">${{ "%.2f"|format(row.total_amount or 0) }}</td>
               <td class="text-end">${{ "%.2f"|format(row.paid_amount or 0) }}</td>
               <td class="text-end">${{ "%.2f"|format(row.remaining_balance or 0) }}</td>
+            </tr>
+          {% elif selected_tab == 'parts_orders_summary' %}
+            <tr>
+              <td>{{ row.vendor_label }}</td>
+              <td class="text-end">{{ row.orders_count }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.parts_total or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.cores_total or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.shop_supply_total or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.tools_total or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.utilities_total or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.payment_to_another_service_total or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.non_inventory_total or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.total_amount or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.paid_amount or 0) }}</td>
+              <td class="text-end">${{ "%.2f"|format(row.remaining_balance or 0) }}</td>
+            </tr>
+          {% else %}
+            {% set cat = row.category or '' %}
+            {% set is_bold = 'Total' in cat or 'Profit' in cat or 'Net' in cat %}
+            <tr>
+              <td{% if is_bold %} style="font-weight: bold"{% endif %}>{{ cat }}</td>
+              <td class="text-end"{% if is_bold %} style="font-weight: bold"{% endif %}>${{ "%.2f"|format(row.amount or 0) }}</td>
             </tr>
           {% endif %}
         {% endfor %}
