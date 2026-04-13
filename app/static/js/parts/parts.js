@@ -1313,6 +1313,9 @@
 		let _historyOrders = [];
 		let _historyWorkOrders = [];
 		let _historyPart = {};
+		let _historyPartId = "";
+		let _ordersCurrentPage = 1;
+		let _woCurrentPage = 1;
 
 		function money(n) {
 			const x = Number(n || 0);
@@ -1328,36 +1331,13 @@
 			return el.value || "";
 		}
 
-		function _renderHistoryTables(orders, workOrders) {
-			var from = _getHistoryDateVal(partHistoryDateFrom);
-			var to = _getHistoryDateVal(partHistoryDateTo);
+		function _renderHistoryTables(orders, workOrders, ordersPg, woPg) {
+			partHistoryMeta.textContent = `${_historyPart.part_number || ""}${_historyPart.description ? ` — ${_historyPart.description}` : ""} | Orders: ${(ordersPg && ordersPg.total) || orders.length}, Work Orders: ${(woPg && woPg.total) || workOrders.length}`;
 
-			var filteredOrders = orders;
-			var filteredWO = workOrders;
-
-			if (from || to) {
-				filteredOrders = orders.filter(function (r) {
-					var d = (r.created_at || "").slice(0, 10);
-					if (!d) return true;
-					if (from && d < from) return false;
-					if (to && d > to) return false;
-					return true;
-				});
-				filteredWO = workOrders.filter(function (r) {
-					var d = (r.created_at || "").slice(0, 10);
-					if (!d) return true;
-					if (from && d < from) return false;
-					if (to && d > to) return false;
-					return true;
-				});
-			}
-
-			partHistoryMeta.textContent = `${_historyPart.part_number || ""}${_historyPart.description ? ` — ${_historyPart.description}` : ""} | Orders: ${filteredOrders.length}, Work Orders: ${filteredWO.length}`;
-
-			if (filteredOrders.length === 0) {
+			if (orders.length === 0) {
 				partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No orders found for this part.</td></tr>`;
 			} else {
-				partHistoryOrdersBody.innerHTML = filteredOrders.map(function (row) {
+				partHistoryOrdersBody.innerHTML = orders.map(function (row) {
 					var orderNum = row.order_number || (row.order_id ? "#" + row.order_id.slice(-6) : "-");
 					return '<tr>' +
 						'<td><span class="badge bg-secondary">' + orderNum + '</span></td>' +
@@ -1371,10 +1351,30 @@
 				}).join("");
 			}
 
-			if (filteredWO.length === 0) {
+			// Orders pagination
+			var ordersPagEl = document.getElementById("partHistoryOrdersPagination");
+			if (ordersPagEl && ordersPg) {
+				if (ordersPg.pages > 1) {
+					var prevDisabled = !ordersPg.has_prev ? " disabled" : "";
+					var nextDisabled = !ordersPg.has_next ? " disabled" : "";
+					ordersPagEl.innerHTML =
+						'<div class="wo-pagination-row mt-2">' +
+						'<div class="small text-muted wo-pagination-meta">Page ' + ordersPg.page + ' of ' + ordersPg.pages + ' &middot; ' + ordersPg.total + ' total</div>' +
+						'<div class="wo-pagination-actions"><div class="btn-group btn-group-sm" role="group" aria-label="Orders pagination">' +
+						'<button type="button" class="btn btn-outline-secondary js-history-orders-page' + prevDisabled + '" data-page="' + ordersPg.prev_page + '"' + (prevDisabled ? ' tabindex="-1"' : '') + '>Prev</button>' +
+						'<button type="button" class="btn btn-outline-secondary js-history-orders-page' + nextDisabled + '" data-page="' + ordersPg.next_page + '"' + (nextDisabled ? ' tabindex="-1"' : '') + '>Next</button>' +
+						'</div></div></div>';
+				} else if (ordersPg.total) {
+					ordersPagEl.innerHTML = '<div class="mt-2"><div class="small text-muted">' + ordersPg.total + ' total</div></div>';
+				} else {
+					ordersPagEl.innerHTML = '';
+				}
+			}
+
+			if (workOrders.length === 0) {
 				partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No work orders found for this part.</td></tr>`;
 			} else {
-				partHistoryWorkOrdersBody.innerHTML = filteredWO.map(function (row) {
+				partHistoryWorkOrdersBody.innerHTML = workOrders.map(function (row) {
 					var woNum = row.wo_number || (row.work_order_id ? "#" + row.work_order_id.slice(-6) : "-");
 					return '<tr style="cursor: pointer;" class="workOrderHistoryRow" data-wo-id="' + row.work_order_id + '">' +
 						'<td><span class="badge bg-secondary">' + woNum + '</span></td>' +
@@ -1388,6 +1388,26 @@
 				}).join("");
 			}
 
+			// Work orders pagination
+			var woPagEl = document.getElementById("partHistoryWoPagination");
+			if (woPagEl && woPg) {
+				if (woPg.pages > 1) {
+					var wPrevDisabled = !woPg.has_prev ? " disabled" : "";
+					var wNextDisabled = !woPg.has_next ? " disabled" : "";
+					woPagEl.innerHTML =
+						'<div class="wo-pagination-row mt-2">' +
+						'<div class="small text-muted wo-pagination-meta">Page ' + woPg.page + ' of ' + woPg.pages + ' &middot; ' + woPg.total + ' total</div>' +
+						'<div class="wo-pagination-actions"><div class="btn-group btn-group-sm" role="group" aria-label="Work orders pagination">' +
+						'<button type="button" class="btn btn-outline-secondary js-history-wo-page' + wPrevDisabled + '" data-page="' + woPg.prev_page + '"' + (wPrevDisabled ? ' tabindex="-1"' : '') + '>Prev</button>' +
+						'<button type="button" class="btn btn-outline-secondary js-history-wo-page' + wNextDisabled + '" data-page="' + woPg.next_page + '"' + (wNextDisabled ? ' tabindex="-1"' : '') + '>Next</button>' +
+						'</div></div></div>';
+				} else if (woPg.total) {
+					woPagEl.innerHTML = '<div class="mt-2"><div class="small text-muted">' + woPg.total + ' total</div></div>';
+				} else {
+					woPagEl.innerHTML = '';
+				}
+			}
+
 			if (window.TableSort) {
 				var oTbl = partHistoryOrdersBody && partHistoryOrdersBody.closest("table");
 				var wTbl = partHistoryWorkOrdersBody && partHistoryWorkOrdersBody.closest("table");
@@ -1396,15 +1416,30 @@
 			}
 		}
 
-		async function loadPartHistory(partId) {
+		async function loadPartHistory(partId, ordersPage, woPage) {
 			if (!partHistoryMeta || !partHistoryOrdersBody || !partHistoryWorkOrdersBody) return;
+
+			if (partId) _historyPartId = partId;
+			if (typeof ordersPage === "number" && ordersPage >= 1) _ordersCurrentPage = ordersPage;
+			if (typeof woPage === "number" && woPage >= 1) _woCurrentPage = woPage;
 
 			partHistoryMeta.textContent = "Loading...";
 			partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">Loading...</td></tr>`;
 			partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">Loading...</td></tr>`;
 
 			try {
-				const res = await fetch(`/parts/api/${encodeURIComponent(partId)}/history`, {
+				var apiParams = new URLSearchParams();
+				apiParams.set("orders_page", String(_ordersCurrentPage));
+				apiParams.set("wo_page", String(_woCurrentPage));
+
+				var dateFrom = _getHistoryDateVal(partHistoryDateFrom);
+				var dateTo = _getHistoryDateVal(partHistoryDateTo);
+				var datePreset = partHistoryDatePreset ? partHistoryDatePreset.value : "";
+				if (datePreset) apiParams.set("date_preset", datePreset);
+				if (dateFrom) apiParams.set("date_from", dateFrom);
+				if (dateTo) apiParams.set("date_to", dateTo);
+
+				const res = await fetch(`/parts/api/${encodeURIComponent(_historyPartId)}/history?${apiParams.toString()}`, {
 					method: "GET",
 					headers: { "Accept": "application/json" }
 				});
@@ -1421,7 +1456,7 @@
 				_historyOrders = Array.isArray(data.orders) ? data.orders : [];
 				_historyWorkOrders = Array.isArray(data.work_orders) ? data.work_orders : [];
 
-				_renderHistoryTables(_historyOrders, _historyWorkOrders);
+				_renderHistoryTables(_historyOrders, _historyWorkOrders, data.orders_pagination || {}, data.wo_pagination || {});
 			} catch (err) {
 				partHistoryMeta.textContent = "Network error while loading history";
 				partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
@@ -1447,6 +1482,22 @@
 			window.open(`/work_orders/details?work_order_id=${woId}`, "_blank");
 		});
 
+		// Pagination click handlers for history tables
+		document.addEventListener("click", function (e) {
+			if (!isPartsPageAlive()) return;
+			var btn = e.target.closest(".js-history-orders-page");
+			if (btn && !btn.classList.contains("disabled")) {
+				var page = parseInt(btn.dataset.page, 10);
+				if (page >= 1) loadPartHistory(null, page, undefined);
+				return;
+			}
+			var woBtn = e.target.closest(".js-history-wo-page");
+			if (woBtn && !woBtn.classList.contains("disabled")) {
+				var woPage = parseInt(woBtn.dataset.page, 10);
+				if (woPage >= 1) loadPartHistory(null, undefined, woPage);
+			}
+		});
+
 		partHistoryModal?.addEventListener("hidden.bs.modal", function () {
 			if (partHistoryMeta) partHistoryMeta.textContent = "Loading...";
 			if (partHistoryOrdersBody) partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
@@ -1454,6 +1505,13 @@
 			_historyOrders = [];
 			_historyWorkOrders = [];
 			_historyPart = {};
+			_historyPartId = "";
+			_ordersCurrentPage = 1;
+			_woCurrentPage = 1;
+			var ordersPagEl = document.getElementById("partHistoryOrdersPagination");
+			var woPagEl = document.getElementById("partHistoryWoPagination");
+			if (ordersPagEl) ordersPagEl.innerHTML = '';
+			if (woPagEl) woPagEl.innerHTML = '';
 			if (partHistoryDateFrom && partHistoryDateFrom._flatpickr) partHistoryDateFrom._flatpickr.clear();
 			if (partHistoryDateTo && partHistoryDateTo._flatpickr) partHistoryDateTo._flatpickr.clear();
 			if (partHistoryDatePreset) partHistoryDatePreset.value = "all_time";
@@ -1465,10 +1523,12 @@
 			}
 		});
 
-		// Date filter change handlers
+		// Date filter change handlers — re-fetch from server with page reset
 		function _onHistoryDateChange() {
-			if (_historyOrders.length || _historyWorkOrders.length) {
-				_renderHistoryTables(_historyOrders, _historyWorkOrders);
+			if (_historyPartId) {
+				_ordersCurrentPage = 1;
+				_woCurrentPage = 1;
+				loadPartHistory(null, 1, 1);
 			}
 		}
 

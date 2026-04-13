@@ -2253,6 +2253,7 @@ def parts_api_history(part_id: str):
     Return part usage history from:
       - parts_orders (ordered/received)
       - work_orders (used in jobs)
+    Supports server-side pagination and date filtering.
     """
     parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
     if parts_coll is None or orders_coll is None or shop is None:
@@ -2268,15 +2269,37 @@ def parts_api_history(part_id: str):
 
     part_number = str(part.get("part_number") or "").strip()
 
+    # Pagination params
+    orders_page, orders_per_page = get_pagination_params(
+        request.args, default_per_page=20, max_per_page=100,
+        page_key="orders_page", per_page_key="orders_per_page",
+    )
+    wo_page, wo_per_page = get_pagination_params(
+        request.args, default_per_page=20, max_per_page=100,
+        page_key="wo_page", per_page_key="wo_per_page",
+    )
+
+    # Date range
+    date_filters = _get_date_range_filters(request.args, preset_key="date_preset")
+    created_from = date_filters["created_from"]
+    created_to_exclusive = date_filters["created_to_exclusive"]
+
     # Orders history
-    orders_rows = list(
-        orders_coll.find(
-            {
-                "shop_id": shop["_id"],
-                "is_active": {"$ne": False},
-                "items.part_id": pid,
-            }
-        ).sort([("created_at", -1)]).limit(200)
+    orders_query = {
+        "shop_id": shop["_id"],
+        "is_active": {"$ne": False},
+        "items.part_id": pid,
+    }
+    orders_date_filter = _build_preferred_date_filter("order_date", created_from, created_to_exclusive)
+    if orders_date_filter:
+        orders_query = {"$and": [orders_query, orders_date_filter]}
+
+    orders_rows, orders_pagination = paginate_find(
+        orders_coll,
+        orders_query,
+        [("created_at", -1)],
+        orders_page,
+        orders_per_page,
     )
 
     vendor_map = {}
@@ -2316,7 +2339,14 @@ def parts_api_history(part_id: str):
     # Work order history (prefer part_id match, fallback by part_number for legacy docs)
     db, _ = _get_shop_db(master)
     if db is None:
-        return jsonify({"ok": True, "part": {"id": str(pid), "part_number": part_number}, "orders": orders_out, "work_orders": []})
+        return jsonify({
+            "ok": True,
+            "part": {"id": str(pid), "part_number": part_number},
+            "orders": orders_out,
+            "orders_pagination": orders_pagination,
+            "work_orders": [],
+            "wo_pagination": {"page": 1, "per_page": wo_per_page, "total": 0, "pages": 1, "has_prev": False, "has_next": False, "prev_page": 1, "next_page": 1},
+        })
 
     work_orders_coll = db.work_orders
     pid_str = str(pid)
@@ -2329,7 +2359,17 @@ def parts_api_history(part_id: str):
             {"labors.parts.part_number": part_number},
         ],
     }
-    wo_rows = list(work_orders_coll.find(wo_filter).sort([("created_at", -1)]).limit(300))
+    wo_date_filter = _build_preferred_date_filter("created_at", created_from, created_to_exclusive)
+    if wo_date_filter:
+        wo_filter = {"$and": [wo_filter, wo_date_filter]}
+
+    wo_rows, wo_pagination = paginate_find(
+        work_orders_coll,
+        wo_filter,
+        [("created_at", -1)],
+        wo_page,
+        wo_per_page,
+    )
 
     customer_ids = [w.get("customer_id") for w in wo_rows if w.get("customer_id")]
     unit_ids = [w.get("unit_id") for w in wo_rows if w.get("unit_id")]
@@ -2399,7 +2439,9 @@ def parts_api_history(part_id: str):
             "description": str(part.get("description") or ""),
         },
         "orders": orders_out,
+        "orders_pagination": orders_pagination,
         "work_orders": work_orders_out,
+        "wo_pagination": wo_pagination,
     })
 
 
