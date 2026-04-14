@@ -5,8 +5,8 @@ import hashlib
 from datetime import datetime, timezone
 from zoneinfo import available_timezones
 
-from bson import ObjectId
-from flask import render_template, request, redirect, url_for, flash, session, jsonify
+from bson import ObjectId, Binary
+from flask import render_template, request, redirect, url_for, flash, session, jsonify, make_response
 
 from app.blueprints.settings import settings_bp
 from app.extensions import get_master_db, get_mongo_client
@@ -620,6 +620,8 @@ def locations_index():
             "city": s.get("city"),
             "state": s.get("state"),
             "zip": s.get("zip"),
+            "billing_address": s.get("billing_address"),
+            "logo_filename": s.get("logo_filename"),
             "status": s.get("status") or ("active" if s.get("is_active", True) else "disabled"),
             "is_active": bool(s.get("is_active", True)),
             "is_primary": False,  # primary = shop_ids[0], можно дорисовать позже
@@ -727,6 +729,9 @@ def locations_index():
             "city": str(active_shop.get("city") or "").strip(),
             "state": str(active_shop.get("state") or "").strip(),
             "zip": str(active_shop.get("zip") or "").strip(),
+            "billing_address": str(active_shop.get("billing_address") or "").strip(),
+            "logo_filename": active_shop.get("logo_filename") or "",
+            "_id": str(active_shop.get("_id") or ""),
         }
 
     return _render_settings_page(
@@ -780,16 +785,18 @@ def api_locations_create():
     if not user or not tenant:
         return jsonify({"ok": False, "errors": ["Session mismatch"]}), 401
 
-    data = request.get_json(silent=True) or {}
-    name = (data.get("name") or "").strip()
-    address = (data.get("address") or "").strip()
-    phone = (data.get("phone") or "").strip()
-    email = (data.get("email") or "").strip()
+    name = (request.form.get("name") or "").strip()
+    address = (request.form.get("address") or "").strip()
+    phone = (request.form.get("phone") or "").strip()
+    email = (request.form.get("email") or "").strip()
+    billing_address = (request.form.get("billing_address") or "").strip()
 
     if len(name) < 2:
         return jsonify({"ok": False, "errors": ["Shop name is required."]}), 400
     if len(address) < 5:
         return jsonify({"ok": False, "errors": ["Address is required."]}), 400
+    if not billing_address:
+        return jsonify({"ok": False, "errors": ["Billing address is required."]}), 400
 
     tenant_slug = tenant.get("slug") or slugify_shop_name(tenant.get("name") or "tenant")
     shop_slug = slugify_shop_name(name)
@@ -807,12 +814,23 @@ def api_locations_create():
         "address": address or None,
         "phone": phone or None,
         "email": email or None,
+        "billing_address": billing_address,
         "status": "active",
         "is_active": True,
         "is_primary": False,
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
+
+    # Handle logo file upload
+    logo_file = request.files.get("logo")
+    if logo_file and logo_file.filename:
+        raw = logo_file.read()
+        if len(raw) > 5 * 1024 * 1024:
+            return jsonify({"ok": False, "errors": ["Logo must be under 5 MB."]}), 400
+        shop_doc["logo_data"] = Binary(raw)
+        shop_doc["logo_filename"] = logo_file.filename
+        shop_doc["logo_content_type"] = logo_file.content_type or "image/png"
 
     try:
         res = master.shops.insert_one(shop_doc)
@@ -862,7 +880,7 @@ def api_locations_create():
         return jsonify({"ok": False, "errors": [str(e)]}), 500
 
 
-@settings_bp.route("/api/locations/<shop_id>", methods=["PUT", "PATCH"])
+@settings_bp.route("/api/locations/<shop_id>", methods=["PUT", "PATCH", "POST"])
 @login_required
 @permission_required("settings.manage_org")
 def api_locations_update(shop_id: str):
@@ -880,27 +898,42 @@ def api_locations_update(shop_id: str):
     if not shop:
         return jsonify({"ok": False, "errors": ["Shop not found"]}), 404
 
-    data = request.get_json(silent=True) or {}
-    name = (data.get("name") or "").strip()
-    address = (data.get("address") or "").strip()
-    phone = (data.get("phone") or "").strip()
-    email = (data.get("email") or "").strip()
+    name = (request.form.get("name") or "").strip()
+    address = (request.form.get("address") or "").strip()
+    phone = (request.form.get("phone") or "").strip()
+    email = (request.form.get("email") or "").strip()
+    billing_address = (request.form.get("billing_address") or "").strip()
 
     if len(name) < 2:
         return jsonify({"ok": False, "errors": ["Shop name is required."]}), 400
+    if not billing_address:
+        return jsonify({"ok": False, "errors": ["Billing address is required."]}), 400
 
     now = utcnow()
+    update_set = {
+        "name": name,
+        "address": address or None,
+        "phone": phone or None,
+        "email": email or None,
+        "billing_address": billing_address,
+        "updated_at": now,
+        "updated_by": user.get("_id"),
+    }
+
+    # Handle logo file upload (only update if new file provided)
+    logo_file = request.files.get("logo")
+    if logo_file and logo_file.filename:
+        raw = logo_file.read()
+        if len(raw) > 5 * 1024 * 1024:
+            return jsonify({"ok": False, "errors": ["Logo must be under 5 MB."]}), 400
+        update_set["logo_data"] = Binary(raw)
+        update_set["logo_filename"] = logo_file.filename
+        update_set["logo_content_type"] = logo_file.content_type or "image/png"
+
     master.shops.update_one(
         {"_id": shop_oid},
         {
-            "$set": {
-                "name": name,
-                "address": address or None,
-                "phone": phone or None,
-                "email": email or None,
-                "updated_at": now,
-                "updated_by": user.get("_id"),
-            },
+            "$set": update_set,
             "$unset": {
                 "address_line": "",
                 "city": "",
@@ -945,5 +978,32 @@ def api_locations_inactive(shop_id: str):
     )
 
     return jsonify({"ok": True})
+
+
+@settings_bp.get("/api/locations/<shop_id>/logo")
+@login_required
+def api_locations_logo(shop_id: str):
+    """Serve shop logo image."""
+    master = get_master_db()
+    tenant = _load_current_tenant(master)
+    if not tenant:
+        return "", 404
+
+    shop_oid = _maybe_object_id(shop_id)
+    if not shop_oid:
+        return "", 404
+
+    shop = master.shops.find_one(
+        {"_id": shop_oid, "tenant_id": tenant["_id"]},
+        {"logo_data": 1, "logo_content_type": 1, "logo_filename": 1},
+    )
+    if not shop or not shop.get("logo_data"):
+        return "", 404
+
+    resp = make_response(bytes(shop["logo_data"]))
+    resp.headers["Content-Type"] = shop.get("logo_content_type", "image/png")
+    resp.headers["Content-Disposition"] = f'inline; filename="{shop.get("logo_filename", "logo.png")}"'
+    resp.headers["Cache-Control"] = "private, max-age=3600"
+    return resp
 
 

@@ -1,0 +1,298 @@
+{% extends "layouts/app_base.html" %}
+{% block page_title %}Settings — PDF Design{% endblock %}
+
+{% block app_content %}
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <div>
+    <h1 class="h4 mb-1">PDF Design</h1>
+    <p class="text-muted mb-0">Customize how your Work Order PDF looks.</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('main.settings') }}">Back to Settings</a>
+  </div>
+</div>
+
+<!-- Current Shop Info Banner -->
+<div class="card border-0 bg-light mb-4">
+  <div class="card-body py-3">
+    <div class="row align-items-center">
+      <div class="col-auto">
+        <div class="rounded-circle bg-primary bg-opacity-10 d-flex align-items-center justify-content-center" style="width:48px;height:48px;">
+          {% if has_logo %}
+            <i class="bi bi-image text-primary" style="font-size:1.3rem;"></i>
+          {% else %}
+            <i class="bi bi-shop text-primary" style="font-size:1.3rem;"></i>
+          {% endif %}
+        </div>
+      </div>
+      <div class="col">
+        <div class="fw-semibold">{{ shop_name or 'No shop name' }}</div>
+        {% if shop_address %}<div class="text-muted small">{{ shop_address }}</div>{% endif %}
+        <div class="text-muted small">
+          {% if shop_phone %}{{ shop_phone }}{% endif %}
+          {% if shop_phone and shop_email %} · {% endif %}
+          {% if shop_email %}{{ shop_email }}{% endif %}
+        </div>
+      </div>
+      <div class="col-auto">
+        {% if has_logo %}
+          <span class="badge bg-success bg-opacity-10 text-success"><i class="bi bi-check-circle me-1"></i>Logo uploaded</span>
+        {% else %}
+          <span class="badge bg-warning bg-opacity-10 text-warning"><i class="bi bi-exclamation-circle me-1"></i>No logo</span>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<form id="pdfDesignForm" autocomplete="off">
+<div class="row g-4">
+
+  <!-- LEFT COLUMN — Settings -->
+  <div class="col-12 col-lg-7">
+
+    <!-- Header Colors -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom fw-semibold d-flex align-items-center gap-2">
+        <i class="bi bi-palette text-primary"></i> Colors & Branding
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-12 col-md-6">
+            <label class="form-label small fw-semibold">Header Background</label>
+            <div class="d-flex align-items-center gap-2">
+              <input type="color" class="form-control form-control-color" name="header_color" value="{{ cfg.header_color or '#1f6b43' }}" style="width:48px;height:38px;">
+              <input type="text" class="form-control form-control-sm font-monospace" name="header_color_text" value="{{ cfg.header_color or '#1f6b43' }}" maxlength="7" style="width:90px;">
+            </div>
+            <div class="form-text">Top banner background color</div>
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="form-label small fw-semibold">Accent Color</label>
+            <div class="d-flex align-items-center gap-2">
+              <input type="color" class="form-control form-control-color" name="accent_color" value="{{ cfg.accent_color or '#1f6b43' }}" style="width:48px;height:38px;">
+              <input type="text" class="form-control form-control-sm font-monospace" name="accent_color_text" value="{{ cfg.accent_color or '#1f6b43' }}" maxlength="7" style="width:90px;">
+            </div>
+            <div class="form-text">Section titles, borders, totals line</div>
+          </div>
+          <div class="col-12">
+            <div class="form-check form-switch">
+              <input class="form-check-input" type="checkbox" name="show_logo" id="showLogo" {{ 'checked' if cfg.get('show_logo', true) }}>
+              <label class="form-check-label" for="showLogo">Show shop logo in header</label>
+            </div>
+            {% if not has_logo %}
+            <div class="form-text text-warning">No logo uploaded yet. Go to <strong>Settings → Locations</strong> to upload one.</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Customer & Unit -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom fw-semibold d-flex align-items-center gap-2">
+        <i class="bi bi-person-vcard text-primary"></i> Customer & Unit Info
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-12 col-md-6">
+            <p class="small text-muted mb-2 fw-semibold text-uppercase" style="letter-spacing:.5px;">Customer</p>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" name="show_customer_email" id="showCustEmail" {{ 'checked' if cfg.get('show_customer_email', true) }}>
+              <label class="form-check-label" for="showCustEmail">Show customer email</label>
+            </div>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" name="show_customer_phone" id="showCustPhone" {{ 'checked' if cfg.get('show_customer_phone', true) }}>
+              <label class="form-check-label" for="showCustPhone">Show customer phone</label>
+            </div>
+          </div>
+          <div class="col-12 col-md-6">
+            <p class="small text-muted mb-2 fw-semibold text-uppercase" style="letter-spacing:.5px;">Vehicle / Unit</p>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" name="show_unit_number" id="showUnitNum" {{ 'checked' if cfg.get('show_unit_number', true) }}>
+              <label class="form-check-label" for="showUnitNum">Show unit number</label>
+            </div>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" name="show_vin" id="showVin" {{ 'checked' if cfg.get('show_vin', true) }}>
+              <label class="form-check-label" for="showVin">Show VIN</label>
+            </div>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" name="show_mileage" id="showMileage" {{ 'checked' if cfg.get('show_mileage', true) }}>
+              <label class="form-check-label" for="showMileage">Show mileage</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Services & Parts -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom fw-semibold d-flex align-items-center gap-2">
+        <i class="bi bi-tools text-primary"></i> Services & Parts
+      </div>
+      <div class="card-body">
+        <div class="row g-3">
+          <div class="col-12 col-md-6">
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" name="show_labor_hours" id="showHours" {{ 'checked' if cfg.get('show_labor_hours', true) }}>
+              <label class="form-check-label" for="showHours">Show labor hours</label>
+            </div>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" name="show_labor_rate" id="showRate" {{ 'checked' if cfg.get('show_labor_rate', true) }}>
+              <label class="form-check-label" for="showRate">Show labor rate code</label>
+            </div>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" name="show_parts_detail" id="showPartsDetail" {{ 'checked' if cfg.get('show_parts_detail', true) }}>
+              <label class="form-check-label" for="showPartsDetail">Show parts detail table</label>
+            </div>
+          </div>
+          <div class="col-12 col-md-6">
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" name="show_core_charges" id="showCore" {{ 'checked' if cfg.get('show_core_charges', true) }}>
+              <label class="form-check-label" for="showCore">Show core charges</label>
+            </div>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" name="show_misc_charges" id="showMisc" {{ 'checked' if cfg.get('show_misc_charges', true) }}>
+              <label class="form-check-label" for="showMisc">Show misc charges</label>
+            </div>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" name="show_shop_supply" id="showShopSupply" {{ 'checked' if cfg.get('show_shop_supply', true) }}>
+              <label class="form-check-label" for="showShopSupply">Show shop supply</label>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Footer / Notes -->
+    <div class="card border-0 shadow-sm mb-3">
+      <div class="card-header bg-white border-bottom fw-semibold d-flex align-items-center gap-2">
+        <i class="bi bi-card-text text-primary"></i> Footer
+      </div>
+      <div class="card-body">
+        <div class="mb-3">
+          <label class="form-label small fw-semibold">Thank-you message</label>
+          <input type="text" class="form-control" name="thank_you_message" value="{{ cfg.thank_you_message or 'Thank you for your business!' }}" maxlength="200" placeholder="Thank you for your business!">
+        </div>
+        <div>
+          <label class="form-label small fw-semibold">Terms & Conditions / Notes</label>
+          <textarea class="form-control" name="footer_notes" rows="4" maxlength="2000" placeholder="Terms, conditions, or notes printed at the bottom of the PDF...">{{ cfg.footer_notes or '' }}</textarea>
+        </div>
+      </div>
+    </div>
+
+    <!-- Save button -->
+    <div class="mb-5">
+      <button type="submit" class="btn btn-primary px-4" id="savePdfDesignBtn">
+        <i class="bi bi-check-lg me-1"></i> Save PDF Design
+      </button>
+    </div>
+
+  </div>
+
+  <!-- RIGHT COLUMN — Live Preview -->
+  <div class="col-12 col-lg-5">
+    <div class="card border-0 shadow-sm sticky-top" style="top: 1rem;">
+      <div class="card-header bg-white border-bottom fw-semibold d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-eye me-1 text-primary"></i> Live Preview</span>
+        <span class="badge bg-primary bg-opacity-10 text-primary">Live</span>
+      </div>
+      <div class="card-body p-2">
+        <div id="pdfPreview" style="font-family: Helvetica, Arial, sans-serif; font-size: 7pt; color: #1a1a1a; border: 1px solid #e0e0e0; padding: 14px; background: #fff; border-radius: 4px;">
+
+          <!-- Preview header -->
+          <div id="prevHeader" style="padding: 7px 10px; margin-bottom: 8px; color: #fff; border-radius: 2px;">
+            <div style="font-size: 10pt; font-weight: bold;" id="prevShopName">{{ shop_name or 'Your Shop Name' }}</div>
+            <div style="font-size: 6pt; margin-top: 1px;" id="prevShopAddr">{{ shop_address or '123 Main Street' }}</div>
+            <div style="font-size: 6pt; margin-top: 1px;" id="prevShopContact">
+              {% if shop_phone %}{{ shop_phone }}{% endif %}
+              {% if shop_phone and shop_email %} · {% endif %}
+              {% if shop_email %}{{ shop_email }}{% endif %}
+            </div>
+          </div>
+
+          <table width="100%" style="margin-bottom: 3px;">
+            <tr>
+              <td width="55%" style="vertical-align: top;">
+                <div style="font-size: 9pt; font-weight: bold; text-align: right;" class="prev-accent-text">Work Order #1001</div>
+                <div style="font-size: 6.5pt; color: #555; text-align: right;">Date: 04/13/2026</div>
+              </td>
+            </tr>
+          </table>
+
+          <table width="100%" style="margin-bottom: 6px;">
+            <tr>
+              <td width="50%" style="vertical-align: top;">
+                <div style="font-size: 6pt; font-weight: bold; text-transform: uppercase; border-bottom: 1pt solid; padding-bottom: 1px; margin-bottom: 3px;" class="prev-accent">Customer</div>
+                <div style="font-size: 6.5pt;">John Doe</div>
+                <div style="font-size: 6.5pt;" id="prevCustEmail">john@example.com</div>
+                <div style="font-size: 6.5pt;" id="prevCustPhone">(555) 123-4567</div>
+              </td>
+              <td width="50%" style="vertical-align: top; padding-left: 8px;">
+                <div style="font-size: 6pt; font-weight: bold; text-transform: uppercase; border-bottom: 1pt solid; padding-bottom: 1px; margin-bottom: 3px;" class="prev-accent">Vehicle / Unit</div>
+                <div style="font-size: 6.5pt;" id="prevUnitNum">Unit #: 1234</div>
+                <div style="font-size: 6.5pt;">2024 Ford F-150</div>
+                <div style="font-size: 6.5pt;" id="prevVin">VIN: 1FTFW1E80NF...</div>
+                <div style="font-size: 6.5pt;" id="prevMileage">Mileage: 45,200</div>
+              </td>
+            </tr>
+          </table>
+
+          <div style="font-size: 6pt; font-weight: bold; text-transform: uppercase; border-bottom: 1pt solid; padding-bottom: 1px; margin-bottom: 3px;" class="prev-accent">Services & Parts</div>
+
+          <div style="border: 1pt solid #ddd; padding: 4px 6px; margin-bottom: 4px; border-radius: 2px;">
+            <div style="font-size: 7pt; font-weight: bold;" class="prev-accent-text">1. Oil Change</div>
+            <div style="font-size: 5.5pt; color: #666;" id="prevLaborMeta">Hours: 1.0 · Rate: STANDARD</div>
+
+            <table id="prevPartsTable" width="100%" style="border-collapse: collapse; margin-top: 3px; font-size: 6pt;">
+              <tr style="background: #f2f2f2;">
+                <th style="border: 1pt solid #ccc; padding: 1px 3px;">Part</th>
+                <th style="border: 1pt solid #ccc; padding: 1px 3px; text-align: right; width: 25px;">Qty</th>
+                <th style="border: 1pt solid #ccc; padding: 1px 3px; text-align: right; width: 40px;">Price</th>
+                <th style="border: 1pt solid #ccc; padding: 1px 3px; text-align: right; width: 40px;">Total</th>
+              </tr>
+              <tr>
+                <td style="border: 1pt solid #ddd; padding: 1px 3px;">Oil Filter</td>
+                <td style="border: 1pt solid #ddd; padding: 1px 3px; text-align: right;">1</td>
+                <td style="border: 1pt solid #ddd; padding: 1px 3px; text-align: right;">$12.99</td>
+                <td style="border: 1pt solid #ddd; padding: 1px 3px; text-align: right;">$12.99</td>
+              </tr>
+              <tr id="prevCoreRow">
+                <td colspan="3" style="font-style: italic; font-size: 5.5pt; color: #777; padding: 1px 3px;">Core Charge × 1</td>
+                <td style="text-align: right; padding: 1px 3px;">$5.00</td>
+              </tr>
+            </table>
+
+            <table style="font-size: 6pt; margin-left: auto; margin-top: 3px;">
+              <tr><td style="text-align: right; color: #555;">Parts:</td><td style="text-align: right; font-weight: bold;">$12.99</td></tr>
+              <tr id="prevCoreSub"><td style="text-align: right; color: #555;">Core Charges:</td><td style="text-align: right; font-weight: bold;">$5.00</td></tr>
+              <tr id="prevMiscSub"><td style="text-align: right; color: #555;">Misc:</td><td style="text-align: right; font-weight: bold;">$2.50</td></tr>
+              <tr><td style="text-align: right; color: #555;">Labor:</td><td style="text-align: right; font-weight: bold;">$85.00</td></tr>
+              <tr id="prevShopSupplySub"><td style="text-align: right; color: #555;">Shop Supply:</td><td style="text-align: right; font-weight: bold;">$3.50</td></tr>
+              <tr style="border-top: 1pt solid #ccc;"><td style="text-align: right; color: #555;"><strong>Block Total:</strong></td><td style="text-align: right; font-weight: bold;"><strong>$108.99</strong></td></tr>
+            </table>
+          </div>
+
+          <div id="prevTotals" style="border-top: 1.5pt solid; padding-top: 5px; margin-top: 6px;">
+            <table style="font-size: 6.5pt; margin-left: auto;">
+              <tr><td style="text-align: right; color: #555;">Labor Total:</td><td style="text-align: right; font-weight: bold;">$85.00</td></tr>
+              <tr><td style="text-align: right; color: #555;">Parts Total:</td><td style="text-align: right; font-weight: bold;">$12.99</td></tr>
+              <tr id="prevCoreTot"><td style="text-align: right; color: #555;">Core Charges:</td><td style="text-align: right; font-weight: bold;">$5.00</td></tr>
+              <tr id="prevShopSupplyTot"><td style="text-align: right; color: #555;">Shop Supply:</td><td style="text-align: right; font-weight: bold;">$3.50</td></tr>
+              <tr id="prevMiscTot"><td style="text-align: right; color: #555;">Misc:</td><td style="text-align: right; font-weight: bold;">$2.50</td></tr>
+              <tr style="border-top: 1pt solid #ccc;"><td style="text-align: right; font-size: 7.5pt; font-weight: bold;">GRAND TOTAL:</td><td style="text-align: right; font-size: 7.5pt; font-weight: bold;">$108.99</td></tr>
+            </table>
+          </div>
+
+          <div id="prevThankYou" style="text-align: center; margin-top: 8px; font-size: 6pt; color: #555; font-style: italic;">Thank you for your business!</div>
+          <div id="prevFooterNotes" style="margin-top: 4px; font-size: 5.5pt; color: #777; white-space: pre-wrap;"></div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</form>
+
+<script src="{{ url_for('static', filename='js/settings/pdf_design.js') }}"></script>
+{% endblock %}

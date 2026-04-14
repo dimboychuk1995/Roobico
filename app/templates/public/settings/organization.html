@@ -2,88 +2,57 @@
 {% block page_title %}Settings — Organization{% endblock %}
 
 {% block app_content %}
-<!-- template: public/settings/organization.html -->
-
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div>
     <h1 class="h4 mb-1">Organization</h1>
-    <p class="text-muted mb-0">Company profile, contacts, legal, billing, and preferences.</p>
+    <p class="text-muted mb-0">Company profile, contacts, and preferences.</p>
   </div>
-
   <div class="d-flex gap-2">
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('main.settings') }}">Back to Settings</a>
-    <button class="btn btn-outline-primary btn-sm" type="button" disabled>Edit (later)</button>
   </div>
 </div>
 
-<!-- Quick info -->
-<div class="alert alert-light border mb-3">
-  <div class="d-flex flex-column flex-md-row gap-2 justify-content-between">
-    <div>
-      <div class="fw-semibold">Tip</div>
-      <div class="text-muted small">
-        Later we’ll add: editing, logo upload, billing/tax fields, addresses, and audit history.
-      </div>
-    </div>
-    <div class="text-muted small">
-      Required permission: <span class="badge text-bg-secondary">settings.manage_org</span>
-    </div>
-  </div>
-</div>
-
+<form id="orgForm" autocomplete="off">
 <div class="row g-3">
   <!-- Left column -->
   <div class="col-12 col-lg-7">
+
     <!-- Company details -->
     <div class="card">
-      <div class="card-header d-flex align-items-center justify-content-between">
-        <div class="fw-semibold">Company details</div>
-        <button class="btn btn-outline-secondary btn-sm" type="button" disabled>Change</button>
-      </div>
-
+      <div class="card-header fw-semibold">Company Details</div>
       <div class="card-body">
         <div class="row g-3">
           <div class="col-12 col-md-6">
-            <label class="form-label">Company name</label>
-            <div class="form-control bg-light" id="org_company_name">
-              {{ tenant_name or "—" }}
-            </div>
-            <div class="form-text">This value comes from tenant session (read-only for now).</div>
+            <label class="form-label">Company Name</label>
+            <input type="text" class="form-control" name="name" value="{{ org.name or '' }}">
           </div>
-
           <div class="col-12 col-md-6">
-            <label class="form-label">Display name (header)</label>
-            <div class="form-control bg-light" id="org_company_display">
-              {{ app_tenant_display or tenant_name or "—" }}
-            </div>
-            <div class="form-text">What you see in the top header.</div>
+            <label class="form-label">Legal Name</label>
+            <input type="text" class="form-control" name="legal_name" value="{{ org.legal_name or '' }}">
           </div>
-
-          <div class="col-12 col-md-6">
-            <label class="form-label">Legal name</label>
-            <div class="form-control bg-light" id="org_legal_name">—</div>
-          </div>
-
           <div class="col-12 col-md-6">
             <label class="form-label">DOT / MC</label>
-            <div class="form-control bg-light" id="org_dot_mc">—</div>
+            <input type="text" class="form-control" name="dot_mc" value="{{ org.dot_mc or '' }}">
           </div>
-
           <div class="col-12 col-md-6">
             <label class="form-label">Tax ID / EIN</label>
-            <div class="form-control bg-light" id="org_tax_id">—</div>
+            <input type="text" class="form-control" name="tax_id" value="{{ org.tax_id or '' }}">
           </div>
-
+          <div class="col-12 col-md-6">
+            <label class="form-label">Phone</label>
+            <input type="text" class="form-control" name="phone" value="{{ org.phone or '' }}">
+          </div>
+          <div class="col-12 col-md-6">
+            <label class="form-label">Email</label>
+            <input type="email" class="form-control" name="email" value="{{ org.email or '' }}">
+          </div>
           <div class="col-12 col-md-6">
             <label class="form-label">Website</label>
-            <div class="form-control bg-light" id="org_website">—</div>
+            <input type="url" class="form-control" name="website" value="{{ org.website or '' }}" placeholder="https://">
           </div>
-
           <div class="col-12">
             <label class="form-label">Notes</label>
-            <div class="form-control bg-light" style="min-height: 80px;" id="org_notes">
-              —
-            </div>
+            <textarea class="form-control" name="notes" rows="3">{{ org.notes or '' }}</textarea>
           </div>
         </div>
       </div>
@@ -91,37 +60,32 @@
 
     <!-- Address -->
     <div class="card mt-3">
-      <div class="card-header d-flex align-items-center justify-content-between">
-        <div class="fw-semibold">Address</div>
-        <button class="btn btn-outline-secondary btn-sm" type="button" disabled>Edit</button>
-      </div>
-
+      <div class="card-header fw-semibold">Address</div>
       <div class="card-body">
         <div class="row g-3">
           <div class="col-12">
-            <label class="form-label">Street</label>
-            <div class="form-control bg-light" id="org_street">—</div>
+            <label class="form-label">Street Address</label>
+            <input type="text" class="form-control" name="address" value="{{ org.address or '' }}">
           </div>
           <div class="col-12 col-md-4">
             <label class="form-label">City</label>
-            <div class="form-control bg-light" id="org_city">—</div>
+            <input type="text" class="form-control" name="city" value="{{ org.city or '' }}">
           </div>
           <div class="col-12 col-md-4">
             <label class="form-label">State</label>
-            <div class="form-control bg-light" id="org_state">—</div>
+            <input type="text" class="form-control" name="state" value="{{ org.state or '' }}">
           </div>
           <div class="col-12 col-md-4">
             <label class="form-label">ZIP</label>
-            <div class="form-control bg-light" id="org_zip">—</div>
+            <input type="text" class="form-control" name="zip" value="{{ org.zip or '' }}">
           </div>
           <div class="col-12 col-md-6">
             <label class="form-label">Country</label>
-            <div class="form-control bg-light" id="org_country">—</div>
+            <input type="text" class="form-control" name="country" value="{{ org.country or '' }}">
           </div>
           <div class="col-12 col-md-6">
-            <label class="form-label">Time zone</label>
-            <div class="form-control bg-light" id="org_timezone">—</div>
-            <div class="form-text">We’ll connect this with your timezone settings later.</div>
+            <label class="form-label">Timezone</label>
+            <input type="text" class="form-control" name="timezone" value="{{ org.timezone or '' }}" placeholder="America/Chicago">
           </div>
         </div>
       </div>
@@ -129,24 +93,20 @@
 
     <!-- Billing -->
     <div class="card mt-3">
-      <div class="card-header d-flex align-items-center justify-content-between">
-        <div class="fw-semibold">Billing</div>
-        <button class="btn btn-outline-secondary btn-sm" type="button" disabled>Manage</button>
-      </div>
-
+      <div class="card-header fw-semibold">Billing</div>
       <div class="card-body">
         <div class="row g-3">
           <div class="col-12 col-md-6">
-            <label class="form-label">Billing email</label>
-            <div class="form-control bg-light" id="org_billing_email">—</div>
+            <label class="form-label">Billing Email</label>
+            <input type="email" class="form-control" name="billing_email" value="{{ org.billing_email or '' }}">
           </div>
           <div class="col-12 col-md-6">
-            <label class="form-label">Billing phone</label>
-            <div class="form-control bg-light" id="org_billing_phone">—</div>
+            <label class="form-label">Billing Phone</label>
+            <input type="text" class="form-control" name="billing_phone" value="{{ org.billing_phone or '' }}">
           </div>
           <div class="col-12">
-            <label class="form-label">Billing address</label>
-            <div class="form-control bg-light" style="min-height: 60px;" id="org_billing_address">—</div>
+            <label class="form-label">Billing Address</label>
+            <textarea class="form-control" name="billing_address" rows="2">{{ org.billing_address or '' }}</textarea>
           </div>
         </div>
       </div>
@@ -155,104 +115,81 @@
 
   <!-- Right column -->
   <div class="col-12 col-lg-5">
+
     <!-- Primary contact -->
     <div class="card">
-      <div class="card-header d-flex align-items-center justify-content-between">
-        <div class="fw-semibold">Primary contact</div>
-        <button class="btn btn-outline-secondary btn-sm" type="button" disabled>Edit</button>
-      </div>
-
+      <div class="card-header fw-semibold">Primary Contact</div>
       <div class="card-body">
         <div class="row g-3">
           <div class="col-12">
-            <label class="form-label">Contact person</label>
-            <div class="form-control bg-light" id="org_contact_name">—</div>
+            <label class="form-label">Contact Person</label>
+            <input type="text" class="form-control" name="contact_name" value="{{ org.contact_name or '' }}">
           </div>
-
           <div class="col-12">
-            <label class="form-label">Email</label>
-            <div class="form-control bg-light" id="org_contact_email">
-              {{ user_email or "—" }}
-            </div>
-            <div class="form-text">For now we show current user email (read-only).</div>
+            <label class="form-label">Contact Email</label>
+            <input type="email" class="form-control" name="contact_email" value="{{ org.contact_email or '' }}">
           </div>
-
           <div class="col-12">
-            <label class="form-label">Phone</label>
-            <div class="form-control bg-light" id="org_contact_phone">—</div>
-          </div>
-
-          <div class="col-12">
-            <label class="form-label">Support / Dispatch phone</label>
-            <div class="form-control bg-light" id="org_support_phone">—</div>
+            <label class="form-label">Contact Phone</label>
+            <input type="text" class="form-control" name="contact_phone" value="{{ org.contact_phone or '' }}">
           </div>
         </div>
       </div>
     </div>
 
-    <!-- Preferences -->
-    <div class="card mt-3">
-      <div class="card-header d-flex align-items-center justify-content-between">
-        <div class="fw-semibold">Preferences</div>
-        <button class="btn btn-outline-secondary btn-sm" type="button" disabled>Change</button>
-      </div>
-
-      <div class="card-body">
-        <div class="row g-3">
-          <div class="col-12">
-            <label class="form-label">Default currency</label>
-            <div class="form-control bg-light" id="org_currency">USD</div>
-          </div>
-
-          <div class="col-12">
-            <label class="form-label">Date format</label>
-            <div class="form-control bg-light" id="org_date_format">MM/DD/YYYY</div>
-          </div>
-
-          <div class="col-12">
-            <label class="form-label">Units</label>
-            <div class="form-control bg-light" id="org_units">Miles / Gallons</div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Security / meta -->
-    <div class="card mt-3">
-      <div class="card-header">
-        <div class="fw-semibold">Meta</div>
-      </div>
-
-      <div class="card-body">
-        <div class="small text-muted mb-2">This section is informational (frontend only).</div>
-
-        <div class="table-responsive">
-          <table class="table table-sm mb-0">
-            <tbody>
-              <tr>
-                <td class="text-muted">Tenant name (session)</td>
-                <td class="text-end fw-semibold">{{ tenant_name or "—" }}</td>
-              </tr>
-              <tr>
-                <td class="text-muted">Signed in as</td>
-                <td class="text-end fw-semibold">{{ (user_name or user_email) or "—" }}</td>
-              </tr>
-              <tr>
-                <td class="text-muted">Access</td>
-                <td class="text-end"><span class="badge text-bg-success">Allowed</span></td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <hr class="my-3">
-        <div class="d-flex gap-2">
-          <button class="btn btn-outline-danger btn-sm" type="button" disabled>Deactivate organization (later)</button>
-          <button class="btn btn-outline-secondary btn-sm" type="button" disabled>Export profile (later)</button>
-        </div>
-      </div>
-    </div>
   </div>
 </div>
 
+<div class="mt-3">
+  <button type="submit" class="btn btn-primary" id="orgSaveBtn">Save Changes</button>
+  <span class="text-success ms-2 d-none" id="orgSaveOk">Saved!</span>
+  <span class="text-danger ms-2 d-none" id="orgSaveErr"></span>
+</div>
+</form>
+
+<script>
+(function () {
+  var form = document.getElementById("orgForm");
+  if (!form) return;
+
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var btn = document.getElementById("orgSaveBtn");
+    var okMsg = document.getElementById("orgSaveOk");
+    var errMsg = document.getElementById("orgSaveErr");
+    okMsg.classList.add("d-none");
+    errMsg.classList.add("d-none");
+    btn.disabled = true;
+    btn.textContent = "Saving…";
+
+    var fd = new FormData(form);
+    var payload = {};
+    fd.forEach(function (val, key) { payload[key] = val; });
+
+    fetch("{{ url_for('main.settings_organization_save') }}", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        btn.disabled = false;
+        btn.textContent = "Save Changes";
+        if (data.ok) {
+          okMsg.classList.remove("d-none");
+          setTimeout(function () { okMsg.classList.add("d-none"); }, 3000);
+        } else {
+          errMsg.textContent = data.error || "Save failed.";
+          errMsg.classList.remove("d-none");
+        }
+      })
+      .catch(function () {
+        btn.disabled = false;
+        btn.textContent = "Save Changes";
+        errMsg.textContent = "Network error.";
+        errMsg.classList.remove("d-none");
+      });
+  });
+})();
+</script>
 {% endblock %}

@@ -59,6 +59,8 @@
                       data-shop-phone="{{ s.phone or '' }}"
                       data-shop-email="{{ s.email or '' }}"
                       data-shop-address="{{ s.address or '' }}"
+                      data-shop-billing-address="{{ s.billing_address or '' }}"
+                      data-shop-has-logo="{{ 'yes' if s.get('logo_filename') else '' }}"
                     >
                       Edit
                     </button>
@@ -121,6 +123,22 @@
           <div class="small text-muted">Address</div>
           <div>{{ active_shop_info.address or "—" }}</div>
         </div>
+
+        <div class="col-12 col-md-6">
+          <div class="small text-muted">Billing Address</div>
+          <div>{{ active_shop_info.billing_address or "—" }}</div>
+        </div>
+
+        <div class="col-12 col-md-6">
+          <div class="small text-muted">Logo</div>
+          <div>
+            {% if active_shop_info.get('logo_filename') %}
+              <img src="{{ url_for('settings.api_locations_logo', shop_id=active_shop_info._id) }}" alt="Logo" style="max-height:60px;" class="rounded border">
+            {% else %}
+              —
+            {% endif %}
+          </div>
+        </div>
       </div>
     {% else %}
       <div class="text-muted">Active shop is not selected in session.</div>
@@ -177,9 +195,17 @@
             <label class="form-label">Address <span class="text-danger">*</span></label>
             <input type="text" class="form-control" id="createShopAddress" name="address" maxlength="200" required placeholder="Start typing an address…">
           </div>
-          <div>
+          <div class="mb-3">
             <label class="form-label">Phone (optional)</label>
             <input type="text" class="form-control" name="phone" maxlength="50">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Billing Address <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" name="billing_address" maxlength="200" required>
+          </div>
+          <div>
+            <label class="form-label">Logo (optional)</label>
+            <input type="file" class="form-control" name="logo" accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml">
           </div>
           <div id="createShopError" class="text-danger small mt-2 d-none"></div>
         </div>
@@ -214,9 +240,20 @@
             <label class="form-label">Address (optional)</label>
             <input type="text" class="form-control" name="address" maxlength="200">
           </div>
-          <div>
+          <div class="mb-3">
             <label class="form-label">Phone (optional)</label>
             <input type="text" class="form-control" name="phone" maxlength="50">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Billing Address <span class="text-danger">*</span></label>
+            <input type="text" class="form-control" name="billing_address" maxlength="200" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Logo (optional)</label>
+            <input type="file" class="form-control" name="logo" accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml">
+            <div id="editLogoPreview" class="mt-2 d-none">
+              <img src="" alt="Current logo" style="max-height:60px;" class="rounded border">
+            </div>
           </div>
           <div id="editShopError" class="text-danger small mt-2 d-none"></div>
         </div>

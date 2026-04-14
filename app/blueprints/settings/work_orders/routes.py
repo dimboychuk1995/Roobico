@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 import re
 
-from flask import render_template, redirect, url_for, flash, session, request
+from flask import render_template, redirect, url_for, flash, session, request, jsonify
 
 from app.blueprints.settings import settings_bp
 from app.extensions import get_master_db, get_mongo_client
@@ -415,3 +415,105 @@ def work_orders_labor_rates_delete(rate_id: str):
 
     flash("Labor rate deleted.", "success")
     return redirect(url_for("settings.work_orders_index"))
+
+
+# =====================================================================
+#  PDF Design settings
+# =====================================================================
+
+_PDF_DESIGN_BOOL_FIELDS = [
+    "show_logo",
+    "show_customer_email",
+    "show_customer_phone",
+    "show_unit_number",
+    "show_vin",
+    "show_mileage",
+    "show_labor_hours",
+    "show_labor_rate",
+    "show_parts_detail",
+    "show_core_charges",
+    "show_misc_charges",
+    "show_shop_supply",
+]
+
+_PDF_DESIGN_TEXT_FIELDS = [
+    "header_color",
+    "accent_color",
+    "thank_you_message",
+    "footer_notes",
+]
+
+_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+@settings_bp.get("/pdf-design")
+@login_required
+@permission_required("settings.manage_org")
+def pdf_design_index():
+    master = get_master_db()
+    shop_db, shop_oid = _get_shop_db_strict(master)
+    if shop_db is None:
+        flash("Active shop not set.", "error")
+        return redirect(url_for("main.settings"))
+
+    shop = master.shops.find_one({"_id": shop_oid}) or {}
+    cfg = shop_db.pdf_design.find_one({"shop_id": shop_oid}) or {}
+
+    shop_name = shop.get("name") or ""
+    addr_parts = [shop.get("address_line"), shop.get("city"), shop.get("state"), shop.get("zip")]
+    shop_address = ", ".join(str(p).strip() for p in addr_parts if p and str(p).strip())
+    shop_phone = str(shop.get("phone") or "").strip()
+    shop_email = str(shop.get("email") or "").strip()
+    has_logo = bool(shop.get("logo_data"))
+
+    return _render_settings_page(
+        "public/settings/pdf_design.html",
+        cfg=cfg,
+        shop_name=shop_name,
+        shop_address=shop_address,
+        shop_phone=shop_phone,
+        shop_email=shop_email,
+        has_logo=has_logo,
+    )
+
+
+@settings_bp.post("/api/pdf-design")
+@login_required
+@permission_required("settings.manage_org")
+def api_pdf_design_save():
+    master = get_master_db()
+    user = _load_current_user(master)
+    shop_db, shop_oid = _get_shop_db_strict(master)
+    if shop_db is None or not user:
+        return jsonify({"ok": False, "errors": ["Session mismatch"]}), 401
+
+    data = request.get_json(silent=True) or {}
+
+    doc = {}
+    for field in _PDF_DESIGN_BOOL_FIELDS:
+        doc[field] = bool(data.get(field, True))
+
+    for field in _PDF_DESIGN_TEXT_FIELDS:
+        doc[field] = str(data.get(field) or "").strip()
+
+    # Validate colors
+    if doc["header_color"] and not _HEX_RE.match(doc["header_color"]):
+        doc["header_color"] = "#1f6b43"
+    if doc["accent_color"] and not _HEX_RE.match(doc["accent_color"]):
+        doc["accent_color"] = "#1f6b43"
+
+    # Truncate
+    doc["thank_you_message"] = doc["thank_you_message"][:200]
+    doc["footer_notes"] = doc["footer_notes"][:2000]
+
+    now = datetime.now(timezone.utc)
+    doc["updated_at"] = now
+    doc["updated_by"] = user.get("_id")
+
+    shop_db.pdf_design.update_one(
+        {"shop_id": shop_oid},
+        {"$set": doc, "$setOnInsert": {"shop_id": shop_oid, "created_at": now}},
+        upsert=True,
+    )
+
+    return jsonify({"ok": True})

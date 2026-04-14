@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import base64
 import json
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
-from flask import request, session, redirect, url_for, flash, jsonify, render_template
+from flask import request, session, redirect, url_for, flash, jsonify, render_template, make_response
 
 from app.blueprints.work_orders import work_orders_bp
 from app.blueprints.main.routes import _render_app_page
@@ -3308,42 +3309,11 @@ def _save_new_contact_to_customer(shop_db, customer_id, new_contact):
 
 
 # ---------------------------------------------------------------------------
-# Email routes
+# PDF helpers
 # ---------------------------------------------------------------------------
 
-@work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/send-email")
-@login_required
-@permission_required("work_orders.create")
-def api_send_work_order_email(work_order_id):
-    shop_db, shop = get_shop_db()
-    if shop_db is None:
-        return jsonify({"ok": False, "error": "Shop not found"}), 404
-
-    wo_id = oid(work_order_id)
-    if not wo_id:
-        return jsonify({"ok": False, "error": "Invalid work order ID"}), 400
-
-    wo = shop_db.work_orders.find_one({"_id": wo_id, "is_active": True})
-    if not wo:
-        return jsonify({"ok": False, "error": "Work order not found"}), 404
-
-    data = request.get_json(silent=True) or {}
-
-    # Accept either single "email" or "emails" array
-    raw_emails = data.get("emails") or []
-    if not raw_emails:
-        single = str(data.get("email") or "").strip().lower()
-        if single:
-            raw_emails = [single]
-    to_emails = [e.strip().lower() for e in raw_emails if isinstance(e, str) and "@" in e.strip()]
-    if not to_emails:
-        return jsonify({"ok": False, "error": "At least one valid email address required"}), 400
-
-    # Optionally save new contact to customer
-    new_contact = data.get("new_contact")
-    if isinstance(new_contact, dict) and wo.get("customer_id"):
-        _save_new_contact_to_customer(shop_db, wo["customer_id"], new_contact)
-
+def _build_wo_pdf_context(shop_db, shop, wo):
+    """Build the template context dict used by work_order_pdf.html."""
     customer = shop_db.customers.find_one({"_id": wo.get("customer_id")}) or {}
     cust_name = customer_label(customer)
     customer_email_val = get_main_contact_email(customer, entity_type="customer")
@@ -3366,13 +3336,12 @@ def api_send_work_order_email(work_order_id):
 
     wo_date = wo.get("work_order_date") or wo.get("created_at")
     wo_date_label = format_date_mmddyyyy(wo_date) if wo_date else ""
-    wo_number = str(wo.get("wo_number") or work_order_id)
+    wo_number = str(wo.get("wo_number") or str(wo["_id"]))
 
     raw_labors = wo.get("labors") or []
     totals_doc = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
     totals_labors = totals_doc.get("labors") if isinstance(totals_doc.get("labors"), list) else []
 
-    # Build comprehensive labor data used by both email and PDF templates
     labors_built = []
     for i, block in enumerate(raw_labors):
         if not isinstance(block, dict):
@@ -3418,7 +3387,7 @@ def api_send_work_order_email(work_order_id):
         labors_built.append({
             "labor_desc": desc or f"Labor {i + 1}",
             "hours": hours,
-            "labor_hours": hours,           # alias for email template
+            "labor_hours": hours,
             "rate_code": rate_code,
             "labor_base": labor_base,
             "shop_supply": shop_supply,
@@ -3440,7 +3409,16 @@ def api_send_work_order_email(work_order_id):
         "grand_total": _work_order_grand_total(wo),
     }
 
-    shared_ctx = dict(
+    pdf_cfg = shop_db.pdf_design.find_one({"shop_id": shop["_id"]}) or {}
+
+    # Build logo as base64 data URI (xhtml2pdf can't fetch localhost URLs)
+    shop_logo_url = ""
+    if pdf_cfg.get("show_logo", True) and shop.get("logo_data"):
+        ct = shop.get("logo_content_type") or "image/png"
+        b64 = base64.b64encode(bytes(shop["logo_data"])).decode("ascii")
+        shop_logo_url = f"data:{ct};base64,{b64}"
+
+    return dict(
         shop_name=shop_name,
         shop_address=shop_address,
         shop_contact=shop_contact,
@@ -3458,7 +3436,86 @@ def api_send_work_order_email(work_order_id):
         unit_model=unit_model,
         labors=labors_built,
         t=t,
+        pdf_cfg=pdf_cfg,
+        shop_logo_url=shop_logo_url,
     )
+
+
+# ---------------------------------------------------------------------------
+# PDF download
+# ---------------------------------------------------------------------------
+
+@work_orders_bp.get("/work_orders/api/work_orders/<work_order_id>/download-pdf")
+@login_required
+@permission_required("work_orders.view")
+def api_download_work_order_pdf(work_order_id):
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "Shop not found"}), 404
+
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return jsonify({"ok": False, "error": "Invalid work order ID"}), 400
+
+    wo = shop_db.work_orders.find_one({"_id": wo_id, "is_active": True})
+    if not wo:
+        return jsonify({"ok": False, "error": "Work order not found"}), 404
+
+    ctx = _build_wo_pdf_context(shop_db, shop, wo)
+    pdf_html = render_template("emails/work_order_pdf.html", **ctx)
+
+    try:
+        pdf_bytes = render_html_to_pdf(pdf_html)
+    except Exception:
+        return jsonify({"ok": False, "error": "PDF generation failed"}), 500
+
+    wo_number = ctx["wo_number"]
+    resp = make_response(pdf_bytes)
+    resp.headers["Content-Type"] = "application/pdf"
+    resp.headers["Content-Disposition"] = f'inline; filename="WorkOrder-{wo_number}.pdf"'
+    return resp
+
+
+# ---------------------------------------------------------------------------
+# Email routes
+# ---------------------------------------------------------------------------
+
+@work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/send-email")
+@login_required
+@permission_required("work_orders.create")
+def api_send_work_order_email(work_order_id):
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "Shop not found"}), 404
+
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return jsonify({"ok": False, "error": "Invalid work order ID"}), 400
+
+    wo = shop_db.work_orders.find_one({"_id": wo_id, "is_active": True})
+    if not wo:
+        return jsonify({"ok": False, "error": "Work order not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+
+    # Accept either single "email" or "emails" array
+    raw_emails = data.get("emails") or []
+    if not raw_emails:
+        single = str(data.get("email") or "").strip().lower()
+        if single:
+            raw_emails = [single]
+    to_emails = [e.strip().lower() for e in raw_emails if isinstance(e, str) and "@" in e.strip()]
+    if not to_emails:
+        return jsonify({"ok": False, "error": "At least one valid email address required"}), 400
+
+    # Optionally save new contact to customer
+    new_contact = data.get("new_contact")
+    if isinstance(new_contact, dict) and wo.get("customer_id"):
+        _save_new_contact_to_customer(shop_db, wo["customer_id"], new_contact)
+
+    shared_ctx = _build_wo_pdf_context(shop_db, shop, wo)
+    wo_number = shared_ctx["wo_number"]
+    shop_name = shared_ctx["shop_name"]
 
     html_body = render_template("emails/work_order_email.html", **shared_ctx)
     pdf_html = render_template("emails/work_order_pdf.html", **shared_ctx)

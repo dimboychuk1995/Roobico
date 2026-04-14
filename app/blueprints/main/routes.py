@@ -223,7 +223,59 @@ def settings():
 @login_required
 @permission_required("settings.manage_org")
 def settings_organization():
-    return _render_app_page("public/settings/organization.html", active_page="settings")
+    user, tenant = _load_user_and_tenant_from_session()
+    if not user or not tenant:
+        flash("Session data mismatch. Please login again.", "error")
+        session.clear()
+        return redirect(url_for("main.index"))
+    return _render_app_page(
+        "public/settings/organization.html",
+        active_page="settings",
+        org=tenant,
+    )
+
+
+@main_bp.post("/settings/organization")
+@login_required
+@permission_required("settings.manage_org")
+def settings_organization_save():
+    user, tenant = _load_user_and_tenant_from_session()
+    if not user or not tenant:
+        return jsonify({"ok": False, "error": "Session expired."}), 401
+
+    master = get_master_db()
+    data = request.get_json(silent=True) or {}
+
+    update_fields = {}
+    allowed = [
+        "name", "legal_name", "dot_mc", "tax_id", "website", "notes",
+        "phone", "email",
+        "address", "city", "state", "zip", "country",
+        "contact_name", "contact_email", "contact_phone",
+        "billing_email", "billing_phone", "billing_address",
+        "timezone", "currency", "date_format", "units",
+    ]
+    for key in allowed:
+        if key in data:
+            update_fields[key] = (str(data[key]).strip() if data[key] is not None else "")
+
+    if not update_fields:
+        return jsonify({"ok": False, "error": "No fields to update."}), 400
+
+    from datetime import datetime, timezone as tz
+    update_fields["updated_at"] = datetime.now(tz.utc)
+
+    master.tenants.update_one(
+        {"_id": tenant["_id"]},
+        {"$set": update_fields},
+    )
+
+    # Update session tenant name if changed
+    if "name" in update_fields and update_fields["name"]:
+        session["tenant_name"] = update_fields["name"]
+        session.modified = True
+
+    return jsonify({"ok": True})
 
 
 @main_bp.get("/settings/roles")

@@ -36,36 +36,48 @@
       editErrorEl.classList.remove("d-none");
     }
 
-    function buildPayload(targetForm) {
-      var nameInput = targetForm.querySelector('input[name="name"]');
-      var addressInput = targetForm.querySelector('input[name="address"]');
-      var phoneInput = targetForm.querySelector('input[name="phone"]');
-      var emailInput = targetForm.querySelector('input[name="email"]');
+    function buildFormData(targetForm) {
+      var fd = new FormData();
+      var fields = ["name", "address", "phone", "email", "billing_address"];
+      fields.forEach(function (f) {
+        var inp = targetForm.querySelector('input[name="' + f + '"]');
+        fd.append(f, inp ? inp.value.trim() : "");
+      });
+      var logoInput = targetForm.querySelector('input[name="logo"]');
+      if (logoInput && logoInput.files && logoInput.files.length > 0) {
+        fd.append("logo", logoInput.files[0]);
+      }
+      return fd;
+    }
 
-      return {
-        name: (nameInput && nameInput.value ? nameInput.value : "").trim(),
-        address: (addressInput && addressInput.value ? addressInput.value : "").trim(),
-        phone: (phoneInput && phoneInput.value ? phoneInput.value : "").trim(),
-        email: (emailInput && emailInput.value ? emailInput.value : "").trim(),
-      };
+    function getVal(targetForm, name) {
+      var inp = targetForm.querySelector('input[name="' + name + '"]');
+      return inp ? inp.value.trim() : "";
     }
 
     form.addEventListener("submit", async function (event) {
       event.preventDefault();
       setError("");
 
-      var nameInput = form.querySelector('input[name="name"]');
-      var payload = buildPayload(form);
-
-      if (!payload.name) {
+      var nameVal = getVal(form, "name");
+      if (!nameVal) {
         setError("Shop name is required.");
+        var nameInput = form.querySelector('input[name="name"]');
         if (nameInput) nameInput.focus();
         return;
       }
-      var addressInput = form.querySelector('input[name="address"]');
-      if (!payload.address || payload.address.length < 5) {
+      var addressVal = getVal(form, "address");
+      if (!addressVal || addressVal.length < 5) {
         setError("Address is required.");
+        var addressInput = form.querySelector('input[name="address"]');
         if (addressInput) addressInput.focus();
+        return;
+      }
+      var billingVal = getVal(form, "billing_address");
+      if (!billingVal) {
+        setError("Billing address is required.");
+        var billingInput = form.querySelector('input[name="billing_address"]');
+        if (billingInput) billingInput.focus();
         return;
       }
 
@@ -73,8 +85,7 @@
       try {
         var res = await fetch("/settings/api/locations", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          body: buildFormData(form),
           credentials: "same-origin",
         });
 
@@ -110,6 +121,22 @@
         editForm.querySelector('input[name="phone"]').value = btn.getAttribute("data-shop-phone") || "";
         editForm.querySelector('input[name="email"]').value = btn.getAttribute("data-shop-email") || "";
         editForm.querySelector('input[name="address"]').value = btn.getAttribute("data-shop-address") || "";
+        editForm.querySelector('input[name="billing_address"]').value = btn.getAttribute("data-shop-billing-address") || "";
+        // Reset file input (can't set value)
+        var logoInput = editForm.querySelector('input[name="logo"]');
+        if (logoInput) logoInput.value = "";
+        // Show logo preview if shop has one
+        var previewEl = document.getElementById("editLogoPreview");
+        if (previewEl) {
+          var hasLogo = btn.getAttribute("data-shop-has-logo");
+          var shopId = btn.getAttribute("data-shop-id");
+          if (hasLogo && shopId) {
+            previewEl.querySelector("img").src = "/settings/api/locations/" + shopId + "/logo?t=" + Date.now();
+            previewEl.classList.remove("d-none");
+          } else {
+            previewEl.classList.add("d-none");
+          }
+        }
         setEditError("");
       });
     });
@@ -119,9 +146,12 @@
       setEditError("");
 
       var shopId = (editForm.querySelector('input[name="shop_id"]').value || "").trim();
-      var payload = buildPayload(editForm);
-      if (!payload.name) {
+      if (!getVal(editForm, "name")) {
         setEditError("Shop name is required.");
+        return;
+      }
+      if (!getVal(editForm, "billing_address")) {
+        setEditError("Billing address is required.");
         return;
       }
       if (!shopId) {
@@ -131,10 +161,11 @@
 
       editSubmitBtn.disabled = true;
       try {
+        var fd = buildFormData(editForm);
+        fd.append("shop_id", shopId);
         var res = await fetch("/settings/api/locations/" + encodeURIComponent(shopId), {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
+          method: "POST",
+          body: fd,
           credentials: "same-origin",
         });
         var data = await res.json().catch(function () { return {}; });
@@ -189,7 +220,16 @@
       });
     });
 
-    // Initialize tax rate form (moved to parts_settings.js)
+    // Auto-copy address → billing_address when billing is empty
+    var createAddr = form.querySelector('input[name="address"]');
+    var createBilling = form.querySelector('input[name="billing_address"]');
+    if (createAddr && createBilling) {
+      createAddr.addEventListener("change", function () {
+        if (!createBilling.value.trim()) {
+          createBilling.value = createAddr.value;
+        }
+      });
+    }
 
   }
 

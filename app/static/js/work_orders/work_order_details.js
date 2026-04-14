@@ -2238,7 +2238,7 @@
 
   function setButtonsState(mode, els) {
     // mode: "creating" | "created_locked_open" | "editing_open" | "paid"
-    const { createBtn, editBtn, saveBtn, paidBtn, unpaidBtn, emailBtn } = els;
+    const { createBtn, editBtn, saveBtn, paidBtn, unpaidBtn, emailBtn, downloadPdfBtn } = els;
 
     const show = (el, v) => { if (el) el.style.display = v ? "" : "none"; };
     const enable = (el, v) => { if (el) el.disabled = !v; };
@@ -2251,6 +2251,7 @@
       show(paidBtn, false);
       show(unpaidBtn, false);
       show(emailBtn, false);
+      show(downloadPdfBtn, false);
       return;
     }
 
@@ -2261,6 +2262,7 @@
       show(paidBtn, true); enable(paidBtn, true);
       show(unpaidBtn, false);
       show(emailBtn, true); enable(emailBtn, true);
+      show(downloadPdfBtn, true); enable(downloadPdfBtn, true);
       return;
     }
 
@@ -2271,6 +2273,7 @@
       show(paidBtn, true); enable(paidBtn, false); // пока редактируем — paid запрещаем
       show(unpaidBtn, false);
       show(emailBtn, true); enable(emailBtn, true);
+      show(downloadPdfBtn, true); enable(downloadPdfBtn, true);
       return;
     }
 
@@ -2281,6 +2284,7 @@
       show(paidBtn, false);
       show(unpaidBtn, true); enable(unpaidBtn, true);
       show(emailBtn, true); enable(emailBtn, true);
+      show(downloadPdfBtn, true); enable(downloadPdfBtn, true);
       return;
     }
   }
@@ -2469,6 +2473,7 @@
     const paidBtn = $("paidWorkOrderBtn");
     const unpaidBtn = $("unpaidWorkOrderBtn");
     const emailBtn = $("emailWorkOrderBtn");
+    const downloadPdfBtn = $("downloadPdfBtn");
 
     const addLaborBtn = $("addLaborBtn");
     const addUnitBtn = $("addUnitBtn");
@@ -2496,7 +2501,7 @@
 
     const els = {
       editor, customerSel, unitSel, addUnitBtn, addLaborBtn,
-      createBtn, editBtn, saveBtn, paidBtn, unpaidBtn, emailBtn
+      createBtn, editBtn, saveBtn, paidBtn, unpaidBtn, emailBtn, downloadPdfBtn
     };
 
     rebuildEnhancedSelect(customerSel);
@@ -3631,6 +3636,13 @@
         if (typeof _emailSendCallback === "function") {
           _emailSendCallback(emails, getNewContactForSave());
         }
+      });
+    }
+
+    if (downloadPdfBtn) {
+      downloadPdfBtn.addEventListener("click", function () {
+        if (!isCreated || !workOrderId) return;
+        window.open(`/work_orders/api/work_orders/${workOrderId}/download-pdf`, "_blank");
       });
     }
 
