@@ -1,6 +1,121 @@
 (function () {
   "use strict";
 
+  var _chartInstance = null;
+
+  var CHART_COLORS = [
+    "rgba(54,162,235,0.7)",
+    "rgba(255,99,132,0.7)",
+    "rgba(75,192,192,0.7)",
+    "rgba(255,206,86,0.7)",
+    "rgba(153,102,255,0.7)",
+    "rgba(255,159,64,0.7)",
+    "rgba(99,255,132,0.7)",
+    "rgba(201,203,207,0.7)",
+    "rgba(255,99,255,0.7)",
+    "rgba(54,235,162,0.7)"
+  ];
+
+  var CHART_BORDERS = [
+    "rgba(54,162,235,1)",
+    "rgba(255,99,132,1)",
+    "rgba(75,192,192,1)",
+    "rgba(255,206,86,1)",
+    "rgba(153,102,255,1)",
+    "rgba(255,159,64,1)",
+    "rgba(99,255,132,1)",
+    "rgba(201,203,207,1)",
+    "rgba(255,99,255,1)",
+    "rgba(54,235,162,1)"
+  ];
+
+  function renderChart(chartData) {
+    var wrap = document.getElementById("reportChartWrap");
+    var canvas = document.getElementById("reportChart");
+    if (!wrap || !canvas) return;
+
+    if (_chartInstance) {
+      _chartInstance.destroy();
+      _chartInstance = null;
+    }
+
+    if (!chartData || !chartData.labels || !chartData.labels.length) {
+      wrap.classList.add("d-none");
+      return;
+    }
+
+    var datasets = [];
+    var hasSecondAxis = false;
+    for (var i = 0; i < chartData.datasets.length; i++) {
+      var ds = chartData.datasets[i];
+      var ci = i % CHART_COLORS.length;
+      var entry = {
+        label: ds.label,
+        data: ds.data,
+        backgroundColor: CHART_COLORS[ci],
+        borderColor: CHART_BORDERS[ci],
+        borderWidth: 1
+      };
+      if (ds.yAxisID) {
+        entry.yAxisID = ds.yAxisID;
+        entry.type = "line";
+        entry.fill = false;
+        entry.borderWidth = 2;
+        entry.pointRadius = 3;
+        entry.backgroundColor = CHART_BORDERS[ci];
+        hasSecondAxis = true;
+      }
+      datasets.push(entry);
+    }
+
+    var isHours = chartData.is_hours === true;
+
+    var scales = {
+      y: {
+        beginAtZero: true,
+        ticks: {
+          callback: function (v) {
+            return isHours ? v + " hrs" : "$" + v.toLocaleString();
+          }
+        }
+      }
+    };
+    if (hasSecondAxis) {
+      scales.y1 = {
+        beginAtZero: true,
+        position: "right",
+        grid: { drawOnChartArea: false },
+        ticks: {
+          callback: function (v) { return v + " hrs"; }
+        }
+      };
+    }
+
+    _chartInstance = new Chart(canvas.getContext("2d"), {
+      type: "bar",
+      data: { labels: chartData.labels, datasets: datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: scales,
+        plugins: {
+          tooltip: {
+            callbacks: {
+              label: function (ctx) {
+                var val = ctx.parsed.y;
+                var axisId = ctx.dataset.yAxisID;
+                var fmt = (isHours || axisId === "y1") ? val.toFixed(2) + " hrs" : "$" + val.toFixed(2);
+                return ctx.dataset.label + ": " + fmt;
+              }
+            }
+          }
+        }
+      }
+    });
+
+    wrap.classList.remove("d-none");
+  }
+
   function escapeHtml(s) {
     return String(s == null ? "" : s)
       .replace(/&/g, "&amp;")
@@ -11,6 +126,11 @@
   }
 
   function fmtMoney(v) {
+    var n = parseFloat(v);
+    return isNaN(n) ? "0.00" : n.toFixed(2);
+  }
+
+  function fmtHours(v) {
     var n = parseFloat(v);
     return isNaN(n) ? "0.00" : n.toFixed(2);
   }
@@ -38,9 +158,13 @@
         ["vendors_count", "orders_count"]
       ],
       "general_revenue": [
-        ["sales_revenue", "parts_cost", "parts_profit"],
+        ["sales_revenue", "parts_sale", "parts_cost", "parts_profit", "core_charges"],
         ["po_total_spent", "net_revenue"],
-        ["wo_count", "po_count"]
+        ["wo_count", "po_count", "total_mech_hours"]
+      ],
+      "mechanic_hours": [
+        ["total_hours", "mechanics_count"],
+        ["total_wo", "total_entries"]
       ]
     };
 
@@ -48,7 +172,9 @@
 
     function cardHtml(key, val) {
       var label = key.replace(/_/g, " ");
-      var display = key.indexOf("count") !== -1 ? String(val) : "$" + fmtMoney(val);
+      var isCount = key.indexOf("count") !== -1;
+      var isHours = key.indexOf("hours") !== -1 || key.indexOf("entries") !== -1;
+      var display = isCount ? String(val) : isHours ? fmtHours(val) + " hrs" : "$" + fmtMoney(val);
       return '<div class="col"><div class="border rounded p-2 h-100">' +
         '<div class="small text-muted text-capitalize">' + escapeHtml(label) + '</div>' +
         '<div class="fw-semibold">' + escapeHtml(display) + '</div>' +
@@ -102,6 +228,9 @@
     if (tab === "general_revenue") {
       return '<tr class="text-muted"><th>Category</th><th class="text-end">Amount</th></tr>';
     }
+    if (tab === "mechanic_hours") {
+      return '<tr class="text-muted"><th>Mechanic</th><th class="text-end">Hours</th><th class="text-end">Work Orders</th><th class="text-end">Labor Entries</th></tr>';
+    }
     return '<tr class="text-muted"><th>Vendor</th><th class="text-end">Orders</th><th class="text-end">Parts</th><th class="text-end">Cores</th><th class="text-end">Shop Supply</th><th class="text-end">Tools</th><th class="text-end">Utilities</th><th class="text-end">Pmt to Svc</th><th class="text-end">Non‑Inv Total</th><th class="text-end">Total</th><th class="text-end">Paid</th><th class="text-end">Balance</th></tr>';
   }
 
@@ -140,8 +269,23 @@
       var cls = isBold ? ' class="fw-semibold"' : '';
       var isSep = cat.indexOf("Parts Orders") === 0 && cat.indexOf("Parts Orders \u2014 Parts") === 0;
       var sep = isSep ? '<tr><td colspan="2" class="border-0 py-1"></td></tr>' : '';
+      // Empty separator row
+      if (!cat && row.amount == null) {
+        return '<tr><td colspan="2" class="border-0 py-2"></td></tr>';
+      }
+      // Hours rows (mechanic section)
+      if (row.is_hours) {
+        return sep + '<tr><td' + cls + '>' + escapeHtml(cat) + '</td>' +
+          '<td class="text-end' + (isBold ? ' fw-semibold' : '') + '">' + fmtHours(row.amount) + ' hrs</td></tr>';
+      }
       return sep + '<tr><td' + cls + '>' + escapeHtml(cat) + '</td>' +
         '<td class="text-end' + (isBold ? ' fw-semibold' : '') + '">$' + fmtMoney(row.amount) + '</td></tr>';
+    }
+    if (tab === "mechanic_hours") {
+      return '<tr><td>' + escapeHtml(row.mechanic_name) + '</td>' +
+        '<td class="text-end fw-semibold">' + fmtHours(row.total_hours) + '</td>' +
+        '<td class="text-end">' + (row.wo_count || 0) + '</td>' +
+        '<td class="text-end">' + (row.labor_entries || 0) + '</td></tr>';
     }
     return '<tr><td>' + escapeHtml(row.vendor_label) + '</td>' +
       '<td class="text-end">' + (row.orders_count || 0) + '</td>' +
@@ -193,6 +337,8 @@
     if (summaryEl) summaryEl.classList.add("d-none");
     if (tableWrap) tableWrap.classList.add("d-none");
     if (emptyEl) emptyEl.classList.add("d-none");
+    var chartWrap = document.getElementById("reportChartWrap");
+    if (chartWrap) chartWrap.classList.add("d-none");
 
     fetch(url)
       .then(function (r) { return r.json(); })
@@ -213,6 +359,9 @@
           summaryEl.innerHTML = buildSummaryHtml(rd.summary, tab);
           summaryEl.classList.remove("d-none");
         }
+
+        // render chart if available
+        renderChart(rd.chart_data || null);
 
         var rows = rd.rows || [];
         if (rows.length) {

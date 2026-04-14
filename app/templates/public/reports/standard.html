@@ -39,11 +39,16 @@
       <li class="nav-item" role="presentation">
         <a class="nav-link {% if selected_tab == 'general_revenue' %}active{% endif %}" href="{{ url_for('reports.standard_report_page', report_key='general_revenue') }}">General Revenue</a>
       </li>
+      <li class="nav-item" role="presentation">
+        <a class="nav-link {% if selected_tab == 'mechanic_hours' %}active{% endif %}" href="{{ url_for('reports.standard_report_page', report_key='mechanic_hours') }}">Mechanic Hours</a>
+      </li>
     </ul>
   </div>
 
   <div class="card-body">
+    <input type="hidden" name="generated" value="1">
     <div class="row g-2 align-items-end">
+      {% if selected_tab not in ('customer_balances', 'vendor_balances') %}
       <div class="col-12 col-md-3">
         <label class="form-label">Date Preset</label>
         <select name="date_preset" class="form-select">
@@ -71,6 +76,7 @@
         <label class="form-label">Date To</label>
         <input type="date" name="date_to" class="form-control" value="{{ date_to or '' }}">
       </div>
+      {% endif %}
 
       {% if show_customer_filters %}
       <div class="col-12 col-md-3">
@@ -130,6 +136,16 @@
       </div>
       {% endif %}
 
+      {% if selected_tab in ('sales_summary', 'payments_summary', 'parts_orders_summary', 'mechanic_hours', 'general_revenue') %}
+      <div class="col-6 col-md-2">
+        <label class="form-label">Chart Group By</label>
+        <select name="chart_bucket" class="form-select">
+          <option value="month"{% if request.args.get('chart_bucket') == 'month' or not request.args.get('chart_bucket') %} selected{% endif %}>Month</option>
+          <option value="week"{% if request.args.get('chart_bucket') == 'week' %} selected{% endif %}>Week</option>
+        </select>
+      </div>
+      {% endif %}
+
       <div class="col-auto d-flex gap-1 align-items-end">
         <button type="submit" class="btn btn-primary">Generate</button>
         <button type="submit" formaction="{{ url_for('reports.standard_report_pdf', report_key=selected_tab or 'sales_summary') }}" formtarget="_blank" class="btn btn-outline-dark">Download PDF</button>
@@ -151,6 +167,10 @@
     </div>
     <!-- summary cards (hidden until loaded) -->
     <div id="reportSummary" class="row g-2 mb-3 d-none"></div>
+    <!-- chart (hidden until loaded) -->
+    <div id="reportChartWrap" class="mb-3 d-none" style="position:relative;height:320px;">
+      <canvas id="reportChart"></canvas>
+    </div>
     <!-- table (hidden until loaded) -->
     <div id="reportTableWrap" class="table-responsive d-none">
       <table class="table table-sm align-middle mb-0 sortable">
@@ -164,5 +184,6 @@
   <div class="card-footer small text-muted" id="reportFooter"></div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
 <script src="{{ url_for('static', filename='js/reports/reports.js') }}"></script>
 {% endblock %}

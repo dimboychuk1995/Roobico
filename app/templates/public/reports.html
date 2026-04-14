@@ -5,18 +5,30 @@
 <div class="d-flex align-items-center justify-content-between mb-3">
   <div>
     <h1 class="h4 mb-1">Reports</h1>
-    <p class="text-muted mb-0">Choose a section. Each section is a separate page.</p>
+    <p class="text-muted mb-0">Choose a report. Each report is a separate page.</p>
   </div>
 </div>
 
+<!-- ── Sales & Revenue ── -->
+<h2 class="h6 text-muted text-uppercase mt-4 mb-2">Sales &amp; Revenue</h2>
 <div class="row g-3">
-
   <div class="col-12 col-md-6 col-xl-4">
     <a href="{{ url_for('reports.standard_report_page', report_key='sales_summary') }}" class="text-decoration-none">
       <div class="card h-100">
         <div class="card-body">
           <h2 class="h6 mb-2">Sales Summary</h2>
           <p class="text-muted mb-0">Revenue breakdown by customer with labor, parts, and tax totals.</p>
+        </div>
+      </div>
+    </a>
+  </div>
+
+  <div class="col-12 col-md-6 col-xl-4">
+    <a href="{{ url_for('reports.standard_report_page', report_key='general_revenue') }}" class="text-decoration-none">
+      <div class="card h-100">
+        <div class="card-body">
+          <h2 class="h6 mb-2">General Revenue</h2>
+          <p class="text-muted mb-0">Full revenue overview: sales, parts profit, orders, and mechanic hours.</p>
         </div>
       </div>
     </a>
@@ -32,7 +44,11 @@
       </div>
     </a>
   </div>
+</div>
 
+<!-- ── Balances ── -->
+<h2 class="h6 text-muted text-uppercase mt-4 mb-2">Balances</h2>
+<div class="row g-3">
   <div class="col-12 col-md-6 col-xl-4">
     <a href="{{ url_for('reports.standard_report_page', report_key='customer_balances') }}" class="text-decoration-none">
       <div class="card h-100">
@@ -54,7 +70,41 @@
       </div>
     </a>
   </div>
+</div>
 
+<!-- ── Parts & Inventory ── -->
+<h2 class="h6 text-muted text-uppercase mt-4 mb-2">Parts &amp; Inventory</h2>
+<div class="row g-3">
+  <div class="col-12 col-md-6 col-xl-4">
+    <a href="{{ url_for('reports.standard_report_page', report_key='parts_orders_summary') }}" class="text-decoration-none">
+      <div class="card h-100">
+        <div class="card-body">
+          <h2 class="h6 mb-2">Parts Orders Summary</h2>
+          <p class="text-muted mb-0">Parts orders by vendor with cost breakdown and balances.</p>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<!-- ── Labor ── -->
+<h2 class="h6 text-muted text-uppercase mt-4 mb-2">Labor</h2>
+<div class="row g-3">
+  <div class="col-12 col-md-6 col-xl-4">
+    <a href="{{ url_for('reports.standard_report_page', report_key='mechanic_hours') }}" class="text-decoration-none">
+      <div class="card h-100">
+        <div class="card-body">
+          <h2 class="h6 mb-2">Mechanic Hours</h2>
+          <p class="text-muted mb-0">Hours worked by each mechanic across all work orders.</p>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+
+<!-- ── Audit ── -->
+<h2 class="h6 text-muted text-uppercase mt-4 mb-2">Audit</h2>
+<div class="row g-3">
   <div class="col-12 col-md-6 col-xl-4">
     <a href="{{ url_for('reports.activity_journal_page') }}" class="text-decoration-none">
       <div class="card h-100">
@@ -65,6 +115,5 @@
       </div>
     </a>
   </div>
-
 </div>
 {% endblock %}

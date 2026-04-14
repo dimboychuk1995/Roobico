@@ -34,6 +34,8 @@
         <td class="text-end">
           {% if 'count' in key %}
             {{ value }}
+          {% elif 'hours' in key or 'entries' in key %}
+            {{ "%.2f"|format(value or 0) }}
           {% else %}
             ${{ "%.2f"|format(value or 0) }}
           {% endif %}
@@ -41,6 +43,10 @@
       </tr>
       {% endfor %}
     </table>
+  {% endif %}
+
+  {% if chart_image %}
+    <img src="data:image/png;base64,{{ chart_image }}" style="width:100%; margin:12px 0;" />
   {% endif %}
 
   {% if report_data.rows and report_data.rows|length > 0 %}
@@ -92,6 +98,13 @@
             <th class="text-end">Total</th>
             <th class="text-end">Paid</th>
             <th class="text-end">Balance</th>
+          </tr>
+        {% elif selected_tab == 'mechanic_hours' %}
+          <tr>
+            <th>Mechanic</th>
+            <th class="text-end">Hours</th>
+            <th class="text-end">Work Orders</th>
+            <th class="text-end">Labor Entries</th>
           </tr>
         {% else %}
           <tr>
@@ -149,13 +162,29 @@
               <td class="text-end">${{ "%.2f"|format(row.paid_amount or 0) }}</td>
               <td class="text-end">${{ "%.2f"|format(row.remaining_balance or 0) }}</td>
             </tr>
+          {% elif selected_tab == 'mechanic_hours' %}
+            <tr>
+              <td>{{ row.mechanic_name }}</td>
+              <td class="text-end">{{ "%.2f"|format(row.total_hours or 0) }}</td>
+              <td class="text-end">{{ row.wo_count or 0 }}</td>
+              <td class="text-end">{{ row.labor_entries or 0 }}</td>
+            </tr>
           {% else %}
             {% set cat = row.category or '' %}
             {% set is_bold = 'Total' in cat or 'Profit' in cat or 'Net' in cat %}
+            {% if not cat and row.amount is none %}
+            <tr><td colspan="2" style="border: none; padding: 6px 0;"></td></tr>
+            {% elif row.is_hours %}
+            <tr>
+              <td{% if is_bold %} style="font-weight: bold"{% endif %}>{{ cat }}</td>
+              <td class="text-end"{% if is_bold %} style="font-weight: bold"{% endif %}>{{ "%.2f"|format(row.amount or 0) }} hrs</td>
+            </tr>
+            {% else %}
             <tr>
               <td{% if is_bold %} style="font-weight: bold"{% endif %}>{{ cat }}</td>
               <td class="text-end"{% if is_bold %} style="font-weight: bold"{% endif %}>${{ "%.2f"|format(row.amount or 0) }}</td>
             </tr>
+            {% endif %}
           {% endif %}
         {% endfor %}
       </tbody>
