@@ -465,6 +465,7 @@ def pdf_design_index():
     shop_phone = str(shop.get("phone") or "").strip()
     shop_email = str(shop.get("email") or "").strip()
     has_logo = bool(shop.get("logo_data"))
+    shop_logo_url = url_for("settings.api_locations_logo", shop_id=str(shop_oid)) if has_logo else ""
 
     return _render_settings_page(
         "public/settings/pdf_design.html",
@@ -474,6 +475,7 @@ def pdf_design_index():
         shop_phone=shop_phone,
         shop_email=shop_email,
         has_logo=has_logo,
+        shop_logo_url=shop_logo_url,
     )
 
 
@@ -498,9 +500,9 @@ def api_pdf_design_save():
 
     # Validate colors
     if doc["header_color"] and not _HEX_RE.match(doc["header_color"]):
-        doc["header_color"] = "#1f6b43"
+        doc["header_color"] = "#1a1a1a"
     if doc["accent_color"] and not _HEX_RE.match(doc["accent_color"]):
-        doc["accent_color"] = "#1f6b43"
+        doc["accent_color"] = "#1a1a1a"
 
     # Truncate
     doc["thank_you_message"] = doc["thank_you_message"][:200]

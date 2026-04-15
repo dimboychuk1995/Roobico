@@ -61,16 +61,16 @@
           <div class="col-12 col-md-6">
             <label class="form-label small fw-semibold">Header Background</label>
             <div class="d-flex align-items-center gap-2">
-              <input type="color" class="form-control form-control-color" name="header_color" value="{{ cfg.header_color or '#1f6b43' }}" style="width:48px;height:38px;">
-              <input type="text" class="form-control form-control-sm font-monospace" name="header_color_text" value="{{ cfg.header_color or '#1f6b43' }}" maxlength="7" style="width:90px;">
+              <input type="color" class="form-control form-control-color" name="header_color" value="{{ cfg.header_color or '#1a1a1a' }}" style="width:48px;height:38px;">
+              <input type="text" class="form-control form-control-sm font-monospace" name="header_color_text" value="{{ cfg.header_color or '#1a1a1a' }}" maxlength="7" style="width:90px;">
             </div>
             <div class="form-text">Top banner background color</div>
           </div>
           <div class="col-12 col-md-6">
             <label class="form-label small fw-semibold">Accent Color</label>
             <div class="d-flex align-items-center gap-2">
-              <input type="color" class="form-control form-control-color" name="accent_color" value="{{ cfg.accent_color or '#1f6b43' }}" style="width:48px;height:38px;">
-              <input type="text" class="form-control form-control-sm font-monospace" name="accent_color_text" value="{{ cfg.accent_color or '#1f6b43' }}" maxlength="7" style="width:90px;">
+              <input type="color" class="form-control form-control-color" name="accent_color" value="{{ cfg.accent_color or '#1a1a1a' }}" style="width:48px;height:38px;">
+              <input type="text" class="form-control form-control-sm font-monospace" name="accent_color_text" value="{{ cfg.accent_color or '#1a1a1a' }}" maxlength="7" style="width:90px;">
             </div>
             <div class="form-text">Section titles, borders, totals line</div>
           </div>
@@ -200,91 +200,156 @@
         <div id="pdfPreview" style="font-family: Helvetica, Arial, sans-serif; font-size: 7pt; color: #1a1a1a; border: 1px solid #e0e0e0; padding: 14px; background: #fff; border-radius: 4px;">
 
           <!-- Preview header -->
-          <div id="prevHeader" style="padding: 7px 10px; margin-bottom: 8px; color: #fff; border-radius: 2px;">
-            <div style="font-size: 10pt; font-weight: bold;" id="prevShopName">{{ shop_name or 'Your Shop Name' }}</div>
-            <div style="font-size: 6pt; margin-top: 1px;" id="prevShopAddr">{{ shop_address or '123 Main Street' }}</div>
-            <div style="font-size: 6pt; margin-top: 1px;" id="prevShopContact">
-              {% if shop_phone %}{{ shop_phone }}{% endif %}
-              {% if shop_phone and shop_email %} · {% endif %}
-              {% if shop_email %}{{ shop_email }}{% endif %}
-            </div>
-          </div>
-
-          <table width="100%" style="margin-bottom: 3px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 4px;">
             <tr>
-              <td width="55%" style="vertical-align: top;">
-                <div style="font-size: 9pt; font-weight: bold; text-align: right;" class="prev-accent-text">Work Order #1001</div>
-                <div style="font-size: 6.5pt; color: #555; text-align: right;">Date: 04/13/2026</div>
+              <td width="45%" style="vertical-align: top;">
+                <div style="font-size: 9pt; font-weight: bold;" id="prevShopName">{{ shop_name or 'Your Shop Name' }}</div>
+                <div style="font-size: 6pt; color: #333;" id="prevShopAddr">{{ shop_address or '123 Main Street' }}</div>
+                <div style="font-size: 6pt; color: #333;" id="prevShopContact">
+                  {% if shop_phone %}{{ shop_phone }}{% endif %}
+                  {% if shop_phone and shop_email %} · {% endif %}
+                  {% if shop_email %}{{ shop_email }}{% endif %}
+                </div>
+              </td>
+              <td width="20%" style="text-align: center; vertical-align: middle;" id="prevLogoArea">
+                {% if has_logo and shop_logo_url %}
+                <img src="{{ shop_logo_url }}" style="max-width: 80px; max-height: 40px;" id="prevLogoImg">
+                {% endif %}
+              </td>
+              <td width="35%" style="vertical-align: top;">
+                <table cellpadding="0" cellspacing="0" style="margin-left: auto;">
+                  <tr>
+                    <td style="text-align: right; padding-right: 6px; font-size: 6pt; color: #333;">Work Order:</td>
+                    <td style="text-align: right; font-weight: bold; font-size: 9pt;" class="prev-accent-text">WO-1001</td>
+                  </tr>
+                  <tr>
+                    <td style="text-align: right; padding-right: 6px; font-size: 6pt; color: #333;">Date:</td>
+                    <td style="text-align: right; font-weight: bold; font-size: 7pt;">04/14/2026</td>
+                  </tr>
+                </table>
               </td>
             </tr>
           </table>
 
+          <div id="prevDivider" style="border-top: 1.5pt solid; margin-bottom: 6px;"></div>
+
+          <!-- WO Info Row -->
+          <table width="100%" style="border-collapse: collapse; margin-bottom: 6px; font-size: 6pt;">
+            <tr id="prevInfoRowHeader">
+              <th style="color: #fff; padding: 1px 4px; text-align: left; font-size: 5pt;">Work Order</th>
+              <th style="color: #fff; padding: 1px 4px; text-align: left; font-size: 5pt;" id="prevInfoUnitHdr">Unit #</th>
+            </tr>
+            <tr>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0;">WO-1001</td>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0;" id="prevInfoUnitVal">1234</td>
+            </tr>
+          </table>
+
+          <!-- Bill To -->
           <table width="100%" style="margin-bottom: 6px;">
             <tr>
               <td width="50%" style="vertical-align: top;">
-                <div style="font-size: 6pt; font-weight: bold; text-transform: uppercase; border-bottom: 1pt solid; padding-bottom: 1px; margin-bottom: 3px;" class="prev-accent">Customer</div>
-                <div style="font-size: 6.5pt;">John Doe</div>
-                <div style="font-size: 6.5pt;" id="prevCustEmail">john@example.com</div>
-                <div style="font-size: 6.5pt;" id="prevCustPhone">(555) 123-4567</div>
+                <div id="prevBillToHdr" style="font-size: 5.5pt; font-weight: bold; border-bottom: 1pt solid; padding-bottom: 1px; margin-bottom: 3px;">Bill To</div>
+                <div style="font-size: 6.5pt; padding: 0 4px;">
+                  <strong>John Doe</strong>
+                  <div style="color: #444;">123 Main St, Anytown, IL 60010</div>
+                  <div id="prevCustEmail">john@example.com</div>
+                  <div id="prevCustPhone">P: (555) 123-4567</div>
+                </div>
               </td>
-              <td width="50%" style="vertical-align: top; padding-left: 8px;">
-                <div style="font-size: 6pt; font-weight: bold; text-transform: uppercase; border-bottom: 1pt solid; padding-bottom: 1px; margin-bottom: 3px;" class="prev-accent">Vehicle / Unit</div>
-                <div style="font-size: 6.5pt;" id="prevUnitNum">Unit #: 1234</div>
-                <div style="font-size: 6.5pt;">2024 Ford F-150</div>
-                <div style="font-size: 6.5pt;" id="prevVin">VIN: 1FTFW1E80NF...</div>
-                <div style="font-size: 6.5pt;" id="prevMileage">Mileage: 45,200</div>
+              <td width="50%" style="vertical-align: top;"></td>
+            </tr>
+          </table>
+
+          <!-- Items table -->
+          <table width="100%" style="border-collapse: collapse; font-size: 6pt; margin-bottom: 4px;">
+            <tr id="prevItemsHeader">
+              <th style="color: #fff; padding: 2px 4px; text-align: left; font-size: 5.5pt; width: 30px;">Item</th>
+              <th style="color: #fff; padding: 2px 4px; text-align: left; font-size: 5.5pt;">Description</th>
+              <th style="color: #fff; padding: 2px 4px; text-align: right; font-size: 5.5pt; width: 35px;">Qty</th>
+              <th style="color: #fff; padding: 2px 4px; text-align: right; font-size: 5.5pt; width: 35px;">Rate</th>
+              <th style="color: #fff; padding: 2px 4px; text-align: right; font-size: 5.5pt; width: 40px;">Amount</th>
+            </tr>
+            <!-- Labor block 1 -->
+            <tr>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0;">Labor</td>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0;">
+                Oil Change
+                <span style="font-size: 5pt; color: #666; display: block;" id="prevLaborMeta">Hours: 1.0 · Rate: STANDARD</span>
+              </td>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">1.00000</td>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">$85.00</td>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">$85.00</td>
+            </tr>
+            <tr id="prevPartsTable">
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0;">Parts</td>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0;">Oil Filter - FL400S</td>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">1.00000</td>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">$12.99</td>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">$12.99</td>
+            </tr>
+            <tr id="prevCoreRow">
+              <td style="padding: 2px 4px;"></td>
+              <td colspan="3" style="padding: 2px 4px; font-style: italic; font-size: 5pt; color: #777;">Core Charge × 1</td>
+              <td style="padding: 2px 4px; text-align: right;">$5.00</td>
+            </tr>
+            <!-- Labor separator -->
+            <tr class="prev-labor-sep"><td colspan="5" style="padding: 0; height: 3px;"></td></tr>
+            <tr class="prev-labor-sep"><td colspan="5" style="padding: 0; height: 0; border-bottom: 1.5pt solid;"></td></tr>
+            <tr class="prev-labor-sep"><td colspan="5" style="padding: 0; height: 3px;"></td></tr>
+            <!-- Labor block 2 -->
+            <tr>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0;">Labor</td>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0;">Brake Inspection</td>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">0.50000</td>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">$85.00</td>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">$42.50</td>
+            </tr>
+            <tr>
+              <td colspan="4" style="padding: 3px 4px; text-align: right; border-top: 1pt solid #999; font-weight: bold;">Subtotal</td>
+              <td style="padding: 3px 4px; text-align: right; border-top: 1pt solid #999; font-weight: bold;">$145.49</td>
+            </tr>
+          </table>
+
+          <!-- Unit Info + Totals -->
+          <table width="100%" style="margin-top: 4px;">
+            <tr>
+              <td width="45%" style="vertical-align: top; font-size: 6pt;">
+                <div id="prevUnitNum"><strong>Unit: 1234</strong></div>
+                <div id="prevVin" style="margin-top: 1px;"><strong>VIN:</strong> 1FTFW1E80NF...</div>
+                <div style="margin-top: 1px;">2024 Ford F-150</div>
+                <div id="prevMileage" style="margin-top: 1px;"><strong>Mileage:</strong> 45,200</div>
+              </td>
+              <td width="55%" style="vertical-align: top;">
+                <table style="font-size: 6pt; margin-left: auto; border-collapse: collapse;">
+                  <tr><td style="text-align: right; font-weight: bold; color: #333; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">Labor</td><td style="text-align: right; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">$85.00</td></tr>
+                  <tr><td style="text-align: right; font-weight: bold; color: #333; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">Parts</td><td style="text-align: right; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">$12.99</td></tr>
+                  <tr id="prevCoreTot"><td style="text-align: right; font-weight: bold; color: #333; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">Core Charges</td><td style="text-align: right; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">$5.00</td></tr>
+                  <tr id="prevShopSupplyTot"><td style="text-align: right; font-weight: bold; color: #333; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">Shop Supplies</td><td style="text-align: right; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">$3.50</td></tr>
+                  <tr id="prevMiscTot"><td style="text-align: right; font-weight: bold; color: #333; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">Misc</td><td style="text-align: right; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">$2.50</td></tr>
+                  <tr id="prevTotals"><td style="text-align: right; font-size: 7pt; font-weight: bold; padding: 3px 5px; border-top: 1.5pt solid;">Total</td><td style="text-align: right; font-size: 7pt; font-weight: bold; padding: 3px 5px; border-top: 1.5pt solid;">$108.99</td></tr>
+                </table>
               </td>
             </tr>
           </table>
 
-          <div style="font-size: 6pt; font-weight: bold; text-transform: uppercase; border-bottom: 1pt solid; padding-bottom: 1px; margin-bottom: 3px;" class="prev-accent">Services & Parts</div>
-
-          <div style="border: 1pt solid #ddd; padding: 4px 6px; margin-bottom: 4px; border-radius: 2px;">
-            <div style="font-size: 7pt; font-weight: bold;" class="prev-accent-text">1. Oil Change</div>
-            <div style="font-size: 5.5pt; color: #666;" id="prevLaborMeta">Hours: 1.0 · Rate: STANDARD</div>
-
-            <table id="prevPartsTable" width="100%" style="border-collapse: collapse; margin-top: 3px; font-size: 6pt;">
-              <tr style="background: #f2f2f2;">
-                <th style="border: 1pt solid #ccc; padding: 1px 3px;">Part</th>
-                <th style="border: 1pt solid #ccc; padding: 1px 3px; text-align: right; width: 25px;">Qty</th>
-                <th style="border: 1pt solid #ccc; padding: 1px 3px; text-align: right; width: 40px;">Price</th>
-                <th style="border: 1pt solid #ccc; padding: 1px 3px; text-align: right; width: 40px;">Total</th>
-              </tr>
-              <tr>
-                <td style="border: 1pt solid #ddd; padding: 1px 3px;">Oil Filter</td>
-                <td style="border: 1pt solid #ddd; padding: 1px 3px; text-align: right;">1</td>
-                <td style="border: 1pt solid #ddd; padding: 1px 3px; text-align: right;">$12.99</td>
-                <td style="border: 1pt solid #ddd; padding: 1px 3px; text-align: right;">$12.99</td>
-              </tr>
-              <tr id="prevCoreRow">
-                <td colspan="3" style="font-style: italic; font-size: 5.5pt; color: #777; padding: 1px 3px;">Core Charge × 1</td>
-                <td style="text-align: right; padding: 1px 3px;">$5.00</td>
-              </tr>
-            </table>
-
-            <table style="font-size: 6pt; margin-left: auto; margin-top: 3px;">
-              <tr><td style="text-align: right; color: #555;">Parts:</td><td style="text-align: right; font-weight: bold;">$12.99</td></tr>
-              <tr id="prevCoreSub"><td style="text-align: right; color: #555;">Core Charges:</td><td style="text-align: right; font-weight: bold;">$5.00</td></tr>
-              <tr id="prevMiscSub"><td style="text-align: right; color: #555;">Misc:</td><td style="text-align: right; font-weight: bold;">$2.50</td></tr>
-              <tr><td style="text-align: right; color: #555;">Labor:</td><td style="text-align: right; font-weight: bold;">$85.00</td></tr>
-              <tr id="prevShopSupplySub"><td style="text-align: right; color: #555;">Shop Supply:</td><td style="text-align: right; font-weight: bold;">$3.50</td></tr>
-              <tr style="border-top: 1pt solid #ccc;"><td style="text-align: right; color: #555;"><strong>Block Total:</strong></td><td style="text-align: right; font-weight: bold;"><strong>$108.99</strong></td></tr>
-            </table>
-          </div>
-
-          <div id="prevTotals" style="border-top: 1.5pt solid; padding-top: 5px; margin-top: 6px;">
-            <table style="font-size: 6.5pt; margin-left: auto;">
-              <tr><td style="text-align: right; color: #555;">Labor Total:</td><td style="text-align: right; font-weight: bold;">$85.00</td></tr>
-              <tr><td style="text-align: right; color: #555;">Parts Total:</td><td style="text-align: right; font-weight: bold;">$12.99</td></tr>
-              <tr id="prevCoreTot"><td style="text-align: right; color: #555;">Core Charges:</td><td style="text-align: right; font-weight: bold;">$5.00</td></tr>
-              <tr id="prevShopSupplyTot"><td style="text-align: right; color: #555;">Shop Supply:</td><td style="text-align: right; font-weight: bold;">$3.50</td></tr>
-              <tr id="prevMiscTot"><td style="text-align: right; color: #555;">Misc:</td><td style="text-align: right; font-weight: bold;">$2.50</td></tr>
-              <tr style="border-top: 1pt solid #ccc;"><td style="text-align: right; font-size: 7.5pt; font-weight: bold;">GRAND TOTAL:</td><td style="text-align: right; font-size: 7.5pt; font-weight: bold;">$108.99</td></tr>
-            </table>
-          </div>
-
           <div id="prevThankYou" style="text-align: center; margin-top: 8px; font-size: 6pt; color: #555; font-style: italic;">Thank you for your business!</div>
-          <div id="prevFooterNotes" style="margin-top: 4px; font-size: 5.5pt; color: #777; white-space: pre-wrap;"></div>
+
+          <div id="prevTerms" style="margin-top: 8px; font-size: 5pt; color: #555; line-height: 1.5;">
+            <div style="font-size: 5.5pt; font-weight: bold; color: #333; margin-bottom: 2px; text-transform: uppercase;">Terms &amp; Conditions</div>
+            <div id="prevTermsContent">
+              <p style="margin: 1px 0;">1) Payment is due upon completion unless otherwise agreed in writing.</p>
+              <p style="margin: 1px 0;">2) Parts warranties are provided solely by the manufacturer. Labor warranty: 30 days or 1,000 miles.</p>
+              <p style="margin: 1px 0;">3) Customer-supplied parts carry no warranty.</p>
+            </div>
+          </div>
+
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 8px; font-size: 5pt;">
+            <tr>
+              <td width="55%" style="padding-top: 12px; border-top: 0.5pt solid #333;">Customer Signature</td>
+              <td width="45%" style="padding-top: 12px; border-top: 0.5pt solid #333;">Date</td>
+            </tr>
+          </table>
 
         </div>
       </div>

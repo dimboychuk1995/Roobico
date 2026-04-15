@@ -2,8 +2,8 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  {% set hdr_color = pdf_cfg.header_color or '#1f6b43' %}
-  {% set acc_color = pdf_cfg.accent_color or '#1f6b43' %}
+  {% set hdr_color = pdf_cfg.header_color or '#1a1a1a' %}
+  {% set acc_color = pdf_cfg.accent_color or '#1a1a1a' %}
   <style>
     @page {
       size: letter portrait;
@@ -15,312 +15,346 @@
       color: #1a1a1a;
       margin: 0;
     }
-    .sec-title {
-      font-size: 7.5pt;
-      font-weight: bold;
-      color: {{ acc_color }};
-      text-transform: uppercase;
-      border-bottom: 1pt solid {{ acc_color }};
-      padding-bottom: 2px;
-      margin-bottom: 5px;
-      margin-top: 10px;
-    }
-    .info-lbl {
+    .tr { text-align: right; }
+    .hdr-tbl { width: 100%; border-collapse: collapse; }
+    .hdr-tbl td { vertical-align: top; }
+    .shop-name { font-size: 13pt; font-weight: bold; line-height: 1.3; }
+    .shop-detail { font-size: 8.5pt; color: #333333; line-height: 1.5; }
+    .wo-box { border-collapse: collapse; margin-left: auto; }
+    .wo-box td { padding: 2px 0; }
+    .wo-box .lbl { text-align: right; padding-right: 10px; font-size: 9pt; color: #333333; }
+    .wo-box .val { text-align: right; font-weight: bold; font-size: 13pt; }
+    .wo-box .val-sm { text-align: right; font-weight: bold; font-size: 10pt; }
+    .divider { border-top: 2pt solid {{ hdr_color }}; margin: 10px 0; }
+    .sec-hdr {
       font-size: 8pt;
       font-weight: bold;
-      color: #555555;
-      padding-right: 8px;
-      white-space: nowrap;
-      vertical-align: top;
-    }
-    .info-val {
-      font-size: 8.5pt;
-      vertical-align: top;
-    }
-    .labor-block {
-      border: 1pt solid #dddddd;
-      padding: 7px 9px;
-      margin-bottom: 8px;
-      margin-top: 4px;
-    }
-    .labor-title {
-      font-size: 10pt;
-      font-weight: bold;
-      color: {{ acc_color }};
-      margin-bottom: 3px;
-    }
-    .labor-meta {
-      font-size: 7.5pt;
-      color: #666666;
+      color: #ffffff;
+      background-color: {{ hdr_color }};
+      padding: 3px 8px;
       margin-bottom: 5px;
     }
-    .parts-tbl {
+    .info-block { font-size: 8.5pt; line-height: 1.7; padding: 2px 8px; }
+    .items-tbl {
       width: 100%;
       border-collapse: collapse;
-      margin-top: 5px;
-      margin-bottom: 5px;
-      font-size: 8pt;
+      margin-top: 8px;
+      margin-bottom: 0;
     }
-    .parts-tbl th {
-      background-color: #f2f2f2;
-      border: 1pt solid #cccccc;
-      padding: 3px 6px;
+    .items-tbl th {
+      background-color: {{ hdr_color }};
+      color: #ffffff;
+      font-size: 8pt;
+      font-weight: bold;
+      padding: 5px 8px;
       text-align: left;
+      border: none;
     }
-    .parts-tbl td {
-      border: 1pt solid #dddddd;
-      padding: 3px 6px;
+    .items-tbl th.tr { text-align: right; }
+    .items-tbl td {
+      padding: 5px 8px;
+      font-size: 8.5pt;
       vertical-align: top;
+      border-bottom: 0.5pt solid #e0e0e0;
     }
-    .tr { text-align: right; }
-    .sub-tbl {
-      font-size: 8pt;
-      margin-left: auto;
-      margin-top: 6px;
+    .items-tbl td.tr { text-align: right; }
+    .items-tbl .labor-note {
+      font-size: 7.5pt;
+      color: #666666;
+      display: block;
+      margin-top: 2px;
     }
-    .sub-tbl td { padding: 1px 5px; }
-    .sub-lbl { text-align: right; color: #555555; min-width: 100px; }
-    .sub-val { text-align: right; font-weight: bold; min-width: 65px; }
-    .totals-box {
-      border-top: 2pt solid {{ acc_color }};
-      padding-top: 8px;
-      margin-top: 14px;
+    .items-tbl .subtotal-row td {
+      border-top: 1pt solid #999999;
+      border-bottom: none;
+      font-weight: bold;
+      padding-top: 6px;
     }
+    .summary-tbl { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .unit-info { font-size: 8.5pt; line-height: 1.7; }
     .tot-tbl {
+      border-collapse: collapse;
       font-size: 9pt;
       margin-left: auto;
     }
-    .tot-tbl td { padding: 2px 5px; }
-    .tot-lbl { text-align: right; color: #555555; min-width: 130px; }
-    .tot-val { text-align: right; font-weight: bold; min-width: 85px; }
+    .tot-tbl td {
+      padding: 3px 8px;
+      border-bottom: 0.5pt solid #dddddd;
+    }
+    .tot-lbl { text-align: right; font-weight: bold; color: #333333; min-width: 120px; }
+    .tot-val { text-align: right; min-width: 80px; }
     .grand-row td {
       font-size: 11pt;
       font-weight: bold;
-      border-top: 1pt solid #cccccc;
+      border-top: 2pt solid {{ hdr_color }};
+      border-bottom: none;
       padding-top: 5px;
     }
-    .italic-note { font-style: italic; font-size: 7.5pt; color: #777777; }
-    .footer-note { font-size: 7pt; color: #777777; margin-top: 10px; white-space: pre-wrap; }
+.italic-note { font-style: italic; font-size: 7.5pt; color: #777777; }
+    .footer-note { font-size: 7pt; color: #777777; margin-top: 14px; white-space: pre-wrap; }
+    .info-row-tbl {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      margin-bottom: 10px;
+    }
+    .info-row-tbl th {
+      background-color: {{ hdr_color }};
+      color: #ffffff;
+      font-size: 7.5pt;
+      font-weight: bold;
+      padding: 3px 8px;
+      text-align: left;
+      border: none;
+    }
+    .info-row-tbl td {
+      font-size: 8.5pt;
+      padding: 5px 8px;
+      border-bottom: 0.5pt solid #e0e0e0;
+    }
+    .terms-section {
+      margin-top: 20px;
+      font-size: 7pt;
+      color: #555555;
+      line-height: 1.6;
+    }
+    .terms-section .terms-title {
+      font-size: 8pt;
+      font-weight: bold;
+      color: #333333;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+    }
+    .terms-section p {
+      margin: 2px 0;
+    }
   </style>
 </head>
 <body>
 
   <!-- HEADER -->
-  <table width="100%" cellpadding="0" cellspacing="0">
+  <table class="hdr-tbl" cellpadding="0" cellspacing="0">
     <tr>
-      <td width="60%" style="background-color: {{ hdr_color }}; color: #ffffff; padding: 10px 14px; vertical-align: middle;">
-        {% if pdf_cfg.get('show_logo', true) and shop_logo_url %}
-        <img src="{{ shop_logo_url }}" width="120" height="36" alt="" style="display: block; margin-bottom: 4px;">
+      <td width="45%">
+        <div class="shop-name">{{ shop_name }}</div>
+        {% if shop_address %}<div class="shop-detail">{{ shop_address }}</div>{% endif %}
+        {% if shop_contact %}
+        {% for part in shop_contact.split(' · ') %}
+        <div class="shop-detail">{{ part }}</div>
+        {% endfor %}
         {% endif %}
-        <span style="font-size: 15pt; font-weight: bold;">{{ shop_name }}</span>
-        {% if shop_address %}<br><span style="font-size: 8pt;">{{ shop_address }}</span>{% endif %}
-        {% if shop_contact %}<br><span style="font-size: 8pt;">{{ shop_contact }}</span>{% endif %}
       </td>
-      <td width="40%" style="vertical-align: top; padding: 10px 0 0 14px;">
-        <span style="font-size: 13pt; font-weight: bold; color: {{ acc_color }};">Work Order #{{ wo_number }}</span>
-        {% if wo_date_label %}<br><span style="font-size: 9pt; color: #555555;">Date: {{ wo_date_label }}</span>{% endif %}
+      <td width="20%" style="text-align: center; vertical-align: middle;">
+        {% if pdf_cfg.get('show_logo', true) and shop_logo_url %}
+        <img src="{{ shop_logo_url }}" style="max-width: 120px; max-height: 60px;">
+        {% endif %}
+      </td>
+      <td width="35%">
+        <table class="wo-box" cellpadding="0" cellspacing="0">
+          <tr>
+            <td class="lbl">Work Order:</td>
+            <td class="val">{{ wo_number }}</td>
+          </tr>
+          {% if wo_date_label %}
+          <tr>
+            <td class="lbl">Date:</td>
+            <td class="val-sm">{{ wo_date_label }}</td>
+          </tr>
+          {% endif %}
+        </table>
       </td>
     </tr>
   </table>
 
-  <br>
+  <div class="divider"></div>
 
-  <!-- CUSTOMER / UNIT -->
+  <!-- WO INFO ROW -->
+  <table class="info-row-tbl" cellpadding="0" cellspacing="0">
+    <tr>
+      <th>Work Order</th>
+      {% if unit_number and pdf_cfg.get('show_unit_number', true) %}<th>Unit #</th>{% endif %}
+    </tr>
+    <tr>
+      <td>{{ wo_number }}</td>
+      {% if unit_number and pdf_cfg.get('show_unit_number', true) %}<td>{{ unit_number }}</td>{% endif %}
+    </tr>
+  </table>
+
+  <!-- BILL TO -->
   <table width="100%" cellpadding="0" cellspacing="0">
     <tr>
       <td width="50%" style="vertical-align: top; padding-right: 14px;">
-        <div class="sec-title">Customer</div>
-        <table cellpadding="0" cellspacing="0">
-          <tr>
-            <td class="info-lbl">Name:</td>
-            <td class="info-val">{{ cust_name }}</td>
-          </tr>
+        <div style="font-size: 8pt; font-weight: bold; color: {{ hdr_color }}; border-bottom: 1.5pt solid {{ hdr_color }}; padding-bottom: 2px; margin-bottom: 5px;">Bill To</div>
+        <div class="info-block">
+          <strong>{{ cust_name }}</strong>
+          {% if customer_address %}
+          <br>{{ customer_address }}
+          {% endif %}
           {% if customer_email and pdf_cfg.get('show_customer_email', true) %}
-          <tr>
-            <td class="info-lbl">Email:</td>
-            <td class="info-val">{{ customer_email }}</td>
-          </tr>
+          <br>{{ customer_email }}
           {% endif %}
           {% if customer_phone and pdf_cfg.get('show_customer_phone', true) %}
-          <tr>
-            <td class="info-lbl">Phone:</td>
-            <td class="info-val">{{ customer_phone }}</td>
-          </tr>
+          <br>P: {{ customer_phone }}
           {% endif %}
-        </table>
+        </div>
       </td>
-      <td width="50%" style="vertical-align: top; padding-left: 14px;">
-        <div class="sec-title">Vehicle / Unit</div>
-        <table cellpadding="0" cellspacing="0">
-          {% if unit_number and pdf_cfg.get('show_unit_number', true) %}
-          <tr>
-            <td class="info-lbl">Unit #:</td>
-            <td class="info-val">{{ unit_number }}</td>
-          </tr>
+      <td width="50%" style="vertical-align: top;"></td>
+    </tr>
+  </table>
+
+  <!-- ITEMS -->
+  {% for labor in labors %}
+  {%- set h = (labor.hours | float(0)) if labor.hours else 0.0 -%}
+
+  <table class="items-tbl">
+    <thead>
+      <tr>
+        <th style="width: 55px;">Item</th>
+        <th>Description</th>
+        <th class="tr" style="width: 65px;">Quantity</th>
+        <th class="tr" style="width: 70px;">Rate</th>
+        <th class="tr" style="width: 70px;">Amount</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Labor</td>
+        <td>
+          {{ labor.labor_desc }}
+          {% if (labor.hours and pdf_cfg.get('show_labor_hours', true)) or (labor.rate_code and pdf_cfg.get('show_labor_rate', true)) %}
+          <span class="labor-note">
+            {% if labor.hours and pdf_cfg.get('show_labor_hours', true) %}Hours: {{ labor.hours }}{% endif %}
+            {% if labor.hours and pdf_cfg.get('show_labor_hours', true) and labor.rate_code and pdf_cfg.get('show_labor_rate', true) %} · {% endif %}
+            {% if labor.rate_code and pdf_cfg.get('show_labor_rate', true) %}Rate: {{ labor.rate_code }}{% endif %}
+          </span>
           {% endif %}
-          {% if unit_year or unit_make or unit_model %}
-          <tr>
-            <td class="info-lbl">Vehicle:</td>
-            <td class="info-val">
-              {{ unit_year or '' }}{% if unit_year and (unit_make or unit_model) %} {% endif %}{{ unit_make or '' }}{% if unit_make and unit_model %} {% endif %}{{ unit_model or '' }}
-            </td>
-          </tr>
+        </td>
+        <td class="tr">{{ "%.5f" | format(h if h > 0 else 1) }}</td>
+        <td class="tr">${{ "%.2f" | format((labor.labor_base / h) if h > 0 else labor.labor_base) }}</td>
+        <td class="tr">${{ "%.2f" | format(labor.labor_base) }}</td>
+      </tr>
+
+      {% if labor.parts and pdf_cfg.get('show_parts_detail', true) %}
+      {% for p in labor.parts %}
+      <tr>
+        <td>Parts</td>
+        <td>
+          {{ p.description or p.part_number }}{% if p.part_number and p.description and p.part_number != p.description %} - {{ p.part_number }}{% endif %}
+        </td>
+        <td class="tr">{{ "%.5f" | format(p.qty) }}</td>
+        <td class="tr">${{ "%.2f" | format(p.price) }}</td>
+        <td class="tr">${{ "%.2f" | format(p.total) }}</td>
+      </tr>
+      {% if p.core > 0 and pdf_cfg.get('show_core_charges', true) %}
+      <tr>
+        <td></td>
+        <td class="italic-note" colspan="3">Core Charge &times; {{ p.qty }}</td>
+        <td class="tr">${{ "%.2f" | format(p.core) }}</td>
+      </tr>
+      {% endif %}
+      {% if p.misc > 0 and pdf_cfg.get('show_misc_charges', true) %}
+      <tr>
+        <td></td>
+        <td class="italic-note" colspan="3">{{ p.misc_desc or 'Misc Charge' }}</td>
+        <td class="tr">${{ "%.2f" | format(p.misc) }}</td>
+      </tr>
+      {% endif %}
+      {% endfor %}
+      {% endif %}
+
+      <tr class="subtotal-row">
+        <td colspan="4" style="text-align: right;">Subtotal</td>
+        <td class="tr">${{ "%.2f" | format(labor.labor_base + labor.parts_subtotal + labor.core_total + labor.misc_total) }}</td>
+      </tr>
+    </tbody>
+  </table>
+  {% endfor %}
+
+  <!-- UNIT INFO + TOTALS -->
+  <table class="summary-tbl" cellpadding="0" cellspacing="0" style="margin-top: 16px;">
+    <tr>
+      <td width="45%" style="vertical-align: top; padding-top: 10px; padding-right: 20px;">
+        <div class="unit-info">
+          {% if unit_number and pdf_cfg.get('show_unit_number', true) %}
+          <strong>Unit: {{ unit_number }}</strong>
           {% endif %}
           {% if unit_vin and pdf_cfg.get('show_vin', true) %}
-          <tr>
-            <td class="info-lbl">VIN:</td>
-            <td class="info-val">{{ unit_vin }}</td>
-          </tr>
+          &nbsp;<strong>VIN:</strong> {{ unit_vin }}
+          {% endif %}
+          {% if unit_year or unit_make or unit_model %}
+          <br>{{ unit_year or '' }} {{ unit_make or '' }} {{ unit_model or '' }}
           {% endif %}
           {% if unit_mileage and pdf_cfg.get('show_mileage', true) %}
+          <br><strong>Mileage:</strong> {{ unit_mileage }}
+          {% endif %}
+        </div>
+      </td>
+      <td width="55%" style="vertical-align: top;">
+        <table class="tot-tbl" cellpadding="0" cellspacing="0">
           <tr>
-            <td class="info-lbl">Mileage:</td>
-            <td class="info-val">{{ unit_mileage }}</td>
+            <td class="tot-lbl">Labor</td>
+            <td class="tot-val">${{ "%.2f" | format(t.labor_total) }}</td>
+          </tr>
+          <tr>
+            <td class="tot-lbl">Parts</td>
+            <td class="tot-val">${{ "%.2f" | format(t.parts_total) }}</td>
+          </tr>
+          {% if t.core_total > 0 and pdf_cfg.get('show_core_charges', true) %}
+          <tr>
+            <td class="tot-lbl">Core Charges</td>
+            <td class="tot-val">${{ "%.2f" | format(t.core_total) }}</td>
           </tr>
           {% endif %}
+          {% if t.shop_supply_total > 0 and pdf_cfg.get('show_shop_supply', true) %}
+          <tr>
+            <td class="tot-lbl">Shop Supplies</td>
+            <td class="tot-val">${{ "%.2f" | format(t.shop_supply_total) }}</td>
+          </tr>
+          {% endif %}
+          {% if t.misc_total > 0 and pdf_cfg.get('show_misc_charges', true) %}
+          <tr>
+            <td class="tot-lbl">Misc</td>
+            <td class="tot-val">${{ "%.2f" | format(t.misc_total) }}</td>
+          </tr>
+          {% endif %}
+          <tr class="grand-row">
+            <td class="tot-lbl">Total</td>
+            <td class="tot-val">${{ "%.2f" | format(t.grand_total) }}</td>
+          </tr>
         </table>
       </td>
     </tr>
   </table>
 
-  <!-- SERVICES & PARTS -->
-  <div class="sec-title">Services &amp; Parts</div>
-
-  {% for labor in labors %}
-  <div class="labor-block">
-    <div class="labor-title">{{ loop.index }}. {{ labor.labor_desc }}</div>
-    {% if (labor.hours and pdf_cfg.get('show_labor_hours', true)) or (labor.rate_code and pdf_cfg.get('show_labor_rate', true)) %}
-    <div class="labor-meta">
-      {% if labor.hours and pdf_cfg.get('show_labor_hours', true) %}Hours: {{ labor.hours }}{% endif %}
-      {% if labor.hours and pdf_cfg.get('show_labor_hours', true) and labor.rate_code and pdf_cfg.get('show_labor_rate', true) %} &nbsp;·&nbsp; {% endif %}
-      {% if labor.rate_code and pdf_cfg.get('show_labor_rate', true) %}Rate: {{ labor.rate_code }}{% endif %}
-    </div>
-    {% endif %}
-
-    {% if labor.parts and pdf_cfg.get('show_parts_detail', true) %}
-    <table class="parts-tbl">
-      <thead>
-        <tr>
-          <th>Part # / Description</th>
-          <th class="tr" style="width: 35px;">Qty</th>
-          <th class="tr" style="width: 75px;">Unit Price</th>
-          <th class="tr" style="width: 75px;">Total</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for p in labor.parts %}
-        <tr>
-          <td>
-            {% if p.part_number %}<strong>{{ p.part_number }}</strong>{% endif %}
-            {% if p.description and p.description != p.part_number %}
-              {% if p.part_number %}<br>{% endif %}
-              <span style="color: #555555;">{{ p.description }}</span>
-            {% endif %}
-          </td>
-          <td class="tr">{{ p.qty }}</td>
-          <td class="tr">${{ "%.2f" | format(p.price) }}</td>
-          <td class="tr">${{ "%.2f" | format(p.total) }}</td>
-        </tr>
-        {% if p.core > 0 and pdf_cfg.get('show_core_charges', true) %}
-        <tr>
-          <td colspan="3" class="italic-note">Core Charge &times; {{ p.qty }}</td>
-          <td class="tr">${{ "%.2f" | format(p.core) }}</td>
-        </tr>
-        {% endif %}
-        {% if p.misc > 0 and pdf_cfg.get('show_misc_charges', true) %}
-        <tr>
-          <td colspan="3" class="italic-note">{{ p.misc_desc or 'Misc Charge' }}</td>
-          <td class="tr">${{ "%.2f" | format(p.misc) }}</td>
-        </tr>
-        {% endif %}
-        {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
-
-    <!-- Block subtotals -->
-    <table class="sub-tbl" cellpadding="0" cellspacing="0">
-      {% if labor.parts_subtotal > 0 %}
-      <tr>
-        <td class="sub-lbl">Parts:</td>
-        <td class="sub-val">${{ "%.2f" | format(labor.parts_subtotal) }}</td>
-      </tr>
-      {% endif %}
-      {% if labor.core_total > 0 and pdf_cfg.get('show_core_charges', true) %}
-      <tr>
-        <td class="sub-lbl">Core Charges:</td>
-        <td class="sub-val">${{ "%.2f" | format(labor.core_total) }}</td>
-      </tr>
-      {% endif %}
-      {% if labor.misc_total > 0 and pdf_cfg.get('show_misc_charges', true) %}
-      <tr>
-        <td class="sub-lbl">Misc:</td>
-        <td class="sub-val">${{ "%.2f" | format(labor.misc_total) }}</td>
-      </tr>
-      {% endif %}
-      <tr>
-        <td class="sub-lbl">Labor:</td>
-        <td class="sub-val">${{ "%.2f" | format(labor.labor_base) }}</td>
-      </tr>
-      {% if labor.shop_supply > 0 and pdf_cfg.get('show_shop_supply', true) %}
-      <tr>
-        <td class="sub-lbl">Shop Supply:</td>
-        <td class="sub-val">${{ "%.2f" | format(labor.shop_supply) }}</td>
-      </tr>
-      {% endif %}
-      <tr style="border-top: 1pt solid #cccccc;">
-        <td class="sub-lbl"><strong>Block Total:</strong></td>
-        <td class="sub-val"><strong>${{ "%.2f" | format(labor.block_total) }}</strong></td>
-      </tr>
-    </table>
-  </div>
-  {% endfor %}
-
-  <!-- GRAND TOTALS -->
-  <div class="totals-box">
-    <table class="tot-tbl" cellpadding="0" cellspacing="0">
-      <tr>
-        <td class="tot-lbl">Labor Total:</td>
-        <td class="tot-val">${{ "%.2f" | format(t.labor_total) }}</td>
-      </tr>
-      <tr>
-        <td class="tot-lbl">Parts Total:</td>
-        <td class="tot-val">${{ "%.2f" | format(t.parts_total) }}</td>
-      </tr>
-      {% if t.core_total > 0 and pdf_cfg.get('show_core_charges', true) %}
-      <tr>
-        <td class="tot-lbl">Core Charges:</td>
-        <td class="tot-val">${{ "%.2f" | format(t.core_total) }}</td>
-      </tr>
-      {% endif %}
-      {% if t.shop_supply_total > 0 and pdf_cfg.get('show_shop_supply', true) %}
-      <tr>
-        <td class="tot-lbl">Shop Supply:</td>
-        <td class="tot-val">${{ "%.2f" | format(t.shop_supply_total) }}</td>
-      </tr>
-      {% endif %}
-      {% if t.misc_total > 0 and pdf_cfg.get('show_misc_charges', true) %}
-      <tr>
-        <td class="tot-lbl">Misc:</td>
-        <td class="tot-val">${{ "%.2f" | format(t.misc_total) }}</td>
-      </tr>
-      {% endif %}
-      <tr class="grand-row">
-        <td class="tot-lbl">GRAND TOTAL:</td>
-        <td class="tot-val">${{ "%.2f" | format(t.grand_total) }}</td>
-      </tr>
-    </table>
-  </div>
-
   {% if pdf_cfg.get('thank_you_message') %}
-  <div style="text-align: center; margin-top: 14px; font-size: 8pt; color: #555555; font-style: italic;">
+  <div style="text-align: center; margin-top: 18px; font-size: 8pt; color: #555555; font-style: italic;">
     {{ pdf_cfg.thank_you_message }}
   </div>
   {% endif %}
 
   {% if pdf_cfg.get('footer_notes') %}
-  <div class="footer-note">{{ pdf_cfg.footer_notes }}</div>
+  <div class="terms-section">
+    <div class="terms-title">Terms &amp; Conditions</div>
+    <div style="white-space: pre-wrap;">{{ pdf_cfg.footer_notes }}</div>
+  </div>
+  {% else %}
+  <div class="terms-section">
+    <div class="terms-title">Terms &amp; Conditions</div>
+    <p>1) Payment is due upon completion unless otherwise agreed in writing.</p>
+    <p>2) Parts warranties are provided solely by the manufacturer. Labor warranty: 30 days or 1,000 miles, whichever comes first.</p>
+    <p>3) Customer-supplied parts carry no warranty (parts or labor).</p>
+    <p>4) Vehicles left more than 3 days after notice of completion may incur storage fees.</p>
+    <p>5) We are not liable for loss or damage due to fire, theft, weather, or other causes beyond our control.</p>
+  </div>
   {% endif %}
+
+  <!-- SIGNATURE -->
+  <table width="100%" cellpadding="0" cellspacing="0" style="margin-top: 20px; font-size: 8pt;">
+    <tr>
+      <td width="60%" style="padding-top: 30px; border-top: 1pt solid #333333;">Customer Signature</td>
+      <td width="40%" style="padding-top: 30px; border-top: 1pt solid #333333;">Date</td>
+    </tr>
+  </table>
 
 </body>
 </html>

@@ -3318,6 +3318,7 @@ def _build_wo_pdf_context(shop_db, shop, wo):
     cust_name = customer_label(customer)
     customer_email_val = get_main_contact_email(customer, entity_type="customer")
     customer_phone = get_main_contact_phone(customer, entity_type="customer")
+    customer_address = str(customer.get("address") or "").strip()
 
     unit = shop_db.units.find_one({"_id": wo.get("unit_id")}) or {}
     unit_lbl = unit_label(unit)
@@ -3427,6 +3428,7 @@ def _build_wo_pdf_context(shop_db, shop, wo):
         cust_name=cust_name,
         customer_email=customer_email_val,
         customer_phone=customer_phone,
+        customer_address=customer_address,
         unit_label=unit_lbl,
         unit_vin=unit_vin,
         unit_mileage=unit_mileage,

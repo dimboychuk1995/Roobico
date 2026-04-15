@@ -42,23 +42,56 @@
 
     // ── Live preview updater ──
     function updatePreview() {
-      var hdrColor = headerColor ? headerColor.value : "#1f6b43";
-      var accColor = accentColor ? accentColor.value : "#1f6b43";
+      var hdrColor = headerColor ? headerColor.value : "#1a1a1a";
+      var accColor = accentColor ? accentColor.value : "#1a1a1a";
 
-      // Header
-      var prevHeader = document.getElementById("prevHeader");
-      if (prevHeader) prevHeader.style.backgroundColor = hdrColor;
+      // Divider line
+      var prevDivider = document.getElementById("prevDivider");
+      if (prevDivider) prevDivider.style.borderTopColor = hdrColor;
 
-      // Accent elements
-      document.querySelectorAll(".prev-accent").forEach(function (el) {
-        el.style.color = accColor;
-        el.style.borderBottomColor = accColor;
+      // Bill To header (text + border, no bg)
+      var prevBillToHdr = document.getElementById("prevBillToHdr");
+      if (prevBillToHdr) {
+        prevBillToHdr.style.color = hdrColor;
+        prevBillToHdr.style.borderBottomColor = hdrColor;
+      }
+
+      // Info row header
+      var prevInfoRowHeader = document.getElementById("prevInfoRowHeader");
+      if (prevInfoRowHeader) {
+        prevInfoRowHeader.querySelectorAll("th").forEach(function (th) {
+          th.style.backgroundColor = hdrColor;
+        });
+      }
+
+      // Items table header row
+      var prevItemsHeader = document.getElementById("prevItemsHeader");
+      if (prevItemsHeader) {
+        prevItemsHeader.querySelectorAll("th").forEach(function (th) {
+          th.style.backgroundColor = hdrColor;
+        });
+      }
+
+      // Labor separator lines
+      document.querySelectorAll(".prev-labor-sep").forEach(function (tr) {
+        var td = tr.querySelector("td");
+        if (td && td.style.borderBottom) {
+          td.style.borderBottomColor = hdrColor;
+        }
       });
+
+      // Accent elements (WO number text)
       document.querySelectorAll(".prev-accent-text").forEach(function (el) {
         el.style.color = accColor;
       });
+
+      // Totals grand row border
       var prevTotals = document.getElementById("prevTotals");
-      if (prevTotals) prevTotals.style.borderTopColor = accColor;
+      if (prevTotals) {
+        prevTotals.querySelectorAll("td").forEach(function (td) {
+          td.style.borderTopColor = hdrColor;
+        });
+      }
 
       // Toggles
       function toggle(id, checked) {
@@ -73,17 +106,17 @@
 
       toggle("prevCustEmail", cb("show_customer_email"));
       toggle("prevCustPhone", cb("show_customer_phone"));
+      toggle("prevLogoArea", cb("show_logo"));
       toggle("prevUnitNum", cb("show_unit_number"));
+      toggle("prevInfoUnitHdr", cb("show_unit_number"));
+      toggle("prevInfoUnitVal", cb("show_unit_number"));
       toggle("prevVin", cb("show_vin"));
       toggle("prevMileage", cb("show_mileage"));
       toggle("prevLaborMeta", cb("show_labor_hours") || cb("show_labor_rate"));
       toggle("prevPartsTable", cb("show_parts_detail"));
       toggle("prevCoreRow", cb("show_core_charges"));
-      toggle("prevCoreSub", cb("show_core_charges"));
       toggle("prevCoreTot", cb("show_core_charges"));
-      toggle("prevMiscSub", cb("show_misc_charges"));
       toggle("prevMiscTot", cb("show_misc_charges"));
-      toggle("prevShopSupplySub", cb("show_shop_supply"));
       toggle("prevShopSupplyTot", cb("show_shop_supply"));
 
       // Footer text
@@ -92,10 +125,23 @@
         ty.textContent = thankYouInput.value || "";
         ty.style.display = thankYouInput.value ? "" : "none";
       }
-      var fn = document.getElementById("prevFooterNotes");
-      if (fn && footerNotesInput) {
-        fn.textContent = footerNotesInput.value || "";
-        fn.style.display = footerNotesInput.value ? "" : "none";
+      var termsContent = document.getElementById("prevTermsContent");
+      if (termsContent && footerNotesInput) {
+        var val = footerNotesInput.value.trim();
+        if (val) {
+          termsContent.innerHTML = "";
+          val.split("\n").forEach(function (line) {
+            var p = document.createElement("p");
+            p.style.margin = "1px 0";
+            p.textContent = line;
+            termsContent.appendChild(p);
+          });
+        } else {
+          termsContent.innerHTML =
+            '<p style="margin:1px 0;">1) Payment is due upon completion unless otherwise agreed in writing.</p>' +
+            '<p style="margin:1px 0;">2) Parts warranties are provided solely by the manufacturer. Labor warranty: 30 days or 1,000 miles.</p>' +
+            '<p style="margin:1px 0;">3) Customer-supplied parts carry no warranty.</p>';
+        }
       }
     }
 
@@ -108,8 +154,8 @@
       saveBtn.disabled = true;
 
       var payload = {
-        header_color: (headerColor ? headerColor.value : "#1f6b43"),
-        accent_color: (accentColor ? accentColor.value : "#1f6b43"),
+        header_color: (headerColor ? headerColor.value : "#1a1a1a"),
+        accent_color: (accentColor ? accentColor.value : "#1a1a1a"),
         show_logo: !!form.querySelector('input[name="show_logo"]').checked,
         show_customer_email: !!form.querySelector('input[name="show_customer_email"]').checked,
         show_customer_phone: !!form.querySelector('input[name="show_customer_phone"]').checked,
