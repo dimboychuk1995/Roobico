@@ -4,60 +4,15 @@
 
 {% block extra_styles %}
   {{ super() }}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css', v='20260312-dashboard-async-stable') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css', v='20260414-redesign') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/attachments.css', v='20260409') }}">
 {% endblock %}
 
 {% block content %}
 <div class="container-fluid p-0 app-shell sidebar-collapsed">
 
-  <!-- Top header -->
-  <nav class="navbar navbar-expand-lg bg-light px-3 app-topbar">
-    <div class="container-fluid px-0">
-      <a class="navbar-brand fw-semibold" href="{{ url_for('dashboard.dashboard') }}">Small Shop</a>
-
-      <div class="ms-auto d-flex align-items-center gap-3">
-        <div class="text-end">
-          <div class="small text-muted">Logged in</div>
-          <div class="fw-semibold">{{ app_user_display or "—" }}</div>
-        </div>
-
-        <div class="text-end">
-          <div class="small text-muted">Organization</div>
-          <div class="fw-semibold">{{ app_tenant_display or "—" }}</div>
-        </div>
-
-        <!-- ✅ Active shop switcher -->
-        <div class="text-end">
-          <div class="small text-muted">Active shop</div>
-
-          {% if shop_options and shop_options|length > 0 %}
-            <form method="POST" action="{{ url_for('main.set_active_shop') }}">
-              <select class="form-select form-select-sm"
-                      name="shop_id"
-                      onchange="this.form.submit()"
-                      style="min-width: 220px;">
-                {% for s in shop_options %}
-                  <option value="{{ s.id }}" {% if active_shop_id == s.id %}selected{% endif %}>
-                    {{ s.name }}
-                  </option>
-                {% endfor %}
-              </select>
-            </form>
-          {% else %}
-            <div class="fw-semibold">—</div>
-          {% endif %}
-        </div>
-
-        <a class="btn btn-outline-danger btn-sm" href="{{ url_for('auth.logout') }}">Logout</a>
-      </div>
-    </div>
-  </nav>
-
-  <div class="row g-0 app-shell-body">
-
-    <!-- Sidebar -->
-    <div class="col-12 col-md-3 col-lg-2 app-sidebar-col">
+  <!-- Sidebar -->
+  <div class="app-sidebar-col">
       <div class="card app-sidebar-card h-100">
         <div class="card-header d-flex align-items-center justify-content-between">
           <span class="app-sidebar-title">Navigation</span>
@@ -144,14 +99,61 @@
       </div>
     </div>
 
-    <!-- Main -->
-    <div class="col-12 col-md-9 col-lg-10 app-main-col app-main-pad">
+  <!-- Right area: topbar + content -->
+  <div class="app-right-area">
+    <nav class="navbar navbar-expand-lg px-3 app-topbar">
+      <div class="container-fluid px-0">
+        <a class="navbar-brand fw-semibold" href="{{ url_for('dashboard.dashboard') }}" style="color: #0f172a; font-size: 1.1rem; letter-spacing: -0.01em;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#1a7a42" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 0.4rem; vertical-align: -4px;">
+            <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+          </svg>Small Shop
+        </a>
+
+        <div class="ms-auto d-flex align-items-center gap-3">
+          <div class="text-end">
+            <div class="small text-muted">Logged in</div>
+            <div class="fw-semibold">{{ app_user_display or "—" }}</div>
+          </div>
+
+          <div class="text-end">
+            <div class="small text-muted">Organization</div>
+            <div class="fw-semibold">{{ app_tenant_display or "—" }}</div>
+          </div>
+
+          <!-- ✅ Active shop switcher -->
+          <div class="text-end">
+            <div class="small text-muted">Active shop</div>
+
+            {% if shop_options and shop_options|length > 0 %}
+              <form method="POST" action="{{ url_for('main.set_active_shop') }}">
+                <select class="form-select form-select-sm"
+                        name="shop_id"
+                        onchange="this.form.submit()"
+                        style="min-width: 220px;">
+                  {% for s in shop_options %}
+                    <option value="{{ s.id }}" {% if active_shop_id == s.id %}selected{% endif %}>
+                      {{ s.name }}
+                    </option>
+                  {% endfor %}
+                </select>
+              </form>
+            {% else %}
+              <div class="fw-semibold">—</div>
+            {% endif %}
+          </div>
+
+          <a class="btn btn-outline-danger btn-sm" href="{{ url_for('auth.logout') }}">Logout</a>
+        </div>
+      </div>
+    </nav>
+
+    <div class="app-main-col app-main-pad">
       {% block app_content %}
       <!-- Page content goes here -->
       {% endblock %}
     </div>
-
   </div>
+
 </div>
 
 <script>

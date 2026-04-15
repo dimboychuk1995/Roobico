@@ -9,7 +9,7 @@
   position: absolute;
   inset: 8px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(47, 131, 86, 0.2) 0%, rgba(47, 131, 86, 0) 70%);
+  background: radial-gradient(circle, rgba(26, 122, 66, 0.15) 0%, rgba(26, 122, 66, 0) 70%);
   filter: blur(6px);
 }
 
@@ -19,11 +19,10 @@
   height: 100%;
   border-radius: 50%;
   background:
-    conic-gradient(from -90deg, #2d8b58 0%, #2d8b58 var(--paid), #d25a5a var(--paid), #d25a5a 100%),
-    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 45%);
+    conic-gradient(from -90deg, #1a7a42 0%, #1a7a42 var(--paid), #c43b3b var(--paid), #c43b3b 100%);
   box-shadow:
-    inset 0 0 0 1px rgba(31, 107, 67, 0.2),
-    0 12px 26px rgba(22, 58, 36, 0.18);
+    inset 0 0 0 1px rgba(0,0,0,0.06),
+    0 8px 20px rgba(0,0,0,0.1);
 }
 
 .dashboard-donut::after {
@@ -31,8 +30,8 @@
   position: absolute;
   inset: 30px;
   border-radius: 50%;
-  background: linear-gradient(180deg, #ffffff 0%, #f4faf4 100%);
-  box-shadow: inset 0 0 0 1px #d2ded4, inset 0 8px 12px rgba(31, 107, 67, 0.05);
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px #e2e8f0;
 }
 
 .dashboard-donut-center {
@@ -48,7 +47,7 @@
 .dashboard-donut-percent {
   margin-top: 0.1rem;
   font-size: 0.78rem;
-  color: #3d5f4d;
+  color: #64748b;
   font-weight: 700;
 }
 
@@ -61,32 +60,31 @@
 }
 
 .dashboard-dot-paid {
-  background: #2a7a4f;
+  background: #1a7a42;
 }
 
 .dashboard-dot-unpaid {
-  background: #c44545;
+  background: #c43b3b;
 }
 
 .dashboard-donut-glow-po {
-  background: radial-gradient(circle, rgba(37, 97, 173, 0.2) 0%, rgba(37, 97, 173, 0) 70%);
+  background: radial-gradient(circle, rgba(26, 122, 66, 0.15) 0%, rgba(26, 122, 66, 0) 70%);
 }
 
 .dashboard-donut-po {
   background:
-    conic-gradient(from -90deg, #2d6ca8 0 var(--received), #cf7a2d var(--received) 100%),
-    radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 45%);
+    conic-gradient(from -90deg, #2d8b58 0 var(--received), #c48a1a var(--received) 100%);
   box-shadow:
-    inset 0 0 0 1px rgba(36, 86, 144, 0.2),
-    0 12px 26px rgba(24, 58, 94, 0.18);
+    inset 0 0 0 1px rgba(0,0,0,0.06),
+    0 8px 20px rgba(0,0,0,0.1);
 }
 
 .dashboard-dot-received {
-  background: #2d6ca8;
+  background: #2d8b58;
 }
 
 .dashboard-dot-ordered {
-  background: #cf7a2d;
+  background: #c48a1a;
 }
 
 .dashboard-donut-dual-wrap .dashboard-donut-center {
@@ -106,7 +104,7 @@
 
 .dashboard-dual-ring-outer {
   inset: 0;
-  background: conic-gradient(from -90deg, #2d6ca8 0%, #2d6ca8 var(--outer), #cf7a2d var(--outer), #cf7a2d 100%);
+  background: conic-gradient(from -90deg, #2d8b58 0%, #2d8b58 var(--outer), #c48a1a var(--outer), #c48a1a 100%);
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 24px), #000 calc(100% - 23px));
   mask: radial-gradient(farthest-side, transparent calc(100% - 24px), #000 calc(100% - 23px));
 }
@@ -121,36 +119,28 @@
 
 .dashboard-dual-ring-inner {
   inset: 36px;
-  background: conic-gradient(from -90deg, #2a7a4f 0%, #2a7a4f var(--inner), #c44545 var(--inner), #c44545 100%);
+  background: conic-gradient(from -90deg, #1a7a42 0%, #1a7a42 var(--inner), #c43b3b var(--inner), #c43b3b 100%);
   -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 16px), #000 calc(100% - 15px));
   mask: radial-gradient(farthest-side, transparent calc(100% - 16px), #000 calc(100% - 15px));
   z-index: 2;
 }
 
 .dashboard-legend-row {
-  color: #3d5e4d;
+  color: #475569;
   font-weight: 600;
 }
 
 .dashboard-goal-progress {
   height: 0.95rem;
   border-radius: 999px;
-  background: linear-gradient(180deg, #e7efe9 0%, #dae6dd 100%);
-  box-shadow: inset 0 1px 2px rgba(22, 53, 34, 0.15);
+  background: #e2e8f0;
+  box-shadow: none;
 }
 
 .dashboard-goal-progress .progress-bar {
   border-radius: 999px;
-  background:
-    linear-gradient(90deg, #1f6b43 0%, #2f8356 60%, #45a06a 100%),
-    repeating-linear-gradient(
-      -45deg,
-      rgba(255, 255, 255, 0.15) 0,
-      rgba(255, 255, 255, 0.15) 8px,
-      rgba(255, 255, 255, 0.02) 8px,
-      rgba(255, 255, 255, 0.02) 16px
-    );
-  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.08);
+  background: linear-gradient(90deg, #1a7a42 0%, #3da660 100%);
+  box-shadow: none;
 }
 
 .dashboard-async-card {

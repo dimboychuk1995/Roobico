@@ -2,166 +2,181 @@
 
 {% block title %}Login / Registration{% endblock %}
 
+{% block extra_styles %}
+<style>
+  body.public-shell {
+    background: #f1f5f9;
+    min-height: 100vh;
+  }
+  .auth-wrapper {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1rem;
+  }
+  .auth-container {
+    width: 100%;
+    max-width: 960px;
+  }
+  .auth-brand {
+    text-align: center;
+    margin-bottom: 2rem;
+  }
+  .auth-brand h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0;
+  }
+  .auth-brand p {
+    color: #64748b;
+    margin: 0.25rem 0 0;
+    font-size: 0.9rem;
+  }
+  .auth-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #ffffff;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+    overflow: hidden;
+  }
+  .auth-card .card-body {
+    padding: 2rem;
+  }
+  .auth-card h2 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid #f1f5f9;
+  }
+  .auth-card .btn-primary {
+    padding: 0.55rem 1.5rem;
+  }
+  .auth-divider {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin: 1.5rem 0;
+    color: #94a3b8;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .auth-divider::before, .auth-divider::after {
+    content: "";
+    flex: 1;
+    border-top: 1px solid #e2e8f0;
+  }
+  .auth-section-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #64748b;
+    margin-bottom: 0.75rem;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="container py-4">
+<div class="auth-wrapper">
+  <div class="auth-container">
 
-  <div class="mb-4">
-    <h1 class="h3 mb-2">Login / Registration</h1>
-    <p class="text-muted mb-0">
-      Пока без сложного дизайна. Только форма и поля. Бэк-логика постепенно.
-    </p>
-  </div>
-
-  <div class="row g-4">
-
-    <!-- LOGIN -->
-    <div class="col-12 col-lg-6">
-      <div class="card">
-        <div class="card-body">
-          <h2 class="h5 mb-3" id="login-title">Login</h2>
-
-          <form method="post" action="/login" autocomplete="on">
-            <div class="mb-3">
-              <label for="login_email" class="form-label">Email</label>
-              <input
-                id="login_email"
-                name="email"
-                type="email"
-                class="form-control"
-                placeholder="you@company.com"
-                required
-              />
-            </div>
-
-            <div class="mb-3">
-              <label for="login_password" class="form-label">Password</label>
-              <input
-                id="login_password"
-                name="password"
-                type="password"
-                class="form-control"
-                required
-              />
-            </div>
-
-            <div class="d-flex gap-2 align-items-center">
-              <button type="submit" class="btn btn-primary">Login</button>
-              <a class="btn btn-link px-0" href="/forgot-password">Forgot password?</a>
-            </div>
-          </form>
-
-        </div>
-      </div>
+    <div class="auth-brand">
+      <h1>
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#1a7a42" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -5px; margin-right: 0.35rem;">
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+        </svg>
+        Small Shop
+      </h1>
+      <p>Shop management made simple</p>
     </div>
 
-    <!-- REGISTRATION -->
-    <div class="col-12 col-lg-6">
-      <div class="card">
-        <div class="card-body">
-          <h2 class="h5 mb-3" id="register-title">Registration</h2>
+    <div class="row g-4">
 
-          <form method="post" action="/tenant/register" autocomplete="on">
-            <div class="mb-4">
-              <h3 class="h6 text-muted mb-3">Company</h3>
+      <!-- LOGIN -->
+      <div class="col-12 col-lg-5">
+        <div class="auth-card">
+          <div class="card-body">
+            <h2>Sign In</h2>
 
+            <form method="post" action="/login" autocomplete="on">
               <div class="mb-3">
-                <label for="company_name" class="form-label">Company name</label>
-                <input
-                  id="company_name"
-                  name="company_name"
-                  type="text"
-                  class="form-control"
-                  placeholder="Small Shop LLC"
-                  required
-                />
+                <label for="login_email" class="form-label">Email</label>
+                <input id="login_email" name="email" type="email" class="form-control" placeholder="you@company.com" required />
               </div>
 
               <div class="mb-3">
-                <label for="company_address" class="form-label">Company address</label>
-                <input
-                  id="company_address"
-                  name="company_address"
-                  type="text"
-                  class="form-control"
-                  placeholder="Start typing an address…"
-                  autocomplete="off"
-                  required
-                />
+                <label for="login_password" class="form-label">Password</label>
+                <input id="login_password" name="password" type="password" class="form-control" required />
               </div>
 
-              <div class="mb-3">
-                <label for="company_phone" class="form-label">Phone number</label>
-                <input
-                  id="company_phone"
-                  name="company_phone"
-                  type="tel"
-                  class="form-control"
-                  placeholder="+1 (555) 555-5555"
-                  required
-                />
+              <div class="d-flex justify-content-between align-items-center">
+                <button type="submit" class="btn btn-primary">Sign In</button>
+                <a class="small" href="/forgot-password">Forgot password?</a>
               </div>
-            </div>
+            </form>
+          </div>
+        </div>
+      </div>
 
-            <div class="mb-3">
-              <h3 class="h6 text-muted mb-3">Owner (first user)</h3>
+      <!-- DIVIDER (mobile) -->
+      <div class="col-12 d-lg-none">
+        <div class="auth-divider">or create an account</div>
+      </div>
 
-              <div class="row g-3">
+      <!-- REGISTRATION -->
+      <div class="col-12 col-lg-7">
+        <div class="auth-card">
+          <div class="card-body">
+            <h2>Create Account</h2>
+
+            <form method="post" action="/tenant/register" autocomplete="on">
+              <div class="auth-section-label">Company</div>
+              <div class="row g-3 mb-3">
+                <div class="col-12">
+                  <label for="company_name" class="form-label">Company name</label>
+                  <input id="company_name" name="company_name" type="text" class="form-control" placeholder="Small Shop LLC" required />
+                </div>
+                <div class="col-12">
+                  <label for="company_address" class="form-label">Company address</label>
+                  <input id="company_address" name="company_address" type="text" class="form-control" placeholder="Start typing an address…" autocomplete="off" required />
+                </div>
+                <div class="col-12 col-md-6">
+                  <label for="company_phone" class="form-label">Phone number</label>
+                  <input id="company_phone" name="company_phone" type="tel" class="form-control" placeholder="+1 (555) 555-5555" required />
+                </div>
+              </div>
+
+              <div class="auth-section-label">Owner</div>
+              <div class="row g-3 mb-3">
                 <div class="col-12 col-md-6">
                   <label for="first_name" class="form-label">First name</label>
-                  <input
-                    id="first_name"
-                    name="first_name"
-                    type="text"
-                    class="form-control"
-                    placeholder="Dmytro"
-                    required
-                  />
+                  <input id="first_name" name="first_name" type="text" class="form-control" placeholder="John" required />
                 </div>
-
                 <div class="col-12 col-md-6">
                   <label for="last_name" class="form-label">Last name</label>
-                  <input
-                    id="last_name"
-                    name="last_name"
-                    type="text"
-                    class="form-control"
-                    placeholder="Boichuk"
-                    required
-                  />
+                  <input id="last_name" name="last_name" type="text" class="form-control" placeholder="Smith" required />
                 </div>
-
-                <div class="col-12">
+                <div class="col-12 col-md-6">
                   <label for="reg_email" class="form-label">Email</label>
-                  <input
-                    id="reg_email"
-                    name="email"
-                    type="email"
-                    class="form-control"
-                    placeholder="admin@company.com"
-                    required
-                  />
+                  <input id="reg_email" name="email" type="email" class="form-control" placeholder="admin@company.com" required />
                 </div>
-
-                <div class="col-12">
+                <div class="col-12 col-md-6">
                   <label for="reg_password" class="form-label">Password</label>
-                  <input
-                    id="reg_password"
-                    name="password"
-                    type="password"
-                    class="form-control"
-                    required
-                  />
+                  <input id="reg_password" name="password" type="password" class="form-control" required />
                 </div>
               </div>
-            </div>
 
-            <button type="submit" class="btn btn-success">Create account</button>
-          </form>
-
+              <button type="submit" class="btn btn-primary">Create Account</button>
+            </form>
+          </div>
         </div>
       </div>
     </div>
-
   </div>
 </div>
 {% endblock %}

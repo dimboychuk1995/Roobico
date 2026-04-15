@@ -44,8 +44,7 @@
     const woDonut = document.getElementById('dashWoDonut');
     if (woDonut) {
       woDonut.style.background =
-        `${buildConicGradient('#2d8b58', paid, '#d25a5a')}, ` +
-        'radial-gradient(circle at 30% 20%, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0) 45%)';
+        `${buildConicGradient('#1a7a42', paid, '#c43b3b')}`;
     }
   }
 
@@ -55,10 +54,10 @@
     const outerRing = document.getElementById('dashPoOuterRing');
     const innerRing = document.getElementById('dashPoInnerRing');
     if (outerRing) {
-      outerRing.style.background = buildConicGradient('#2d6ca8', outer, '#cf7a2d');
+      outerRing.style.background = buildConicGradient('#2d8b58', outer, '#c48a1a');
     }
     if (innerRing) {
-      innerRing.style.background = buildConicGradient('#2a7a4f', inner, '#c44545');
+      innerRing.style.background = buildConicGradient('#1a7a42', inner, '#c43b3b');
     }
   }
 

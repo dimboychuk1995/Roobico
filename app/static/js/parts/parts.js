@@ -1142,7 +1142,7 @@
 				showCancelButton: true,
 				confirmButtonText: 'Receive Order',
 				cancelButtonText: 'Cancel',
-				confirmButtonColor: '#1f6b43',
+				confirmButtonColor: '#1a7a42',
 				cancelButtonColor: '#6c757d',
 				showClass: noAnim,
 				hideClass: noAnim,

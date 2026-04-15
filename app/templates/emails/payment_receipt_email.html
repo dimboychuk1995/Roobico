@@ -9,7 +9,7 @@
 
     <!-- HEADER -->
     <tr>
-      <td style="background:#1f6b43;padding:24px 32px;">
+      <td style="background:#145e33;padding:24px 32px;">
         <div style="color:#fff;">
           <div style="font-size:20px;font-weight:700;">{{ shop_name }}</div>
           {% if shop_address %}
@@ -33,7 +33,7 @@
       <td style="padding:24px 32px;">
 
         <!-- Customer -->
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#1f6b43;border-bottom:2px solid #1f6b43;padding-bottom:4px;margin-bottom:10px;">Customer</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#145e33;border-bottom:2px solid #145e33;padding-bottom:4px;margin-bottom:10px;">Customer</div>
         <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
           <tr>
             <td style="color:#888;width:130px;padding:3px 0;">Name</td>
@@ -43,7 +43,7 @@
 
         {% if unit_label %}
         <!-- Vehicle -->
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#1f6b43;border-bottom:2px solid #1f6b43;padding-bottom:4px;margin:20px 0 10px;">Vehicle / Unit</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#145e33;border-bottom:2px solid #145e33;padding-bottom:4px;margin:20px 0 10px;">Vehicle / Unit</div>
         <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
           <tr>
             <td style="color:#888;width:130px;padding:3px 0;">Unit</td>
@@ -53,28 +53,28 @@
         {% endif %}
 
         <!-- Payment -->
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#1f6b43;border-bottom:2px solid #1f6b43;padding-bottom:4px;margin:20px 0 10px;">Payment</div>
-        <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;border:1px solid #c5e0d0;border-radius:6px;overflow:hidden;">
-          <tr style="background:#f0f7f3;">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#145e33;border-bottom:2px solid #145e33;padding-bottom:4px;margin:20px 0 10px;">Payment</div>
+        <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;border:1px solid #bfdbfe;border-radius:6px;overflow:hidden;">
+          <tr style="background:#edf7f0;">
             <td style="padding:14px 16px;color:#555;font-size:15px;">Amount Paid</td>
-            <td style="padding:14px 16px;font-size:24px;font-weight:700;text-align:right;color:#1f6b43;">${{ "%.2f"|format(amount) }}</td>
+            <td style="padding:14px 16px;font-size:24px;font-weight:700;text-align:right;color:#145e33;">${{ "%.2f"|format(amount) }}</td>
           </tr>
-          <tr style="border-top:1px solid #c5e0d0;">
+          <tr style="border-top:1px solid #bfdbfe;">
             <td style="padding:7px 16px;font-size:13px;color:#888;">Payment Method</td>
             <td style="padding:7px 16px;font-size:13px;text-align:right;font-weight:600;">{{ method }}</td>
           </tr>
-          <tr style="border-top:1px solid #c5e0d0;">
+          <tr style="border-top:1px solid #bfdbfe;">
             <td style="padding:7px 16px;font-size:13px;color:#888;">Date</td>
             <td style="padding:7px 16px;font-size:13px;text-align:right;font-weight:600;">{{ pay_date_label or "—" }}</td>
           </tr>
           {% if notes %}
-          <tr style="border-top:1px solid #c5e0d0;">
+          <tr style="border-top:1px solid #bfdbfe;">
             <td style="padding:7px 16px;font-size:13px;color:#888;">Notes</td>
             <td style="padding:7px 16px;font-size:13px;text-align:right;">{{ notes }}</td>
           </tr>
           {% endif %}
           {% if payment_ref %}
-          <tr style="border-top:1px solid #c5e0d0;">
+          <tr style="border-top:1px solid #bfdbfe;">
             <td style="padding:7px 16px;font-size:13px;color:#888;">Ref #</td>
             <td style="padding:7px 16px;font-size:13px;text-align:right;font-family:monospace;letter-spacing:1px;">{{ payment_ref }}</td>
           </tr>
@@ -82,7 +82,7 @@
         </table>
 
         <!-- Balance -->
-        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#1f6b43;border-bottom:2px solid #1f6b43;padding-bottom:4px;margin:20px 0 10px;">Balance</div>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#145e33;border-bottom:2px solid #145e33;padding-bottom:4px;margin:20px 0 10px;">Balance</div>
         <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;background:#f9f9f9;border-radius:6px;">
           <tr>
             <td style="padding:6px 16px;color:#555;">Invoice Total</td>
@@ -90,17 +90,17 @@
           </tr>
           <tr style="border-top:1px solid #e0e0e0;">
             <td style="padding:6px 16px;color:#555;">Total Paid</td>
-            <td style="padding:6px 16px;text-align:right;font-weight:600;color:#1f6b43;">${{ "%.2f"|format(paid_total) }}</td>
+            <td style="padding:6px 16px;text-align:right;font-weight:600;color:#145e33;">${{ "%.2f"|format(paid_total) }}</td>
           </tr>
           {% if is_fully_paid %}
-          <tr style="border-top:2px solid #1f6b43;">
-            <td style="padding:12px 16px;font-size:15px;font-weight:700;color:#1f6b43;">Paid In Full ✓</td>
-            <td style="padding:12px 16px;text-align:right;font-size:15px;font-weight:700;color:#1f6b43;"></td>
+          <tr style="border-top:2px solid #145e33;">
+            <td style="padding:12px 16px;font-size:15px;font-weight:700;color:#145e33;">Paid In Full ✓</td>
+            <td style="padding:12px 16px;text-align:right;font-size:15px;font-weight:700;color:#145e33;"></td>
           </tr>
           {% else %}
-          <tr style="border-top:2px solid #ce8a20;">
-            <td style="padding:12px 16px;font-size:15px;font-weight:700;color:#ce8a20;">Remaining Balance</td>
-            <td style="padding:12px 16px;font-size:15px;font-weight:700;text-align:right;color:#ce8a20;">${{ "%.2f"|format(remaining) }}</td>
+          <tr style="border-top:2px solid #f59e0b;">
+            <td style="padding:12px 16px;font-size:15px;font-weight:700;color:#f59e0b;">Remaining Balance</td>
+            <td style="padding:12px 16px;font-size:15px;font-weight:700;text-align:right;color:#f59e0b;">${{ "%.2f"|format(remaining) }}</td>
           </tr>
           {% endif %}
         </table>
