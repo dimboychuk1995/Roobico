@@ -663,10 +663,6 @@ def parts_page():
     if active_tab == "parts":
         parts_query = {
             "is_active": True,
-            "$or": [
-                {"in_stock": {"$gt": 0}},
-                {"do_not_track_inventory": True},
-            ],
         }
         parts_search_filter = build_regex_search_filter(
             q,
