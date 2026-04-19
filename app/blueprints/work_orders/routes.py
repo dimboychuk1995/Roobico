@@ -4,7 +4,7 @@ import base64
 import json
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
-from flask import request, session, redirect, url_for, flash, jsonify, render_template, make_response
+from flask import g, request, session, redirect, url_for, flash, jsonify, render_template, make_response
 
 from app.blueprints.work_orders import work_orders_bp
 from app.blueprints.main.routes import _render_app_page
@@ -3537,8 +3537,11 @@ def api_send_work_order_email(work_order_id):
             "content_type": "application/pdf",
         }]
 
+    user_email = (g.user.get("email") or "").strip() if g.user else ""
+
     try:
-        send_email(to_emails, subject, html_body, attachments=attachments)
+        send_email(to_emails, subject, html_body, attachments=attachments,
+                   reply_to=user_email or None)
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
@@ -3629,8 +3632,11 @@ def api_send_payment_receipt(payment_id):
         else f"Payment Receipt — {shop_name}"
     )
 
+    user_email = (g.user.get("email") or "").strip() if g.user else ""
+
     try:
-        send_email(to_emails, subject, html_body)
+        send_email(to_emails, subject, html_body,
+                   reply_to=user_email or None)
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 

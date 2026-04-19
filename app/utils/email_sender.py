@@ -13,6 +13,7 @@ def send_email(
     subject: str,
     html_body: str,
     attachments: list[dict] | None = None,
+    reply_to: str | None = None,
 ) -> None:
     """
     Send an HTML email via SMTP with STARTTLS.
@@ -74,6 +75,8 @@ def send_email(
     msg["Subject"] = subject
     msg["From"]    = f"{from_name} <{from_addr}>" if from_name else from_addr
     msg["To"]      = ", ".join(recipients)
+    if reply_to:
+        msg["Reply-To"] = reply_to
 
     try:
         with smtplib.SMTP(host, port, timeout=20) as server:
