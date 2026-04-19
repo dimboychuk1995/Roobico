@@ -21,5 +21,5 @@ class Config:
     #   SMTP_USER        login / sender address
     #   SMTP_PASS        password / app-password
     #   SMTP_FROM_EMAIL  explicit From address  (defaults to SMTP_USER)
-    #   SMTP_FROM_NAME   display name           (default: SmallShop)
+    #   SMTP_FROM_NAME   display name           (default: Roobico)
 

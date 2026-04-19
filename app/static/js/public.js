@@ -178,7 +178,7 @@
 				document.title = doc.title;
 			}
 
-			window.dispatchEvent(new CustomEvent("smallshop:content-replaced"));
+			window.dispatchEvent(new CustomEvent("roobico:content-replaced"));
 			bindAutoSearchForms();
 		}
 
@@ -564,7 +564,7 @@
 		}
 
 		var wrapper = document.createElement("div");
-		wrapper.className = "col-auto smallshop-search-btn-wrap";
+		wrapper.className = "col-auto roobico-search-btn-wrap";
 		wrapper.appendChild(btn);
 
 		var inputContainer = input.closest(".col-12, .col-auto, .col-md-8, .col-lg-6") || input.parentElement;
@@ -802,7 +802,7 @@
 
 	window.initDatePickers = initDatePickers;
 	window.applyDatePresetToForm = applyDatePresetToForm;
-	window.dispatchEvent(new CustomEvent("smallshop:public-ready"));
+	window.dispatchEvent(new CustomEvent("roobico:public-ready"));
 
 	document.addEventListener("DOMContentLoaded", function () {
 		bindAutoSearchForms();
@@ -813,7 +813,7 @@
 		updateSidebarActiveState(window.location.pathname);
 	});
 
-	window.addEventListener("smallshop:content-replaced", function () {
+	window.addEventListener("roobico:content-replaced", function () {
 		initDatePickers(document);
 	});
 })();
@@ -1038,7 +1038,7 @@
     autoInit();
   }
 
-  window.addEventListener("smallshop:content-replaced", autoInit);
+  window.addEventListener("roobico:content-replaced", autoInit);
 
   if (typeof MutationObserver !== "undefined") {
     new MutationObserver(function (mutations) {
@@ -1266,7 +1266,7 @@
     getRoots().forEach(initRoot);
   }
 
-  window.SmallShopContacts = {
+  window.RoobicoContacts = {
     init: initRoot,
     initAll: initAll,
     getContacts: getContacts,
@@ -1279,5 +1279,5 @@
     initAll();
   }
 
-  window.addEventListener("smallshop:content-replaced", initAll);
+  window.addEventListener("roobico:content-replaced", initAll);
 })();

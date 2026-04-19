@@ -271,9 +271,9 @@
     loadMetrics();
   }
 
-  window.smallshopInitDashboardMetrics = init;
+  window.roobicoInitDashboardMetrics = init;
 
-  window.addEventListener('smallshop:content-replaced', function () {
+  window.addEventListener('roobico:content-replaced', function () {
     if (document.getElementById('dashboardFiltersForm')) {
       init();
     }

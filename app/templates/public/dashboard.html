@@ -172,8 +172,8 @@
     var attempts = 0;
     function run() {
       attempts += 1;
-      if (typeof window.smallshopInitDashboardMetrics === "function") {
-        window.smallshopInitDashboardMetrics();
+      if (typeof window.roobicoInitDashboardMetrics === "function") {
+        window.roobicoInitDashboardMetrics();
         return;
       }
       if (attempts < 20) {

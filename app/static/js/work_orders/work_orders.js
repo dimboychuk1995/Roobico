@@ -480,7 +480,7 @@
   if (!body || body.dataset.workOrdersWindowHooksBound !== "1") {
     if (body) body.dataset.workOrdersWindowHooksBound = "1";
     window.addEventListener("load", restoreSavedTab);
-    window.addEventListener("smallshop:content-replaced", function () {
+    window.addEventListener("roobico:content-replaced", function () {
       paymentsLoaded = false;
       _paymentsCurrentPage = 1;
       _estimatesLoaded = false;

@@ -293,5 +293,5 @@
   }
 
   // Re-init after AJAX content replacement (modal DOM may have been replaced).
-  window.addEventListener("smallshop:content-replaced", initAllBlocks);
+  window.addEventListener("roobico:content-replaced", initAllBlocks);
 })();

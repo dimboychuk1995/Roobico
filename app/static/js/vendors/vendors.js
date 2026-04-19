@@ -349,8 +349,8 @@
       if (els.addressInput) els.addressInput.value = vendor.address || "";
       if (els.notesInput) els.notesInput.value = vendor.notes || "";
       if (els.isActiveInput) els.isActiveInput.checked = vendor.is_active !== false;
-      if (els.contactsForm && window.SmallShopContacts) {
-        window.SmallShopContacts.setContacts(els.contactsForm, Array.isArray(vendor.contacts) ? vendor.contacts : []);
+      if (els.contactsForm && window.RoobicoContacts) {
+        window.RoobicoContacts.setContacts(els.contactsForm, Array.isArray(vendor.contacts) ? vendor.contacts : []);
       }
 
       // Show attachments block when editing
@@ -401,7 +401,7 @@
         loadVendorOrders(1);
       });
       ordersEls.modal.addEventListener("shown.bs.modal", function () {
-        window.dispatchEvent(new CustomEvent("smallshop:content-replaced"));
+        window.dispatchEvent(new CustomEvent("roobico:content-replaced"));
       });
     }
 
@@ -421,8 +421,8 @@
         current.submitBtn.textContent = "Create Vendor";
         if (current.activeGroup) current.activeGroup.style.display = "none";
         current.form.reset();
-        if (current.contactsForm && window.SmallShopContacts) {
-          window.SmallShopContacts.setContacts(current.contactsForm, []);
+        if (current.contactsForm && window.RoobicoContacts) {
+          window.RoobicoContacts.setContacts(current.contactsForm, []);
         }
         // Hide attachments when creating
         var attGroup = document.getElementById('vendorAttachmentsGroup');
@@ -525,8 +525,8 @@
         var formData = {
           name: (current.nameInput && current.nameInput.value || "").trim(),
           website: (current.websiteInput && current.websiteInput.value || "").trim(),
-          contacts: current.contactsForm && window.SmallShopContacts
-            ? window.SmallShopContacts.getContacts(current.contactsForm)
+          contacts: current.contactsForm && window.RoobicoContacts
+            ? window.RoobicoContacts.getContacts(current.contactsForm)
             : [],
           address: (current.addressInput && current.addressInput.value || "").trim(),
           notes: (current.notesInput && current.notesInput.value || "").trim(),

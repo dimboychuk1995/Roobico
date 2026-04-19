@@ -628,5 +628,5 @@
     init();
   }
 
-  window.addEventListener("smallshop:content-replaced", init);
+  window.addEventListener("roobico:content-replaced", init);
 })();

@@ -25,7 +25,7 @@ def send_email(
         SMTP_USER        – login / sender address
         SMTP_PASS        – password / app-password
         SMTP_FROM_EMAIL  – explicit From address     (defaults to SMTP_USER)
-        SMTP_FROM_NAME   – display name              (default: SmallShop)
+        SMTP_FROM_NAME   – display name              (default: Roobico)
 
     attachments: optional list of dicts:
         {"filename": "wo-123.pdf", "data": <bytes>, "content_type": "application/pdf"}
@@ -45,7 +45,7 @@ def send_email(
     user       = os.environ.get("SMTP_USER", "")
     password   = os.environ.get("SMTP_PASS", "")
     from_addr  = os.environ.get("SMTP_FROM_EMAIL", "") or user
-    from_name  = os.environ.get("SMTP_FROM_NAME", "SmallShop")
+    from_name  = os.environ.get("SMTP_FROM_NAME", "Roobico")
 
     if not from_addr:
         raise RuntimeError(
