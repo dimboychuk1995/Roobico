@@ -14,6 +14,8 @@ def send_email(
     html_body: str,
     attachments: list[dict] | None = None,
     reply_to: str | None = None,
+    from_email: str | None = None,
+    from_name: str | None = None,
 ) -> None:
     """
     Send an HTML email via SMTP with STARTTLS.
@@ -45,8 +47,8 @@ def send_email(
     port       = int(os.environ.get("SMTP_PORT", "587"))
     user       = os.environ.get("SMTP_USER", "")
     password   = os.environ.get("SMTP_PASS", "")
-    from_addr  = os.environ.get("SMTP_FROM_EMAIL", "") or user
-    from_name  = os.environ.get("SMTP_FROM_NAME", "Roobico")
+    from_addr  = from_email or os.environ.get("SMTP_FROM_EMAIL", "") or user
+    _from_name = from_name or os.environ.get("SMTP_FROM_NAME", "Roobico")
 
     if not from_addr:
         raise RuntimeError(
@@ -73,7 +75,7 @@ def send_email(
         msg.attach(MIMEText(html_body, "html", "utf-8"))
 
     msg["Subject"] = subject
-    msg["From"]    = f"{from_name} <{from_addr}>" if from_name else from_addr
+    msg["From"]    = f"{_from_name} <{from_addr}>" if _from_name else from_addr
     msg["To"]      = ", ".join(recipients)
     if reply_to:
         msg["Reply-To"] = reply_to

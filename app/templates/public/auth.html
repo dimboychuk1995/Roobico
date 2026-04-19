@@ -5,174 +5,332 @@
 {% block extra_styles %}
 <style>
   body.public-shell {
-    background: #f1f5f9;
-    min-height: 100vh;
-  }
-  .auth-wrapper {
-    min-height: 100vh;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem 1rem;
-  }
-  .auth-container {
-    width: 100%;
-    max-width: 960px;
-  }
-  .auth-brand {
-    text-align: center;
-    margin-bottom: 2rem;
-  }
-  .auth-brand h1 {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: #0f172a;
     margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    background: #f5f5f5;
   }
-  .auth-brand p {
-    color: #64748b;
-    margin: 0.25rem 0 0;
-    font-size: 0.9rem;
+  .auth-split {
+    display: flex;
+    min-height: 100vh;
   }
-  .auth-card {
-    border: 1px solid #e2e8f0;
-    border-radius: 12px;
-    background: #ffffff;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
-    overflow: hidden;
+  /* LEFT PANEL — login */
+  .auth-left {
+    width: 480px;
+    min-width: 380px;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 3rem 3.5rem;
+    position: relative;
+    z-index: 2;
+    box-shadow: 4px 0 24px rgba(0,0,0,0.06);
   }
-  .auth-card .card-body {
-    padding: 2rem;
+  .auth-logo {
+    text-align: center;
+    margin-bottom: 2.5rem;
   }
-  .auth-card h2 {
-    font-size: 1.15rem;
+  .auth-logo img {
+    width: 72px;
+    height: 72px;
+    margin-bottom: 0.6rem;
+  }
+  .auth-logo h1 {
+    font-size: 2rem;
+    font-weight: 900;
+    color: #16a34a;
+    margin: 0;
+    letter-spacing: 0.03em;
+  }
+  .auth-form-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #94a3b8;
+    margin-bottom: 0.35rem;
+  }
+  .auth-input {
+    border: none;
+    border-bottom: 2px solid #e2e8f0;
+    border-radius: 0;
+    padding: 0.5rem 0;
+    font-size: 0.95rem;
+    background: transparent;
+    transition: border-color 0.2s;
+  }
+  .auth-input:focus {
+    box-shadow: none;
+    border-color: #16a34a;
+    outline: none;
+  }
+  .auth-btn {
+    width: 100%;
+    padding: 0.75rem;
+    background: #0f172a;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.85rem;
     font-weight: 700;
-    color: #0f172a;
-    margin-bottom: 1.5rem;
-    padding-bottom: 0.75rem;
-    border-bottom: 1px solid #f1f5f9;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    cursor: pointer;
+    transition: background 0.2s;
   }
-  .auth-card .btn-primary {
-    padding: 0.55rem 1.5rem;
+  .auth-btn:hover {
+    background: #1e293b;
+    color: #fff;
+  }
+  .auth-forgot {
+    text-align: center;
+    margin-top: 0.75rem;
+  }
+  .auth-forgot a {
+    font-size: 0.82rem;
+    color: #64748b;
+    text-decoration: underline;
+  }
+  .auth-forgot a:hover {
+    color: #0f172a;
   }
   .auth-divider {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    margin: 1.5rem 0;
+    margin: 1.75rem 0;
     color: #94a3b8;
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
+    font-size: 0.78rem;
   }
   .auth-divider::before, .auth-divider::after {
     content: "";
     flex: 1;
     border-top: 1px solid #e2e8f0;
   }
-  .auth-section-label {
-    font-size: 0.75rem;
+  /* Registration toggle */
+  .auth-register-toggle {
+    width: 100%;
+    padding: 0.65rem;
+    background: transparent;
+    color: #16a34a;
+    border: 2px solid #16a34a;
+    border-radius: 6px;
+    font-size: 0.82rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .auth-register-toggle:hover {
+    background: #16a34a;
+    color: #fff;
+  }
+  .auth-register-panel {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s ease;
+  }
+  .auth-register-panel.open {
+    max-height: 800px;
+  }
+  .auth-section-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #16a34a;
+    margin-bottom: 0.5rem;
+    margin-top: 1rem;
+  }
+  .auth-footer {
+    text-align: center;
+    margin-top: 1.5rem;
+    font-size: 0.75rem;
+    color: #94a3b8;
+  }
+  .auth-footer a {
     color: #64748b;
+    text-decoration: underline;
+  }
+
+  /* RIGHT PANEL — hero */
+  .auth-right {
+    flex: 1;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem;
+    position: relative;
+    overflow: hidden;
+  }
+  .auth-right::before {
+    content: "";
+    position: absolute;
+    top: -50%;
+    right: -30%;
+    width: 80%;
+    height: 200%;
+    background: radial-gradient(circle, rgba(22,163,74,0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+  .auth-hero {
+    text-align: center;
+    max-width: 500px;
+    position: relative;
+    z-index: 1;
+  }
+  .auth-hero-icon {
+    width: 120px;
+    height: 120px;
+    margin-bottom: 2rem;
+    border-radius: 24px;
+    box-shadow: 0 8px 32px rgba(22,163,74,0.3);
+  }
+  .auth-hero h2 {
+    font-size: 2.2rem;
+    font-weight: 900;
+    color: #fff;
     margin-bottom: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  .auth-hero h2 span {
+    color: #16a34a;
+  }
+  .auth-hero p {
+    font-size: 1rem;
+    color: rgba(255,255,255,0.7);
+    line-height: 1.6;
+    margin-bottom: 2rem;
+  }
+  .auth-hero-features {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    justify-content: center;
+  }
+  .auth-hero-feature {
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    color: rgba(255,255,255,0.8);
+    font-size: 0.82rem;
+    font-weight: 500;
+  }
+
+  /* Responsive */
+  @media (max-width: 991px) {
+    .auth-split {
+      flex-direction: column;
+    }
+    .auth-left {
+      width: 100%;
+      min-width: unset;
+      padding: 2rem 1.5rem;
+    }
+    .auth-right {
+      min-height: 300px;
+      padding: 2rem 1.5rem;
+    }
   }
 </style>
 {% endblock %}
 
 {% block content %}
-<div class="auth-wrapper">
-  <div class="auth-container">
-
-    <div class="auth-brand">
-      <img src="{{ url_for('static', filename='images/main_logo.png') }}" alt="Roobico" style="width: 80px; height: 80px; margin-bottom: 0.75rem;">
-      <h1 style="color: #16a34a; font-weight: 700;">
-        Roobico
-      </h1>
-      <p>Shop management made simple</p>
+<div class="auth-split">
+  <!-- LEFT — Login -->
+  <div class="auth-left">
+    <div class="auth-logo">
+      <img src="{{ url_for('static', filename='images/main_logo.png') }}" alt="Roobico">
+      <h1>ROOBICO</h1>
     </div>
 
-    <div class="row g-4">
+    <form method="post" action="/login" autocomplete="on">
+      <div class="mb-4">
+        <div class="auth-form-label">Email</div>
+        <input id="login_email" name="email" type="email" class="form-control auth-input" placeholder="you@company.com" required />
+      </div>
+      <div class="mb-4">
+        <div class="auth-form-label">Password</div>
+        <input id="login_password" name="password" type="password" class="form-control auth-input" required />
+      </div>
+      <button type="submit" class="auth-btn">Log In</button>
+    </form>
 
-      <!-- LOGIN -->
-      <div class="col-12 col-lg-5">
-        <div class="auth-card">
-          <div class="card-body">
-            <h2>Sign In</h2>
+    <div class="auth-forgot">
+      <a href="/forgot-password">Forgot password</a>
+    </div>
 
-            <form method="post" action="/login" autocomplete="on">
-              <div class="mb-3">
-                <label for="login_email" class="form-label">Email</label>
-                <input id="login_email" name="email" type="email" class="form-control" placeholder="you@company.com" required />
-              </div>
+    <div class="auth-divider">or</div>
 
-              <div class="mb-3">
-                <label for="login_password" class="form-label">Password</label>
-                <input id="login_password" name="password" type="password" class="form-control" required />
-              </div>
+    <button type="button" class="auth-register-toggle" onclick="toggleRegister()">
+      Create Account
+    </button>
 
-              <div class="d-flex justify-content-between align-items-center">
-                <button type="submit" class="btn btn-primary">Sign In</button>
-                <a class="small" href="/forgot-password">Forgot password?</a>
-              </div>
-            </form>
+    <div class="auth-register-panel" id="registerPanel">
+      <form method="post" action="/tenant/register" autocomplete="on">
+        <div class="auth-section-label">Company</div>
+        <div class="mb-3">
+          <div class="auth-form-label">Company name</div>
+          <input id="company_name" name="company_name" type="text" class="form-control auth-input" placeholder="Your Company LLC" required />
+        </div>
+        <div class="mb-3">
+          <div class="auth-form-label">Company address</div>
+          <input id="company_address" name="company_address" type="text" class="form-control auth-input" placeholder="Start typing an address…" autocomplete="off" required />
+        </div>
+        <div class="mb-3">
+          <div class="auth-form-label">Phone number</div>
+          <input id="company_phone" name="company_phone" type="tel" class="form-control auth-input" placeholder="+1 (555) 555-5555" required />
+        </div>
+
+        <div class="auth-section-label">Owner</div>
+        <div class="row g-3 mb-3">
+          <div class="col-6">
+            <div class="auth-form-label">First name</div>
+            <input id="first_name" name="first_name" type="text" class="form-control auth-input" placeholder="John" required />
+          </div>
+          <div class="col-6">
+            <div class="auth-form-label">Last name</div>
+            <input id="last_name" name="last_name" type="text" class="form-control auth-input" placeholder="Smith" required />
           </div>
         </div>
-      </div>
-
-      <!-- DIVIDER (mobile) -->
-      <div class="col-12 d-lg-none">
-        <div class="auth-divider">or create an account</div>
-      </div>
-
-      <!-- REGISTRATION -->
-      <div class="col-12 col-lg-7">
-        <div class="auth-card">
-          <div class="card-body">
-            <h2>Create Account</h2>
-
-            <form method="post" action="/tenant/register" autocomplete="on">
-              <div class="auth-section-label">Company</div>
-              <div class="row g-3 mb-3">
-                <div class="col-12">
-                  <label for="company_name" class="form-label">Company name</label>
-                  <input id="company_name" name="company_name" type="text" class="form-control" placeholder="Small Shop LLC" required />
-                </div>
-                <div class="col-12">
-                  <label for="company_address" class="form-label">Company address</label>
-                  <input id="company_address" name="company_address" type="text" class="form-control" placeholder="Start typing an address…" autocomplete="off" required />
-                </div>
-                <div class="col-12 col-md-6">
-                  <label for="company_phone" class="form-label">Phone number</label>
-                  <input id="company_phone" name="company_phone" type="tel" class="form-control" placeholder="+1 (555) 555-5555" required />
-                </div>
-              </div>
-
-              <div class="auth-section-label">Owner</div>
-              <div class="row g-3 mb-3">
-                <div class="col-12 col-md-6">
-                  <label for="first_name" class="form-label">First name</label>
-                  <input id="first_name" name="first_name" type="text" class="form-control" placeholder="John" required />
-                </div>
-                <div class="col-12 col-md-6">
-                  <label for="last_name" class="form-label">Last name</label>
-                  <input id="last_name" name="last_name" type="text" class="form-control" placeholder="Smith" required />
-                </div>
-                <div class="col-12 col-md-6">
-                  <label for="reg_email" class="form-label">Email</label>
-                  <input id="reg_email" name="email" type="email" class="form-control" placeholder="admin@company.com" required />
-                </div>
-                <div class="col-12 col-md-6">
-                  <label for="reg_password" class="form-label">Password</label>
-                  <input id="reg_password" name="password" type="password" class="form-control" required />
-                </div>
-              </div>
-
-              <button type="submit" class="btn btn-primary">Create Account</button>
-            </form>
+        <div class="row g-3 mb-3">
+          <div class="col-6">
+            <div class="auth-form-label">Email</div>
+            <input id="reg_email" name="email" type="email" class="form-control auth-input" placeholder="admin@company.com" required />
+          </div>
+          <div class="col-6">
+            <div class="auth-form-label">Password</div>
+            <input id="reg_password" name="password" type="password" class="form-control auth-input" required />
           </div>
         </div>
+        <button type="submit" class="auth-btn" style="background:#16a34a;">Create Account</button>
+      </form>
+    </div>
+
+    <div class="auth-footer">
+      By logging in you are agreeing to our <a href="#">Terms of Service</a>.
+    </div>
+  </div>
+
+  <!-- RIGHT — Hero -->
+  <div class="auth-right">
+    <div class="auth-hero">
+      <img src="{{ url_for('static', filename='images/main_logo.png') }}" alt="Roobico" class="auth-hero-icon">
+      <h2>Manage Your Shop<span>.</span></h2>
+      <p>All-in-one platform for work orders, parts inventory, customers, payments, and reporting — built for repair shops.</p>
+      <div class="auth-hero-features">
+        <div class="auth-hero-feature">Work Orders</div>
+        <div class="auth-hero-feature">Parts & Inventory</div>
+        <div class="auth-hero-feature">Customers</div>
+        <div class="auth-hero-feature">Payments</div>
+        <div class="auth-hero-feature">Reports</div>
+        <div class="auth-hero-feature">Email & PDF</div>
       </div>
     </div>
   </div>
@@ -181,5 +339,9 @@
 
 {% block extra_scripts %}
 <script>
+function toggleRegister() {
+  const panel = document.getElementById('registerPanel');
+  panel.classList.toggle('open');
+}
 </script>
 {% endblock %}
