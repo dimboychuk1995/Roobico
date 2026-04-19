@@ -4,12 +4,11 @@
 {% block page_title %}Work Orders{% endblock %}
 
 {% block app_content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <div>
+<div class="text-center mb-3">
     <h1 class="h4 mb-1">Work Orders</h1>
     <p class="text-muted mb-0">Manage work orders, payments, and estimates for the active shop.</p>
-  </div>
-
+</div>
+<div class="d-flex justify-content-end mb-3">
   <div class="d-flex gap-2">
     <a class="btn btn-primary btn-sm" href="{{ url_for('work_orders.work_order_details_page') }}">
       Create Work Order

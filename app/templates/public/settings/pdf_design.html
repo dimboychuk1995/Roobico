@@ -2,14 +2,12 @@
 {% block page_title %}Settings — PDF Design{% endblock %}
 
 {% block app_content %}
-<div class="d-flex align-items-center justify-content-between mb-3">
-  <div>
+<div class="text-center mb-3">
     <h1 class="h4 mb-1">PDF Design</h1>
     <p class="text-muted mb-0">Customize how your Work Order PDF looks.</p>
-  </div>
-  <div class="d-flex gap-2">
-    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('main.settings') }}">Back to Settings</a>
-  </div>
+</div>
+<div class="d-flex justify-content-end mb-3">
+  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('main.settings') }}">Back to Settings</a>
 </div>
 
 <!-- Current Shop Info Banner -->
