@@ -174,7 +174,9 @@ def _safe_int(val):
     if val is None:
         return None
     try:
-        return int(float(str(val).strip()))
+        s = _clean_excel(val)
+        s = s.replace('$', '').replace(',', '').strip()
+        return int(float(s))
     except (ValueError, TypeError):
         return None
 
@@ -183,15 +185,29 @@ def _safe_float(val):
     if val is None:
         return None
     try:
-        return round(float(str(val).strip()), 2)
+        s = _clean_excel(val)
+        s = s.replace('$', '').replace(',', '').strip()
+        return round(float(s), 2)
     except (ValueError, TypeError):
         return None
+
+
+def _clean_excel(val):
+    """Strip Excel ='"..."' and ="..." wrappers from a value."""
+    if val is None:
+        return None
+    s = str(val).strip()
+    # ="value" or ='value'
+    if (s.startswith('="') and s.endswith('"')) or (s.startswith("='") and s.endswith("'")):
+        s = s[2:-1]
+    return s
 
 
 def _safe_str(val):
     if val is None:
         return None
-    s = str(val).strip()
+    s = _clean_excel(val)
+    s = s.strip() if s else None
     return s if s else None
 
 
