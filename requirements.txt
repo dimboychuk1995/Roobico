@@ -5,3 +5,5 @@ python-dotenv==1.0.1
 openpyxl
 xhtml2pdf
 matplotlib
+openai>=1.30.0
+PyMuPDF

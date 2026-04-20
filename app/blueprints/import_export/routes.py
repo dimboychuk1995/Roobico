@@ -11,6 +11,7 @@ from flask import request, redirect, url_for, flash, session, jsonify
 from app.blueprints.import_export import import_export_bp
 from app.blueprints.main.routes import _render_app_page, NAV_ITEMS
 from app.extensions import get_master_db, get_mongo_client
+from app.utils.parts_search import build_parts_search_terms
 from app.utils.auth import (
     login_required,
     SESSION_TENANT_ID,
@@ -330,17 +331,11 @@ def _build_part_doc(mapped_row, shop, now, user_id):
     average_cost = _safe_float(mapped_row.get("average_cost"))
     selling_price = _safe_float(mapped_row.get("selling_price"))
 
-    search_parts = [part_number]
-    if description:
-        search_parts.append(description)
-    if reference:
-        search_parts.append(reference)
-
     doc = {
         "part_number": part_number,
         "description": description,
         "reference": reference,
-        "search_terms": " ".join(search_parts).lower(),
+        "search_terms": build_parts_search_terms(part_number, description, reference),
         "in_stock": in_stock or 0,
         "average_cost": average_cost or 0.0,
         "has_selling_price": selling_price is not None and selling_price > 0,

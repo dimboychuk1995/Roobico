@@ -269,6 +269,58 @@ def vendors_create():
     return redirect(url_for("vendors.vendors_page"))
 
 
+@vendors_bp.post("/api/create")
+@login_required
+@permission_required("vendors.edit")
+def vendors_api_create():
+    """
+    AJAX create vendor with full fields.
+    Accepts JSON: { name, website, address, notes, contacts: [{first_name, last_name, phone, email, is_main}] }
+    Returns: { ok: true, vendor_id: "<oid>", vendor_name: "..." }
+    """
+    coll, shop, master = _vendors_collection()
+    if coll is None or shop is None:
+        return jsonify(ok=False, error="Shop database not configured."), 400
+
+    tenant_oid = _oid(session.get(SESSION_TENANT_ID))
+    if not tenant_oid:
+        return jsonify(ok=False, error="Tenant session missing."), 401
+
+    data = request.get_json(silent=True) or {}
+    name = str(data.get("name") or "").strip()
+    if not name:
+        return jsonify(ok=False, error="Vendor name is required."), 400
+
+    website = str(data.get("website") or "").strip()
+    address = str(data.get("address") or "").strip()
+    notes = str(data.get("notes") or "").strip()
+    contacts = build_contacts_from_payload({"contacts": data.get("contacts") or []})
+
+    now = utcnow()
+    user_oid = _oid(session.get(SESSION_USER_ID))
+
+    doc = {
+        "name": name,
+        "website": website or None,
+        "address": address or None,
+        "contacts": contacts,
+        "notes": notes or None,
+        "is_active": True,
+        "created_at": now,
+        "updated_at": now,
+        "created_by": user_oid,
+        "updated_by": user_oid,
+        "deactivated_at": None,
+        "deactivated_by": None,
+        "shop_id": shop["_id"],
+        "tenant_id": tenant_oid,
+    }
+    doc.update(build_vendor_legacy_contact_fields(contacts))
+
+    res = coll.insert_one(doc)
+    return jsonify(ok=True, vendor_id=str(res.inserted_id), vendor_name=name)
+
+
 @vendors_bp.post("/<vendor_id>/deactivate")
 @login_required
 @permission_required("vendors.deactivate")

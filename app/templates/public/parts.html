@@ -805,6 +805,12 @@
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="orderModalLabel">Order parts (one vendor)</h5>
+        <div class="ms-auto me-2">
+          <label class="btn btn-sm btn-outline-info mb-0" id="scanInvoiceBtn" title="Upload vendor invoice PDF or image for AI recognition">
+            <i class="bi bi-magic me-1"></i> Scan Invoice
+            <input type="file" id="invoiceFileInput" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tiff" class="d-none">
+          </label>
+        </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
 
@@ -857,6 +863,22 @@
                  style="z-index:1060; display:none; max-height:260px; overflow:auto; width:calc(100% - 24px);">
             </div>
           </div>
+        </div>
+
+        <!-- AI Scan progress / results -->
+        <div id="invoiceScanProgress" class="alert alert-info d-none">
+          <div class="d-flex align-items-center">
+            <div class="spinner-border spinner-border-sm me-2" role="status"></div>
+            <span>Scanning invoice with AI... This may take a few seconds.</span>
+          </div>
+        </div>
+
+        <div id="invoiceScanResult" class="alert alert-success d-none">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <div class="fw-semibold"><i class="bi bi-check-circle me-1"></i> Invoice scanned</div>
+            <button type="button" class="btn btn-sm btn-outline-secondary" id="dismissScanResult">Dismiss</button>
+          </div>
+          <div id="invoiceScanDetails" class="small"></div>
         </div>
 
         <div class="table-responsive">
@@ -1072,6 +1094,158 @@
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Scan Vendor Create Modal (used by invoice scanner) -->
+<div class="modal fade" id="scanVendorModal" tabindex="-1" aria-labelledby="scanVendorModalLabel" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="scanVendorModalLabel">Create new vendor</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Name <span class="text-danger">*</span></label>
+            <input type="text" id="scanVendorNameInput" class="form-control" required autocomplete="off" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Website</label>
+            <input type="text" id="scanVendorWebsite" class="form-control" placeholder="https://..." autocomplete="off" />
+          </div>
+          <div class="col-md-8">
+            <label class="form-label">Address</label>
+            <input type="text" id="scanVendorAddress" class="form-control" autocomplete="off" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Notes</label>
+            <input type="text" id="scanVendorNotesInput" class="form-control" autocomplete="off" />
+          </div>
+          <div class="col-12">
+            <div class="border rounded p-3" data-contacts-form data-contact-title="Contact" id="scanVendorContactsForm">
+              <div class="d-flex align-items-center justify-content-between mb-3">
+                <div>
+                  <div class="fw-semibold">Contacts</div>
+                  <div class="small text-muted">One contact is always marked as main and used by default.</div>
+                </div>
+                <button type="button" class="btn btn-sm btn-outline-primary" data-add-contact>Add Contact</button>
+              </div>
+              <div class="d-grid gap-3" data-contacts-list></div>
+            </div>
+          </div>
+        </div>
+        <div id="scanVendorAlert" class="alert alert-danger mt-3 d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="scanVendorSubmitBtn">Create Vendor</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Scan: Create Part Modal ──────────────────────────────────────── -->
+<div class="modal fade" id="scanPartModal" tabindex="-1" aria-labelledby="scanPartModalLabel" aria-hidden="true" data-bs-backdrop="static">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="scanPartModalLabel">Create new part</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Part number <span class="text-danger">*</span></label>
+            <input type="text" id="scanPartNumber" class="form-control" required autocomplete="off" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Reference</label>
+            <input type="text" id="scanPartReference" class="form-control" autocomplete="off" />
+          </div>
+          <div class="col-12">
+            <label class="form-label">Description</label>
+            <input type="text" id="scanPartDescription" class="form-control" autocomplete="off" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Average cost</label>
+            <input type="number" id="scanPartAverageCost" min="0" step="0.01" value="0" class="form-control" />
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">Vendor</label>
+            <select id="scanPartVendor" class="form-select">
+              <option value="">-- None --</option>
+              {% if vendors and vendors|length > 0 %}
+                {% for v in vendors %}
+                  <option value="{{ v._id }}">
+                    {{ v.name if v.name else (v.company_name if v.company_name else v._id) }}
+                  </option>
+                {% endfor %}
+              {% endif %}
+            </select>
+          </div>
+          <div class="col-md-4">
+            <label class="form-label">In stock</label>
+            <input type="number" id="scanPartInStock" min="0" step="1" value="0" class="form-control" />
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Category</label>
+            <select id="scanPartCategory" class="form-select">
+              <option value="">-- None --</option>
+              {% if categories and categories|length > 0 %}
+                {% for c in categories %}
+                  <option value="{{ c._id }}">{{ c.name if c.name else c._id }}</option>
+                {% endfor %}
+              {% endif %}
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Location</label>
+            <select id="scanPartLocation" class="form-select">
+              <option value="">-- None --</option>
+              {% if locations and locations|length > 0 %}
+                {% for l in locations %}
+                  <option value="{{ l._id }}">{{ l.name if l.name else l._id }}</option>
+                {% endfor %}
+              {% endif %}
+            </select>
+          </div>
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="scanPartSellingPriceToggle">
+              <label class="form-check-label" for="scanPartSellingPriceToggle">This part has selling price</label>
+            </div>
+          </div>
+          <div class="col-md-4 d-none" id="scanPartSellingPriceGroup">
+            <label class="form-label">Selling price</label>
+            <input type="number" id="scanPartSellingPrice" min="0" step="0.01" value="0" class="form-control" />
+          </div>
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="scanPartDoNotTrack">
+              <label class="form-check-label" for="scanPartDoNotTrack">Do not track inventory for this part</label>
+            </div>
+            <div class="form-text">Part will be available in work orders and purchases, but stock quantity will not be auto-adjusted.</div>
+          </div>
+          <div class="col-12">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" id="scanPartCoreChargeToggle">
+              <label class="form-check-label" for="scanPartCoreChargeToggle">This part has Core charge</label>
+            </div>
+          </div>
+          <div class="col-md-4 d-none" id="scanPartCoreCostGroup">
+            <label class="form-label">Core cost</label>
+            <input type="number" id="scanPartCoreCost" min="0" step="0.01" value="0" class="form-control" />
+          </div>
+        </div>
+        <div id="scanPartAlert" class="alert alert-danger mt-3 d-none"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="scanPartSubmitBtn">Create Part</button>
       </div>
     </div>
   </div>

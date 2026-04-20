@@ -1258,6 +1258,89 @@ def parts_create():
     return redirect(url_for("parts.parts_page"))
 
 
+@parts_bp.post("/api/create")
+@login_required
+@permission_required("parts.edit")
+def parts_api_create():
+    """
+    AJAX create part.
+    Accepts JSON with part fields.
+    Returns: { ok: true, part_id: "<oid>" }
+    """
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop database not configured."}), 400
+
+    tenant_oid = _oid(session.get(SESSION_TENANT_ID))
+    if not tenant_oid:
+        return jsonify({"ok": False, "error": "Tenant session missing."}), 401
+
+    data = request.get_json(silent=True) or {}
+    part_number = str(data.get("part_number") or "").strip()
+    if not part_number:
+        return jsonify({"ok": False, "error": "Part number is required."}), 400
+
+    description = str(data.get("description") or "").strip()
+    reference = str(data.get("reference") or "").strip()
+    vendor_id_raw = str(data.get("vendor_id") or "").strip()
+    category_id_raw = str(data.get("category_id") or "").strip()
+    location_id_raw = str(data.get("location_id") or "").strip()
+    average_cost = _parse_float(data.get("average_cost"), default=0.0)
+    in_stock = _parse_int(data.get("in_stock"), default=0)
+    do_not_track = bool(data.get("do_not_track_inventory"))
+    has_selling_price = bool(data.get("has_selling_price"))
+    selling_price = _parse_float(data.get("selling_price"), default=0.0) if has_selling_price else None
+    core_has_charge = bool(data.get("core_has_charge"))
+    core_cost = _parse_float(data.get("core_cost"), default=0.0) if core_has_charge else None
+
+    vendor_oid = None
+    if vendor_id_raw and vendors_coll is not None:
+        vendor_oid, _ = _validate_ref(vendors_coll, vendor_id_raw, "Vendor")
+
+    category_oid = None
+    if category_id_raw and cats_coll is not None:
+        category_oid, _ = _validate_ref(cats_coll, category_id_raw, "Category")
+
+    location_oid = None
+    if location_id_raw and locs_coll is not None:
+        location_oid, _ = _validate_ref(locs_coll, location_id_raw, "Location")
+
+    now = utcnow()
+    user_oid = _oid(session.get(SESSION_USER_ID))
+
+    doc = {
+        "part_number": part_number,
+        "description": description or None,
+        "reference": reference or None,
+        "search_terms": build_parts_search_terms(part_number, description, reference),
+        "vendor_id": vendor_oid,
+        "category_id": category_oid,
+        "location_id": location_oid,
+        "do_not_track_inventory": do_not_track,
+        "average_cost": float(average_cost),
+        "has_selling_price": has_selling_price,
+        "selling_price": float(selling_price) if selling_price is not None else None,
+        "core_has_charge": core_has_charge,
+        "core_cost": float(core_cost) if core_cost is not None else None,
+        "misc_has_charge": False,
+        "misc_charges": [],
+        "is_active": True,
+        "created_at": now,
+        "updated_at": now,
+        "created_by": user_oid,
+        "updated_by": user_oid,
+        "deactivated_at": None,
+        "deactivated_by": None,
+        "shop_id": shop["_id"],
+        "tenant_id": tenant_oid,
+    }
+    if not do_not_track:
+        doc["in_stock"] = in_stock
+
+    res = parts_coll.insert_one(doc)
+    return jsonify({"ok": True, "part_id": str(res.inserted_id)})
+
+
 @parts_bp.get("/api/search")
 @login_required
 def parts_api_search():
@@ -1398,6 +1481,121 @@ def parts_api_search():
                 break
 
     return {"ok": True, "items": items}
+
+
+@parts_bp.post("/api/orders/parse-invoice")
+@login_required
+@permission_required("parts.edit")
+def parts_api_orders_parse_invoice():
+    """
+    Upload a vendor invoice (PDF or image) and use AI to extract vendor, items, etc.
+    Returns JSON with parsed data + matching info from the database.
+    """
+    from app.utils.invoice_parser import parse_invoice
+
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or vendors_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop database not configured."}), 400
+
+    f = request.files.get("invoice")
+    if not f or not f.filename:
+        return jsonify({"ok": False, "error": "No file uploaded."}), 400
+
+    allowed_types = {
+        "application/pdf",
+        "image/jpeg", "image/png", "image/gif", "image/webp",
+        "image/bmp", "image/tiff",
+    }
+    ct = f.content_type or ""
+    if ct not in allowed_types:
+        return jsonify({"ok": False, "error": f"Unsupported file type: {ct}"}), 400
+
+    file_bytes = f.read()
+    if len(file_bytes) > 16 * 1024 * 1024:
+        return jsonify({"ok": False, "error": "File too large (max 16 MB)."}), 400
+
+    try:
+        parsed = parse_invoice(file_bytes, ct)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": "Failed to parse invoice. Please try again."}), 500
+
+    # Match vendor by name (fuzzy)
+    vendor_match = None
+    vendor_name_parsed = parsed.get("vendor_name", "")
+    if vendor_name_parsed:
+        import re
+        vendor_regex = re.escape(vendor_name_parsed)
+        vendor_doc = vendors_coll.find_one({
+            "shop_id": shop["_id"],
+            "is_active": True,
+            "name": {"$regex": vendor_regex, "$options": "i"},
+        })
+        if not vendor_doc:
+            # Try partial match on words
+            words = [w for w in vendor_name_parsed.split() if len(w) >= 3]
+            if words:
+                pattern = ".*".join(re.escape(w) for w in words[:3])
+                vendor_doc = vendors_coll.find_one({
+                    "shop_id": shop["_id"],
+                    "is_active": True,
+                    "name": {"$regex": pattern, "$options": "i"},
+                })
+        if vendor_doc:
+            vendor_match = {
+                "vendor_id": str(vendor_doc["_id"]),
+                "vendor_name": vendor_doc.get("name", ""),
+            }
+
+    # Match parts by part_number
+    items_with_matches = []
+    for item in parsed.get("items", []):
+        pn = item.get("part_number", "").strip()
+        part_match = None
+        if pn:
+            part_doc = parts_coll.find_one({
+                "shop_id": shop["_id"],
+                "is_active": True,
+                "part_number": {"$regex": f"^{_re_escape(pn)}$", "$options": "i"},
+            })
+            if part_doc:
+                part_match = {
+                    "part_id": str(part_doc["_id"]),
+                    "part_number": part_doc.get("part_number", ""),
+                    "description": part_doc.get("description", ""),
+                    "in_stock": part_doc.get("in_stock", 0),
+                    "average_cost": part_doc.get("average_cost", 0),
+                }
+
+        items_with_matches.append({
+            **item,
+            "matched_part": part_match,
+        })
+
+    return jsonify({
+        "ok": True,
+        "vendor_name": vendor_name_parsed,
+        "vendor_match": vendor_match,
+        "vendor_address": parsed.get("vendor_address", ""),
+        "vendor_phone": parsed.get("vendor_phone", ""),
+        "vendor_email": parsed.get("vendor_email", ""),
+        "vendor_website": parsed.get("vendor_website", ""),
+        "vendor_contact_first_name": parsed.get("vendor_contact_first_name", ""),
+        "vendor_contact_last_name": parsed.get("vendor_contact_last_name", ""),
+        "invoice_number": parsed.get("invoice_number", ""),
+        "invoice_date": parsed.get("invoice_date", ""),
+        "items": items_with_matches,
+        "total": parsed.get("total", 0),
+    })
+
+
+def _re_escape(s: str) -> str:
+    """Escape string for use in regex."""
+    import re
+    return re.escape(s)
 
 
 @parts_bp.post("/api/orders/create")

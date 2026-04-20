@@ -23,3 +23,6 @@ class Config:
     #   SMTP_FROM_EMAIL  explicit From address  (defaults to SMTP_USER)
     #   SMTP_FROM_NAME   display name           (default: Roobico)
 
+    # ── OpenAI (Invoice AI parsing) ───────────────────────────────────────────
+    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+

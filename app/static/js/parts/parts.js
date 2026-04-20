@@ -117,6 +117,8 @@
 		let orderItems = [];
 		let currentOrderStatus = null;
 		let currentVendorBill = "";
+		let scannedInvoiceFile = null;
+		let scannedVendorData = null;
 
 		const canUseOrderComposer = !!(
 			vendorSelect && vendorSearchInput && vendorDropdown && partSearch && dropdown && itemsBody &&
@@ -1101,6 +1103,19 @@
 
 				if (!isEdit) {
 					createdOrderId.value = data.order_id;
+
+					// Auto-attach scanned invoice file
+					if (scannedInvoiceFile) {
+						const attachFD = new FormData();
+						attachFD.append("entity_type", "parts_order");
+						attachFD.append("entity_id", data.order_id);
+						attachFD.append("files", scannedInvoiceFile);
+						fetch("/attachments/api/upload", {
+							method: "POST",
+							body: attachFD,
+						}).catch(() => {});
+						scannedInvoiceFile = null;
+					}
 				}
 				orderCreatedBox.classList.remove("d-none");
 
@@ -1132,6 +1147,9 @@
 				if (value === null) return null;
 				return String(value || "").trim();
 			}
+			// Temporarily hide the Bootstrap modal so its focus trap doesn't block SweetAlert input
+			const openModal = document.querySelector('.modal.show');
+			if (openModal) openModal.style.display = 'none';
 			const noAnim = { popup: '', backdrop: '' };
 			const result = await Swal.fire({
 				title: 'Vendor Bill',
@@ -1147,6 +1165,7 @@
 				showClass: noAnim,
 				hideClass: noAnim,
 			});
+			if (openModal) openModal.style.display = '';
 			if (!result.isConfirmed) return null;
 			return String(result.value || "").trim();
 		}
@@ -1276,6 +1295,570 @@
 			if (orderMetaCreated) orderMetaCreated.textContent = "-";
 			if (orderMetaReceived) orderMetaReceived.textContent = "-";
 			if (orderMetaPaymentsBody) orderMetaPaymentsBody.innerHTML = `<tr><td colspan="5" class="text-muted">No payments.</td></tr>`;
+
+			// Reset scan UI
+			const scanProgress = document.getElementById("invoiceScanProgress");
+			const scanResult = document.getElementById("invoiceScanResult");
+			if (scanProgress) scanProgress.classList.add("d-none");
+			if (scanResult) scanResult.classList.add("d-none");
+			const fileInput = document.getElementById("invoiceFileInput");
+			if (fileInput) fileInput.value = "";
+			scannedInvoiceFile = null;
+			scannedVendorData = null;
+		});
+
+		// ── Invoice AI Scan ──────────────────────────────────────────────────
+		const invoiceFileInput = document.getElementById("invoiceFileInput");
+		const scanProgress = document.getElementById("invoiceScanProgress");
+		const scanResult = document.getElementById("invoiceScanResult");
+		const scanDetails = document.getElementById("invoiceScanDetails");
+		const dismissScanBtn = document.getElementById("dismissScanResult");
+
+		if (invoiceFileInput) {
+			invoiceFileInput.addEventListener("change", async function () {
+				const file = this.files?.[0];
+				if (!file) return;
+
+				// Show progress
+				scanProgress?.classList.remove("d-none");
+				scanResult?.classList.add("d-none");
+				clearError();
+
+				// Keep file for attachment later
+				scannedInvoiceFile = file;
+
+				const formData = new FormData();
+				formData.append("invoice", file);
+
+				try {
+					const resp = await fetch("/parts/api/orders/parse-invoice", {
+						method: "POST",
+						body: formData,
+					});
+					const data = await resp.json();
+
+					scanProgress?.classList.add("d-none");
+
+					if (!data.ok) {
+						showError(data.error || "Failed to scan invoice.");
+						return;
+					}
+
+					// Apply vendor match
+					if (data.vendor_match && !vendorSelect.disabled) {
+						vendorSelect.value = data.vendor_match.vendor_id;
+						vendorSearchInput.value = data.vendor_match.vendor_name;
+						vendorSelect.dispatchEvent(new Event("change"));
+						partSearch.disabled = false;
+					}
+
+					// Save scanned vendor data for modal pre-fill
+					scannedVendorData = {
+						name: data.vendor_name || "",
+						address: data.vendor_address || "",
+						phone: data.vendor_phone || "",
+						email: data.vendor_email || "",
+						website: data.vendor_website || "",
+						contact_first_name: data.vendor_contact_first_name || "",
+						contact_last_name: data.vendor_contact_last_name || "",
+					};
+
+					// Build result summary
+					const matched = data.items.filter(i => i.matched_part);
+					const unmatched = data.items.filter(i => !i.matched_part);
+
+					let details = "";
+
+					// ── Vendor section ───────────────────────────────────
+					if (data.vendor_match) {
+						details += `<div class="mb-2"><i class="bi bi-check-circle text-success me-1"></i><strong>Vendor:</strong> ${escapeHtml(data.vendor_match.vendor_name)} — matched</div>`;
+					} else {
+						details += `<div class="mb-2 p-2 border rounded bg-light">`;
+						details += `<div class="d-flex align-items-center gap-2 flex-wrap">`;
+						details += `<i class="bi bi-exclamation-triangle text-warning me-1"></i>`;
+						details += `<strong>Vendor not found:</strong> ${escapeHtml(data.vendor_name)}`;
+						details += `<button type="button" class="btn btn-sm btn-outline-success" id="openScanVendorModalBtn" data-vendor-name="${escapeHtml(data.vendor_name)}"><i class="bi bi-plus-lg me-1"></i>Create Vendor</button>`;
+						details += `</div></div>`;
+					}
+
+					details += `<div class="mb-2"><strong>Invoice #:</strong> ${escapeHtml(data.invoice_number)} &nbsp; <strong>Date:</strong> ${escapeHtml(data.invoice_date)}</div>`;
+					details += `<div class="mb-2"><strong>Items:</strong> ${data.items.length} found — ${matched.length} matched, ${unmatched.length} new</div>`;
+
+					// ── Matched items (editable) ─────────────────────────
+					if (matched.length > 0) {
+						details += `<div class="mt-2"><strong>Matched parts:</strong></div>`;
+						details += `<div class="table-responsive mt-1"><table class="table table-sm table-bordered mb-0"><thead><tr>`;
+						details += `<th>Part #</th><th>Description</th><th style="width:80px;">Qty</th><th style="width:110px;">Price</th><th style="width:100px;">Action</th>`;
+						details += `</tr></thead><tbody>`;
+						for (const item of matched) {
+							const mp = item.matched_part;
+							details += `<tr data-scan-matched="1" data-scan-part-id="${escapeHtml(mp.part_id)}">
+								<td><strong>${escapeHtml(mp.part_number)}</strong></td>
+								<td class="text-muted">${escapeHtml(mp.description || item.description)}</td>
+								<td><input type="number" class="form-control form-control-sm scan-match-qty" min="1" step="1" value="${item.quantity}"></td>
+								<td><input type="number" class="form-control form-control-sm scan-match-price" min="0" step="0.01" value="${Number(item.price).toFixed(2)}"></td>
+								<td><button type="button" class="btn btn-sm btn-primary add-scanned-matched-btn"><i class="bi bi-plus-lg me-1"></i>Add</button></td>
+							</tr>`;
+						}
+						details += `</tbody></table></div>`;
+						if (matched.length > 1) {
+							details += `<div class="mt-1"><button type="button" class="btn btn-sm btn-primary" id="addAllMatchedBtn"><i class="bi bi-plus-lg me-1"></i>Add All Matched</button></div>`;
+						}
+					}
+
+					// ── Unmatched items (editable) ───────────────────────
+					if (unmatched.length > 0) {
+						details += `<div class="mt-3"><strong>New parts (not in database):</strong></div>`;
+						details += `<div class="table-responsive mt-1"><table class="table table-sm table-bordered mb-0"><thead><tr>`;
+						details += `<th style="min-width:140px;">Part #</th><th style="min-width:200px;">Description</th><th style="width:80px;">Qty</th><th style="width:110px;">Price</th><th style="width:130px;">Action</th>`;
+						details += `</tr></thead><tbody>`;
+						for (const item of unmatched) {
+							details += `<tr data-scan-unmatched="1">
+								<td><input type="text" class="form-control form-control-sm scan-new-pn" value="${escapeHtml(item.part_number)}" placeholder="Part number"></td>
+								<td><input type="text" class="form-control form-control-sm scan-new-desc" value="${escapeHtml(item.description)}" placeholder="Description"></td>
+								<td><input type="number" class="form-control form-control-sm scan-new-qty" min="1" step="1" value="${item.quantity}"></td>
+								<td><input type="number" class="form-control form-control-sm scan-new-price" min="0" step="0.01" value="${Number(item.price).toFixed(2)}"></td>
+								<td><button type="button" class="btn btn-sm btn-outline-primary create-scanned-part-btn"><i class="bi bi-plus-lg me-1"></i>Create & Add</button></td>
+							</tr>`;
+						}
+						details += `</tbody></table></div>`;
+						if (unmatched.length > 1) {
+							details += `<div class="mt-1"><button type="button" class="btn btn-sm btn-outline-primary" id="createAllUnmatchedBtn"><i class="bi bi-plus-lg me-1"></i>Create & Add All</button></div>`;
+						}
+					}
+
+					if (scanDetails) scanDetails.innerHTML = details;
+					scanResult?.classList.remove("d-none");
+
+				} catch (err) {
+					scanProgress?.classList.add("d-none");
+					showError("Network error during invoice scan.");
+					console.error(err);
+				}
+
+				// Reset file input so the same file can be re-selected
+				this.value = "";
+			});
+		}
+
+		dismissScanBtn?.addEventListener("click", () => {
+			scanResult?.classList.add("d-none");
+		});
+
+		// ── Create Vendor from scan (modal) ──────────────────────────────
+		const scanVendorModalEl = document.getElementById("scanVendorModal");
+		const scanVendorModal = scanVendorModalEl ? new bootstrap.Modal(scanVendorModalEl) : null;
+		const scanVendorNameInput = document.getElementById("scanVendorNameInput");
+		const scanVendorWebsite = document.getElementById("scanVendorWebsite");
+		const scanVendorAddress = document.getElementById("scanVendorAddress");
+		const scanVendorNotesInput = document.getElementById("scanVendorNotesInput");
+		const scanVendorContactsForm = document.getElementById("scanVendorContactsForm");
+		const scanVendorSubmitBtn = document.getElementById("scanVendorSubmitBtn");
+		const scanVendorAlert = document.getElementById("scanVendorAlert");
+
+		// Open vendor modal from scan results
+		document.addEventListener("click", function (e) {
+			const btn = e.target.closest("#openScanVendorModalBtn");
+			if (!btn || !scanVendorModal) return;
+
+			// Pre-fill all fields from scanned data
+			const vd = scannedVendorData || {};
+			if (scanVendorNameInput) scanVendorNameInput.value = vd.name || btn.dataset.vendorName || "";
+			if (scanVendorWebsite) scanVendorWebsite.value = vd.website || "";
+			if (scanVendorAddress) scanVendorAddress.value = vd.address || "";
+			if (scanVendorNotesInput) scanVendorNotesInput.value = "";
+			if (scanVendorAlert) scanVendorAlert.classList.add("d-none");
+			if (scanVendorSubmitBtn) {
+				scanVendorSubmitBtn.disabled = false;
+				scanVendorSubmitBtn.textContent = "Create Vendor";
+			}
+
+			// Pre-fill contacts from scanned data
+			const hasContact = vd.contact_first_name || vd.contact_last_name || vd.phone || vd.email;
+			if (scanVendorContactsForm && window.RoobicoContacts) {
+				if (hasContact) {
+					window.RoobicoContacts.setContacts(scanVendorContactsForm, [{
+						first_name: vd.contact_first_name || "",
+						last_name: vd.contact_last_name || "",
+						phone: vd.phone || "",
+						email: vd.email || "",
+						is_main: true,
+					}]);
+				} else {
+					window.RoobicoContacts.setContacts(scanVendorContactsForm, [{ is_main: true }]);
+				}
+			}
+
+			scanVendorModal.show();
+		});
+
+		// Submit vendor creation from modal
+		if (scanVendorSubmitBtn) {
+			scanVendorSubmitBtn.addEventListener("click", function () {
+				const name = (scanVendorNameInput?.value || "").trim();
+				if (!name) {
+					if (scanVendorAlert) {
+						scanVendorAlert.textContent = "Vendor name is required.";
+						scanVendorAlert.classList.remove("d-none");
+					}
+					return;
+				}
+
+				if (scanVendorAlert) scanVendorAlert.classList.add("d-none");
+
+				// Collect contacts
+				let contacts = [];
+				if (scanVendorContactsForm && window.RoobicoContacts) {
+					contacts = window.RoobicoContacts.getContacts(scanVendorContactsForm);
+				}
+
+				scanVendorSubmitBtn.disabled = true;
+				scanVendorSubmitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Creating...`;
+
+				fetch("/vendors/api/create", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						name: name,
+						website: (scanVendorWebsite?.value || "").trim(),
+						address: (scanVendorAddress?.value || "").trim(),
+						notes: (scanVendorNotesInput?.value || "").trim(),
+						contacts: contacts,
+					}),
+				})
+				.then(r => r.json())
+				.then(result => {
+					if (result.ok && result.vendor_id) {
+						// Add to vendor select dropdown
+						const opt = document.createElement("option");
+						opt.value = result.vendor_id;
+						opt.textContent = result.vendor_name;
+						vendorSelect.appendChild(opt);
+
+						// Select the new vendor
+						vendorSelect.value = result.vendor_id;
+						vendorSearchInput.value = result.vendor_name;
+						vendorSelect.dispatchEvent(new Event("change"));
+						partSearch.disabled = false;
+
+						// Close modal
+						scanVendorModal.hide();
+
+						// Update scan result UI
+						const vendorSection = scanResult?.querySelector(".bg-light");
+						if (vendorSection) {
+							vendorSection.innerHTML = `<i class="bi bi-check-circle text-success me-1"></i><strong>Vendor:</strong> ${escapeHtml(result.vendor_name)} — created & selected`;
+							vendorSection.classList.remove("bg-light");
+						}
+					} else {
+						scanVendorSubmitBtn.disabled = false;
+						scanVendorSubmitBtn.textContent = "Create Vendor";
+						if (scanVendorAlert) {
+							scanVendorAlert.textContent = result.error || "Failed to create vendor.";
+							scanVendorAlert.classList.remove("d-none");
+						}
+					}
+				})
+				.catch(() => {
+					scanVendorSubmitBtn.disabled = false;
+					scanVendorSubmitBtn.textContent = "Create Vendor";
+					if (scanVendorAlert) {
+						scanVendorAlert.textContent = "Network error creating vendor.";
+						scanVendorAlert.classList.remove("d-none");
+					}
+				});
+			});
+		}
+
+		// Ensure z-index stacking when scan vendor modal opens over order modal
+		scanVendorModalEl?.addEventListener("shown.bs.modal", function () {
+			const backdrops = document.querySelectorAll(".modal-backdrop.show");
+			if (backdrops.length > 1) {
+				backdrops[backdrops.length - 1].style.zIndex = "1070";
+			}
+			scanVendorModalEl.style.zIndex = "1075";
+		});
+
+		scanVendorModalEl?.addEventListener("hidden.bs.modal", function () {
+			scanVendorModalEl.style.zIndex = "";
+			if (orderModal && orderModal.classList.contains("show")) {
+				document.body.classList.add("modal-open");
+			}
+		});
+
+		// ── Add single matched part from scan ────────────────────────────
+		document.addEventListener("click", function (e) {
+			const btn = e.target.closest(".add-scanned-matched-btn");
+			if (!btn) return;
+
+			const tr = btn.closest("tr[data-scan-matched]");
+			if (!tr) return;
+
+			const partId = tr.dataset.scanPartId;
+			const partNumber = tr.querySelector("td strong")?.textContent || "";
+			const desc = tr.querySelector("td.text-muted")?.textContent || "";
+			const qty = parseInt(tr.querySelector(".scan-match-qty")?.value || "1", 10);
+			const price = parseFloat(tr.querySelector(".scan-match-price")?.value || "0");
+
+			addOrIncrementItem({
+				id: partId,
+				part_number: partNumber,
+				description: desc,
+				average_cost: price,
+				core_has_charge: false,
+				core_cost: 0,
+			});
+			const row = itemsBody.querySelector(`tr[data-part-id="${partId}"]`);
+			if (row) {
+				const qtyInput = row.querySelector(".qty-input");
+				if (qtyInput) qtyInput.value = String(qty);
+				const priceInput = row.querySelector(".price-input");
+				if (priceInput) priceInput.value = Number(price).toFixed(2);
+			}
+			calculateOrderTotal();
+
+			btn.innerHTML = `<i class="bi bi-check-lg"></i> Added`;
+			btn.classList.remove("btn-primary");
+			btn.classList.add("btn-success");
+			btn.disabled = true;
+		});
+
+		// ── Add all matched parts ────────────────────────────────────────
+		document.addEventListener("click", function (e) {
+			const btn = e.target.closest("#addAllMatchedBtn");
+			if (!btn) return;
+
+			const rows = document.querySelectorAll("tr[data-scan-matched]");
+			rows.forEach(tr => {
+				const addBtn = tr.querySelector(".add-scanned-matched-btn");
+				if (addBtn && !addBtn.disabled) addBtn.click();
+			});
+			btn.innerHTML = `<i class="bi bi-check-lg me-1"></i>All Added`;
+			btn.classList.remove("btn-primary");
+			btn.classList.add("btn-success");
+			btn.disabled = true;
+		});
+
+		// ── Create Part from scan (modal) ────────────────────────────────
+		const scanPartModalEl = document.getElementById("scanPartModal");
+		const scanPartModal = scanPartModalEl ? new bootstrap.Modal(scanPartModalEl) : null;
+		const scanPartNumber = document.getElementById("scanPartNumber");
+		const scanPartReference = document.getElementById("scanPartReference");
+		const scanPartDescription = document.getElementById("scanPartDescription");
+		const scanPartAverageCost = document.getElementById("scanPartAverageCost");
+		const scanPartVendor = document.getElementById("scanPartVendor");
+		const scanPartInStock = document.getElementById("scanPartInStock");
+		const scanPartCategory = document.getElementById("scanPartCategory");
+		const scanPartLocation = document.getElementById("scanPartLocation");
+		const scanPartSellingPriceToggle = document.getElementById("scanPartSellingPriceToggle");
+		const scanPartSellingPriceGroup = document.getElementById("scanPartSellingPriceGroup");
+		const scanPartSellingPrice = document.getElementById("scanPartSellingPrice");
+		const scanPartDoNotTrack = document.getElementById("scanPartDoNotTrack");
+		const scanPartCoreChargeToggle = document.getElementById("scanPartCoreChargeToggle");
+		const scanPartCoreCostGroup = document.getElementById("scanPartCoreCostGroup");
+		const scanPartCoreCost = document.getElementById("scanPartCoreCost");
+		const scanPartSubmitBtn = document.getElementById("scanPartSubmitBtn");
+		const scanPartAlert = document.getElementById("scanPartAlert");
+
+		// Toggles for conditional fields
+		scanPartSellingPriceToggle?.addEventListener("change", function () {
+			scanPartSellingPriceGroup?.classList.toggle("d-none", !this.checked);
+		});
+		scanPartCoreChargeToggle?.addEventListener("change", function () {
+			scanPartCoreCostGroup?.classList.toggle("d-none", !this.checked);
+		});
+
+		// Track which table row triggered the modal
+		let scanPartSourceRow = null;
+		let scanPartSourceQty = 1;
+
+		// z-index stacking for scanPartModal over orderModal
+		scanPartModalEl?.addEventListener("shown.bs.modal", function () {
+			const backdrops = document.querySelectorAll(".modal-backdrop.show");
+			if (backdrops.length > 0) {
+				backdrops[backdrops.length - 1].style.zIndex = "1075";
+			}
+			scanPartModalEl.style.zIndex = "1080";
+		});
+
+		// ── Create & Add single unmatched part from scan ─────────────────
+		document.addEventListener("click", function (e) {
+			const btn = e.target.closest(".create-scanned-part-btn");
+			if (!btn || !scanPartModal) return;
+
+			const tr = btn.closest("tr[data-scan-unmatched]");
+			if (!tr) return;
+
+			const pn = (tr.querySelector(".scan-new-pn")?.value || "").trim();
+			const desc = (tr.querySelector(".scan-new-desc")?.value || "").trim();
+			const qty = parseInt(tr.querySelector(".scan-new-qty")?.value || "1", 10);
+			const price = parseFloat(tr.querySelector(".scan-new-price")?.value || "0");
+
+			// Pre-fill modal
+			scanPartSourceRow = tr;
+			scanPartSourceQty = qty;
+			if (scanPartNumber) scanPartNumber.value = pn;
+			if (scanPartReference) scanPartReference.value = "";
+			if (scanPartDescription) scanPartDescription.value = desc;
+			if (scanPartAverageCost) scanPartAverageCost.value = Number(price).toFixed(2);
+			if (scanPartVendor) scanPartVendor.value = vendorSelect.value || "";
+			if (scanPartInStock) scanPartInStock.value = "0";
+			if (scanPartCategory) scanPartCategory.value = "";
+			if (scanPartLocation) scanPartLocation.value = "";
+			if (scanPartSellingPriceToggle) { scanPartSellingPriceToggle.checked = false; }
+			scanPartSellingPriceGroup?.classList.add("d-none");
+			if (scanPartSellingPrice) scanPartSellingPrice.value = "0";
+			if (scanPartDoNotTrack) scanPartDoNotTrack.checked = false;
+			if (scanPartCoreChargeToggle) { scanPartCoreChargeToggle.checked = false; }
+			scanPartCoreCostGroup?.classList.add("d-none");
+			if (scanPartCoreCost) scanPartCoreCost.value = "0";
+			if (scanPartAlert) scanPartAlert.classList.add("d-none");
+			if (scanPartSubmitBtn) {
+				scanPartSubmitBtn.disabled = false;
+				scanPartSubmitBtn.textContent = "Create Part";
+			}
+
+			scanPartModal.show();
+		});
+
+		// Submit part creation from modal
+		scanPartSubmitBtn?.addEventListener("click", function () {
+			const pn = (scanPartNumber?.value || "").trim();
+			if (!pn) {
+				if (scanPartAlert) {
+					scanPartAlert.textContent = "Part number is required.";
+					scanPartAlert.classList.remove("d-none");
+				}
+				return;
+			}
+
+			const desc = (scanPartDescription?.value || "").trim();
+			const price = parseFloat(scanPartAverageCost?.value || "0");
+			const hasSelling = scanPartSellingPriceToggle?.checked || false;
+			const coreCharge = scanPartCoreChargeToggle?.checked || false;
+
+			const payload = {
+				part_number: pn,
+				reference: (scanPartReference?.value || "").trim(),
+				description: desc,
+				average_cost: price,
+				vendor_id: scanPartVendor?.value || "",
+				in_stock: parseInt(scanPartInStock?.value || "0", 10),
+				category_id: scanPartCategory?.value || "",
+				location_id: scanPartLocation?.value || "",
+				has_selling_price: hasSelling,
+				selling_price: hasSelling ? parseFloat(scanPartSellingPrice?.value || "0") : 0,
+				do_not_track_inventory: scanPartDoNotTrack?.checked || false,
+				core_has_charge: coreCharge,
+				core_cost: coreCharge ? parseFloat(scanPartCoreCost?.value || "0") : 0,
+			};
+
+			scanPartSubmitBtn.disabled = true;
+			scanPartSubmitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Creating...`;
+
+			fetch("/parts/api/create", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(payload),
+			})
+			.then(r => r.json())
+			.then(result => {
+				if (result.ok && result.part_id) {
+					scanPartModal.hide();
+
+					// Mark source row as created
+					const tr = scanPartSourceRow;
+					if (tr) {
+						const btn = tr.querySelector(".create-scanned-part-btn");
+						if (btn) {
+							btn.innerHTML = `<i class="bi bi-check-lg me-1"></i>Created`;
+							btn.classList.remove("btn-outline-primary");
+							btn.classList.add("btn-success");
+							btn.disabled = true;
+						}
+						tr.querySelectorAll("input").forEach(inp => inp.disabled = true);
+					}
+
+					// Add to order items
+					addOrIncrementItem({
+						id: result.part_id,
+						part_number: pn,
+						description: desc,
+						average_cost: price,
+						core_has_charge: coreCharge,
+						core_cost: coreCharge ? parseFloat(scanPartCoreCost?.value || "0") : 0,
+					});
+					const row = itemsBody.querySelector(`tr[data-part-id="${result.part_id}"]`);
+					if (row) {
+						const qtyInput = row.querySelector(".qty-input");
+						if (qtyInput && scanPartSourceQty > 1) qtyInput.value = String(scanPartSourceQty);
+						const priceInput = row.querySelector(".price-input");
+						if (priceInput) priceInput.value = Number(price).toFixed(2);
+					}
+					calculateOrderTotal();
+					scanPartSourceRow = null;
+				} else {
+					scanPartSubmitBtn.disabled = false;
+					scanPartSubmitBtn.textContent = "Create Part";
+					if (scanPartAlert) {
+						scanPartAlert.textContent = result.error || "Failed to create part.";
+						scanPartAlert.classList.remove("d-none");
+					}
+				}
+			})
+			.catch(() => {
+				scanPartSubmitBtn.disabled = false;
+				scanPartSubmitBtn.textContent = "Create Part";
+				if (scanPartAlert) {
+					scanPartAlert.textContent = "Network error creating part.";
+					scanPartAlert.classList.remove("d-none");
+				}
+			});
+		});
+
+		// ── Create & Add all unmatched parts (queue through modal) ──────
+		let scanPartQueue = [];
+		let scanPartQueueBtn = null;
+
+		function openNextQueuedPart() {
+			if (scanPartQueue.length === 0) {
+				if (scanPartQueueBtn) {
+					scanPartQueueBtn.innerHTML = `<i class="bi bi-check-lg me-1"></i>All Created`;
+					scanPartQueueBtn.classList.remove("btn-outline-primary");
+					scanPartQueueBtn.classList.add("btn-success");
+					scanPartQueueBtn = null;
+				}
+				return;
+			}
+			const nextBtn = scanPartQueue.shift();
+			nextBtn.click();
+		}
+
+		// After modal hides, open next queued part
+		scanPartModalEl?.addEventListener("hidden.bs.modal", function () {
+			if (scanPartQueue.length > 0) {
+				setTimeout(openNextQueuedPart, 200);
+			}
+		});
+
+		document.addEventListener("click", function (e) {
+			const btn = e.target.closest("#createAllUnmatchedBtn");
+			if (!btn) return;
+
+			const rows = document.querySelectorAll("tr[data-scan-unmatched]");
+			const pending = [];
+			rows.forEach(tr => {
+				const createBtn = tr.querySelector(".create-scanned-part-btn");
+				if (createBtn && !createBtn.disabled) pending.push(createBtn);
+			});
+
+			if (pending.length === 0) return;
+
+			btn.disabled = true;
+			btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Creating ${pending.length}...`;
+			scanPartQueueBtn = btn;
+			scanPartQueue = pending.slice(1);
+			pending[0].click();
 		});
 
 		partsOrderPaymentModalEl?.addEventListener("shown.bs.modal", function () {
