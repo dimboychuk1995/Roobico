@@ -805,12 +805,6 @@
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="orderModalLabel">Order parts (one vendor)</h5>
-        <div class="ms-auto me-2">
-          <label class="btn btn-sm btn-outline-info mb-0" id="scanInvoiceBtn" title="Upload vendor invoice PDF or image for AI recognition">
-            <i class="bi bi-magic me-1"></i> Scan Invoice
-            <input type="file" id="invoiceFileInput" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tiff" class="d-none">
-          </label>
-        </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
 
@@ -1000,6 +994,10 @@
             <i class="bi bi-cash-stack me-1"></i> Paid
           </button>
         </div>
+        <label class="btn btn-outline-info" id="scanInvoiceBtn" title="Upload vendor invoice PDF or image for AI recognition">
+          <i class="bi bi-magic me-1"></i> AI Order Reader
+          <input type="file" id="invoiceFileInput" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.bmp,.tiff" class="d-none">
+        </label>
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
         <button type="button" class="btn btn-primary" id="createOrderBtn">Create order</button>
       </div>
