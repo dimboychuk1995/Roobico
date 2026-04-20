@@ -1,11 +1,10 @@
 from __future__ import annotations
 
+import base64
 import os
-import smtplib
-from email import encoders as _encoders
-from email.mime.base import MIMEBase
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
+from urllib.request import Request, urlopen
+from urllib.error import HTTPError, URLError
+import json
 
 
 def send_email(
@@ -18,17 +17,14 @@ def send_email(
     from_name: str | None = None,
 ) -> None:
     """
-    Send an HTML email via SMTP with STARTTLS.
+    Send an HTML email via Resend HTTP API.
 
     to_address: single email string or list of email strings.
 
     Configure via environment variables in .env:
-        SMTP_HOST        – SMTP server host          (default: smtp.gmail.com)
-        SMTP_PORT        – SMTP port                 (default: 587)
-        SMTP_USER        – login / sender address
-        SMTP_PASS        – password / app-password
-        SMTP_FROM_EMAIL  – explicit From address     (defaults to SMTP_USER)
-        SMTP_FROM_NAME   – display name              (default: Roobico)
+        RESEND_API_KEY   – Resend API key (re_xxx...)
+        RESEND_FROM_EMAIL – From address (e.g. workorders@roobico.com)
+        RESEND_FROM_NAME  – display name (default: Roobico)
 
     attachments: optional list of dicts:
         {"filename": "wo-123.pdf", "data": <bytes>, "content_type": "application/pdf"}
@@ -43,57 +39,63 @@ def send_email(
     if not recipients:
         raise RuntimeError("No recipient email addresses provided.")
 
-    host       = os.environ.get("SMTP_HOST", "smtp.gmail.com")
-    port       = int(os.environ.get("SMTP_PORT", "587"))
-    user       = os.environ.get("SMTP_USER", "")
-    password   = os.environ.get("SMTP_PASS", "")
-    from_addr  = from_email or os.environ.get("SMTP_FROM_EMAIL", "") or user
-    _from_name = from_name or os.environ.get("SMTP_FROM_NAME", "Roobico")
+    api_key = os.environ.get("RESEND_API_KEY", "")
+    from_addr = from_email or os.environ.get("RESEND_FROM_EMAIL", "")
+    _from_name = from_name or os.environ.get("RESEND_FROM_NAME", "Roobico")
 
+    if not api_key:
+        raise RuntimeError(
+            "Email is not configured. Set RESEND_API_KEY in your .env file."
+        )
     if not from_addr:
         raise RuntimeError(
-            "Email is not configured. "
-            "Set SMTP_USER (and optionally SMTP_PASS, SMTP_HOST, SMTP_PORT) in your .env file."
+            "Email is not configured. Set RESEND_FROM_EMAIL in your .env file."
         )
 
-    if attachments:
-        msg = MIMEMultipart("mixed")
-        alt = MIMEMultipart("alternative")
-        alt.attach(MIMEText(html_body, "html", "utf-8"))
-        msg.attach(alt)
-        for att in attachments:
-            maintype, subtype = att["content_type"].split("/", 1)
-            part = MIMEBase(maintype, subtype)
-            part.set_payload(att["data"])
-            _encoders.encode_base64(part)
-            part.add_header(
-                "Content-Disposition", "attachment", filename=att["filename"]
-            )
-            msg.attach(part)
-    else:
-        msg = MIMEMultipart("alternative")
-        msg.attach(MIMEText(html_body, "html", "utf-8"))
+    # Build "from" field
+    from_field = f"{_from_name} <{from_addr}>" if _from_name else from_addr
 
-    msg["Subject"] = subject
-    msg["From"]    = f"{_from_name} <{from_addr}>" if _from_name else from_addr
-    msg["To"]      = ", ".join(recipients)
+    # Build request payload
+    payload: dict = {
+        "from": from_field,
+        "to": recipients,
+        "subject": subject,
+        "html": html_body,
+    }
+
     if reply_to:
-        msg["Reply-To"] = reply_to
+        payload["reply_to"] = reply_to
+
+    if attachments:
+        payload["attachments"] = [
+            {
+                "filename": att["filename"],
+                "content": base64.b64encode(att["data"]).decode("ascii"),
+            }
+            for att in attachments
+        ]
+
+    # Send via Resend API
+    req = Request(
+        "https://api.resend.com/emails",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "SmallShop-Mailer/1.0",
+        },
+        method="POST",
+    )
 
     try:
-        with smtplib.SMTP(host, port, timeout=20) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            if user and password:
-                server.login(user, password)
-            server.sendmail(from_addr, recipients, msg.as_string())
-    except smtplib.SMTPAuthenticationError as exc:
-        raise RuntimeError(
-            "SMTP authentication failed – check SMTP_USER / SMTP_PASS in .env"
-        ) from exc
-    except smtplib.SMTPException as exc:
-        raise RuntimeError(f"Failed to send email: {exc}") from exc
+        with urlopen(req, timeout=30) as resp:
+            resp.read()  # consume response
+    except HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Resend API error ({exc.code}): {body}") from exc
+    except URLError as exc:
+        raise RuntimeError(f"Failed to connect to Resend API: {exc.reason}") from exc
     except OSError as exc:
-        raise RuntimeError(f"SMTP connection error ({host}:{port}): {exc}") from exc
+        raise RuntimeError(f"Network error sending email: {exc}") from exc
 
