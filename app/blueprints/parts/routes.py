@@ -844,6 +844,13 @@ def parts_page():
             payment_summary = _build_parts_order_payment_summary(order, paid_amount)
             amounts = _parts_order_amounts(order)
 
+            # Lookup current in_stock for each part in the order
+            order_part_ids = [item.get("part_id") for item in (order.get("items") or []) if isinstance(item, dict) and item.get("part_id")]
+            in_stock_map = {}
+            if order_part_ids and parts_coll is not None:
+                for p in parts_coll.find({"_id": {"$in": order_part_ids}}, {"in_stock": 1}):
+                    in_stock_map[p["_id"]] = int(p.get("in_stock") or 0)
+
             order_items_inline = []
             for item in (order.get("items") or []):
                 if not isinstance(item, dict):
@@ -856,6 +863,7 @@ def parts_page():
                         "description": str(item.get("description") or ""),
                         "quantity": int(_parse_int(item.get("quantity"), default=0)),
                         "price": float(_parse_float(item.get("price"), default=0.0)),
+                        "in_stock": in_stock_map.get(part_id, 0),
                     }
                 )
 
@@ -1387,6 +1395,7 @@ def parts_api_search():
         "description": 1,
         "reference": 1,
         "average_cost": 1,
+        "in_stock": 1,
         "vendor_id": 1,
         "has_selling_price": 1,
         "selling_price": 1,
@@ -1422,6 +1431,7 @@ def parts_api_search():
             "part_number": p.get("part_number") or "",
             "description": p.get("description") or "",
             "average_cost": float(p.get("average_cost") or 0.0),
+            "in_stock": int(p.get("in_stock") or 0),
             "vendor_id": str(p["vendor_id"]) if p.get("vendor_id") else "",
             "has_selling_price": bool(p.get("has_selling_price")),
             "selling_price": float(p.get("selling_price") or 0.0),

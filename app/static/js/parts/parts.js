@@ -543,6 +543,7 @@
 					description: item.description,
 					quantity: item.quantity ?? item.qty ?? 0,
 					price: item.price ?? item.cost ?? 0,
+					in_stock: item.in_stock ?? 0,
 					core_has_charge: item.core_has_charge || false,
 					core_cost: item.core_cost || 0
 				}));
@@ -823,7 +824,7 @@
 			if (itemsBody.querySelectorAll("tr").length === 0) {
 				const empty = document.createElement("tr");
 				empty.id = "emptyOrderRow";
-				empty.innerHTML = `<td colspan="5" class="text-muted">No items added.</td>`;
+				empty.innerHTML = `<td colspan="6" class="text-muted">No items added.</td>`;
 				itemsBody.appendChild(empty);
 			}
 		}
@@ -856,6 +857,7 @@
 			const pn = item.part_number || "";
 			const desc = item.description || "";
 			const price = Number(item.average_cost || 0).toFixed(2);
+			const inStock = parseInt(item.in_stock || 0, 10);
 			const coreHasCharge = item.core_has_charge || false;
 			const coreCost = Number(item.core_cost || 0).toFixed(2);
 			
@@ -870,6 +872,7 @@
 			tr.innerHTML = `
 				<td class="fw-semibold">${escapeHtml(pn)}${coreIndicator}</td>
 				<td class="text-muted">${escapeHtml(desc) || "-"}</td>
+				<td class="text-end text-muted">${inStock}</td>
 				<td class="text-end">
 					<input class="form-control form-control-sm text-end qty-input" type="number" min="1" step="1" value="1" required>
 				</td>
@@ -902,6 +905,7 @@
 				const coreIndicator = item.core_has_charge && item.core_cost > 0
 					? `<span class="badge bg-warning text-dark ms-1" title="Core charge: $${Number(item.core_cost).toFixed(2)} per unit">Core</span>`
 					: '';
+				const inStock = parseInt(item.in_stock || 0, 10);
 				
 				const tr = document.createElement("tr");
 				tr.setAttribute("data-part-id", item.part_id);
@@ -915,6 +919,7 @@
 				tr.innerHTML = `
 					<td class="fw-semibold">${escapeHtml(item.part_number)}${coreIndicator}</td>
 					<td class="text-muted">${escapeHtml(item.description) || "-"}</td>
+					<td class="text-end text-muted">${inStock}</td>
 					<td class="text-end">
 						<input class="form-control form-control-sm text-end qty-input" type="number" min="1" step="1" value="${item.quantity}" required ${isReceived ? 'disabled' : ''}>
 					</td>
@@ -975,6 +980,7 @@
 					el.className = "list-group-item list-group-item-action";
 					
 					const priceDisplay = Number(item.average_cost || 0).toFixed(2);
+					const inStock = parseInt(item.in_stock || 0, 10);
 					const coreInfo = item.core_has_charge && item.core_cost > 0 
 						? `<span class="badge bg-warning text-dark ms-1" title="Core charge included">+Core $${Number(item.core_cost).toFixed(2)}</span>`
 						: '';
@@ -982,7 +988,7 @@
 					el.innerHTML = `
 						<div class="d-flex justify-content-between">
 							<div class="fw-semibold">${escapeHtml(item.part_number)}</div>
-							<div class="text-muted small">$${priceDisplay}${coreInfo}</div>
+							<div class="text-muted small">$${priceDisplay}${coreInfo} <span class="ms-2 badge ${inStock > 0 ? 'bg-success' : 'bg-secondary'}">${inStock} in stock</span></div>
 						</div>
 						<div class="text-muted small">${escapeHtml(item.description)}</div>
 					`;

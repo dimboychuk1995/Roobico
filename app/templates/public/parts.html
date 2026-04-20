@@ -881,14 +881,15 @@
               <tr>
                 <th style="min-width:160px;">Part #</th>
                 <th>Description</th>
-                <th class="text-end" style="width:120px;">Qty</th>
+                <th class="text-end" style="width:80px;">In Stock</th>
+                <th class="text-end" style="width:100px;">Qty</th>
                 <th class="text-end" style="width:140px;">Price</th>
                 <th class="text-end" style="width:90px;"></th>
               </tr>
             </thead>
             <tbody id="orderItemsBody">
               <tr id="emptyOrderRow">
-                <td colspan="5" class="text-muted">No items added.</td>
+                <td colspan="6" class="text-muted">No items added.</td>
               </tr>
             </tbody>
           </table>
@@ -1249,7 +1250,7 @@
   </div>
 </div>
 
-<script src="{{ url_for('static', filename='js/parts/parts.js', v='20260419-non-inv-fix') }}"></script>
+<script src="{{ url_for('static', filename='js/parts/parts.js', v='20260419-in-stock') }}"></script>
 
 {{ attachments_modal() }}
 
