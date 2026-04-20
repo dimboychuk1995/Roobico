@@ -1031,6 +1031,12 @@
 			}
 		});
 
+		nonInventoryBody.addEventListener("change", function (e) {
+			if (e.target.classList.contains("non-inv-type")) {
+				ensureTrailingNonInventoryRow(vendorSelect.disabled);
+			}
+		});
+
 		nonInventoryBody.addEventListener("click", function (e) {
 			const btn = e.target.closest(".non-inv-remove-btn");
 			if (!btn) return;
@@ -2156,6 +2162,7 @@
 				// Creating new order — hide attachments
 				var attGroup = document.getElementById('orderAttachmentsGroup');
 				if (attGroup) attGroup.classList.add('d-none');
+				ensureTrailingNonInventoryRow(false);
 				return;
 			}
 			const orderId = String(editBtn.getAttribute("data-order-id") || "").trim();
