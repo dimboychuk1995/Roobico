@@ -460,8 +460,10 @@ def pdf_design_index():
     cfg = shop_db.pdf_design.find_one({"shop_id": shop_oid}) or {}
 
     shop_name = shop.get("name") or ""
+    addr_full = str(shop.get("address") or "").strip()
     addr_parts = [shop.get("address_line"), shop.get("city"), shop.get("state"), shop.get("zip")]
-    shop_address = ", ".join(str(p).strip() for p in addr_parts if p and str(p).strip())
+    shop_address = addr_full or ", ".join(str(p).strip() for p in addr_parts if p and str(p).strip())
+    shop_billing_address = str(shop.get("billing_address") or "").strip() or shop_address
     shop_phone = str(shop.get("phone") or "").strip()
     shop_email = str(shop.get("email") or "").strip()
     has_logo = bool(shop.get("logo_data"))
@@ -472,6 +474,7 @@ def pdf_design_index():
         cfg=cfg,
         shop_name=shop_name,
         shop_address=shop_address,
+        shop_billing_address=shop_billing_address,
         shop_phone=shop_phone,
         shop_email=shop_email,
         has_logo=has_logo,

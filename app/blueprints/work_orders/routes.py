@@ -3381,10 +3381,15 @@ def _build_wo_pdf_context(shop_db, shop, wo):
     unit_model = str(unit.get("model") or "").strip()
 
     shop_name = str(shop.get("name") or "").strip()
+    addr_full = str(shop.get("address") or "").strip()
     addr_parts = [shop.get("address_line"), shop.get("city"), shop.get("state"), shop.get("zip")]
-    shop_address = ", ".join(str(p).strip() for p in addr_parts if p and str(p).strip())
+    shop_address = addr_full or ", ".join(str(p).strip() for p in addr_parts if p and str(p).strip())
     contact_parts = [str(shop.get("phone") or "").strip(), str(shop.get("email") or "").strip()]
     shop_contact = " · ".join(p for p in contact_parts if p)
+
+    # Remit-to block: explicit billing address if set, else fall back to the
+    # shop's physical address.
+    shop_billing_address = str(shop.get("billing_address") or "").strip() or shop_address
 
     wo_date = wo.get("work_order_date") or wo.get("created_at")
     wo_date_label = format_date_mmddyyyy(wo_date) if wo_date else ""
@@ -3474,6 +3479,7 @@ def _build_wo_pdf_context(shop_db, shop, wo):
         shop_name=shop_name,
         shop_address=shop_address,
         shop_contact=shop_contact,
+        shop_billing_address=shop_billing_address,
         wo_number=wo_number,
         wo_date_label=wo_date_label,
         cust_name=cust_name,
@@ -3641,8 +3647,9 @@ def api_send_payment_receipt(payment_id):
     unit_lbl = unit_label(unit)
 
     shop_name = str(shop.get("name") or "").strip()
+    addr_full = str(shop.get("address") or "").strip()
     addr_parts = [shop.get("address_line"), shop.get("city"), shop.get("state"), shop.get("zip")]
-    shop_address = ", ".join(str(p).strip() for p in addr_parts if p and str(p).strip())
+    shop_address = addr_full or ", ".join(str(p).strip() for p in addr_parts if p and str(p).strip())
     contact_parts = [str(shop.get("phone") or "").strip(), str(shop.get("email") or "").strip()]
     shop_contact = " · ".join(p for p in contact_parts if p)
 

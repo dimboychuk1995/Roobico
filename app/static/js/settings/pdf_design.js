@@ -56,6 +56,13 @@
         prevBillToHdr.style.borderBottomColor = hdrColor;
       }
 
+      // Remit Payment To header (mirrors Bill To styling)
+      var prevRemitHdr = document.getElementById("prevRemitHdr");
+      if (prevRemitHdr) {
+        prevRemitHdr.style.color = hdrColor;
+        prevRemitHdr.style.borderBottomColor = hdrColor;
+      }
+
       // Info row header
       var prevInfoRowHeader = document.getElementById("prevInfoRowHeader");
       if (prevInfoRowHeader) {

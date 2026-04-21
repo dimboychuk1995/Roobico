@@ -246,7 +246,7 @@
           <!-- Bill To -->
           <table width="100%" style="margin-bottom: 6px;">
             <tr>
-              <td width="50%" style="vertical-align: top;">
+              <td width="50%" style="vertical-align: top; padding-right: 6px;">
                 <div id="prevBillToHdr" style="font-size: 5.5pt; font-weight: bold; border-bottom: 1pt solid; padding-bottom: 1px; margin-bottom: 3px;">Bill To</div>
                 <div style="font-size: 6.5pt; padding: 0 4px;">
                   <strong>John Doe</strong>
@@ -255,7 +255,15 @@
                   <div id="prevCustPhone">P: (555) 123-4567</div>
                 </div>
               </td>
-              <td width="50%" style="vertical-align: top;"></td>
+              <td width="50%" style="vertical-align: top; padding-left: 6px;">
+                <div id="prevRemitHdr" style="font-size: 5.5pt; font-weight: bold; border-bottom: 1pt solid; padding-bottom: 1px; margin-bottom: 3px;">Remit Payment To</div>
+                <div style="font-size: 6.5pt; padding: 0 4px;">
+                  <strong>{{ shop_name or 'Your Shop Name' }}</strong>
+                  {% if shop_billing_address %}
+                  <div style="color: #444;">{{ shop_billing_address }}</div>
+                  {% endif %}
+                </div>
+              </td>
             </tr>
           </table>
 

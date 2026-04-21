@@ -198,7 +198,15 @@
           {% endif %}
         </div>
       </td>
-      <td width="50%" style="vertical-align: top;"></td>
+      <td width="50%" style="vertical-align: top; padding-left: 14px;">
+        <div style="font-size: 8pt; font-weight: bold; color: {{ hdr_color }}; border-bottom: 1.5pt solid {{ hdr_color }}; padding-bottom: 2px; margin-bottom: 5px;">Remit Payment To</div>
+        <div class="info-block">
+          <strong>{{ shop_name }}</strong>
+          {% if shop_billing_address %}
+          <br>{{ shop_billing_address }}
+          {% endif %}
+        </div>
+      </td>
     </tr>
   </table>
 
