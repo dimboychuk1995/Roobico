@@ -114,6 +114,27 @@ def ensure_shop_collections_indexes(shop_db):
     _safe_create_index(shop_db.attachments, [("entity_type", ASCENDING), ("entity_id", ASCENDING), ("uploaded_at", DESCENDING)], name="idx_attachments_entity_type_id")
     _safe_create_index(shop_db.attachments, [("parent_id", ASCENDING)], name="idx_attachments_parent_id", sparse=True)
 
+    # Calendar
+    _safe_create_index(shop_db.calendar_events, [("shop_id", ASCENDING), ("start_time", ASCENDING)], name="idx_calendar_events_shop_start")
+    _safe_create_index(shop_db.calendar_events, [("shop_id", ASCENDING), ("customer_id", ASCENDING), ("start_time", ASCENDING)], name="idx_calendar_events_shop_customer_start")
+    _safe_create_index(shop_db.calendar_events, [("shop_id", ASCENDING), ("unit_id", ASCENDING), ("start_time", ASCENDING)], name="idx_calendar_events_shop_unit_start")
+    _safe_create_index(shop_db.calendar_settings, [("key", ASCENDING)], unique=True, name="uniq_calendar_settings_key")
+
+    # Work order presets
+    _safe_create_index(shop_db.wo_presets, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("name", ASCENDING)], name="idx_wo_presets_shop_active_name")
+
+    # Core charge rules (one-per-shop config)
+    _safe_create_index(shop_db.core_charge_rules, [("shop_id", ASCENDING)], name="idx_core_charge_rules_shop")
+
+    # PDF design (one-per-shop config)
+    _safe_create_index(shop_db.pdf_design, [("shop_id", ASCENDING)], name="idx_pdf_design_shop")
+
+    # Shop-scoped settings collection (key-based)
+    _safe_create_index(shop_db.shop_settings, [("key", ASCENDING)], unique=True, name="uniq_shop_settings_key")
+
+    # Timezone / location lookup
+    _safe_create_index(shop_db.timezone_location, [("shop_id", ASCENDING)], name="idx_timezone_location_shop")
+
 
 def ensure_all_shop_databases_indexes(client, master_db):
     shops_cursor = master_db.shops.find(

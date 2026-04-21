@@ -230,6 +230,50 @@ def _unit_label(unit: dict) -> str:
     return " • ".join([x for x in bits if x]) or "-"
 
 
+def _resolve_default_labor_rate_id(shop_db, shop_id: ObjectId) -> ObjectId | None:
+    """
+    Always return a non-None ObjectId for a customer's default labor rate.
+    Order:
+      1) active "standard" rate for the shop
+      2) first active rate (sorted by name)
+      3) seed default rates and re-pick "standard"
+    """
+    if shop_db is None or not shop_id:
+        return None
+
+    doc = shop_db.labor_rates.find_one(
+        {"shop_id": shop_id, "is_active": True, "code": "standard"},
+        {"_id": 1},
+    )
+    if doc:
+        return doc["_id"]
+
+    doc = shop_db.labor_rates.find_one(
+        {"shop_id": shop_id, "is_active": True},
+        {"_id": 1},
+        sort=[("name", 1)],
+    )
+    if doc:
+        return doc["_id"]
+
+    # Last-resort: seed defaults so customers always have a rate.
+    try:
+        from app.blueprints.tenant.routes import seed_labor_rates
+        seed_labor_rates(shop_db, shop_id)
+    except Exception:
+        pass
+
+    doc = shop_db.labor_rates.find_one(
+        {"shop_id": shop_id, "is_active": True, "code": "standard"},
+        {"_id": 1},
+    ) or shop_db.labor_rates.find_one(
+        {"shop_id": shop_id, "is_active": True},
+        {"_id": 1},
+        sort=[("name", 1)],
+    )
+    return doc["_id"] if doc else None
+
+
 def _get_labor_rates(shop_db, shop_id: ObjectId) -> list[dict]:
     rows = list(
         shop_db.labor_rates.find({"shop_id": shop_id, "is_active": True}).sort([("name", 1)])
@@ -1186,23 +1230,17 @@ def customers_create():
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
 
-    default_rate_doc = coll.database.labor_rates.find_one(
-        {"shop_id": shop["_id"], "is_active": True, "code": "standard"},
-        {"_id": 1},
-    )
-    if not default_rate_doc:
-        default_rate_doc = coll.database.labor_rates.find_one(
-            {"shop_id": shop["_id"], "is_active": True},
-            {"_id": 1},
-            sort=[("name", 1)],
-        )
+    default_rate_id = _resolve_default_labor_rate_id(coll.database, shop["_id"])
+    if not default_rate_id:
+        flash("No labor rates configured for this shop. Please create at least one labor rate first.", "error")
+        return redirect(url_for("customers.customers_page"))
 
     doc = {
         "company_name": company_name or None,
         "contacts": contacts,
         "address": address or None,
         "taxable": taxable,
-        "default_labor_rate": default_rate_doc.get("_id") if default_rate_doc else None,
+        "default_labor_rate": default_rate_id,
 
         "is_active": True,
 
@@ -1289,8 +1327,9 @@ def customer_details_update(customer_id):
     contacts = build_contacts_from_form(request.form)
     address = (request.form.get("address") or "").strip()
     taxable = (request.form.get("taxable") or "").strip().lower() in {"1", "true", "on", "yes"}
-    default_labor_rate_id = _oid(request.form.get("default_labor_rate"))
-    if request.form.get("default_labor_rate") and not default_labor_rate_id:
+    default_labor_rate_raw = (request.form.get("default_labor_rate") or "").strip()
+    default_labor_rate_id = _oid(default_labor_rate_raw) if default_labor_rate_raw else None
+    if default_labor_rate_raw and not default_labor_rate_id:
         flash("Selected default labor rate is invalid.", "error")
         return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="details"))
 
@@ -1300,6 +1339,14 @@ def customer_details_update(customer_id):
         )
         if rate_exists == 0:
             flash("Selected default labor rate is invalid.", "error")
+            return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="details"))
+    else:
+        # Never allow empty default labor rate — keep existing or fall back to a sensible default.
+        default_labor_rate_id = customer.get("default_labor_rate") if isinstance(customer.get("default_labor_rate"), ObjectId) else None
+        if not default_labor_rate_id:
+            default_labor_rate_id = _resolve_default_labor_rate_id(coll.database, shop["_id"])
+        if not default_labor_rate_id:
+            flash("No labor rates configured for this shop. Please create at least one labor rate first.", "error")
             return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="details"))
 
     if not company_name and not has_contact_name(contacts):

@@ -212,7 +212,7 @@ def _safe_str(val):
     return s if s else None
 
 
-def _build_customer_doc(mapped_row, shop, now, user_id):
+def _build_customer_doc(mapped_row, shop, now, user_id, default_labor_rate_id=None):
     company_name = _safe_str(mapped_row.get("company_name"))
     first_name = _safe_str(mapped_row.get("first_name"))
     last_name = _safe_str(mapped_row.get("last_name"))
@@ -247,6 +247,7 @@ def _build_customer_doc(mapped_row, shop, now, user_id):
         "main_contact_email": (email or "").lower() if email else None,
         "taxable": False,
         "current_balance": 0.0,
+        "default_labor_rate": default_labor_rate_id,
         "is_active": True,
         "shop_id": shop["_id"],
         "tenant_id": shop.get("tenant_id"),
@@ -447,6 +448,14 @@ def run_import():
             if cn:
                 customer_lookup[cn] = c["_id"]
 
+    # Pre-resolve default labor rate for customer imports so the field is never empty.
+    customer_default_rate_id = None
+    if entity_type == "customers":
+        from app.blueprints.customers.routes import _resolve_default_labor_rate_id
+        customer_default_rate_id = _resolve_default_labor_rate_id(shop_db, shop["_id"])
+        if not customer_default_rate_id:
+            return jsonify({"ok": False, "error": "No labor rates configured for this shop. Please create at least one labor rate first."}), 400
+
     for i, row in enumerate(rows):
         # Map file headers to our field keys
         mapped_row = {}
@@ -456,7 +465,7 @@ def run_import():
 
         try:
             if entity_type == "customers":
-                doc = _build_customer_doc(mapped_row, shop, now, user_id)
+                doc = _build_customer_doc(mapped_row, shop, now, user_id, default_labor_rate_id=customer_default_rate_id)
                 if doc is None:
                     skipped += 1
                     continue

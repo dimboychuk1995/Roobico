@@ -2836,13 +2836,24 @@
     }
 
     function refreshEditorGate() {
+      const customerId = customerHidden ? String(customerHidden.value || "").trim() : "";
       const unitId = unitHidden ? String(unitHidden.value || "").trim() : "";
       const mv = unitMileageInput ? String(unitMileageInput.value || "").trim() : "";
-      const ok = !!unitId && !!mv && mileageConfirmed;
+      const ok = !!customerId && !!unitId && !!mv && mileageConfirmed;
       setEditorEnabled(ok);
+      // Keep the Create WO button disabled until everything is set.
+      // (Once the WO is created, applyStateFromStatus hides the create button
+      // entirely, so we only gate it while still in the pre-create flow.)
+      if (!isCreated && createBtn) {
+        createBtn.disabled = !ok;
+        createBtn.classList.toggle("disabled", !ok);
+        createBtn.title = ok ? "" : "Select customer, unit and confirm mileage to create the work order.";
+      }
       if (hint) {
-        if (!unitId) {
-          hint.textContent = "Select a customer and unit to continue.";
+        if (!customerId) {
+          hint.textContent = "Select a customer to continue.";
+        } else if (!unitId) {
+          hint.textContent = "Select a unit to continue.";
         } else if (!mv) {
           hint.textContent = "Enter the current mileage to continue.";
         } else if (!mileageConfirmed) {
@@ -3115,6 +3126,8 @@
 
     // initial enable state (before create)
     setEditorEnabled(!!(unitSel && String(unitSel.value || "").trim()));
+    // Also gate the Create button right away.
+    setTimeout(() => { try { refreshEditorGate(); } catch {} }, 0);
 
     // customer/unit change (только пока НЕ создано)
     customerSel?.addEventListener("change", async function () {
@@ -3142,6 +3155,7 @@
       mileageConfirmed = false;
 
       setEditorEnabled(false);
+      refreshEditorGate();
 
       if (!customerId || !unitSel) return;
       const units = await fetchUnits(customerId);

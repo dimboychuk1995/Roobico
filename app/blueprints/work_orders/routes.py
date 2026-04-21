@@ -732,7 +732,7 @@ def normalize_saved_labors(raw, shop_db=None):
                 continue
             assigned_mechanics.append(
                 {
-                    "user_id": str(user_id),
+                    "user_id": user_id,
                     "name": str(item.get("name") or "").strip(),
                     "role": str(item.get("role") or "").strip(),
                     "percent": round2(item.get("percent")),
