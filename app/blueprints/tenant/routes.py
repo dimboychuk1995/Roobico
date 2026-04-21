@@ -10,6 +10,7 @@ from werkzeug.security import generate_password_hash
 from pymongo.errors import DuplicateKeyError
 
 from app.extensions import get_master_db, get_mongo_client
+from app.utils.sales_tax import extract_us_zip, refresh_zip_tax_rate
 from . import tenant_bp
 
 
@@ -530,6 +531,7 @@ def register_tenant():
             "slug": tenant_slug,
             "db_name": tenant_db_name,
             "address": company_address,
+            "zip": extract_us_zip(company_address) or None,
             "phone": company_phone,
             "email": email,
             "contact_name": f"{first_name} {last_name}".strip(),
@@ -552,6 +554,7 @@ def register_tenant():
             "slug": first_shop_slug,
             "db_name": shop_db_name,
             "address": company_address,
+            "zip": extract_us_zip(company_address) or None,
             "phone": company_phone,
             "email": email,
             "billing_address": company_address,
@@ -563,6 +566,12 @@ def register_tenant():
         }
         shop_res = master.shops.insert_one(shop_doc)
         shop_id = shop_res.inserted_id
+
+        # Refresh sales-tax cache for the new shop's ZIP (best-effort).
+        try:
+            refresh_zip_tax_rate(master, company_address)
+        except Exception:
+            pass
 
         # ✅ IMPORTANT: нужен shop_id для seed parts_categories / labor_rates
         shop_doc["_id"] = shop_id

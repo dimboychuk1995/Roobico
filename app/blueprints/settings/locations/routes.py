@@ -14,6 +14,7 @@ from app.utils.auth import login_required, SESSION_USER_ID, SESSION_TENANT_ID
 from app.utils.permissions import permission_required, filter_nav_items
 from app.blueprints.main.routes import NAV_ITEMS
 from app.utils.layout import build_app_layout_context
+from app.utils.sales_tax import extract_us_zip, refresh_zip_tax_rate
 
 
 COMMON_TIMEZONES = [
@@ -806,12 +807,15 @@ def api_locations_create():
 
     shop_db_name = make_shop_db_name(tenant_slug, shop_slug)
 
+    extracted_zip = extract_us_zip(address)
+
     shop_doc = {
         "tenant_id": tenant["_id"],
         "name": name,
         "slug": shop_slug,
         "db_name": shop_db_name,
         "address": address or None,
+        "zip": extracted_zip or None,
         "phone": phone or None,
         "email": email or None,
         "billing_address": billing_address,
@@ -821,6 +825,13 @@ def api_locations_create():
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
+
+    # Refresh sales-tax cache for this ZIP (best-effort, async-safe).
+    if extracted_zip:
+        try:
+            refresh_zip_tax_rate(master, extracted_zip)
+        except Exception:
+            pass
 
     # Handle logo file upload
     logo_file = request.files.get("logo")
@@ -906,13 +917,19 @@ def api_locations_update(shop_id: str):
 
     if len(name) < 2:
         return jsonify({"ok": False, "errors": ["Shop name is required."]}), 400
+    if len(address) < 5:
+        return jsonify({"ok": False, "errors": ["Address is required."]}), 400
     if not billing_address:
         return jsonify({"ok": False, "errors": ["Billing address is required."]}), 400
+
+    extracted_zip = extract_us_zip(address)
+    address_changed = (str(shop.get("address") or "").strip() != address)
 
     now = utcnow()
     update_set = {
         "name": name,
         "address": address or None,
+        "zip": extracted_zip or None,
         "phone": phone or None,
         "email": email or None,
         "billing_address": billing_address,
@@ -938,10 +955,17 @@ def api_locations_update(shop_id: str):
                 "address_line": "",
                 "city": "",
                 "state": "",
-                "zip": "",
             },
         },
     )
+
+    # If the address changed, refresh the sales-tax cache for the new ZIP
+    # so subsequent work-orders use the up-to-date rate.
+    if address_changed and extracted_zip:
+        try:
+            refresh_zip_tax_rate(master, extracted_zip)
+        except Exception:
+            pass
 
     return jsonify({"ok": True})
 

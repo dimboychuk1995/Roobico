@@ -162,11 +162,11 @@
 
   /* Labor card override */
   .wo-labor.card {
-    border: 1px solid var(--border);
-    background: var(--surface);
+    border: 1px solid #d6dde5;
+    background: #f3f5f8;
   }
   .wo-labor .wo-labor-header {
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid #d6dde5;
   }
   .wo-labor .wo-labor-summary {
     display: flex;
@@ -231,7 +231,7 @@
       <!-- Unit select (NO reload) -->
       <div>
         <div class="row g-3 g-lg-4 align-items-end">
-          <div class="col-lg-6">
+          <div class="col-lg-4">
             <label class="form-label fw-semibold">Unit</label>
             <select id="unitSelect" name="unit_id" class="form-select work-order-enhanced-select" data-select-placeholder="-- Select unit --" {% if not selected_customer_id %}disabled{% endif %}>
               <option value="">-- Select unit --</option>
@@ -248,7 +248,12 @@
             <input id="unitMileageInput" type="number" class="form-control" inputmode="numeric" placeholder="0"/>
           </div>
 
-          <div class="col-lg-4">
+          <div class="col-lg-3">
+            <label class="form-label fw-semibold">Work Order Date</label>
+            <input id="workOrderDateInput" name="work_order_date" type="date" class="form-control" value="{{ work_order_date or today_date_input_value or '' }}">
+          </div>
+
+          <div class="col-lg-3">
             <button id="addUnitBtn" type="button" class="btn btn-success w-100" data-bs-toggle="modal" data-bs-target="#createUnitModal"
                     {% if not selected_customer_id %}disabled{% endif %}>
               + Add Unit
@@ -361,6 +366,19 @@
 
         <div class="wo-section wo-section-muted mb-4 text-center">
           <div class="wo-section-title">Order Totals</div>
+
+          <div id="salesTaxStateOnlyWarning"
+               class="alert alert-danger text-start small mb-3"
+               style="display:none;">
+            <strong>Heads up:</strong> we can only pull the
+            <strong>state-level</strong> sales tax automatically from the shop ZIP
+            (county, city and special-district rates are not included).
+            If you need the full combined rate, go to
+            <a href="{{ url_for('settings.parts_settings_index') }}#tax-rate-card"
+               class="alert-link">Settings → Parts Settings</a>
+            and enter the correct percentage in the
+            <strong>Custom Tax Rate</strong> field.
+          </div>
 
           <div class="wo-totals-row">
             <div class="wo-totals-chip">
@@ -587,15 +605,6 @@
 
         </div>
 
-        <div class="wo-section mb-4">
-          <div class="wo-section-title">Work Order Date</div>
-          <div class="row g-3 align-items-end">
-            <div class="col-12 col-md-4 col-lg-3">
-              <input id="workOrderDateInput" name="work_order_date" type="date" class="form-control" value="{{ work_order_date or today_date_input_value or '' }}">
-            </div>
-          </div>
-        </div>
-
       </fieldset>
 
       <div id="workOrderDatesBlock" class="wo-section mb-4" style="display:none;">
@@ -651,6 +660,7 @@
             <button id="unpaidWorkOrderBtn" class="btn btn-warning" type="button" style="display:none;">Unpaid</button>
             <button id="emailWorkOrderBtn" class="btn btn-outline-secondary" type="button" style="display:none;">&#9993; Email Work Order</button>
             <button id="downloadPdfBtn" class="btn btn-outline-secondary" type="button" style="display:none;">&#128196; Download PDF</button>
+            <button id="deleteWorkOrderBtn" class="btn btn-outline-danger" type="button" style="display:none;">Delete</button>
           </div>
 
           <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end ms-auto">

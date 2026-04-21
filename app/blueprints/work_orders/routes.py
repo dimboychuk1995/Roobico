@@ -99,9 +99,23 @@ def _get_shop_sales_tax_context(shop: dict, shop_db=None) -> dict:
     except Exception:
         rate = 0.0
 
+    source = rate_doc.get("source") or None
+    # API-Ninjas free tier returns only the state rate (county/city/special are
+    # premium-only), so we flag this so the UI can warn the user that the
+    # auto-pulled rate is a STATE-only estimate, not the full combined rate.
+    is_state_only_estimate = bool(
+        source == "api_ninjas"
+        and not (rate_doc.get("county_rate") or 0)
+        and not (rate_doc.get("city_rate") or 0)
+        and not (rate_doc.get("special_rate") or 0)
+    )
+
     return {
         "zip_code": zip_code,
         "rate": round(rate + 1e-12, 6),
+        "source": source,
+        "is_state_only_estimate": is_state_only_estimate,
+        "state": rate_doc.get("state") or "",
     }
 
 
@@ -1549,8 +1563,24 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
     # Generate a temporary ObjectId for attachment uploads before WO is created
     pending_attachment_id = str(_ObjId()) if not (form_state or {}).get("work_order_created") else ""
 
+    # If we are opening an existing WO, lock the displayed tax rate to the value
+    # that was saved on the WO itself (so address changes on the shop don't
+    # silently re-quote tax for old work orders).
+    sales_tax_context = _get_shop_sales_tax_context(shop, shop_db)
+    initial_totals_state = (form_state or {}).get("initial_totals") or {}
+    locked_rate = initial_totals_state.get("sales_tax_rate") if isinstance(initial_totals_state, dict) else None
+    if (form_state or {}).get("work_order_created") and locked_rate is not None:
+        # Existing WO: rate is locked, so suppress the "state-only estimate"
+        # warning even if the current shop config is api-ninjas based.
+        sales_tax_context = {
+            **sales_tax_context,
+            "rate": float(locked_rate or 0),
+            "is_state_only_estimate": False,
+            "source": "locked",
+        }
+
     ctx = {
-        "sales_tax_context": _get_shop_sales_tax_context(shop, shop_db),
+        "sales_tax_context": sales_tax_context,
         "active_page": "work_orders",
         "customers": customers,
         "units": units,
@@ -2687,10 +2717,18 @@ def api_work_order_update(work_order_id):
     mechanics_by_id = {m["id"]: m for m in get_assignable_mechanics(shop)}
     labors = apply_assignments_to_labors(labors, mechanics_by_id)
     totals = align_totals_with_labors(totals, labors)
-    shop_tax = _get_shop_sales_tax_context(shop, shop_db)
+
+    # Use the rate that was locked-in when the WO was originally created.
+    # We never re-quote tax for an existing WO if the shop address changed.
+    existing_totals = wo.get("totals") or {}
+    locked_tax_rate = existing_totals.get("sales_tax_rate")
+    if locked_tax_rate is None:
+        # Legacy WOs without a stored rate: fall back to the current shop rate.
+        locked_tax_rate = (_get_shop_sales_tax_context(shop, shop_db).get("rate") or 0)
+
     totals = _apply_sales_tax_to_totals(
         totals,
-        shop_tax.get("rate") or 0,
+        locked_tax_rate,
         _is_customer_taxable(shop_db, wo.get("customer_id")),
     )
 
@@ -3219,7 +3257,7 @@ def api_work_order_set_status(work_order_id):
 
 @work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/delete")
 @login_required
-@permission_required("work_orders.create")
+@permission_required("work_orders.delete")
 def api_work_order_delete(work_order_id):
     """
     Delete a work order and restore parts to inventory.
@@ -3247,7 +3285,18 @@ def api_work_order_delete(work_order_id):
     core_sync = sync_work_order_cores(shop_db, shop, labors, [], user_id)
 
     # Delete all payments associated with this work order
-    shop_db.work_order_payments.delete_many({"work_order_id": wo_id})
+    payments_deleted = shop_db.work_order_payments.delete_many({"work_order_id": wo_id}).deleted_count
+
+    # Delete all attachments associated with this work order:
+    #   - attachments on the WO itself        (entity_type="work_order",         entity_id=wo_id)
+    #   - attachments on labor blocks         (entity_type="work_order_labor",   parent_id=wo_id)
+    #   - attachments on payments             (entity_type="work_order_payment", parent_id=wo_id)
+    attachments_deleted = shop_db.attachments.delete_many({
+        "$or": [
+            {"entity_type": "work_order", "entity_id": wo_id},
+            {"entity_type": {"$in": ["work_order_labor", "work_order_payment"]}, "parent_id": wo_id},
+        ]
+    }).deleted_count
 
     # Mark work order as inactive (soft delete)
     shop_db.work_orders.update_one(
@@ -3270,6 +3319,8 @@ def api_work_order_delete(work_order_id):
         "cores_synced": len(core_sync.get("changes") or []) > 0,
         "core_changes": core_sync.get("changes") or [],
         "core_sync_errors": core_sync.get("errors") or [],
+        "payments_deleted": payments_deleted,
+        "attachments_deleted": attachments_deleted,
     }), 200
 
 

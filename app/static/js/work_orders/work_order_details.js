@@ -2238,7 +2238,7 @@
 
   function setButtonsState(mode, els) {
     // mode: "creating" | "created_locked_open" | "editing_open" | "paid"
-    const { createBtn, editBtn, saveBtn, paidBtn, unpaidBtn, emailBtn, downloadPdfBtn } = els;
+    const { createBtn, editBtn, saveBtn, paidBtn, unpaidBtn, emailBtn, downloadPdfBtn, deleteBtn } = els;
 
     const show = (el, v) => { if (el) el.style.display = v ? "" : "none"; };
     const enable = (el, v) => { if (el) el.disabled = !v; };
@@ -2252,6 +2252,7 @@
       show(unpaidBtn, false);
       show(emailBtn, false);
       show(downloadPdfBtn, false);
+      show(deleteBtn, false);
       return;
     }
 
@@ -2263,6 +2264,7 @@
       show(unpaidBtn, false);
       show(emailBtn, true); enable(emailBtn, true);
       show(downloadPdfBtn, true); enable(downloadPdfBtn, true);
+      show(deleteBtn, true); enable(deleteBtn, true);
       return;
     }
 
@@ -2274,6 +2276,7 @@
       show(unpaidBtn, false);
       show(emailBtn, true); enable(emailBtn, true);
       show(downloadPdfBtn, true); enable(downloadPdfBtn, true);
+      show(deleteBtn, true); enable(deleteBtn, true);
       return;
     }
 
@@ -2285,6 +2288,7 @@
       show(unpaidBtn, true); enable(unpaidBtn, true);
       show(emailBtn, true); enable(emailBtn, true);
       show(downloadPdfBtn, true); enable(downloadPdfBtn, true);
+      show(deleteBtn, true); enable(deleteBtn, true);
       return;
     }
   }
@@ -2441,6 +2445,18 @@
     currentSalesTaxRate = Math.max(0, toNum(salesTaxData?.rate) || 0);
     coreChargeDefaultEnabled = !!coreChargeData?.enabled;
 
+    // Show a red banner when the auto-pulled tax rate is a state-only estimate
+    // (API-Ninjas free tier doesn't expose county/city/special rates).
+    // Only show when the customer is taxable AND there is no custom override
+    // on this location (source !== "custom").
+    const salesTaxStateOnlyWarning = $("salesTaxStateOnlyWarning");
+    const salesTaxIsStateOnlyEstimate = !!salesTaxData?.is_state_only_estimate;
+    function updateSalesTaxStateOnlyWarning() {
+      if (!salesTaxStateOnlyWarning) return;
+      const shouldShow = salesTaxIsStateOnlyEstimate && currentCustomerTaxable;
+      salesTaxStateOnlyWarning.style.display = shouldShow ? "" : "none";
+    }
+
     const blocksContainer = $("laborsContainer");
     if (!blocksContainer) return;
     const woPageRootMarker = blocksContainer;
@@ -2474,6 +2490,7 @@
     const unpaidBtn = $("unpaidWorkOrderBtn");
     const emailBtn = $("emailWorkOrderBtn");
     const downloadPdfBtn = $("downloadPdfBtn");
+    const deleteBtn = $("deleteWorkOrderBtn");
 
     const addLaborBtn = $("addLaborBtn");
     const addUnitBtn = $("addUnitBtn");
@@ -2501,7 +2518,7 @@
 
     const els = {
       editor, customerSel, unitSel, addUnitBtn, addLaborBtn,
-      createBtn, editBtn, saveBtn, paidBtn, unpaidBtn, emailBtn, downloadPdfBtn
+      createBtn, editBtn, saveBtn, paidBtn, unpaidBtn, emailBtn, downloadPdfBtn, deleteBtn
     };
 
     rebuildEnhancedSelect(customerSel);
@@ -2807,19 +2824,46 @@
     }, 500);
 
     function setEditorEnabled(enabled) {
-      if (editor) editor.disabled = !enabled;
+      if (editor) {
+        editor.disabled = !enabled;
+        editor.style.display = enabled ? "" : "none";
+      }
       if (hint) hint.style.display = enabled ? "none" : "";
+    }
+
+    function refreshEditorGate() {
+      const unitId = unitHidden ? String(unitHidden.value || "").trim() : "";
+      const mv = unitMileageInput ? String(unitMileageInput.value || "").trim() : "";
+      const ok = !!unitId && !!mv && mileageConfirmed;
+      setEditorEnabled(ok);
+      if (hint) {
+        if (!unitId) {
+          hint.textContent = "Select a customer and unit to continue.";
+        } else if (!mv) {
+          hint.textContent = "Enter the current mileage to continue.";
+        } else if (!mileageConfirmed) {
+          hint.textContent = "Please confirm the mileage by re-entering it to continue.";
+        }
+      }
     }
 
     function submitCreate() {
       if (!woForm) return;
 
-      // ✅ Validate mileage was confirmed by user
-      if (!mileageConfirmed && unitMileageInput && unitMileageInput.value) {
-        unitMileageInput.focus();
-        unitMileageInput.select();
-        toast("Please confirm the mileage by re-entering it.");
-        return;
+      // ✅ Mileage is REQUIRED and must be confirmed (re-typed) before creating WO
+      if (unitMileageInput) {
+        const mv = String(unitMileageInput.value || "").trim();
+        if (!mv) {
+          unitMileageInput.focus();
+          toast("Please enter the current mileage before creating the work order.");
+          return;
+        }
+        if (!mileageConfirmed) {
+          unitMileageInput.focus();
+          unitMileageInput.select();
+          toast("Please confirm the mileage by re-entering it.");
+          return;
+        }
       }
 
       // ✅ перед отправкой формы на create кладём totals_json
@@ -3072,6 +3116,7 @@
     customerSel?.addEventListener("change", async function () {
       const customerId = String(customerSel.value || "").trim();
       currentCustomerTaxable = getCustomerTaxable(customersData, customerId);
+      updateSalesTaxStateOnlyWarning();
       if (customerHidden) customerHidden.value = customerId;
       if (createUnitCustomerHidden) createUnitCustomerHidden.value = customerId;
       if (addUnitBtn) addUnitBtn.disabled = !customerId;
@@ -3111,13 +3156,13 @@
     unitSel?.addEventListener("change", async function () {
       const unitId = String(unitSel.value || "").trim();
       if (unitHidden) unitHidden.value = unitId;
-      setEditorEnabled(!!unitId);
       
       // Clear mileage if no unit selected
       if (!unitId) {
         if (unitMileageInput) { unitMileageInput.value = ""; unitMileageInput.style.color = ""; }
         if (unitMileageHidden) unitMileageHidden.value = "";
         mileageConfirmed = false;
+        refreshEditorGate();
         return;
       }
       
@@ -3130,8 +3175,9 @@
           unitMileageInput.style.color = unitDetails.mileage ? "#aaa" : "";
         }
         if (unitMileageHidden) unitMileageHidden.value = unitDetails.mileage || "";
-        mileageConfirmed = !unitDetails.mileage; // if no DB value, nothing to confirm
+        mileageConfirmed = false; // always require re-confirmation
       }
+      refreshEditorGate();
     });
 
     // Update hidden mileage field when user changes the mileage input
@@ -3140,6 +3186,7 @@
       unitMileageInput.style.color = "";
       const mileageValue = String(unitMileageInput.value || "").trim();
       if (unitMileageHidden) unitMileageHidden.value = mileageValue;
+      refreshEditorGate();
     });
 
     // dropdown
@@ -3349,6 +3396,7 @@
         if (saveBtn) saveBtn.style.display = "none";
         if (paidBtn) paidBtn.style.display = "none";
         if (unpaidBtn) unpaidBtn.style.display = "none";
+        if (deleteBtn) deleteBtn.style.display = "none";
         return;
       }
 
@@ -3471,6 +3519,38 @@
         toast("Marked as unpaid.");
       } catch (e) {
         toast(e.message || "Failed to set unpaid.");
+      }
+    });
+
+    // delete work order -> restore parts to inventory and soft-delete
+    deleteBtn?.addEventListener("click", async function () {
+      if (!isCreated || !workOrderId) return;
+
+      const ok = await appConfirm(
+        "Delete this work order? Any parts used will be returned to inventory and all payments will be removed. This cannot be undone.",
+        { title: "Delete work order?", confirmText: "Delete", icon: "warning" }
+      );
+      if (!ok) return;
+
+      const originalText = deleteBtn.textContent;
+      deleteBtn.disabled = true;
+      deleteBtn.textContent = "Deleting…";
+
+      try {
+        const res = await fetch(`/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/delete`, {
+          method: "POST",
+          headers: { "Accept": "application/json" },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data || !data.ok) {
+          throw new Error((data && (data.error || data.message)) || "Failed to delete work order");
+        }
+        appAlert("Work order deleted.", "success");
+        window.location.href = "/work_orders";
+      } catch (e) {
+        appAlert(e.message || "Failed to delete work order.", "error");
+        deleteBtn.disabled = false;
+        deleteBtn.textContent = originalText;
       }
     });
 
@@ -3736,6 +3816,7 @@
 
     const initialCustomerId = String(customerSel?.value || "").trim();
     currentCustomerTaxable = getCustomerTaxable(customersData, initialCustomerId);
+    updateSalesTaxStateOnlyWarning();
     const initialDefaultRateCode = getCustomerDefaultLaborRate(customersData, initialCustomerId);
     applyDefaultLaborRateToAll(blocksContainer, initialDefaultRateCode, true);
     recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
@@ -3760,6 +3841,9 @@
       })();
 
       loadWorkOrderTimeline();
+    } else {
+      // New WO — hide editor until unit selected and mileage confirmed
+      refreshEditorGate();
     }
 
     // Payment modal handler

@@ -126,26 +126,40 @@ def fetch_from_api_ninjas(zip_code: str, api_key: str) -> dict:
     else:
         raise RuntimeError(f"Unexpected API response for ZIP {zip_code}: {data}")
 
-    combined_rate = item.get("total_rate")
-    if combined_rate is None:
-        combined_rate = item.get("combined_rate")
-    if combined_rate is None:
-        raise RuntimeError(f"API response has no combined rate for ZIP {zip_code}")
-
     def _to_float(value):
         try:
-            return float(value)
-        except Exception:
-            return 0.0
+            f = float(value)
+            return f if f >= 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    # API-Ninjas free tier returns the city/county/total rates as the literal
+    # string "This field is for premium subscribers only" — we treat any
+    # non-numeric value as missing and fall back to whatever IS numeric.
+    total_rate = _to_float(item.get("total_rate"))
+    if total_rate is None:
+        total_rate = _to_float(item.get("combined_rate"))
+
+    state_rate = _to_float(item.get("state_rate")) or 0.0
+    county_rate = _to_float(item.get("county_rate")) or 0.0
+    city_rate = _to_float(item.get("city_rate")) or 0.0
+    special_rate = _to_float(item.get("special_rate")) or _to_float(item.get("additional_rate")) or 0.0
+
+    if total_rate is None:
+        # Free tier: synthesise a combined rate from whatever numeric pieces we got.
+        total_rate = round(state_rate + county_rate + city_rate + special_rate, 6)
+
+    if total_rate is None:
+        raise RuntimeError(f"API response has no usable rate for ZIP {zip_code}")
 
     return {
         "zip_code": zip_code,
         "country": "US",
-        "combined_rate": _to_float(combined_rate),
-        "state_rate": _to_float(item.get("state_rate")),
-        "county_rate": _to_float(item.get("county_rate")),
-        "city_rate": _to_float(item.get("city_rate")),
-        "special_rate": _to_float(item.get("special_rate")),
+        "combined_rate": float(total_rate),
+        "state_rate": state_rate,
+        "county_rate": county_rate,
+        "city_rate": city_rate,
+        "special_rate": special_rate,
         "state": str(item.get("state") or "").strip(),
         "city": str(item.get("city") or "").strip(),
         "source": "api_ninjas",

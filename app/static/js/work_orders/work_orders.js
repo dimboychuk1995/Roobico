@@ -389,6 +389,37 @@
     });
   }
 
+  if (!body || body.dataset.workOrdersDeleteWorkOrderBound !== "1") {
+    if (body) body.dataset.workOrdersDeleteWorkOrderBound = "1";
+    document.addEventListener("click", async function (event) {
+      const btn = event.target.closest(".js-delete-work-order");
+      if (!btn) return;
+
+      const workOrderId = String(btn.dataset.workOrderId || "").trim();
+      if (!workOrderId) return;
+
+      const ok = await appConfirm(
+        "Delete this work order? Any parts used will be returned to inventory and all payments will be removed. This cannot be undone.",
+        { title: "Delete work order?", confirmText: "Delete", icon: "warning" }
+      );
+      if (!ok) return;
+
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Deleting...";
+
+      try {
+        await postJson(`/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/delete`, {});
+        appAlert("Work order deleted.", 'success');
+        window.location.reload();
+      } catch (err) {
+        appAlert(err.message || "Failed to delete work order.", 'error');
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }
+    });
+  }
+
   // ========== TAB PERSISTENCE LOGIC ==========
   const workOrdersTabIds = ["tab-work-orders", "tab-payments", "tab-estimates"];
   const allTabs = workOrdersTabIds

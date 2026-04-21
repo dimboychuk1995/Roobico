@@ -90,7 +90,7 @@ def resolve_active_shop_sales_tax_rate(master_db, shop_id: str | ObjectId | None
     if shop_db is not None:
         custom = get_custom_shop_sales_tax_settings(shop_db)
         if custom is not None and custom.get("combined_rate") is not None:
-            return custom
+            return {**custom, "source": "custom"}
     
     # Fallback to ZIP code lookup
     shop = master_db.shops.find_one({"_id": shop_oid})
@@ -103,3 +103,47 @@ def resolve_active_shop_sales_tax_rate(master_db, shop_id: str | ObjectId | None
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def refresh_zip_tax_rate(master_db, address_or_zip: str | None) -> dict | None:
+    """
+    Ensure the master cache (master_db.zip_sales_tax_rates) has a fresh entry
+    for the ZIP extracted from the given address (or raw ZIP).
+
+    Behaviour:
+      * Extracts a 5-digit US ZIP from the input.
+      * If SALES_TAX_API_KEY env var is set, fetches a fresh rate from
+        api-ninjas and upserts it into the cache.
+      * If the API call fails or no key is configured, falls back to whatever
+        cached value already exists (if any).
+      * Always returns the cached rate document for that ZIP (or None).
+
+    Safe to call from request handlers — never raises.
+    """
+    import os
+
+    zip_code = extract_us_zip(address_or_zip)
+    if not zip_code:
+        return None
+
+    api_key = (os.environ.get("SALES_TAX_API_KEY") or "").strip()
+    if api_key:
+        try:
+            from app.utils.sync_zip_sales_tax_rates import fetch_from_api_ninjas
+
+            fresh = fetch_from_api_ninjas(zip_code, api_key)
+            if fresh and fresh.get("combined_rate") is not None:
+                now = utcnow()
+                master_db.zip_sales_tax_rates.update_one(
+                    {"zip_code": zip_code},
+                    {
+                        "$set": {**fresh, "is_active": True, "updated_at": now},
+                        "$setOnInsert": {"created_at": now},
+                    },
+                    upsert=True,
+                )
+        except Exception:
+            # Network/API errors must never break the calling request.
+            pass
+
+    return get_zip_sales_tax_rate(master_db, zip_code)

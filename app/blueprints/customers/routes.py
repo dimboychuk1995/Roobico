@@ -1179,6 +1179,10 @@ def customers_create():
         flash("Company name or at least one contact name is required.", "error")
         return redirect(url_for("customers.customers_page"))
 
+    if len(address) < 5:
+        flash("Customer address is required.", "error")
+        return redirect(url_for("customers.customers_page"))
+
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
 
@@ -1302,6 +1306,10 @@ def customer_details_update(customer_id):
         flash("Company name or at least one contact name is required.", "error")
         return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="details"))
 
+    if len(address) < 5:
+        flash("Customer address is required.", "error")
+        return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="details"))
+
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
 
@@ -1382,6 +1390,9 @@ def customers_api_update(customer_id):
 
     if not company_name and not has_contact_name(contacts):
         return jsonify({"ok": False, "error": "Company name or at least one contact name is required."}), 400
+
+    if len(address) < 5:
+        return jsonify({"ok": False, "error": "Customer address is required."}), 400
 
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
