@@ -2202,7 +2202,7 @@
 
   // ---------------- UI state ----------------
   function setEditingMode(isEditing, els) {
-    const { editor, customerSel, unitSel, addUnitBtn, addLaborBtn } = els;
+    const { editor, customerSel, unitSel, addUnitBtn, addLaborBtn, recognizeWoBtn } = els;
 
     if (!editor) return;
 
@@ -2214,6 +2214,7 @@
       setSelectDisabled(unitSel, false);
       if (addUnitBtn) addUnitBtn.disabled = false;
       if (addLaborBtn) addLaborBtn.disabled = false;
+      if (recognizeWoBtn) recognizeWoBtn.disabled = false;
       document.querySelectorAll(".removeLaborBtn").forEach(b => { b.disabled = false; });
     } else {
       editor.style.pointerEvents = "none";
@@ -2222,6 +2223,7 @@
       setSelectDisabled(unitSel, true);
       if (addUnitBtn) addUnitBtn.disabled = true;
       if (addLaborBtn) addLaborBtn.disabled = true;
+      if (recognizeWoBtn) recognizeWoBtn.disabled = true;
       document.querySelectorAll(".removeLaborBtn").forEach(b => { b.disabled = true; });
     }
 
@@ -2493,6 +2495,8 @@
     const deleteBtn = $("deleteWorkOrderBtn");
 
     const addLaborBtn = $("addLaborBtn");
+    const recognizeWoBtn = $("recognizeWoBtn");
+    const recognizeWoFileInput = $("recognizeWoFileInput");
     const addUnitBtn = $("addUnitBtn");
 
     const unitVinInput = $("unitVinInput");
@@ -2517,7 +2521,7 @@
     const assignMechanicsSaveBtn = $("assignMechanicsSaveBtn");
 
     const els = {
-      editor, customerSel, unitSel, addUnitBtn, addLaborBtn,
+      editor, customerSel, unitSel, addUnitBtn, addLaborBtn, recognizeWoBtn,
       createBtn, editBtn, saveBtn, paidBtn, unpaidBtn, emailBtn, downloadPdfBtn, deleteBtn
     };
 
@@ -3374,6 +3378,625 @@
       }
     });
 
+    // ---------- Recognize handwritten Work Order via AI ----------
+    function setRecognizeWoLoading(isLoading) {
+      if (!recognizeWoBtn) return;
+      const lbl = recognizeWoBtn.querySelector(".recognize-wo-label");
+      const sp = recognizeWoBtn.querySelector(".recognize-wo-spinner");
+      if (lbl) lbl.style.display = isLoading ? "none" : "";
+      if (sp) sp.style.display = isLoading ? "" : "none";
+      recognizeWoBtn.disabled = isLoading;
+    }
+
+    // Holds the raw parser response so the Apply handler can read it back.
+    let recognizedWoData = null;
+    // Holds the original handwritten WO file (PDF/image) so we can attach it
+    // to the work order automatically once it's created.
+    let lastRecognizedWoFile = null;
+    const PENDING_RECOGNIZED_KEY = "pendingRecognizedWoUpload";
+
+    function escapeHtml(s) {
+      return String(s == null ? "" : s)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+    }
+
+    function renderRecognizeWoReview(parsedLabors, previewUrls) {
+      const body = $("recognizeWoReviewBody");
+      const empty = $("recognizeWoEmpty");
+      const previewBox = $("recognizeWoPreview");
+      if (!body) return;
+      body.innerHTML = "";
+
+      // Render the original page(s) on the left.
+      if (previewBox) {
+        if (Array.isArray(previewUrls) && previewUrls.length) {
+          previewBox.innerHTML = previewUrls.map(u =>
+            `<img src="${escapeHtml(u)}" alt="page" class="img-fluid mb-2 rounded border bg-white" />`
+          ).join("");
+        } else {
+          previewBox.innerHTML = `<div class="text-muted small">No preview.</div>`;
+        }
+      }
+
+      if (!Array.isArray(parsedLabors) || parsedLabors.length === 0) {
+        if (empty) empty.style.display = "";
+        return;
+      }
+      if (empty) empty.style.display = "none";
+
+      parsedLabors.forEach((labor, lIdx) => {
+        const card = document.createElement("div");
+        card.className = "card mb-3";
+        card.dataset.laborIndex = String(lIdx);
+
+        const desc = labor?.labor_description || "";
+        const hours = (labor?.labor_hours ?? 0);
+
+        let partsHtml = "";
+        const parts = Array.isArray(labor?.parts) ? labor.parts : [];
+        if (parts.length === 0) {
+          partsHtml = `<div class="text-muted small">No parts recognized for this labor.</div>`;
+        } else {
+          partsHtml = parts.map((p, pIdx) => {
+            const cands = Array.isArray(p.candidates) ? p.candidates : [];
+            const top = cands[0] || null;
+            // Initial state: AI top suggestion preselected (if any), otherwise
+            // we show the written PN + description as a manual entry.
+            const initialPicked = top
+              ? {
+                  part_id: top.part_id,
+                  part_number: top.part_number,
+                  description: top.description,
+                  cost: top.average_cost || 0,
+                  price: top.has_selling_price ? (top.selling_price || 0) : 0,
+                  core_charge: top.core_has_charge ? (top.core_cost || 0) : 0,
+                  reason: top.reason || "",
+                  score: top.score || 0,
+                  is_manual: false,
+                  __full_part: {
+                    id: top.part_id,
+                    part_number: top.part_number,
+                    description: top.description,
+                    average_cost: top.average_cost || 0,
+                    has_selling_price: !!top.has_selling_price,
+                    selling_price: top.selling_price || 0,
+                    in_stock: top.in_stock || 0,
+                    do_not_track_inventory: !!top.do_not_track_inventory,
+                    core_has_charge: !!top.core_has_charge,
+                    core_cost: top.core_cost || 0,
+                    misc_has_charge: !!top.misc_has_charge,
+                    misc_charges: Array.isArray(top.misc_charges) ? top.misc_charges : [],
+                  },
+                }
+              : {
+                  part_id: "",
+                  part_number: p.written_part_number || "",
+                  description: p.written_description || "",
+                  cost: 0, price: 0, core_charge: 0,
+                  reason: "manual", score: 0, is_manual: true,
+                };
+
+            const writtenInfo = `
+              <div class="small text-muted">Written: <code>${escapeHtml(p.written_part_number || "—")}</code> ·
+                ${escapeHtml(p.written_description || "—")}</div>
+            `;
+
+            const pickedHtml = renderPickedPartHtml(initialPicked);
+
+            const suggestionsHtml = cands.length
+              ? cands.map(c => {
+                  const stockNote = c.do_not_track_inventory ? "" : ` · stock: ${c.in_stock}`;
+                  const priceNote = c.has_selling_price ? ` · $${(c.selling_price || 0).toFixed(2)}` : "";
+                  return `
+                    <button type="button" class="list-group-item list-group-item-action recognize-wo-suggestion-btn"
+                            data-cand='${escapeHtml(JSON.stringify(c))}'>
+                      <span class="badge bg-secondary me-2">${c.score}</span>
+                      <code>${escapeHtml(c.part_number)}</code> — ${escapeHtml(c.description)}${priceNote}${stockNote}
+                      <span class="text-muted small ms-1">${escapeHtml(c.reason || "")}</span>
+                    </button>`;
+                }).join("")
+              : `<div class="list-group-item text-muted small">No AI suggestions.</div>`;
+
+            return `
+              <div class="border rounded p-2 mb-2 recognize-wo-part-row" data-part-index="${pIdx}">
+                ${writtenInfo}
+                <div class="d-flex align-items-center gap-2 mt-1">
+                  <input type="number" class="form-control form-control-sm recognize-wo-qty"
+                         style="max-width:80px;" value="${escapeHtml(p.qty || 1)}" min="1" step="1" title="Qty">
+                  <div class="recognize-wo-picked-box flex-grow-1">${pickedHtml}</div>
+                  <button type="button" class="btn btn-sm btn-outline-danger recognize-wo-skip-btn" title="Skip this part">×</button>
+                </div>
+                <div class="mt-2 recognize-wo-search-wrap" style="position:relative;">
+                  <input type="text" class="form-control form-control-sm recognize-wo-search"
+                         placeholder="Search catalog by PN or description (min 3 chars)…">
+                  <div class="list-group recognize-wo-search-results"
+                       style="position:absolute; z-index:1080; width:100%; max-height:240px; overflow:auto; display:none;"></div>
+                </div>
+                <details class="mt-2">
+                  <summary class="small text-muted">AI suggestions (${cands.length})</summary>
+                  <div class="list-group list-group-flush mt-1">${suggestionsHtml}</div>
+                </details>
+              </div>
+            `;
+          }).join("");
+        }
+
+        card.innerHTML = `
+          <div class="card-body">
+            <div class="row g-2 mb-3">
+              <div class="col-md-9">
+                <label class="form-label small fw-semibold mb-1">Labor ${lIdx + 1} — Description</label>
+                <input type="text" class="form-control form-control-sm recognize-wo-labor-desc" value="${escapeHtml(desc)}">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label small fw-semibold mb-1">Hours</label>
+                <input type="number" class="form-control form-control-sm recognize-wo-labor-hours" value="${escapeHtml(hours)}" step="0.25" min="0">
+              </div>
+            </div>
+            ${partsHtml}
+          </div>
+        `;
+        body.appendChild(card);
+      });
+
+      attachRecognizeWoHandlers(body);
+    }
+
+    function renderPickedPartHtml(picked) {
+      if (!picked || (!picked.part_number && !picked.description)) {
+        return `<span class="text-muted small">— Skipped —</span>`;
+      }
+      const tag = picked.is_manual
+        ? `<span class="badge bg-warning text-dark me-1">manual</span>`
+        : `<span class="badge bg-success me-1">DB</span>`;
+      const priceNote = picked.price ? ` · $${Number(picked.price).toFixed(2)}` : "";
+      return `
+        ${tag}
+        <code>${escapeHtml(picked.part_number || "—")}</code>
+        — ${escapeHtml(picked.description || "—")}${priceNote}
+      `;
+    }
+
+    function attachRecognizeWoHandlers(body) {
+      // Click an AI suggestion -> apply to the picked box.
+      body.querySelectorAll(".recognize-wo-suggestion-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          let c = null;
+          try { c = JSON.parse(btn.dataset.cand || "null"); } catch {}
+          if (!c) return;
+          const row = btn.closest(".recognize-wo-part-row");
+          applyPickToRow(row, {
+            part_id: c.part_id,
+            part_number: c.part_number,
+            description: c.description,
+            cost: c.average_cost || 0,
+            price: c.has_selling_price ? (c.selling_price || 0) : 0,
+            core_charge: c.core_has_charge ? (c.core_cost || 0) : 0,
+            reason: c.reason || "",
+            score: c.score || 0,
+            is_manual: false,
+            // Full DB part info — used by applyReviewedLaborsToUi to replay
+            // fillRowFromPart so core/misc charges fill into the WO row.
+            __full_part: {
+              id: c.part_id,
+              part_number: c.part_number,
+              description: c.description,
+              average_cost: c.average_cost || 0,
+              has_selling_price: !!c.has_selling_price,
+              selling_price: c.selling_price || 0,
+              in_stock: c.in_stock || 0,
+              do_not_track_inventory: !!c.do_not_track_inventory,
+              core_has_charge: !!c.core_has_charge,
+              core_cost: c.core_cost || 0,
+              misc_has_charge: !!c.misc_has_charge,
+              misc_charges: Array.isArray(c.misc_charges) ? c.misc_charges : [],
+            },
+          });
+        });
+      });
+
+      // Skip button.
+      body.querySelectorAll(".recognize-wo-skip-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const row = btn.closest(".recognize-wo-part-row");
+          applyPickToRow(row, null);
+        });
+      });
+
+      // Live catalog search per row.
+      body.querySelectorAll(".recognize-wo-search").forEach(input => {
+        const wrap = input.closest(".recognize-wo-search-wrap");
+        const resultsBox = wrap.querySelector(".recognize-wo-search-results");
+        let timer = null;
+        let lastQuery = "";
+
+        const hide = () => { resultsBox.style.display = "none"; resultsBox.innerHTML = ""; };
+
+        input.addEventListener("input", () => {
+          const q = input.value.trim();
+          if (q === lastQuery) return;
+          lastQuery = q;
+          if (timer) clearTimeout(timer);
+          if (q.length < 3) { hide(); return; }
+          timer = setTimeout(async () => {
+            try {
+              const r = await fetch(`/work_orders/api/parts/search?q=${encodeURIComponent(q)}&limit=15`);
+              const d = await r.json();
+              const items = (d && d.items) || [];
+              if (!items.length) {
+                resultsBox.innerHTML = `<div class="list-group-item text-muted small">No matches.</div>`;
+                resultsBox.style.display = "";
+                return;
+              }
+              resultsBox.innerHTML = items.map(it => {
+                const stockNote = it.do_not_track_inventory ? "" : ` · stock: ${it.in_stock || 0}`;
+                const priceNote = it.has_selling_price ? ` · $${(it.selling_price || 0).toFixed(2)}` : "";
+                return `<button type="button" class="list-group-item list-group-item-action recognize-wo-search-item"
+                          data-item='${escapeHtml(JSON.stringify(it))}'>
+                          <code>${escapeHtml(it.part_number || "")}</code> — ${escapeHtml(it.description || "")}${priceNote}${stockNote}
+                        </button>`;
+              }).join("");
+              resultsBox.style.display = "";
+              resultsBox.querySelectorAll(".recognize-wo-search-item").forEach(btn => {
+                btn.addEventListener("click", () => {
+                  let it = null;
+                  try { it = JSON.parse(btn.dataset.item || "null"); } catch {}
+                  if (!it) return;
+                  const row = btn.closest(".recognize-wo-part-row");
+                  applyPickToRow(row, {
+                    part_id: it.id || it._id || "",
+                    part_number: it.part_number || "",
+                    description: it.description || "",
+                    cost: Number(it.average_cost) || 0,
+                    price: it.has_selling_price ? (Number(it.selling_price) || 0) : 0,
+                    core_charge: it.core_has_charge ? (Number(it.core_cost) || 0) : 0,
+                    reason: "search pick",
+                    score: 100,
+                    is_manual: false,
+                    __full_part: {
+                      id: it.id || it._id || "",
+                      part_number: it.part_number || "",
+                      description: it.description || "",
+                      average_cost: Number(it.average_cost) || 0,
+                      has_selling_price: !!it.has_selling_price,
+                      selling_price: Number(it.selling_price) || 0,
+                      in_stock: Number(it.in_stock) || 0,
+                      do_not_track_inventory: !!it.do_not_track_inventory,
+                      core_has_charge: !!it.core_has_charge,
+                      core_cost: Number(it.core_cost) || 0,
+                      misc_has_charge: !!it.misc_has_charge,
+                      misc_charges: Array.isArray(it.misc_charges) ? it.misc_charges : [],
+                    },
+                  });
+                  input.value = "";
+                  lastQuery = "";
+                  hide();
+                });
+              });
+            } catch {
+              hide();
+            }
+          }, 250);
+        });
+
+        input.addEventListener("blur", () => setTimeout(hide, 200));
+      });
+    }
+
+    function applyPickToRow(row, picked) {
+      if (!row) return;
+      const pickedJson = picked ? JSON.stringify(picked) : "";
+      row.dataset.picked = pickedJson;
+      const box = row.querySelector(".recognize-wo-picked-box");
+      if (box) {
+        if (picked === null) {
+          box.innerHTML = `<span class="text-muted small">— Skipped —</span>`;
+        } else {
+          box.innerHTML = renderPickedPartHtml(picked);
+        }
+      }
+    }
+
+    // After rendering, store the initial picked state on each row.dataset.
+    function seedInitialPicks(body) {
+      body.querySelectorAll(".recognize-wo-part-row").forEach((row) => {
+        const lIdx = Number(row.closest(".card[data-labor-index]")?.dataset.laborIndex);
+        const pIdx = Number(row.dataset.partIndex);
+        const sourcePart = recognizedWoData?.labors?.[lIdx]?.parts?.[pIdx] || {};
+        const cands = Array.isArray(sourcePart.candidates) ? sourcePart.candidates : [];
+        const top = cands[0] || null;
+        const picked = top
+          ? {
+              part_id: top.part_id,
+              part_number: top.part_number,
+              description: top.description,
+              cost: top.average_cost || 0,
+              price: top.has_selling_price ? (top.selling_price || 0) : 0,
+              core_charge: top.core_has_charge ? (top.core_cost || 0) : 0,
+              reason: top.reason || "",
+              score: top.score || 0,
+              is_manual: false,
+              __full_part: {
+                id: top.part_id,
+                part_number: top.part_number,
+                description: top.description,
+                average_cost: top.average_cost || 0,
+                has_selling_price: !!top.has_selling_price,
+                selling_price: top.selling_price || 0,
+                in_stock: top.in_stock || 0,
+                do_not_track_inventory: !!top.do_not_track_inventory,
+                core_has_charge: !!top.core_has_charge,
+                core_cost: top.core_cost || 0,
+                misc_has_charge: !!top.misc_has_charge,
+                misc_charges: Array.isArray(top.misc_charges) ? top.misc_charges : [],
+              },
+            }
+          : {
+              part_id: "",
+              part_number: sourcePart.written_part_number || "",
+              description: sourcePart.written_description || "",
+              cost: 0, price: 0, core_charge: 0,
+              reason: "manual", score: 0, is_manual: true,
+            };
+        row.dataset.picked = JSON.stringify(picked);
+      });
+    }
+
+    function collectReviewedLabors() {
+      const body = $("recognizeWoReviewBody");
+      if (!body) return [];
+      const customerId = String(customerSel?.value || "").trim();
+      const defaultRateCode = getCustomerDefaultLaborRate(customersData, customerId);
+
+      const cards = Array.from(body.querySelectorAll(".card[data-labor-index]"));
+      const out = [];
+      cards.forEach((card) => {
+        const labor_description = String(card.querySelector(".recognize-wo-labor-desc")?.value || "").trim();
+        const labor_hours = Number(card.querySelector(".recognize-wo-labor-hours")?.value || 0) || 0;
+
+        const parts = [];
+        const rows = Array.from(card.querySelectorAll(".recognize-wo-part-row"));
+        rows.forEach((row) => {
+          const qty = Number(row.querySelector(".recognize-wo-qty")?.value || 1) || 1;
+          let picked = null;
+          try { picked = row.dataset.picked ? JSON.parse(row.dataset.picked) : null; } catch {}
+          if (!picked) return;  // skipped
+
+          if (!picked.part_number && !picked.description) return;
+
+          parts.push({
+            part_id: picked.part_id || "",
+            one_time_part: false,
+            part_number: picked.part_number || "",
+            description: picked.description || "",
+            qty,
+            cost: Number(picked.cost) || 0,
+            price: Number(picked.price) || 0,
+            core_charge: Number(picked.core_charge) || 0,
+            misc_charge: 0,
+            misc_charge_description: "",
+            __full_part: picked.__full_part || null,
+          });
+        });
+
+        if (!labor_description && labor_hours <= 0 && parts.length === 0) return;
+
+        out.push({
+          labor_description,
+          labor_hours,
+          labor_rate_code: defaultRateCode || "",
+          assigned_mechanics: [],
+          parts,
+        });
+      });
+      return out;
+    }
+
+    function applyReviewedLaborsToUi(blocks) {
+      if (!Array.isArray(blocks) || blocks.length === 0) {
+        toast("Nothing to apply.", "error");
+        return;
+      }
+
+      // Reset existing blocks: keep only the first one (as a template for cloneBlock),
+      // wipe its content, and remove all other blocks. Then applyInitialDataToUi
+      // will clone block 0 as needed and fill in everything.
+      const allBlocks = Array.from(blocksContainer.querySelectorAll(".wo-labor"));
+      for (let i = allBlocks.length - 1; i >= 1; i--) {
+        allBlocks[i].remove();
+      }
+      const firstBlock = blocksContainer.querySelector(".wo-labor");
+      if (firstBlock) {
+        firstBlock.querySelectorAll("input").forEach(i => { i.value = ""; });
+        firstBlock.querySelectorAll(".labor-assignments-json").forEach(i => { i.value = "[]"; });
+        firstBlock.querySelectorAll(".laborAssignSummary").forEach(el => {
+          el.textContent = "Assigned: —";
+        });
+        const tbody = firstBlock.querySelector(".partsTbody");
+        if (tbody) {
+          tbody.innerHTML = "";
+          tbody.appendChild(makePartsRow(0, 0));
+        }
+      }
+
+      applyInitialDataToUi(blocksContainer, blocks);
+
+      // Replay full part data through fillRowFromPart so core/misc charges,
+      // selling-price flags, and per-block misc-charge JSON get populated
+      // exactly like a manual catalog pick would.
+      const blockEls = Array.from(blocksContainer.querySelectorAll(".wo-labor"));
+      blocks.forEach((b, bIdx) => {
+        const blockEl = blockEls[bIdx];
+        if (!blockEl) return;
+        const tbody = blockEl.querySelector(".partsTbody");
+        if (!tbody) return;
+        const rowEls = Array.from(tbody.querySelectorAll("tr.parts-row"));
+        (b.parts || []).forEach((p, rIdx) => {
+          const tr = rowEls[rIdx];
+          if (!tr) return;
+          const fp = p.__full_part;
+          if (fp && fp.id) {
+            const qtyVal = Number(p.qty) || 1;
+            fillRowFromPart(tr, fp);
+            const qInput = tr.querySelector(".part-qty");
+            if (qInput) qInput.value = String(qtyVal);
+          }
+        });
+      });
+
+      Array.from(blocksContainer.querySelectorAll(".wo-labor")).forEach((blockEl) => {
+        setupMiscChargeButton(blockEl);
+        renderMiscChargesTable(blockEl);
+      });
+      if (typeof window.AttachmentsInit === "function") {
+        window.AttachmentsInit();
+      }
+
+      recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
+
+      const totalParts = blocks.reduce((s, b) => s + (b.parts?.length || 0), 0);
+      toast(`Applied ${blocks.length} labor(s) and ${totalParts} part(s).`, "success");
+    }
+
+    if (recognizeWoBtn && recognizeWoFileInput) {
+      recognizeWoBtn.addEventListener("click", function () {
+        if (recognizeWoBtn.disabled) return;
+        recognizeWoFileInput.value = "";
+        recognizeWoFileInput.click();
+      });
+
+      recognizeWoFileInput.addEventListener("change", async function () {
+        const file = recognizeWoFileInput.files && recognizeWoFileInput.files[0];
+        if (!file) return;
+
+        // Remember the original file for later attachment to the WO.
+        lastRecognizedWoFile = file;
+
+        setRecognizeWoLoading(true);
+        try {
+          const fd = new FormData();
+          fd.append("file", file);
+
+          const res = await fetch("/work_orders/api/parse-handwritten", {
+            method: "POST",
+            body: fd,
+          });
+          let data = null;
+          try { data = await res.json(); } catch { data = null; }
+
+          if (!res.ok || !data || !data.ok) {
+            const msg = (data && (data.error || data.message)) || `Recognition failed (${res.status})`;
+            throw new Error(msg);
+          }
+
+          recognizedWoData = data;
+          renderRecognizeWoReview(data.labors || [], data.preview_image_urls || []);
+          const _body = $("recognizeWoReviewBody");
+          if (_body) seedInitialPicks(_body);
+
+          const modalEl = $("recognizeWoModal");
+          if (modalEl && window.bootstrap && window.bootstrap.Modal) {
+            const m = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+            m.show();
+          }
+        } catch (err) {
+          toast(err.message || "Failed to recognize work order.", "error");
+        } finally {
+          setRecognizeWoLoading(false);
+          recognizeWoFileInput.value = "";
+        }
+      });
+
+      const applyBtn = $("recognizeWoApplyBtn");
+      applyBtn?.addEventListener("click", function () {
+        const blocks = collectReviewedLabors();
+        applyReviewedLaborsToUi(blocks);
+
+        // Persist the original recognized document into WO attachments.
+        // If WO is already created — upload right away. Otherwise stash the
+        // file in sessionStorage so we can upload after the create-form
+        // submit reloads the page with a fresh workOrderId.
+        if (lastRecognizedWoFile) {
+          if (isCreated && workOrderId) {
+            uploadRecognizedFileToWo(lastRecognizedWoFile, workOrderId);
+          } else {
+            stashRecognizedFile(lastRecognizedWoFile);
+          }
+        }
+
+        const modalEl = $("recognizeWoModal");
+        if (modalEl && window.bootstrap && window.bootstrap.Modal) {
+          const m = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+          m.hide();
+        }
+      });
+    }
+
+    async function uploadRecognizedFileToWo(file, woId) {
+      try {
+        const fd = new FormData();
+        fd.append("entity_type", "work_order");
+        fd.append("entity_id", String(woId));
+        fd.append("files", file, file.name || "recognized_work_order");
+        const res = await fetch("/attachments/api/upload", { method: "POST", body: fd });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data && data.ok) {
+          if (typeof window.AttachmentsInit === "function") window.AttachmentsInit();
+        } else {
+          toast("Failed to attach the recognized file to the work order.", "error");
+        }
+      } catch {
+        toast("Failed to attach the recognized file to the work order.", "error");
+      }
+    }
+
+    function stashRecognizedFile(file) {
+      try {
+        const reader = new FileReader();
+        reader.onload = function () {
+          try {
+            sessionStorage.setItem(PENDING_RECOGNIZED_KEY, JSON.stringify({
+              name: file.name || "recognized_work_order",
+              type: file.type || "application/octet-stream",
+              dataUrl: reader.result,
+            }));
+          } catch {}
+        };
+        reader.readAsDataURL(file);
+      } catch {}
+    }
+
+    function dataUrlToFile(dataUrl, name, type) {
+      const comma = dataUrl.indexOf(",");
+      const b64 = dataUrl.slice(comma + 1);
+      const bin = atob(b64);
+      const len = bin.length;
+      const buf = new Uint8Array(len);
+      for (let i = 0; i < len; i++) buf[i] = bin.charCodeAt(i);
+      return new File([buf], name, { type: type || "application/octet-stream" });
+    }
+
+    async function flushPendingRecognizedUpload() {
+      if (!isCreated || !workOrderId) return;
+      let stash = null;
+      try {
+        const raw = sessionStorage.getItem(PENDING_RECOGNIZED_KEY);
+        if (!raw) return;
+        stash = JSON.parse(raw);
+      } catch { return; }
+      if (!stash || !stash.dataUrl) {
+        try { sessionStorage.removeItem(PENDING_RECOGNIZED_KEY); } catch {}
+        return;
+      }
+      try {
+        const file = dataUrlToFile(stash.dataUrl, stash.name, stash.type);
+        await uploadRecognizedFileToWo(file, workOrderId);
+      } finally {
+        try { sessionStorage.removeItem(PENDING_RECOGNIZED_KEY); } catch {}
+      }
+    }
+
     // ---------- created/paid state ----------
     let workOrderId = "";
     let workOrderStatus = "open"; // "open" | "paid"
@@ -3385,6 +4008,9 @@
       isCreated = true;
       workOrderId = String(createdInfo.id);
       workOrderStatus = String(createdInfo.status || "open").trim().toLowerCase();
+      // If a recognized handwritten WO was waiting for the create to finish,
+      // attach it now to this freshly-created work order.
+      try { flushPendingRecognizedUpload(); } catch {}
     }
 
     function applyStateFromStatus() {

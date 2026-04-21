@@ -598,14 +598,14 @@ a.text-decoration-none:focus-visible > .card {
   --bs-btn-active-color: #fff;
 }
 .btn-outline-danger {
-  --bs-btn-color: #b91c1c;
-  --bs-btn-bg: #ffffff;
-  --bs-btn-border-color: #fca5a5;
-  --bs-btn-hover-bg: #dc2626;
-  --bs-btn-hover-border-color: #dc2626;
+  --bs-btn-color: #ffffff;
+  --bs-btn-bg: #dc2626;
+  --bs-btn-border-color: #dc2626;
+  --bs-btn-hover-bg: #b91c1c;
+  --bs-btn-hover-border-color: #b91c1c;
   --bs-btn-hover-color: #fff;
-  --bs-btn-active-bg: #b91c1c;
-  --bs-btn-active-border-color: #b91c1c;
+  --bs-btn-active-bg: #991b1b;
+  --bs-btn-active-border-color: #991b1b;
   --bs-btn-active-color: #fff;
 }
 .btn-outline-warning {
@@ -648,7 +648,7 @@ a.text-decoration-none:focus-visible > .card {
 .form-control,
 .form-select,
 textarea.form-control {
-  border: 1px solid #cbd5e1;
+  border: 1px solid #94a3b8;
   border-radius: var(--radius-sm);
   background: #ffffff;
   color: var(--text);
@@ -666,7 +666,7 @@ textarea.form-control:focus {
 input[type="date"].form-control,
 input[type="date"].form-select,
 input[type="date"] {
-  border-color: #cbd5e1;
+  border-color: #94a3b8;
   background: #ffffff;
   color: var(--text);
   font-weight: 600;

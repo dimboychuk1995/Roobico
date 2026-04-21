@@ -7,3 +7,5 @@ xhtml2pdf
 matplotlib
 openai>=1.30.0
 PyMuPDF
+rapidfuzz>=3.9
+azure-ai-documentintelligence>=1.0.0

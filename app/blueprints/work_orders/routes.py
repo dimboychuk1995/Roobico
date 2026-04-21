@@ -2637,6 +2637,173 @@ def api_parts_search():
     return jsonify({"items": items}), 200
 
 
+@work_orders_bp.post("/work_orders/api/parse-handwritten")
+@login_required
+@permission_required("work_orders.create")
+def api_parse_handwritten_work_order():
+    """
+    Upload a handwritten Work Order blank (PDF or image) and use AI to extract
+    labors with their parts. Customer / unit info is intentionally ignored.
+
+    For each handwritten part the backend returns a ranked list of CANDIDATE
+    matches from the shop DB (top 5). The user reviews and picks the right one
+    in the UI before anything is applied to the work order.
+
+    Response shape:
+      {
+        "ok": True,
+        "labors": [
+          {
+            "labor_description": str,
+            "labor_hours": float,
+            "parts": [
+              {
+                "written_part_number": str,
+                "written_description": str,
+                "qty": int,
+                "candidates": [
+                  {
+                    "part_id": str,
+                    "part_number": str,
+                    "description": str,
+                    "average_cost": float,
+                    "selling_price": float,
+                    "has_selling_price": bool,
+                    "in_stock": int,
+                    "core_has_charge": bool,
+                    "core_cost": float,
+                    "score": int,
+                    "reason": str
+                  }, ...
+                ]
+              }, ...
+            ]
+          }, ...
+        ]
+      }
+    """
+    from app.utils.wo_parser import parse_work_order
+
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "Shop database not configured."}), 400
+
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"ok": False, "error": "No file uploaded."}), 400
+
+    allowed_types = {
+        "application/pdf",
+        "image/jpeg", "image/png", "image/gif", "image/webp",
+        "image/bmp", "image/tiff",
+    }
+    ct = f.content_type or ""
+    if ct not in allowed_types:
+        return jsonify({"ok": False, "error": f"Unsupported file type: {ct}"}), 400
+
+    file_bytes = f.read()
+    if len(file_bytes) > 16 * 1024 * 1024:
+        return jsonify({"ok": False, "error": "File too large (max 16 MB)."}), 400
+
+    try:
+        parsed = parse_work_order(file_bytes, ct)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": "Failed to parse work order. Please try again."}), 500
+
+    parts_col = shop_db.parts
+    shop_id = shop["_id"]
+
+    # ----- Build a fast in-memory fuzzy index over the active catalog -----
+    from app.utils.parts_matcher import build_index, match_part
+
+    catalog_proj = {
+        "part_number": 1, "description": 1,
+        "average_cost": 1, "selling_price": 1, "has_selling_price": 1,
+        "in_stock": 1, "do_not_track_inventory": 1,
+        "core_has_charge": 1, "core_cost": 1,
+        "misc_has_charge": 1, "misc_charges": 1,
+    }
+    catalog_cursor = parts_col.find(
+        {"shop_id": shop_id, "is_active": True},
+        catalog_proj,
+    )
+    index = build_index(catalog_cursor)
+
+    def _hydrate(cands: list[dict]) -> list[dict]:
+        out = []
+        for c in cands:
+            d = c["doc"]
+            has_selling = bool(d.get("has_selling_price"))
+            misc_items = []
+            for m in (d.get("misc_charges") or []):
+                if not isinstance(m, dict):
+                    continue
+                misc_items.append({
+                    "description": str(m.get("description") or "").strip(),
+                    "price": float(m.get("price") or 0),
+                    "taxable": m.get("taxable") is not False,
+                })
+            out.append({
+                "part_id": str(d.get("_id")),
+                "part_number": d.get("part_number") or "",
+                "description": d.get("description") or "",
+                "average_cost": float(d.get("average_cost") or 0),
+                "selling_price": float(d.get("selling_price") or 0) if has_selling else 0.0,
+                "has_selling_price": has_selling,
+                "in_stock": int(d.get("in_stock") or 0),
+                "do_not_track_inventory": bool(d.get("do_not_track_inventory")),
+                "core_has_charge": bool(d.get("core_has_charge")),
+                "core_cost": float(d.get("core_cost") or 0),
+                "misc_has_charge": bool(d.get("misc_has_charge")),
+                "misc_charges": misc_items,
+                "score": int(c.get("score") or 0),
+                "reason": c.get("reason") or "",
+            })
+        return out
+
+    out_labors = []
+    for block in (parsed.get("labors") or []):
+        out_parts = []
+        for p in (block.get("parts") or []):
+            written_pn = p.get("part_number") or ""
+            written_desc = p.get("description") or ""
+            try:
+                qty = int(p.get("qty") or 1)
+            except (TypeError, ValueError):
+                qty = 1
+            if qty <= 0:
+                qty = 1
+
+            # Suggest top candidates from the catalog (rapidfuzz). The user
+            # also has a live search box in the UI to override.
+            cands: list[dict] = []
+            if written_pn.strip() or written_desc.strip():
+                cands = match_part(written_pn, written_desc, index, limit=5, min_score=60)
+
+            out_parts.append({
+                "written_part_number": written_pn,
+                "written_description": written_desc,
+                "qty": qty,
+                "candidates": _hydrate(cands),
+            })
+
+        out_labors.append({
+            "labor_description": block.get("labor_description") or "",
+            "labor_hours": float(block.get("labor_hours") or 0),
+            "parts": out_parts,
+        })
+
+    return jsonify({
+        "ok": True,
+        "labors": out_labors,
+        "preview_image_urls": parsed.get("preview_image_urls") or [],
+    }), 200
+
+
 @work_orders_bp.get("/work_orders/api/units")
 @login_required
 @permission_required("work_orders.create")

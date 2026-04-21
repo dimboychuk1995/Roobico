@@ -5,6 +5,29 @@
 {% block app_content %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css">
 <style>
+  /* Stronger visual separation between labor blocks (WO Details + recognize modal) */
+  .wo-labor {
+    border: 2px solid #5a6f63 !important;
+    border-left: 5px solid var(--sidebar-bg) !important;
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08) !important;
+  }
+  .wo-labor + .wo-labor { margin-top: 1.25rem; }
+
+  /* Recognize WO modal — compact font + stronger labor card borders */
+  #recognizeWoModal .modal-body { font-size: 0.8rem; }
+  #recognizeWoModal .modal-body .form-control,
+  #recognizeWoModal .modal-body .form-select,
+  #recognizeWoModal .modal-body .btn { font-size: 0.8rem; }
+  #recognizeWoModal .modal-body .form-label { font-size: 0.75rem; }
+  #recognizeWoReviewBody > .card {
+    border: 2px solid #5a6f63;
+    border-left: 5px solid var(--sidebar-bg);
+    box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+  }
+  #recognizeWoReviewBody .recognize-wo-part-row {
+    background: #f8fafc;
+  }
+
   .work-order-enhanced-select + .select2-container {
     width: 100% !important;
   }
@@ -402,7 +425,17 @@
             <h2 class="h6 mb-0">Labor Blocks</h2>
             <div class="text-muted small">Labors: <strong id="laborCount">1</strong></div>
           </div>
-          <button type="button" class="btn btn-outline-primary btn-sm" id="addLaborBtn">+ Add Labor</button>
+          <div class="d-flex gap-2 align-items-center">
+            <input type="file" id="recognizeWoFileInput" accept="application/pdf,image/*" style="display:none;">
+            <button type="button" class="btn btn-outline-success btn-sm" id="recognizeWoBtn" title="Recognize a handwritten work order with AI">
+              <span class="recognize-wo-label">📷 Recognize WO</span>
+              <span class="recognize-wo-spinner" style="display:none;">
+                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                Recognizing…
+              </span>
+            </button>
+            <button type="button" class="btn btn-outline-primary btn-sm" id="addLaborBtn">+ Add Labor</button>
+          </div>
         </div>
 
         <div id="laborsContainer">
@@ -671,6 +704,43 @@
         </div>
 
     </form>
+
+    <!-- Recognize Work Order (AI) — review modal -->
+    <div class="modal fade" id="recognizeWoModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-fullscreen modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Review recognized work order</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted small mb-3">
+              AI extracted the following labors and parts. Compare with the
+              original on the left, edit any field, and use the search box on
+              each part row to pick a real catalog item. Then click <strong>Apply</strong>.
+            </p>
+            <div class="row g-3">
+              <div class="col-lg-5 col-xl-4" id="recognizeWoPreviewCol">
+                <div id="recognizeWoPreview" class="border rounded p-2 bg-light text-center"
+                     style="position:sticky; top:0; max-height:85vh; overflow:auto;">
+                  <div class="text-muted small">No preview.</div>
+                </div>
+              </div>
+              <div class="col-lg-7 col-xl-8">
+                <div id="recognizeWoReviewBody"></div>
+                <div id="recognizeWoEmpty" class="text-muted text-center py-4" style="display:none;">
+                  AI did not find any labors on this page.
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" id="recognizeWoApplyBtn" class="btn btn-primary">Apply to Work Order</button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Add Misc Charge Modal -->
     <div class="modal fade" id="addMiscChargeModal" tabindex="-1" aria-hidden="true">
