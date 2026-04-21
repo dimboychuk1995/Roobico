@@ -14,6 +14,13 @@ def create_app():
 
     init_mongo(app)
 
+    # Expose selected config keys to all templates.
+    @app.context_processor
+    def inject_public_config():
+        return {
+            "mapbox_access_token": app.config.get("MAPBOX_ACCESS_TOKEN", ""),
+        }
+
     # каждый запрос: если есть сессия — поднимем g.user и g.tenant
     @app.before_request
     def load_current_context():

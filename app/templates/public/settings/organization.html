@@ -63,7 +63,13 @@
         <div class="row g-3">
           <div class="col-12">
             <label class="form-label">Street Address</label>
-            <input type="text" class="form-control" name="address" value="{{ org.address or '' }}">
+            <input type="text" class="form-control" name="address" value="{{ org.address or '' }}"
+                   placeholder="Start typing an address…" autocomplete="off"
+                   data-address-autocomplete
+                   data-aa-city='[name="city"]'
+                   data-aa-state='[name="state"]'
+                   data-aa-zip='[name="zip"]'
+                   data-aa-country='[name="country"]'>
           </div>
           <div class="col-12 col-md-4">
             <label class="form-label">City</label>
@@ -104,7 +110,7 @@
           </div>
           <div class="col-12">
             <label class="form-label">Billing Address</label>
-            <textarea class="form-control" name="billing_address" rows="2">{{ org.billing_address or '' }}</textarea>
+            <textarea class="form-control" name="billing_address" rows="2" placeholder="Start typing an address…" autocomplete="off" data-address-autocomplete>{{ org.billing_address or '' }}</textarea>
           </div>
         </div>
       </div>

@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/public.css', v='20260414-layout') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/address_autocomplete.css', v='20260420b') }}">
   <style>
     *, *::before, *::after {
       animation: none !important;
@@ -36,6 +37,8 @@
   </main>
 
   <script src="{{ url_for('static', filename='js/public.js', v='20260317-preset-range-sync') }}"></script>
+  <script>window.MAPBOX_ACCESS_TOKEN = {{ (mapbox_access_token or '')|tojson }};</script>
+  <script src="{{ url_for('static', filename='js/address_autocomplete.js', v='20260420c-mapbox') }}" defer></script>
 
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>

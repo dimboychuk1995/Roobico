@@ -25,4 +25,6 @@ class Config:
 
     # ── OpenAI (Invoice AI parsing) ───────────────────────────────────────────
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-
+    # ── Mapbox (Address autocomplete) ───────────────────────────────────────────
+    # Public token (pk.*) — exposed to the browser for the Search Box API.
+    MAPBOX_ACCESS_TOKEN = os.environ.get("MAPBOX_ACCESS_TOKEN", "")
