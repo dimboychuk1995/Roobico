@@ -4,6 +4,7 @@
   let coreChargeDefaultEnabled = true;
   let currentSalesTaxRate = 0;
   let currentCustomerTaxable = false;
+  let currentPricing = null;
   const APP_TIMEZONE = document.body?.dataset?.appTimezone || "UTC";
 
   function $(id) { return document.getElementById(id); }
@@ -1202,9 +1203,12 @@
     }
     if (cost) cost.value = (part.average_cost != null) ? String(part.average_cost) : "";
 
-    // If part has a fixed selling price, set it immediately and prevent markup auto-fill
+    // If part has a fixed selling price, set it immediately and prevent markup auto-fill.
+    // BUT: if pricing has override_part_selling_price flag, ignore selling price entirely
+    // and let the auto-markup compute from cost using the configured scale.
     const priceInput = tr.querySelector(".part-price");
-    if (part.has_selling_price && part.selling_price != null && Number.isFinite(toNum(part.selling_price))) {
+    const overridePartPrice = !!(currentPricing && currentPricing.override_part_selling_price);
+    if (!overridePartPrice && part.has_selling_price && part.selling_price != null && Number.isFinite(toNum(part.selling_price))) {
       if (priceInput) priceInput.value = String(round2(toNum(part.selling_price)));
       tr.dataset.priceManuallyEdited = "1";
       delete tr.dataset.priceAutofilled;
@@ -1808,10 +1812,18 @@
         if (desc) desc.value = String(p.description || "");
         if (qty) qty.value = String(p.qty || 1);
         if (cost) cost.value = (p.cost != null) ? String(p.cost) : "";
-        if (price) price.value = (p.price != null) ? String(p.price) : "";
 
-        if (p.price != null) {
+        // If the customer overrides part selling price, ignore the price stored
+        // in the preset and let the markup auto-fill recompute it from cost.
+        const overridePartPrice = !!(currentPricing && currentPricing.override_part_selling_price);
+        const effectivePresetPrice = overridePartPrice ? null : p.price;
+        if (price) price.value = (effectivePresetPrice != null) ? String(effectivePresetPrice) : "";
+
+        if (effectivePresetPrice != null) {
           tr.dataset.priceManuallyEdited = "1";
+          delete tr.dataset.priceAutofilled;
+        } else {
+          delete tr.dataset.priceManuallyEdited;
           delete tr.dataset.priceAutofilled;
         }
 
@@ -2437,7 +2449,8 @@
     const customersData = readJsonScript("customersData", []);
     const laborRates = readJsonScript("laborRatesData", []);
     const mechanicsData = readJsonScript("mechanicsData", []);
-    const pricing = readJsonScript("partsPricingRulesData", null);
+    let pricing = readJsonScript("partsPricingRulesData", null);
+    currentPricing = pricing;
     const shopSupplyData = readJsonScript("shopSupplyData", { percentage: 0 });
     const salesTaxData = readJsonScript("salesTaxData", { rate: 0, zip_code: "" });
     const coreChargeData = readJsonScript("coreChargeDefaultData", { enabled: true });
@@ -3140,6 +3153,31 @@
 
       const defaultRateCode = getCustomerDefaultLaborRate(customersData, customerId);
       applyDefaultLaborRateToAll(blocksContainer, defaultRateCode, false);
+
+      // Refetch pricing scale for this customer (per-customer scale + override flag).
+      try {
+        const url = customerId
+          ? `/work_orders/api/parts_pricing?customer_id=${encodeURIComponent(customerId)}`
+          : `/work_orders/api/parts_pricing`;
+        const res = await fetch(url, { headers: { "Accept": "application/json" } });
+        if (res.ok) {
+          const data = await res.json();
+          pricing = data?.pricing || null;
+          currentPricing = pricing;
+          // If override is on, clear any previously auto-filled prices so they
+          // get recomputed from the new scale (preserve user-edited prices).
+          const overridePartPrice = !!(currentPricing && currentPricing.override_part_selling_price);
+          if (overridePartPrice) {
+            blocksContainer.querySelectorAll("tr.parts-row").forEach((tr) => {
+              if (tr.dataset.priceManuallyEdited === "1") return;
+              const priceInput = tr.querySelector(".part-price");
+              if (priceInput) priceInput.value = "";
+              delete tr.dataset.priceAutofilled;
+            });
+          }
+        }
+      } catch {}
+
       recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
 
       if (unitHidden) unitHidden.value = "";

@@ -1457,8 +1457,25 @@ def apply_assignments_to_labors(labors, mechanics_by_id: dict[str, dict]):
     return out
 
 
-def get_pricing_rules_json(shop_db, shop_id: ObjectId):
-    doc = shop_db.parts_pricing_rules.find_one({"shop_id": shop_id, "is_active": True})
+def get_pricing_rules_json(shop_db, shop_id: ObjectId, customer_id: ObjectId | None = None):
+    customer_doc = None
+    if customer_id:
+        customer_doc = shop_db.customers.find_one(
+            {"_id": customer_id},
+            {"pricing_rule_id": 1, "override_part_selling_price": 1},
+        )
+
+    doc = None
+    customer_rule_id = (customer_doc or {}).get("pricing_rule_id") if customer_doc else None
+    if isinstance(customer_rule_id, ObjectId):
+        doc = shop_db.parts_pricing_rules.find_one({"_id": customer_rule_id, "shop_id": shop_id})
+    if not doc:
+        doc = (
+            shop_db.parts_pricing_rules.find_one({"shop_id": shop_id, "is_default": True, "is_active": True})
+            or shop_db.parts_pricing_rules.find_one({"shop_id": shop_id, "is_default": True})
+            or shop_db.parts_pricing_rules.find_one({"shop_id": shop_id, "is_active": True})
+            or shop_db.parts_pricing_rules.find_one({"shop_id": shop_id})
+        )
     if not doc:
         return None
 
@@ -1489,7 +1506,13 @@ def get_pricing_rules_json(shop_db, shop_id: ObjectId):
 
         rules.append({"from": frm_f, "to": to_f, "value_percent": vp_f})
 
-    return {"mode": mode, "rules": rules}
+    override_part_selling_price = bool((customer_doc or {}).get("override_part_selling_price", False))
+
+    return {
+        "mode": mode,
+        "rules": rules,
+        "override_part_selling_price": override_part_selling_price,
+    }
 
 
 def get_shop_supply_percentage(shop_db, shop_id: ObjectId) -> float:
@@ -1588,7 +1611,7 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
         "selected_unit_id": str(unit_id) if unit_id else "",
         "labor_rates": get_labor_rates(shop_db, shop["_id"]),
         "mechanics": mechanics,
-        "parts_pricing_rules": get_pricing_rules_json(shop_db, shop["_id"]),
+        "parts_pricing_rules": get_pricing_rules_json(shop_db, shop["_id"], customer_id=customer_id),
         "shop_supply_procentage": get_shop_supply_percentage(shop_db, shop["_id"]),
         "charge_for_cores_default": get_core_charge_default(shop_db, shop["_id"]),
 
@@ -2824,6 +2847,19 @@ def api_units_for_customer():
 
     items = [{"id": str(u["_id"]), "label": unit_label(u)} for u in rows]
     return jsonify({"items": items}), 200
+
+
+@work_orders_bp.get("/work_orders/api/parts_pricing")
+@login_required
+@permission_required("work_orders.create")
+def api_parts_pricing_for_customer():
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"pricing": None, "error": "shop_db_missing"}), 200
+
+    customer_id = oid(request.args.get("customer_id")) if request.args.get("customer_id") else None
+    pricing = get_pricing_rules_json(shop_db, shop["_id"], customer_id=customer_id)
+    return jsonify({"pricing": pricing}), 200
 
 
 @work_orders_bp.get("/work_orders/api/unit")

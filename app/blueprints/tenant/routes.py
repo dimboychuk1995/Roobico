@@ -419,30 +419,32 @@ def init_shop_database(shop_db_name: str, tenant_doc: dict, shop_doc: dict, acto
     # -----------------------------
     # seed default parts pricing rules
     # -----------------------------
+    from app.extensions import (
+        NEW_DEFAULT_PRICING_MODE,
+        NEW_DEFAULT_PRICING_RULES,
+        PRICING_RULES_SEED_VERSION,
+    )
+
     col = sdb.parts_pricing_rules
 
-    # one rules doc per shop
-    try:
-        col.create_index([("shop_id", 1)], unique=True, name="uniq_parts_pricing_rules_shop")
-    except Exception:
-        pass
+    # Multiple named scales per shop are now supported.
+    # Unique on (shop_id, name) — created in ensure_shop_collections_indexes.
 
-    default_rules = [
-        {"from": 0, "to": 20, "value_percent": 100},
-        {"from": 20, "to": 100, "value_percent": 60},
-        {"from": 100, "to": None, "value_percent": 50},  # None = infinity
-    ]
+    default_rules = [dict(r) for r in NEW_DEFAULT_PRICING_RULES]
 
-    # idempotent upsert
+    # idempotent upsert of the "Default" scale
     col.update_one(
-        {"shop_id": shop_oid},
+        {"shop_id": shop_oid, "name": "Default"},
         {
             "$setOnInsert": {
                 "shop_id": shop_oid,
-                "mode": "margin",          # "margin" or "markup"
+                "name": "Default",
+                "mode": NEW_DEFAULT_PRICING_MODE,
                 "rules": default_rules,
+                "is_default": True,
                 "is_active": True,
                 "created_at": now,
+                "_seed_v": PRICING_RULES_SEED_VERSION,
             },
             "$set": {
                 "updated_at": now,

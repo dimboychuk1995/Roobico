@@ -37,6 +37,15 @@
       <div class="fw-semibold">{{ customer.default_labor_rate_name if customer.default_labor_rate_name else '-' }}</div>
     </div>
     <div>
+      <div class="small text-muted">Pricing Scale</div>
+      <div class="fw-semibold">
+        {{ customer.pricing_rule_name if customer.pricing_rule_name else '-' }}
+        {% if customer.override_part_selling_price %}
+          <span class="badge bg-warning text-dark ms-1" title="Selling price on parts is ignored; scale is always applied">Override</span>
+        {% endif %}
+      </div>
+    </div>
+    <div>
       <div class="small text-muted">Taxable</div>
       <div>
         {% if customer.taxable %}
@@ -471,6 +480,37 @@
               <div class="form-check form-switch mt-1">
                 <input class="form-check-input" type="checkbox" role="switch" id="customerTaxable" name="taxable" value="1" {% if customer.taxable %}checked{% endif %}>
                 <label class="form-check-label" for="customerTaxable">Yes</label>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <div class="border rounded p-3">
+                <div class="fw-semibold mb-1">Pricing</div>
+                <div class="small text-muted mb-3">Choose which pricing scale is applied to parts in work orders for this customer.</div>
+                <div class="row g-3">
+                  <div class="col-12 col-md-6">
+                    <label class="form-label" for="customerPricingRule">Pricing Scale</label>
+                    <select id="customerPricingRule" name="pricing_rule_id" class="form-select">
+                      {% for s in (pricing_scales or []) %}
+                        <option value="{{ s.id }}"
+                          {% if s.id == customer.pricing_rule_id %}selected{% endif %}>
+                          {{ s.name }}{% if s.is_default %} (default){% endif %}
+                        </option>
+                      {% endfor %}
+                    </select>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <label class="form-label d-block" for="customerOverridePrice">Override part selling price</label>
+                    <div class="form-check form-switch mt-1">
+                      <input class="form-check-input" type="checkbox" role="switch"
+                             id="customerOverridePrice" name="override_part_selling_price" value="1"
+                             {% if customer.override_part_selling_price %}checked{% endif %}>
+                      <label class="form-check-label" for="customerOverridePrice">
+                        Always use the scale, ignore part's selling price
+                      </label>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 

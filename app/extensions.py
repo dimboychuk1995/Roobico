@@ -27,6 +27,72 @@ def _safe_create_index(collection, keys, **kwargs):
         raise
 
 
+# New default markup scale (matches Parts settings screenshot).
+NEW_DEFAULT_PRICING_MODE = "markup"
+NEW_DEFAULT_PRICING_RULES = [
+    {"from": 0,       "to": 1,       "value_percent": 500},
+    {"from": 1.01,    "to": 5,       "value_percent": 200},
+    {"from": 5.01,    "to": 10,      "value_percent": 100},
+    {"from": 10.01,   "to": 25,      "value_percent": 75},
+    {"from": 25.01,   "to": 75,      "value_percent": 55},
+    {"from": 75.01,   "to": 150,     "value_percent": 45},
+    {"from": 150.01,  "to": 300,     "value_percent": 40},
+    {"from": 300.01,  "to": 500,     "value_percent": 35},
+    {"from": 500.01,  "to": 1000,    "value_percent": 30},
+    {"from": 1000.01, "to": 5000,    "value_percent": 20},
+    {"from": 5000.01, "to": None,    "value_percent": 15},
+]
+PRICING_RULES_SEED_VERSION = 2
+
+
+def _migrate_parts_pricing_rules(shop_db):
+    """
+    Migrate legacy single-doc-per-shop pricing rules to multi-scale schema.
+    - Drops the legacy unique index on (shop_id) so multiple named scales can coexist.
+    - Backfills `name`, `is_default` on legacy docs.
+    - One-time hard reset of legacy 3-tier margin defaults to the new markup scale,
+      gated by `_seed_v` so user customizations are preserved across restarts.
+    """
+    col = shop_db.parts_pricing_rules
+
+    # Drop legacy unique-by-shop index that prevents multiple scales per shop.
+    try:
+        col.drop_index("uniq_parts_pricing_rules_shop")
+    except OperationFailure:
+        pass
+    except Exception:
+        pass
+
+    # Backfill name + is_default for legacy docs.
+    try:
+        col.update_many(
+            {"name": {"$exists": False}},
+            {"$set": {"name": "Default", "is_default": True}},
+        )
+    except Exception:
+        pass
+
+    # One-time replace of legacy 3-tier margin defaults with the new markup scale.
+    try:
+        for doc in col.find({"_seed_v": {"$exists": False}}):
+            rules = doc.get("rules") or []
+            mode = (doc.get("mode") or "").lower()
+            looks_like_legacy_default = (
+                mode == "margin"
+                and len(rules) == 3
+                and float(rules[0].get("value_percent") or 0) == 100.0
+                and float(rules[1].get("value_percent") or 0) == 60.0
+                and float(rules[2].get("value_percent") or 0) == 50.0
+            )
+            update = {"$set": {"_seed_v": PRICING_RULES_SEED_VERSION}}
+            if looks_like_legacy_default:
+                update["$set"]["mode"] = NEW_DEFAULT_PRICING_MODE
+                update["$set"]["rules"] = [dict(r) for r in NEW_DEFAULT_PRICING_RULES]
+            col.update_one({"_id": doc["_id"]}, update)
+    except Exception:
+        pass
+
+
 def ensure_master_collections_indexes(master_db):
     """
     Create indexes for master DB collections.
@@ -101,7 +167,14 @@ def ensure_shop_collections_indexes(shop_db):
 
     _safe_create_index(shop_db.parts_categories, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("name", ASCENDING)], name="idx_parts_categories_shop_active_name")
     _safe_create_index(shop_db.parts_locations, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("name", ASCENDING)], name="idx_parts_locations_shop_active_name")
+    _migrate_parts_pricing_rules(shop_db)
     _safe_create_index(shop_db.parts_pricing_rules, [("shop_id", ASCENDING)], name="idx_parts_pricing_rules_shop")
+    _safe_create_index(
+        shop_db.parts_pricing_rules,
+        [("shop_id", ASCENDING), ("name", ASCENDING)],
+        unique=True,
+        name="uniq_parts_pricing_rules_shop_name",
+    )
 
     _safe_create_index(shop_db.cores, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("part_id", ASCENDING)], name="idx_cores_shop_active_part")
     _safe_create_index(shop_db.cores, [("shop_id", ASCENDING), ("quantity", DESCENDING)], name="idx_cores_shop_quantity_desc")
