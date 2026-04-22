@@ -200,6 +200,8 @@ def parts_settings_index():
             edit_category_id=None,
             pricing_mode="margin",
             pricing_rules=[],
+            pricing_scales=[],
+            active_scale_id="",
             api_tax_rate=None,
             custom_tax_rate=None,
             error_message="Please select an active shop (and ensure it has a shop DB).",
@@ -236,10 +238,28 @@ def parts_settings_index():
         cat_per_page,
     )
 
-    # ✅ Load pricing rules from shop DB
-    pr_doc = sdb.parts_pricing_rules.find_one({"shop_id": shop_oid})
-    pricing_mode = (pr_doc or {}).get("mode") or "margin"
-    pricing_rules = (pr_doc or {}).get("rules") or []
+    # ✅ Load pricing rule scales from shop DB
+    scales_cursor = sdb.parts_pricing_rules.find({"shop_id": shop_oid}).sort("created_at", 1)
+    pricing_scales = []
+    default_scale = None
+    for s in scales_cursor:
+        item = {
+            "id": str(s["_id"]),
+            "name": s.get("name") or "Default",
+            "mode": (s.get("mode") or "margin"),
+            "rules": s.get("rules") or [],
+            "is_default": bool(s.get("is_default", False)),
+        }
+        pricing_scales.append(item)
+        if item["is_default"]:
+            default_scale = item
+
+    if pricing_scales and default_scale is None:
+        default_scale = pricing_scales[0]
+
+    pricing_mode = (default_scale or {}).get("mode") or "margin"
+    pricing_rules = (default_scale or {}).get("rules") or []
+    active_scale_id = (default_scale or {}).get("id") or ""
 
     edit_location_id = request.args.get("edit_location_id") or None
     edit_category_id = request.args.get("edit_category_id") or None
@@ -276,6 +296,8 @@ def parts_settings_index():
         edit_category_id=edit_category_id,
         pricing_mode=pricing_mode,
         pricing_rules=pricing_rules,
+        pricing_scales=pricing_scales,
+        active_scale_id=active_scale_id,
         api_tax_rate=api_tax_rate,
         custom_tax_rate=custom_tax_rate,
         error_message=None,
@@ -545,6 +567,12 @@ def _validate_pricing_rules_payload(payload: dict):
         except Exception:
             return False, f"Rule #{i+1}: 'value_percent' must be a number."
 
+        # Margin must be strictly less than 100% (mathematically impossible otherwise).
+        if mode == "margin" and v >= 100:
+            return False, f"Rule #{i+1}: margin must be less than 100%."
+        if v < 0:
+            return False, f"Rule #{i+1}: percent must be >= 0."
+
         norm.append({"from": f, "to": t, "value_percent": v})
 
     # sort by from to keep consistent
@@ -553,56 +581,183 @@ def _validate_pricing_rules_payload(payload: dict):
     return True, {"mode": mode, "rules": norm}
 
 
+def _serialize_scale(doc):
+    return {
+        "id": str(doc["_id"]),
+        "name": doc.get("name") or "Default",
+        "mode": doc.get("mode") or "margin",
+        "rules": doc.get("rules") or [],
+        "is_default": bool(doc.get("is_default", False)),
+        "is_active": bool(doc.get("is_active", True)),
+    }
+
+
 @settings_bp.route("/parts-settings/pricing-rules", methods=["GET"])
 @login_required
 @permission_required("parts.edit")
 def parts_pricing_rules_get():
+    """List all pricing rule scales for active shop."""
     master, sdb, shop_oid = _require_shop_db_or_redirect()
     if sdb is None:
         return jsonify({"ok": False, "error": "No active shop DB."}), 400
 
-    doc = sdb.parts_pricing_rules.find_one({"shop_id": shop_oid}) or {}
-    return jsonify({
-        "ok": True,
-        "mode": doc.get("mode") or "margin",
-        "rules": doc.get("rules") or [],
-    })
+    scales = [
+        _serialize_scale(d)
+        for d in sdb.parts_pricing_rules.find({"shop_id": shop_oid}).sort("created_at", 1)
+    ]
+    return jsonify({"ok": True, "scales": scales})
+
+
+@settings_bp.route("/parts-settings/pricing-rules/<scale_id>", methods=["GET"])
+@login_required
+@permission_required("parts.edit")
+def parts_pricing_rules_get_one(scale_id):
+    master, sdb, shop_oid = _require_shop_db_or_redirect()
+    if sdb is None:
+        return jsonify({"ok": False, "error": "No active shop DB."}), 400
+
+    sid = _maybe_object_id(scale_id)
+    if not sid:
+        return jsonify({"ok": False, "error": "Invalid scale id."}), 400
+
+    doc = sdb.parts_pricing_rules.find_one({"_id": sid, "shop_id": shop_oid})
+    if not doc:
+        return jsonify({"ok": False, "error": "Scale not found."}), 404
+
+    return jsonify({"ok": True, "scale": _serialize_scale(doc)})
 
 
 @settings_bp.route("/parts-settings/pricing-rules/save", methods=["POST"])
 @login_required
 @permission_required("parts.edit")
 def parts_pricing_rules_save():
+    """
+    Save (update) one existing pricing rule scale identified by `id`.
+    Payload: {id, mode, rules}.
+    """
     master, sdb, shop_oid = _require_shop_db_or_redirect()
     if sdb is None:
         return jsonify({"ok": False, "error": "No active shop DB."}), 400
 
     payload = request.get_json(silent=True) or {}
+    sid = _maybe_object_id(payload.get("id"))
+    if not sid:
+        return jsonify({"ok": False, "error": "Missing or invalid scale id."}), 400
+
+    existing = sdb.parts_pricing_rules.find_one({"_id": sid, "shop_id": shop_oid})
+    if not existing:
+        return jsonify({"ok": False, "error": "Scale not found."}), 404
+
     ok, result = _validate_pricing_rules_payload(payload)
     if not ok:
         return jsonify({"ok": False, "error": result}), 400
 
-    # one doc per shop
-    try:
-        sdb.parts_pricing_rules.create_index([("shop_id", 1)], unique=True, name="uniq_parts_pricing_rules_shop")
-    except Exception:
-        pass
-
     sdb.parts_pricing_rules.update_one(
-        {"shop_id": shop_oid},
+        {"_id": sid, "shop_id": shop_oid},
         {
             "$set": {
                 "mode": result["mode"],
                 "rules": result["rules"],
                 "updated_at": utcnow(),
             },
-            "$setOnInsert": {
-                "shop_id": shop_oid,
-                "created_at": utcnow(),
-                "is_active": True,
-            }
         },
-        upsert=True
     )
 
+    return jsonify({"ok": True})
+
+
+@settings_bp.route("/parts-settings/pricing-rules/create", methods=["POST"])
+@login_required
+@permission_required("parts.edit")
+def parts_pricing_rules_create():
+    """
+    Create a new named pricing rule scale for active shop.
+    Payload: {name, mode, rules}.
+    """
+    master, sdb, shop_oid = _require_shop_db_or_redirect()
+    if sdb is None:
+        return jsonify({"ok": False, "error": "No active shop DB."}), 400
+
+    payload = request.get_json(silent=True) or {}
+    name = (payload.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "Name is required."}), 400
+    if len(name) > 80:
+        return jsonify({"ok": False, "error": "Name must be 80 characters or fewer."}), 400
+
+    # Name must be unique per shop
+    if sdb.parts_pricing_rules.find_one({"shop_id": shop_oid, "name": name}):
+        return jsonify({"ok": False, "error": "A scale with this name already exists."}), 400
+
+    ok, result = _validate_pricing_rules_payload(payload)
+    if not ok:
+        return jsonify({"ok": False, "error": result}), 400
+
+    now = utcnow()
+    res = sdb.parts_pricing_rules.insert_one({
+        "shop_id": shop_oid,
+        "name": name,
+        "mode": result["mode"],
+        "rules": result["rules"],
+        "is_default": False,
+        "is_active": True,
+        "created_at": now,
+        "updated_at": now,
+    })
+
+    return jsonify({"ok": True, "id": str(res.inserted_id)})
+
+
+@settings_bp.route("/parts-settings/pricing-rules/<scale_id>/delete", methods=["POST"])
+@login_required
+@permission_required("parts.edit")
+def parts_pricing_rules_delete(scale_id):
+    master, sdb, shop_oid = _require_shop_db_or_redirect()
+    if sdb is None:
+        return jsonify({"ok": False, "error": "No active shop DB."}), 400
+
+    sid = _maybe_object_id(scale_id)
+    if not sid:
+        return jsonify({"ok": False, "error": "Invalid scale id."}), 400
+
+    doc = sdb.parts_pricing_rules.find_one({"_id": sid, "shop_id": shop_oid})
+    if not doc:
+        return jsonify({"ok": False, "error": "Scale not found."}), 404
+
+    if bool(doc.get("is_default", False)):
+        return jsonify({"ok": False, "error": "Cannot delete the default scale."}), 400
+
+    total = sdb.parts_pricing_rules.count_documents({"shop_id": shop_oid})
+    if total <= 1:
+        return jsonify({"ok": False, "error": "Cannot delete the last remaining scale."}), 400
+
+    sdb.parts_pricing_rules.delete_one({"_id": sid, "shop_id": shop_oid})
+    return jsonify({"ok": True})
+
+
+@settings_bp.route("/parts-settings/pricing-rules/<scale_id>/set-default", methods=["POST"])
+@login_required
+@permission_required("parts.edit")
+def parts_pricing_rules_set_default(scale_id):
+    master, sdb, shop_oid = _require_shop_db_or_redirect()
+    if sdb is None:
+        return jsonify({"ok": False, "error": "No active shop DB."}), 400
+
+    sid = _maybe_object_id(scale_id)
+    if not sid:
+        return jsonify({"ok": False, "error": "Invalid scale id."}), 400
+
+    doc = sdb.parts_pricing_rules.find_one({"_id": sid, "shop_id": shop_oid})
+    if not doc:
+        return jsonify({"ok": False, "error": "Scale not found."}), 404
+
+    now = utcnow()
+    sdb.parts_pricing_rules.update_many(
+        {"shop_id": shop_oid, "_id": {"$ne": sid}},
+        {"$set": {"is_default": False, "updated_at": now}},
+    )
+    sdb.parts_pricing_rules.update_one(
+        {"_id": sid, "shop_id": shop_oid},
+        {"$set": {"is_default": True, "is_active": True, "updated_at": now}},
+    )
     return jsonify({"ok": True})

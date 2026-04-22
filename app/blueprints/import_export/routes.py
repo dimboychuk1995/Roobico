@@ -44,6 +44,7 @@ ENTITY_FIELDS = {
         {"key": "phone", "label": "Phone"},
         {"key": "email", "label": "Email"},
         {"key": "address", "label": "Address"},
+        {"key": "pricing_rule_name", "label": "Pricing Scale Name"},
     ],
     "units": [
         {"key": "unit_number", "label": "Unit Number"},
@@ -212,13 +213,15 @@ def _safe_str(val):
     return s if s else None
 
 
-def _build_customer_doc(mapped_row, shop, now, user_id, default_labor_rate_id=None):
+def _build_customer_doc(mapped_row, shop, now, user_id, default_labor_rate_id=None,
+                        pricing_rule_lookup=None, default_pricing_rule_id=None):
     company_name = _safe_str(mapped_row.get("company_name"))
     first_name = _safe_str(mapped_row.get("first_name"))
     last_name = _safe_str(mapped_row.get("last_name"))
     phone = _safe_str(mapped_row.get("phone"))
     email = _safe_str(mapped_row.get("email"))
     address = _safe_str(mapped_row.get("address"))
+    pricing_rule_name = _safe_str(mapped_row.get("pricing_rule_name"))
 
     # Must have company_name or a contact name
     if not company_name and not first_name and not last_name:
@@ -248,6 +251,11 @@ def _build_customer_doc(mapped_row, shop, now, user_id, default_labor_rate_id=No
         "taxable": False,
         "current_balance": 0.0,
         "default_labor_rate": default_labor_rate_id,
+        "pricing_rule_id": (
+            (pricing_rule_lookup or {}).get((pricing_rule_name or "").strip().lower())
+            if pricing_rule_name else None
+        ) or default_pricing_rule_id,
+        "override_part_selling_price": False,
         "is_active": True,
         "shop_id": shop["_id"],
         "tenant_id": shop.get("tenant_id"),
@@ -450,11 +458,21 @@ def run_import():
 
     # Pre-resolve default labor rate for customer imports so the field is never empty.
     customer_default_rate_id = None
+    pricing_rule_lookup = {}
+    customer_default_pricing_rule_id = None
     if entity_type == "customers":
-        from app.blueprints.customers.routes import _resolve_default_labor_rate_id
+        from app.blueprints.customers.routes import (
+            _resolve_default_labor_rate_id,
+            _resolve_default_pricing_rule_id,
+        )
         customer_default_rate_id = _resolve_default_labor_rate_id(shop_db, shop["_id"])
         if not customer_default_rate_id:
             return jsonify({"ok": False, "error": "No labor rates configured for this shop. Please create at least one labor rate first."}), 400
+        customer_default_pricing_rule_id = _resolve_default_pricing_rule_id(shop_db, shop["_id"])
+        for s in shop_db.parts_pricing_rules.find({"shop_id": shop["_id"]}, {"_id": 1, "name": 1}):
+            nm = (s.get("name") or "").strip().lower()
+            if nm:
+                pricing_rule_lookup[nm] = s["_id"]
 
     for i, row in enumerate(rows):
         # Map file headers to our field keys
@@ -465,7 +483,12 @@ def run_import():
 
         try:
             if entity_type == "customers":
-                doc = _build_customer_doc(mapped_row, shop, now, user_id, default_labor_rate_id=customer_default_rate_id)
+                doc = _build_customer_doc(
+                    mapped_row, shop, now, user_id,
+                    default_labor_rate_id=customer_default_rate_id,
+                    pricing_rule_lookup=pricing_rule_lookup,
+                    default_pricing_rule_id=customer_default_pricing_rule_id,
+                )
                 if doc is None:
                     skipped += 1
                     continue

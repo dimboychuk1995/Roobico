@@ -148,6 +148,30 @@
               </div>
             </div>
 
+            <div class="col-12 col-md-6">
+              <label class="form-label" for="customerCreatePricingRule">Pricing Scale</label>
+              <select id="customerCreatePricingRule" name="pricing_rule_id" class="form-select">
+                {% for s in (pricing_scales or []) %}
+                  <option value="{{ s.id }}"
+                    {% if s.id == default_pricing_rule_id %}selected{% endif %}>
+                    {{ s.name }}{% if s.is_default %} (default){% endif %}
+                  </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">Used to compute parts price from cost in work orders.</div>
+            </div>
+
+            <div class="col-12 col-md-6">
+              <label class="form-label d-block">Override part selling price</label>
+              <div class="form-check form-switch">
+                <input class="form-check-input" type="checkbox" role="switch"
+                       id="customerCreateOverridePrice" name="override_part_selling_price" value="1">
+                <label class="form-check-label" for="customerCreateOverridePrice">
+                  Always use the scale, ignore part's selling price
+                </label>
+              </div>
+            </div>
+
             <div class="col-12">
               <label class="form-label">Address</label>
               <input type="text" id="customerAddress" name="address" class="form-control" placeholder="Start typing an address..." autocomplete="off" required minlength="5" data-address-autocomplete>

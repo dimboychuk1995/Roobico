@@ -274,6 +274,49 @@ def _resolve_default_labor_rate_id(shop_db, shop_id: ObjectId) -> ObjectId | Non
     return doc["_id"] if doc else None
 
 
+def _get_pricing_scales(shop_db, shop_id: ObjectId) -> list[dict]:
+    """List all pricing-rule scales for a shop, sorted by created_at."""
+    if shop_db is None or not shop_id:
+        return []
+    out = []
+    for d in shop_db.parts_pricing_rules.find({"shop_id": shop_id}).sort("created_at", 1):
+        out.append({
+            "id": str(d.get("_id")),
+            "name": d.get("name") or "Default",
+            "is_default": bool(d.get("is_default", False)),
+        })
+    return out
+
+
+def _resolve_default_pricing_rule_id(shop_db, shop_id: ObjectId):
+    """Return the ObjectId of the shop's default pricing scale (or any first one)."""
+    if shop_db is None or not shop_id:
+        return None
+    doc = (
+        shop_db.parts_pricing_rules.find_one({"shop_id": shop_id, "is_default": True}, {"_id": 1})
+        or shop_db.parts_pricing_rules.find_one({"shop_id": shop_id, "is_active": True}, {"_id": 1}, sort=[("created_at", 1)])
+        or shop_db.parts_pricing_rules.find_one({"shop_id": shop_id}, {"_id": 1}, sort=[("created_at", 1)])
+    )
+    return doc["_id"] if doc else None
+
+
+def _validate_customer_pricing_rule_id(shop_db, shop_id: ObjectId, raw_value: str):
+    """
+    Resolve a submitted pricing_rule_id form value to a valid ObjectId for this shop,
+    or fall back to the shop's default scale. Returns (object_id_or_None, error_message_or_None).
+    """
+    raw = (raw_value or "").strip()
+    if raw:
+        oid_val = _oid(raw)
+        if not oid_val:
+            return None, "Selected pricing scale is invalid."
+        exists = shop_db.parts_pricing_rules.count_documents({"_id": oid_val, "shop_id": shop_id})
+        if not exists:
+            return None, "Selected pricing scale is invalid."
+        return oid_val, None
+    return _resolve_default_pricing_rule_id(shop_db, shop_id), None
+
+
 def _get_labor_rates(shop_db, shop_id: ObjectId) -> list[dict]:
     rows = list(
         shop_db.labor_rates.find({"shop_id": shop_id, "is_active": True}).sort([("name", 1)])
@@ -519,6 +562,10 @@ def customers_page():
     sort_by = (request.args.get("sort_by") or "").strip()
     sort_dir = (request.args.get("sort_dir") or "").strip()
 
+    pricing_scales = _get_pricing_scales(coll.database, shop["_id"])
+    default_pricing_rule_id = _resolve_default_pricing_rule_id(coll.database, shop["_id"])
+    default_pricing_rule_id_str = str(default_pricing_rule_id) if default_pricing_rule_id else ""
+
     return _render_app_page(
         "public/customers.html",
         active_page="customers",
@@ -527,6 +574,8 @@ def customers_page():
         q=q,
         sort_by=sort_by,
         sort_dir=sort_dir,
+        pricing_scales=pricing_scales,
+        default_pricing_rule_id=default_pricing_rule_id_str,
     )
 
 
@@ -637,6 +686,21 @@ def customer_details_page(customer_id):
     selected_rate_name = (selected_rate or {}).get("name") or "-"
     selected_rate_id = (selected_rate or {}).get("id") or ""
 
+    pricing_scales = _get_pricing_scales(shop_db, shop["_id"])
+    raw_pricing_rule_id = customer.get("pricing_rule_id")
+    if isinstance(raw_pricing_rule_id, ObjectId):
+        selected_pricing_rule_id = str(raw_pricing_rule_id)
+    else:
+        selected_pricing_rule_id = ""
+    if not selected_pricing_rule_id or not any(s["id"] == selected_pricing_rule_id for s in pricing_scales):
+        # Fall back to shop default for display purposes (so the dropdown is never empty).
+        default_id = _resolve_default_pricing_rule_id(shop_db, shop["_id"])
+        selected_pricing_rule_id = str(default_id) if default_id else ""
+    selected_pricing_rule_name = next(
+        (s["name"] for s in pricing_scales if s["id"] == selected_pricing_rule_id),
+        "-",
+    )
+
     customer_view = {
         "id": str(customer.get("_id")),
         "label": _customer_label(customer),
@@ -655,6 +719,9 @@ def customer_details_page(customer_id):
         "updated_at": _fmt_dt_label(customer.get("updated_at")),
         "current_balance": None,
         "default_labor_rate_name": selected_rate_name,
+        "pricing_rule_id": selected_pricing_rule_id,
+        "pricing_rule_name": selected_pricing_rule_name,
+        "override_part_selling_price": bool(customer.get("override_part_selling_price", False)),
     }
 
     tab_items = []
@@ -934,6 +1001,7 @@ def customer_details_page(customer_id):
         date_to=date_to,
         date_preset=date_preset,
         labor_rates=labor_rates,
+        pricing_scales=pricing_scales,
         sort_by=(request.args.get("sort_by") or "").strip(),
         sort_dir=(request.args.get("sort_dir") or "").strip(),
     )
@@ -1235,12 +1303,25 @@ def customers_create():
         flash("No labor rates configured for this shop. Please create at least one labor rate first.", "error")
         return redirect(url_for("customers.customers_page"))
 
+    pricing_rule_id, pricing_err = _validate_customer_pricing_rule_id(
+        coll.database, shop["_id"], request.form.get("pricing_rule_id")
+    )
+    if pricing_err:
+        flash(pricing_err, "error")
+        return redirect(url_for("customers.customers_page"))
+
+    override_part_selling_price = (
+        (request.form.get("override_part_selling_price") or "").strip().lower() in {"1", "true", "on", "yes"}
+    )
+
     doc = {
         "company_name": company_name or None,
         "contacts": contacts,
         "address": address or None,
         "taxable": taxable,
         "default_labor_rate": default_rate_id,
+        "pricing_rule_id": pricing_rule_id,
+        "override_part_selling_price": override_part_selling_price,
 
         "is_active": True,
 
@@ -1357,6 +1438,17 @@ def customer_details_update(customer_id):
         flash("Customer address is required.", "error")
         return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="details"))
 
+    pricing_rule_id, pricing_err = _validate_customer_pricing_rule_id(
+        coll.database, shop["_id"], request.form.get("pricing_rule_id")
+    )
+    if pricing_err:
+        flash(pricing_err, "error")
+        return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="details"))
+
+    override_part_selling_price = (
+        (request.form.get("override_part_selling_price") or "").strip().lower() in {"1", "true", "on", "yes"}
+    )
+
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
 
@@ -1366,6 +1458,8 @@ def customer_details_update(customer_id):
         "address": address or None,
         "taxable": taxable,
         "default_labor_rate": default_labor_rate_id,
+        "pricing_rule_id": pricing_rule_id,
+        "override_part_selling_price": override_part_selling_price,
         "updated_at": now,
         "updated_by": user_oid,
     }
