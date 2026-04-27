@@ -1602,6 +1602,22 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
             "source": "locked",
         }
 
+    # Lock shop-supply percentage to whatever was applied when this WO was
+    # saved, so editing an existing WO doesn't silently re-rate it with the
+    # current shop configuration.
+    shop_supply_pct = get_shop_supply_percentage(shop_db, shop["_id"])
+    if (form_state or {}).get("work_order_created"):
+        try:
+            supply_total = float((initial_totals_state or {}).get("shop_supply_total") or 0)
+            labor_base = float((initial_totals_state or {}).get("labor") or 0)
+            if labor_base > 0:
+                shop_supply_pct = round((supply_total / labor_base) * 100, 4)
+            elif supply_total <= 0:
+                # Saved WO had no shop supply — keep it at zero on edit.
+                shop_supply_pct = 0.0
+        except Exception:
+            pass
+
     ctx = {
         "sales_tax_context": sales_tax_context,
         "active_page": "work_orders",
@@ -1612,7 +1628,7 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
         "labor_rates": get_labor_rates(shop_db, shop["_id"]),
         "mechanics": mechanics,
         "parts_pricing_rules": get_pricing_rules_json(shop_db, shop["_id"], customer_id=customer_id),
-        "shop_supply_procentage": get_shop_supply_percentage(shop_db, shop["_id"]),
+        "shop_supply_procentage": shop_supply_pct,
         "charge_for_cores_default": get_core_charge_default(shop_db, shop["_id"]),
 
         # старые поля (оставляем как у тебя было)
