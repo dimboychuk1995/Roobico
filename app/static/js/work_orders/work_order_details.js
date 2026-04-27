@@ -3435,7 +3435,24 @@
     // Mirror "+ Add Labor" button at the bottom of the labor list
     const addLaborBottomBtn = $("addLaborBottomBtn");
     addLaborBottomBtn?.addEventListener("click", function () {
-      addLaborBtn?.click();
+      const cloned = cloneBlock(blocksContainer);
+      setupMiscChargeButton(cloned);
+      Array.from(blocksContainer.querySelectorAll(".wo-labor")).forEach((b, idx) => renumberBlock(b, idx));
+
+      const customerId = String(customerSel?.value || "").trim();
+      const defaultRateCode = getCustomerDefaultLaborRate(customersData, customerId);
+      applyDefaultLaborRateToBlock(cloned, defaultRateCode, true);
+
+      recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
+
+      if (typeof window.AttachmentsInit === "function") {
+        window.AttachmentsInit();
+      }
+
+      // Scroll the new labor block into view so the user sees what was added.
+      try {
+        cloned?.scrollIntoView({ behavior: "smooth", block: "center" });
+      } catch {}
     });
 
     // ---------- Recognize handwritten Work Order via AI ----------

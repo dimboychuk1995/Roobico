@@ -131,7 +131,15 @@
             </div>
             <div class="col-12 col-md-6">
               <label class="form-label small text-muted mb-1" for="vin">VIN</label>
-              <input type="text" class="form-control form-control-sm" id="vin" name="vin" value="{{ unit.raw_vin }}" />
+              <div class="position-relative">
+                <input type="text" class="form-control form-control-sm" id="vin" name="vin" value="{{ unit.raw_vin }}" maxlength="32" autocomplete="off" />
+                <div id="vinLoadingSpinner" class="position-absolute top-50 end-0 translate-middle-y me-2" style="display:none;">
+                  <div class="spinner-border spinner-border-sm text-primary" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                  </div>
+                </div>
+              </div>
+              <small class="form-text text-muted">VIN auto-fills Year, Make, Model and Type.</small>
             </div>
             <div class="col-12 col-md-4">
               <label class="form-label small text-muted mb-1" for="year">Year</label>
@@ -231,5 +239,79 @@
 {{ attachments_modal() }}
 
 <script src="{{ url_for('static', filename='js/customers/customers.js', v='20260410-wo-labors') }}"></script>
+
+<script>
+(function () {
+  "use strict";
+  const vinInput = document.getElementById("vin");
+  if (!vinInput) return;
+
+  const yearInput = document.getElementById("year");
+  const makeInput = document.getElementById("make");
+  const modelInput = document.getElementById("model");
+  const typeInput = document.getElementById("type");
+  const spinner = document.getElementById("vinLoadingSpinner");
+
+  let lastLookup = "";
+  let timer = null;
+
+  function debounced(fn, ms) {
+    return function () {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(fn, ms);
+    };
+  }
+
+  async function fetchVin(vin) {
+    try {
+      const res = await fetch(`/work_orders/api/vin?vin=${encodeURIComponent(vin)}`,
+        { headers: { "Accept": "application/json" } });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data && data.ok ? data : null;
+    } catch (err) {
+      return null;
+    }
+  }
+
+  async function lookup() {
+    const vin = String(vinInput.value || "").trim().toUpperCase();
+    if (vinInput.value !== vin) vinInput.value = vin;
+    if (vin.length !== 17) {
+      if (spinner) spinner.style.display = "none";
+      return;
+    }
+    if (vin === lastLookup) return;
+    lastLookup = vin;
+
+    if (spinner) spinner.style.display = "block";
+    vinInput.style.borderColor = "#0d6efd";
+    vinInput.style.backgroundColor = "#e7f1ff";
+
+    const data = await fetchVin(vin);
+
+    if (spinner) spinner.style.display = "none";
+    vinInput.style.backgroundColor = "";
+
+    if (!data) {
+      vinInput.style.borderColor = "#dc3545";
+      setTimeout(() => { vinInput.style.borderColor = ""; }, 2000);
+      return;
+    }
+
+    if (yearInput && data.year) yearInput.value = data.year;
+    if (makeInput && data.make) makeInput.value = data.make;
+    if (modelInput && data.model) modelInput.value = data.model;
+    if (typeInput && data.type) typeInput.value = data.type;
+
+    vinInput.style.borderColor = "#198754";
+    setTimeout(() => { vinInput.style.borderColor = ""; }, 1500);
+  }
+
+  const debouncedLookup = debounced(lookup, 500);
+  vinInput.addEventListener("input", debouncedLookup);
+  vinInput.addEventListener("change", lookup);
+})();
+</script>
 
 {% endblock %}
