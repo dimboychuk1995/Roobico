@@ -2406,12 +2406,19 @@ def create_work_order():
         except Exception:
             totals = {}
 
+    # Honor an explicit per-WO taxable override coming from the UI; fall back to
+    # the customer's taxable flag when the front-end didn't send one.
+    if isinstance(totals, dict) and "is_taxable" in totals:
+        is_taxable_override = bool(totals.get("is_taxable"))
+    else:
+        is_taxable_override = _is_customer_taxable(shop_db, customer_id)
+
     totals = align_totals_with_labors(normalize_totals_payload(totals), labors)
     shop_tax = _get_shop_sales_tax_context(shop, shop_db)
     totals = _apply_sales_tax_to_totals(
         totals,
         shop_tax.get("rate") or 0,
-        _is_customer_taxable(shop_db, customer_id),
+        is_taxable_override,
     )
     work_order_date = shop_local_date_to_utc(request.form.get("work_order_date"), default_today=True)
 
@@ -2926,7 +2933,8 @@ def api_work_order_update(work_order_id):
 
     data = request.get_json(silent=True) or {}
     labors = data.get("labors", data.get("blocks"))
-    totals = normalize_totals_payload(data.get("totals") or {})
+    raw_totals = data.get("totals") or {}
+    totals = normalize_totals_payload(raw_totals)
     unit_mileage = data.get("unit_mileage")
     work_order_date = shop_local_date_to_utc(data.get("work_order_date"), default_today=True)
 
@@ -2945,10 +2953,19 @@ def api_work_order_update(work_order_id):
         # Legacy WOs without a stored rate: fall back to the current shop rate.
         locked_tax_rate = (_get_shop_sales_tax_context(shop, shop_db).get("rate") or 0)
 
+    # Honor an explicit per-WO taxable override coming from the UI; fall back to
+    # whatever the WO already had stored, then to the customer's flag.
+    if isinstance(raw_totals, dict) and "is_taxable" in raw_totals:
+        is_taxable_override = bool(raw_totals.get("is_taxable"))
+    elif "is_taxable" in existing_totals:
+        is_taxable_override = bool(existing_totals.get("is_taxable"))
+    else:
+        is_taxable_override = _is_customer_taxable(shop_db, wo.get("customer_id"))
+
     totals = _apply_sales_tax_to_totals(
         totals,
         locked_tax_rate,
-        _is_customer_taxable(shop_db, wo.get("customer_id")),
+        is_taxable_override,
     )
 
     # (опционально) можно запретить редактирование, если paid

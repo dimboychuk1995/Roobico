@@ -3146,6 +3146,8 @@
     customerSel?.addEventListener("change", async function () {
       const customerId = String(customerSel.value || "").trim();
       currentCustomerTaxable = getCustomerTaxable(customersData, customerId);
+      const woTaxableToggleEl = $("woTaxableToggle");
+      if (woTaxableToggleEl) woTaxableToggleEl.checked = !!currentCustomerTaxable;
       updateSalesTaxStateOnlyWarning();
       if (customerHidden) customerHidden.value = customerId;
       if (createUnitCustomerHidden) createUnitCustomerHidden.value = customerId;
@@ -3428,6 +3430,12 @@
       if (typeof window.AttachmentsInit === "function") {
         window.AttachmentsInit();
       }
+    });
+
+    // Mirror "+ Add Labor" button at the bottom of the labor list
+    const addLaborBottomBtn = $("addLaborBottomBtn");
+    addLaborBottomBtn?.addEventListener("click", function () {
+      addLaborBtn?.click();
     });
 
     // ---------- Recognize handwritten Work Order via AI ----------
@@ -4494,6 +4502,20 @@
 
     const initialCustomerId = String(customerSel?.value || "").trim();
     currentCustomerTaxable = getCustomerTaxable(customersData, initialCustomerId);
+    // For an already-created WO, prefer the per-WO override stored on the
+    // totals snapshot so that a manual taxable toggle survives reloads.
+    if (isCreated && totalsSnapshot && Object.prototype.hasOwnProperty.call(totalsSnapshot, "is_taxable")) {
+      currentCustomerTaxable = !!totalsSnapshot.is_taxable;
+    }
+    const woTaxableToggle = $("woTaxableToggle");
+    if (woTaxableToggle) {
+      woTaxableToggle.checked = !!currentCustomerTaxable;
+      woTaxableToggle.addEventListener("change", function () {
+        currentCustomerTaxable = !!woTaxableToggle.checked;
+        updateSalesTaxStateOnlyWarning();
+        recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
+      });
+    }
     updateSalesTaxStateOnlyWarning();
     const initialDefaultRateCode = getCustomerDefaultLaborRate(customersData, initialCustomerId);
     applyDefaultLaborRateToAll(blocksContainer, initialDefaultRateCode, true);

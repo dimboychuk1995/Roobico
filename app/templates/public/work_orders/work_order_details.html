@@ -415,6 +415,10 @@
               <div id="coreGrandTotalWrap" style="display:none;">Cores: <strong id="coreGrandTotalDisplay">—</strong></div>
               <div id="miscGrandTotalWrap" style="display:none;">Misc: <strong id="miscGrandTotalDisplay">—</strong></div>
               <div>Sales tax (<span id="salesTaxRateLabel">0.00%</span>): <strong id="salesTaxGrandTotalDisplay">—</strong></div>
+              <div class="form-check form-switch mt-1 d-inline-flex align-items-center gap-2 m-0">
+                <input class="form-check-input" type="checkbox" id="woTaxableToggle">
+                <label class="form-check-label small" for="woTaxableToggle">Taxable</label>
+              </div>
             </div>
             <div class="wo-totals-chip wo-grand-total">Grand total: <strong id="grandTotalDisplay" class="ms-1">—</strong></div>
           </div>
@@ -636,6 +640,10 @@
             </div>
           </div>
 
+        </div>
+
+        <div class="d-flex justify-content-end mb-3">
+          <button type="button" class="btn btn-outline-primary btn-sm" id="addLaborBottomBtn">+ Add Labor</button>
         </div>
 
       </fieldset>
