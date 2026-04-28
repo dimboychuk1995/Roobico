@@ -407,7 +407,16 @@
             <div class="wo-totals-chip">
               <div>Labor total: <strong id="laborGrandTotalDisplay">—</strong></div>
               <div>Labor: <strong id="laborGrandBaseDisplay">—</strong></div>
-              <div id="shopSupplyGrandTotalWrap" style="display:none;">Shop supply: <strong id="shopSupplyGrandTotalDisplay">—</strong></div>
+              <div id="shopSupplyGrandTotalWrap" class="d-flex align-items-center justify-content-center gap-1" style="display:none;">
+                <span>Shop supply:</span>
+                <span>$</span>
+                <input type="number" step="0.01" min="0" id="shopSupplyGrandTotalInput"
+                       class="form-control form-control-sm text-end"
+                       style="width:90px; padding:0 4px; height:auto;" value="0">
+                <button type="button" id="shopSupplyResetBtn" class="btn btn-sm btn-link p-0"
+                        title="Reset to calculated value" style="display:none; line-height:1;">↺</button>
+                <strong id="shopSupplyGrandTotalDisplay" class="d-none">—</strong>
+              </div>
             </div>
             <div class="wo-totals-chip">
               <div>Parts total: <strong id="partsGrandTotalDisplay">—</strong></div>

@@ -5,6 +5,9 @@
   let currentSalesTaxRate = 0;
   let currentCustomerTaxable = false;
   let currentPricing = null;
+  // null = no manual override (supply is computed from labor * pct).
+  // number = user-typed dollar value that takes precedence over the computed value.
+  let shopSupplyManualOverride = null;
   const APP_TIMEZONE = document.body?.dataset?.appTimezone || "UTC";
 
   function $(id) { return document.getElementById(id); }
@@ -745,9 +748,11 @@
     coreGrand = round2(coreGrand);
     miscGrand = round2(miscGrand);
     miscTaxableGrand = round2(miscTaxableGrand);
-    supplyGrand = (Number.isFinite(shopSupplyPct) && shopSupplyPct > 0)
+    const supplyGrandCalculated = (Number.isFinite(shopSupplyPct) && shopSupplyPct > 0)
       ? round2(laborGrand * (shopSupplyPct / 100))
       : 0;
+    const hasOverride = Number.isFinite(shopSupplyManualOverride) && shopSupplyManualOverride >= 0;
+    supplyGrand = hasOverride ? round2(shopSupplyManualOverride) : supplyGrandCalculated;
     const salesTaxGrand = (currentCustomerTaxable && Number.isFinite(currentSalesTaxRate) && currentSalesTaxRate > 0)
       ? round2((partsGrand + miscTaxableGrand) * currentSalesTaxRate)
       : 0;
@@ -786,9 +791,15 @@
 
     const supplyGrandWrap = $("shopSupplyGrandTotalWrap");
     const supplyGrandEl = $("shopSupplyGrandTotalDisplay");
-    const hasSupplyGrand = supplyGrand > 0;
-    if (supplyGrandWrap) supplyGrandWrap.style.display = hasSupplyGrand ? "" : "none";
-    if (supplyGrandEl) supplyGrandEl.textContent = hasSupplyGrand ? `$${money(supplyGrand)}` : "—";
+    const supplyGrandInput = $("shopSupplyGrandTotalInput");
+    const supplyResetBtn = $("shopSupplyResetBtn");
+    const showSupply = (Number.isFinite(shopSupplyPct) && shopSupplyPct > 0) || hasOverride || supplyGrand > 0;
+    if (supplyGrandWrap) supplyGrandWrap.style.display = showSupply ? "" : "none";
+    if (supplyGrandEl) supplyGrandEl.textContent = supplyGrand > 0 ? `$${money(round2(supplyGrand))}` : "—";
+    if (supplyGrandInput && document.activeElement !== supplyGrandInput) {
+      supplyGrandInput.value = money(round2(supplyGrand));
+    }
+    if (supplyResetBtn) supplyResetBtn.style.display = hasOverride ? "" : "none";
 
     const grandEl = $("grandTotalDisplay");
     if (grandEl) grandEl.textContent = blocks.length ? `$${money(grand)}` : "—";
@@ -851,7 +862,10 @@
       });
     });
 
-    const supplyGrandText = $("shopSupplyGrandTotalDisplay")?.textContent || "0";
+    const supplyGrandInput = $("shopSupplyGrandTotalInput");
+    const supplyGrandText = supplyGrandInput
+      ? String(supplyGrandInput.value || "0")
+      : ($("shopSupplyGrandTotalDisplay")?.textContent || "0");
     supplySum = round2(parseMoneyText(supplyGrandText));
 
     // Compute misc taxable total by scanning all blocks' misc items
@@ -958,6 +972,13 @@
     const supplyGrand = (Number.isFinite(supplyGrandStored) && supplyGrandStored > 0)
       ? round2(supplyGrandStored)
       : supplyGrandCalculated;
+    // Detect manual override: stored value diverges from what the percentage would produce.
+    if (Number.isFinite(supplyGrandStored)
+        && Math.abs(round2(supplyGrandStored) - supplyGrandCalculated) > 0.005) {
+      shopSupplyManualOverride = round2(supplyGrandStored);
+    } else {
+      shopSupplyManualOverride = null;
+    }
 
     const laborGrandBase = Number.isFinite(laborGrandBaseStored)
       ? round2(laborGrandBaseStored)
@@ -1010,9 +1031,18 @@
 
     const supplyGrandWrap = $("shopSupplyGrandTotalWrap");
     const supplyGrandEl = $("shopSupplyGrandTotalDisplay");
-    const hasSupplyGrand = Number.isFinite(supplyGrand) && supplyGrand > 0;
+    const supplyGrandInput = $("shopSupplyGrandTotalInput");
+    const supplyResetBtn = $("shopSupplyResetBtn");
+    const hasOverride = Number.isFinite(shopSupplyManualOverride) && shopSupplyManualOverride >= 0;
+    const hasSupplyGrand = (Number.isFinite(supplyGrand) && supplyGrand > 0)
+      || hasOverride
+      || (Number.isFinite(shopSupplyPct) && shopSupplyPct > 0);
     if (supplyGrandWrap) supplyGrandWrap.style.display = hasSupplyGrand ? "" : "none";
-    if (supplyGrandEl) supplyGrandEl.textContent = hasSupplyGrand ? `$${money(round2(supplyGrand))}` : "—";
+    if (supplyGrandEl) supplyGrandEl.textContent = (Number.isFinite(supplyGrand) && supplyGrand > 0) ? `$${money(round2(supplyGrand))}` : "—";
+    if (supplyGrandInput && document.activeElement !== supplyGrandInput) {
+      supplyGrandInput.value = money(round2(Number.isFinite(supplyGrand) ? supplyGrand : 0));
+    }
+    if (supplyResetBtn) supplyResetBtn.style.display = hasOverride ? "" : "none";
 
     const grandEl = $("grandTotalDisplay");
     if (grandEl) {
@@ -4540,6 +4570,33 @@
     updateSalesTaxStateOnlyWarning();
     const initialDefaultRateCode = getCustomerDefaultLaborRate(customersData, initialCustomerId);
     applyDefaultLaborRateToAll(blocksContainer, initialDefaultRateCode, true);
+
+    // Wire shop supply override input + reset button.
+    const supplyGrandInputEl = $("shopSupplyGrandTotalInput");
+    const supplyResetBtnEl = $("shopSupplyResetBtn");
+    if (supplyGrandInputEl) {
+      supplyGrandInputEl.addEventListener("input", function () {
+        const raw = String(supplyGrandInputEl.value || "").trim();
+        if (raw === "") {
+          shopSupplyManualOverride = null;
+        } else {
+          const v = toNum(raw);
+          shopSupplyManualOverride = (Number.isFinite(v) && v >= 0) ? round2(v) : null;
+        }
+        recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
+      });
+      supplyGrandInputEl.addEventListener("blur", function () {
+        const v = toNum(supplyGrandInputEl.value);
+        supplyGrandInputEl.value = money(Number.isFinite(v) && v >= 0 ? round2(v) : 0);
+      });
+    }
+    if (supplyResetBtnEl) {
+      supplyResetBtnEl.addEventListener("click", function () {
+        shopSupplyManualOverride = null;
+        recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
+      });
+    }
+
     recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
 
     if (isCreated) {
