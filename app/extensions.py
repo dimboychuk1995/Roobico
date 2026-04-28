@@ -119,6 +119,10 @@ def ensure_master_collections_indexes(master_db):
     _safe_create_index(master_db.audit_journal, [("endpoint", ASCENDING), ("created_at", DESCENDING)], name="idx_audit_journal_endpoint_created")
     _safe_create_index(master_db.audit_journal, [("method", ASCENDING), ("created_at", DESCENDING)], name="idx_audit_journal_method_created")
 
+    # Customer authorization tokens for work orders / individual labor items.
+    _safe_create_index(master_db.work_order_authorizations, [("token", ASCENDING)], unique=True, name="uniq_wo_auth_token")
+    _safe_create_index(master_db.work_order_authorizations, [("shop_id", ASCENDING), ("work_order_id", ASCENDING), ("created_at", DESCENDING)], name="idx_wo_auth_shop_wo_created")
+
 
 def ensure_shop_collections_indexes(shop_db):
     """

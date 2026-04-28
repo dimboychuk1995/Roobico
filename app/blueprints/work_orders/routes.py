@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+import secrets
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 from flask import g, request, session, redirect, url_for, flash, jsonify, render_template, make_response
@@ -1647,6 +1648,7 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
         "initial_totals": normalize_totals_payload((form_state or {}).get("initial_totals") or {}),
         "work_order_status": (form_state or {}).get("work_order_status") or "open",
         "pending_attachment_id": pending_attachment_id,
+        "initial_authorizations": (form_state or {}).get("authorizations") or [],
     }
 
     return _render_app_page("public/work_orders/work_order_details.html", **ctx)
@@ -2229,6 +2231,7 @@ def work_order_details_page():
                     "labors": [],
                 },
                 "work_order_status": work_order_status,
+                "authorizations": list(wo.get("authorizations") or []),
             },
         )
 
@@ -3935,6 +3938,351 @@ def api_send_payment_receipt(payment_id):
         return jsonify({"ok": False, "error": str(exc)}), 500
 
     return jsonify({"ok": True, "sent_to": to_emails}), 200
+
+
+# ---------------------------------------------------------------------------
+# Customer Authorization (email-based approve/decline)
+# ---------------------------------------------------------------------------
+
+def _authorizations_collection():
+    """Authorizations live in master DB so anonymous public routes can resolve
+    a token without knowing the shop."""
+    return get_master_db().work_order_authorizations
+
+
+# Approximate cap for total attachment payload before base64 encoding.
+# Resend allows ~40MB per email; base64 inflates ~33%, so cap raw bytes at 20MB.
+_AUTH_EMAIL_ATTACHMENT_BYTES_CAP = 20 * 1024 * 1024
+
+
+def _load_authorization_attachments(shop_db, wo, scope: str, labor_index):
+    """Return a list of attachment dicts to embed in the authorization email.
+
+    Includes WO-level attachments and all labor-block attachments for the WO.
+    Honours an overall size cap to keep the email deliverable.
+    """
+    col = shop_db.attachments
+    wo_id = wo.get("_id")
+    if not wo_id:
+        return []
+
+    cursor = col.find(
+        {
+            "entity_type": {"$in": ["work_order", "work_order_labor"]},
+            "entity_id": wo_id,
+        },
+    ).sort("uploaded_at", 1)
+
+    files = []
+    total_bytes = 0
+    for doc in cursor:
+        data = doc.get("data")
+        if not data:
+            continue
+        try:
+            raw = bytes(data)
+        except Exception:
+            continue
+        size = len(raw)
+        if total_bytes + size > _AUTH_EMAIL_ATTACHMENT_BYTES_CAP:
+            continue
+        total_bytes += size
+        files.append({
+            "filename": doc.get("filename") or "attachment",
+            "data": raw,
+            "content_type": doc.get("content_type") or "application/octet-stream",
+            "size": size,
+        })
+    return files
+
+
+def _build_authorization_context(shop_db, shop, wo, scope: str, labor_index):
+    """Return dict for both email + public page templates.
+
+    scope: "work_order" or "labor".
+    labor_index: int when scope == "labor", else None.
+    """
+    ctx = _build_wo_pdf_context(shop_db, shop, wo)
+    ctx["scope"] = scope
+    ctx["labor_index"] = labor_index
+    if scope == "labor" and isinstance(labor_index, int):
+        labors = ctx.get("labors") or []
+        if 0 <= labor_index < len(labors):
+            single = labors[labor_index]
+            ctx["single_labor"] = single
+            ctx["single_labor_number"] = labor_index + 1
+        else:
+            ctx["single_labor"] = None
+            ctx["single_labor_number"] = labor_index + 1 if isinstance(labor_index, int) else None
+    ctx["attachment_files"] = _load_authorization_attachments(shop_db, wo, scope, labor_index)
+    return ctx
+
+
+@work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/send-authorization")
+@login_required
+@permission_required("work_orders.create")
+def api_send_authorization_email(work_order_id):
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "Shop not found"}), 404
+
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return jsonify({"ok": False, "error": "Invalid work order ID"}), 400
+
+    wo = shop_db.work_orders.find_one({"_id": wo_id, "is_active": True})
+    if not wo:
+        return jsonify({"ok": False, "error": "Work order not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+
+    raw_emails = data.get("emails") or []
+    if not raw_emails:
+        single = str(data.get("email") or "").strip().lower()
+        if single:
+            raw_emails = [single]
+    to_emails = [e.strip().lower() for e in raw_emails if isinstance(e, str) and "@" in e.strip()]
+    if not to_emails:
+        return jsonify({"ok": False, "error": "At least one valid email address required"}), 400
+
+    scope = str(data.get("scope") or "work_order").strip().lower()
+    if scope not in ("work_order", "labor"):
+        return jsonify({"ok": False, "error": "Invalid scope"}), 400
+
+    labor_index = None
+    if scope == "labor":
+        try:
+            labor_index = int(data.get("labor_index"))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "labor_index required for scope=labor"}), 400
+        labors_count = len(wo.get("labors") or [])
+        if labor_index < 0 or labor_index >= labors_count:
+            return jsonify({"ok": False, "error": "labor_index out of range"}), 400
+
+    new_contact = data.get("new_contact")
+    if isinstance(new_contact, dict) and wo.get("customer_id"):
+        _save_new_contact_to_customer(shop_db, wo["customer_id"], new_contact)
+
+    ctx = _build_authorization_context(shop_db, shop, wo, scope, labor_index)
+    wo_number = ctx["wo_number"]
+    shop_name = ctx["shop_name"]
+
+    # Build a PDF of the full work order to attach (same as regular send-email).
+    pdf_attachment = None
+    try:
+        pdf_html = render_template("emails/work_order_pdf.html", **ctx)
+        pdf_bytes = render_html_to_pdf(pdf_html)
+        if pdf_bytes:
+            pdf_attachment = {
+                "filename": f"WorkOrder-{wo_number}.pdf",
+                "data": pdf_bytes,
+                "content_type": "application/pdf",
+            }
+    except Exception:
+        pdf_attachment = None
+
+    # WO/labor uploaded attachments (already capped in size).
+    uploaded_attachments = ctx.get("attachment_files") or []
+
+    email_attachments = []
+    if pdf_attachment:
+        email_attachments.append(pdf_attachment)
+    for att in uploaded_attachments:
+        email_attachments.append({
+            "filename": att["filename"],
+            "data": att["data"],
+            "content_type": att.get("content_type") or "application/octet-stream",
+        })
+
+    db_name = str(shop.get("db_name") or "")
+    auth_col = _authorizations_collection()
+    user_email = (g.user.get("email") or "").strip() if g.user else ""
+    user_id = g.user.get("_id") if g.user else None
+    now = utcnow()
+
+    sent_to = []
+    failed = []
+    for email in to_emails:
+        token = secrets.token_urlsafe(32)
+        auth_doc = {
+            "token": token,
+            "shop_id": shop["_id"],
+            "db_name": db_name,
+            "work_order_id": wo_id,
+            "wo_number": wo_number,
+            "scope": scope,
+            "labor_index": labor_index,
+            "recipient_email": email,
+            "customer_id": wo.get("customer_id"),
+            "status": "pending",
+            "created_at": now,
+            "created_by": user_id,
+            "responded_at": None,
+            "response_ip": None,
+            "response_comment": None,
+        }
+        try:
+            auth_col.insert_one(auth_doc)
+        except Exception:
+            failed.append(email)
+            continue
+
+        approve_url = url_for("work_orders.public_authorization_page",
+                              token=token, _external=True)
+
+        email_ctx = dict(ctx)
+        email_ctx["approve_url"] = approve_url
+        email_ctx["recipient_email"] = email
+        html_body = render_template("emails/authorization_email.html", **email_ctx)
+
+        if scope == "labor":
+            subject_prefix = f"Authorization needed — Work Order #{wo_number} (Labor #{(labor_index or 0) + 1})"
+        else:
+            subject_prefix = f"Authorization needed — Work Order #{wo_number}"
+        subject = f"{subject_prefix} — {shop_name}" if shop_name else subject_prefix
+
+        try:
+            send_email([email], subject, html_body,
+                       attachments=email_attachments or None,
+                       reply_to=user_email or None)
+            sent_to.append(email)
+        except RuntimeError:
+            # Cleanup the token we just created so user isn't left with a
+            # dangling record.
+            auth_col.delete_one({"token": token})
+            failed.append(email)
+
+    if not sent_to:
+        return jsonify({"ok": False, "error": "Failed to send authorization email",
+                        "failed": failed}), 500
+
+    return jsonify({"ok": True, "sent_to": sent_to, "failed": failed}), 200
+
+
+def _resolve_token(token):
+    """Return (auth_doc, shop_db, shop, wo, error_message)."""
+    if not token or not isinstance(token, str) or len(token) < 16:
+        return None, None, None, None, "Invalid authorization link"
+
+    auth_col = _authorizations_collection()
+    auth_doc = auth_col.find_one({"token": token})
+    if not auth_doc:
+        return None, None, None, None, "This authorization link is invalid or has expired."
+
+    master = get_master_db()
+    shop = master.shops.find_one({"_id": auth_doc.get("shop_id")})
+    if not shop:
+        return auth_doc, None, None, None, "Shop is no longer available."
+
+    db_name = auth_doc.get("db_name") or shop.get("db_name")
+    if not db_name:
+        return auth_doc, None, shop, None, "Shop database is not configured."
+
+    client = get_mongo_client()
+    shop_db = client[str(db_name)]
+    wo = shop_db.work_orders.find_one({"_id": auth_doc.get("work_order_id"),
+                                       "is_active": True})
+    if not wo:
+        return auth_doc, shop_db, shop, None, "Work order not found."
+
+    return auth_doc, shop_db, shop, wo, None
+
+
+@work_orders_bp.get("/authorize/<token>")
+def public_authorization_page(token):
+    auth_doc, shop_db, shop, wo, err = _resolve_token(token)
+    if err and not (auth_doc and shop_db and shop and wo):
+        return render_template("public/work_orders/authorization_page.html",
+                               error=err, auth=None, ctx=None), 404
+
+    scope = auth_doc.get("scope") or "work_order"
+    labor_index = auth_doc.get("labor_index")
+    ctx = _build_authorization_context(shop_db, shop, wo, scope, labor_index)
+    return render_template(
+        "public/work_orders/authorization_page.html",
+        error=None,
+        auth=auth_doc,
+        ctx=ctx,
+        token=token,
+        already_responded=auth_doc.get("status") in ("approved", "declined"),
+    )
+
+
+@work_orders_bp.post("/authorize/<token>")
+def public_authorization_submit(token):
+    auth_doc, shop_db, shop, wo, err = _resolve_token(token)
+    if err and not (auth_doc and shop_db and shop and wo):
+        return render_template("public/work_orders/authorization_page.html",
+                               error=err, auth=None, ctx=None), 404
+
+    if auth_doc.get("status") in ("approved", "declined"):
+        # Already responded — re-render the page.
+        scope = auth_doc.get("scope") or "work_order"
+        labor_index = auth_doc.get("labor_index")
+        ctx = _build_authorization_context(shop_db, shop, wo, scope, labor_index)
+        return render_template(
+            "public/work_orders/authorization_page.html",
+            error=None,
+            auth=auth_doc,
+            ctx=ctx,
+            token=token,
+            already_responded=True,
+        )
+
+    decision = (request.form.get("decision") or "").strip().lower()
+    if decision not in ("approve", "decline"):
+        flash("Please choose Approve or Decline.", "error")
+        return redirect(url_for("work_orders.public_authorization_page", token=token))
+
+    comment = (request.form.get("comment") or "").strip()[:2000]
+    # Best-effort client IP: honor X-Forwarded-For first hop when present.
+    forwarded = (request.headers.get("X-Forwarded-For") or "").split(",")
+    client_ip = (forwarded[0].strip() if forwarded and forwarded[0].strip()
+                 else (request.remote_addr or ""))
+    new_status = "approved" if decision == "approve" else "declined"
+    now = utcnow()
+
+    auth_col = _authorizations_collection()
+    auth_col.update_one(
+        {"_id": auth_doc["_id"], "status": "pending"},
+        {"$set": {
+            "status": new_status,
+            "responded_at": now,
+            "response_ip": client_ip,
+            "response_comment": comment,
+            "updated_at": now,
+        }},
+    )
+
+    # Mirror onto the work order itself for easy display in shop UI.
+    scope = auth_doc.get("scope") or "work_order"
+    labor_index = auth_doc.get("labor_index")
+    record = {
+        "token": auth_doc.get("token"),
+        "scope": scope,
+        "labor_index": labor_index,
+        "recipient_email": auth_doc.get("recipient_email"),
+        "status": new_status,
+        "responded_at": now,
+        "response_ip": client_ip,
+        "response_comment": comment,
+    }
+    shop_db.work_orders.update_one(
+        {"_id": wo["_id"]},
+        {"$push": {"authorizations": record}},
+    )
+
+    auth_doc = auth_col.find_one({"_id": auth_doc["_id"]}) or auth_doc
+    ctx = _build_authorization_context(shop_db, shop, wo, scope, labor_index)
+    return render_template(
+        "public/work_orders/authorization_page.html",
+        error=None,
+        auth=auth_doc,
+        ctx=ctx,
+        token=token,
+        already_responded=True,
+        just_submitted=True,
+    )
 
 
 # ──────────────── WO Presets API ────────────────

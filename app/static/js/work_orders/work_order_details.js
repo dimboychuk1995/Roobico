@@ -1464,6 +1464,10 @@
     clone.querySelectorAll(".laborAssignSummary").forEach(el => {
       el.textContent = "Assigned: —";
     });
+    clone.querySelectorAll(".laborAuthBadge").forEach(el => {
+      el.innerHTML = "";
+      el.removeAttribute("title");
+    });
     clone.querySelectorAll(".part-core-charge, .part-misc-charge").forEach(i => {
       i.value = "0";
     });
@@ -2951,7 +2955,47 @@
     wireBlockEvents(blocksContainer, pricing, laborRates, shopSupplyPct);
     Array.from(blocksContainer.querySelectorAll(".wo-labor")).forEach((b, idx) => renumberBlock(b, idx));
     recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
-    
+
+    // ---------- customer authorization badges ----------
+    const initialAuthorizations = readJsonScript("workOrderAuthorizationsData", []);
+    function _badgeMarkup(status) {
+      const s = String(status || "").toLowerCase();
+      if (s === "approved") return '<span class="badge bg-success">\u2713 Authorized</span>';
+      if (s === "declined") return '<span class="badge bg-danger">\u2715 Declined</span>';
+      return "";
+    }
+    function applyAuthorizationBadges() {
+      // Latest record per labor index, plus latest WO-level record.
+      const perLabor = new Map(); // idx -> latest record
+      let woLatest = null;
+      (initialAuthorizations || []).forEach(rec => {
+        if (!rec || rec.status === "pending") return;
+        const t = rec.responded_at ? Date.parse(rec.responded_at) || 0 : 0;
+        if (rec.scope === "labor" && Number.isInteger(rec.labor_index)) {
+          const cur = perLabor.get(rec.labor_index);
+          if (!cur || t >= (cur._t || 0)) perLabor.set(rec.labor_index, { ...rec, _t: t });
+        } else if (rec.scope === "work_order") {
+          if (!woLatest || t >= (woLatest._t || 0)) woLatest = { ...rec, _t: t };
+        }
+      });
+
+      const woBadge = document.getElementById("woAuthBadge");
+      if (woBadge) woBadge.innerHTML = woLatest ? _badgeMarkup(woLatest.status) : "";
+
+      Array.from(blocksContainer.querySelectorAll(".wo-labor")).forEach((blockEl, idx) => {
+        const span = blockEl.querySelector(".laborAuthBadge");
+        if (!span) return;
+        const rec = perLabor.get(idx);
+        span.innerHTML = rec ? _badgeMarkup(rec.status) : "";
+        if (rec && rec.response_comment) {
+          span.title = "Customer comment: " + rec.response_comment;
+        } else {
+          span.removeAttribute("title");
+        }
+      });
+    }
+    applyAuthorizationBadges();
+
     // Render misc charges tables for all blocks
     Array.from(blocksContainer.querySelectorAll(".wo-labor")).forEach(blockEl => {
       renderMiscChargesTable(blockEl);
@@ -4499,6 +4543,79 @@
             emailBtn.textContent = originalText;
           }
         });
+      });
+    }
+
+    // ───────────────────────────── Authorization send ─────────────────────────────
+    async function sendAuthorization(scope, laborIndex, btnEl) {
+      if (!isCreated || !workOrderId) {
+        toast("Save the work order first before requesting authorization.", "error");
+        return;
+      }
+      const title = scope === "labor"
+        ? `Authorize Labor #${(laborIndex || 0) + 1}`
+        : "Authorize Work Order";
+      openEmailModal(title, async function (emails, newContact) {
+        const originalText = btnEl ? btnEl.textContent : "";
+        if (btnEl) { btnEl.disabled = true; btnEl.textContent = "Sending…"; }
+        try {
+          const payload = { emails: emails, scope: scope };
+          if (scope === "labor") payload.labor_index = laborIndex;
+          if (newContact && newContact._save) {
+            payload.new_contact = {
+              first_name: newContact.first_name,
+              last_name: newContact.last_name,
+              email: newContact.email,
+              phone: newContact.phone,
+            };
+          }
+          const res = await fetch(
+            `/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/send-authorization`,
+            {
+              method: "POST",
+              headers: { "Accept": "application/json", "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            }
+          );
+          const data = await res.json();
+          if (!res.ok || !data || !data.ok) {
+            throw new Error((data && (data.error || data.message)) || "Failed to send authorization");
+          }
+          const sentList = Array.isArray(data.sent_to) ? data.sent_to.join(", ") : data.sent_to;
+          toast("Authorization request sent to " + sentList, "success");
+        } catch (err) {
+          toast(err.message || "Failed to send authorization.", "error");
+        } finally {
+          if (btnEl) { btnEl.disabled = false; btnEl.textContent = originalText; }
+        }
+      });
+    }
+
+    const sendWoAuthBtn = $("sendWoAuthBtn");
+    if (sendWoAuthBtn) {
+      // Only meaningful for already-created WOs.
+      sendWoAuthBtn.style.display = isCreated ? "" : "none";
+      sendWoAuthBtn.addEventListener("click", function () {
+        sendAuthorization("work_order", null, sendWoAuthBtn);
+      });
+    }
+
+    // Per-labor "Send for Authorization" link inside each block's 3-dot menu.
+    if (blocksContainer) {
+      blocksContainer.addEventListener("click", function (event) {
+        const link = event.target.closest(".laborSendAuthBtn");
+        if (!link) return;
+        event.preventDefault();
+        if (!isCreated || !workOrderId) {
+          toast("Save the work order first before requesting authorization.", "error");
+          return;
+        }
+        const blockEl = link.closest(".wo-labor");
+        if (!blockEl) return;
+        const blocks = Array.from(blocksContainer.querySelectorAll(".wo-labor"));
+        const idx = blocks.indexOf(blockEl);
+        if (idx < 0) return;
+        sendAuthorization("labor", idx, null);
       });
     }
 

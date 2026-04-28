@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body style="margin:0;padding:20px;background:#f5f5f5;font-family:Arial,Helvetica,sans-serif;color:#333;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+
+    <!-- HEADER -->
+    <tr>
+      <td style="background:#145e33;padding:24px 32px;">
+        <div style="color:#fff;">
+          <table cellpadding="0" cellspacing="0" border="0"><tr>
+            <td style="vertical-align:middle;padding-right:14px;">
+              <img src="https://roobico.com/static/images/main_logo.png" alt="R" width="40" height="40" style="display:block;border-radius:6px;">
+            </td>
+            <td style="vertical-align:middle;">
+              <div style="font-size:20px;font-weight:700;color:#fff;">{{ shop_name }}</div>
+            </td>
+          </tr></table>
+          {% if shop_address %}
+          <div style="font-size:13px;opacity:.8;margin-top:4px;">{{ shop_address }}</div>
+          {% endif %}
+          {% if shop_contact %}
+          <div style="font-size:13px;opacity:.8;">{{ shop_contact }}</div>
+          {% endif %}
+          <div style="font-size:22px;font-weight:700;margin-top:18px;border-top:1px solid rgba(255,255,255,.25);padding-top:14px;">
+            Authorization Request
+          </div>
+          <div style="font-size:14px;font-weight:600;margin-top:4px;">
+            Work Order #{{ wo_number }}{% if wo_date_label %} · {{ wo_date_label }}{% endif %}
+          </div>
+        </div>
+      </td>
+    </tr>
+
+    <!-- BODY -->
+    <tr>
+      <td style="padding:24px 32px;">
+
+        <p style="font-size:14px;line-height:1.5;margin-top:0;">
+          Hello{% if cust_name %} {{ cust_name }}{% endif %},
+        </p>
+
+        <p style="font-size:14px;line-height:1.5;">
+          {% if scope == "labor" and single_labor %}
+            We&rsquo;d like your authorization to proceed with the following labor item on
+            Work Order <strong>#{{ wo_number }}</strong>:
+          {% else %}
+            We&rsquo;d like your authorization to proceed with the work described in
+            Work Order <strong>#{{ wo_number }}</strong>.
+          {% endif %}
+        </p>
+
+        {% if unit_label %}
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#145e33;border-bottom:2px solid #145e33;padding-bottom:4px;margin:20px 0 10px;">Vehicle / Unit</div>
+        <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
+          <tr>
+            <td style="color:#888;width:130px;padding:3px 0;">Unit</td>
+            <td style="font-weight:600;">{{ unit_label }}</td>
+          </tr>
+          {% if unit_vin %}
+          <tr><td style="color:#888;padding:3px 0;">VIN</td><td>{{ unit_vin }}</td></tr>
+          {% endif %}
+          {% if unit_mileage %}
+          <tr><td style="color:#888;padding:3px 0;">Mileage</td><td>{{ unit_mileage }}</td></tr>
+          {% endif %}
+        </table>
+        {% endif %}
+
+        {% if scope == "labor" and single_labor %}
+        <!-- Single labor preview -->
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#145e33;border-bottom:2px solid #145e33;padding-bottom:4px;margin:20px 0 10px;">
+          Labor #{{ single_labor_number }}
+        </div>
+        <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
+          <tr>
+            <td style="color:#888;width:130px;padding:3px 0;">Description</td>
+            <td style="font-weight:600;">{{ single_labor.labor_desc }}</td>
+          </tr>
+          {% if single_labor.hours %}
+          <tr><td style="color:#888;padding:3px 0;">Hours</td><td>{{ single_labor.hours }}</td></tr>
+          {% endif %}
+          <tr><td style="color:#888;padding:3px 0;">Labor total</td><td><strong>${{ "%.2f"|format(single_labor.labor_total) }}</strong></td></tr>
+          {% if single_labor.parts_subtotal %}
+          <tr><td style="color:#888;padding:3px 0;">Parts</td><td>${{ "%.2f"|format(single_labor.parts_subtotal) }}</td></tr>
+          {% endif %}
+          <tr><td style="color:#888;padding:3px 0;">Block total</td><td><strong>${{ "%.2f"|format(single_labor.block_total) }}</strong></td></tr>
+        </table>
+        {% else %}
+        <!-- Whole work order summary -->
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#145e33;border-bottom:2px solid #145e33;padding-bottom:4px;margin:20px 0 10px;">
+          Work Summary
+        </div>
+        {% for lb in labors %}
+        <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;margin-bottom:14px;border:1px solid #eee;border-radius:4px;">
+          <tr style="background:#f9f9f9;">
+            <td style="padding:8px 10px;" colspan="2">
+              <div style="font-weight:700;">Labor {{ loop.index }} — {{ lb.labor_desc }}</div>
+              <div style="color:#666;font-size:12px;margin-top:2px;">
+                {% if lb.hours %}{{ lb.hours }} h · {% endif %}Labor ${{ "%.2f"|format(lb.labor_total) }}{% if lb.parts_subtotal %} · Parts ${{ "%.2f"|format(lb.parts_subtotal) }}{% endif %}
+              </div>
+            </td>
+            <td style="padding:8px 10px;text-align:right;font-weight:700;white-space:nowrap;">
+              ${{ "%.2f"|format(lb.block_total) }}
+            </td>
+          </tr>
+          {% if lb.parts and lb.parts|length > 0 %}
+          <tr>
+            <td colspan="3" style="padding:6px 10px 10px;">
+              <table width="100%" cellpadding="0" cellspacing="0" style="font-size:12px;border-collapse:collapse;">
+                <tr style="color:#888;">
+                  <td style="padding:4px 6px;border-bottom:1px solid #eee;">Part</td>
+                  <td style="padding:4px 6px;border-bottom:1px solid #eee;">Description</td>
+                  <td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:right;">Qty</td>
+                  <td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:right;">Price</td>
+                  <td style="padding:4px 6px;border-bottom:1px solid #eee;text-align:right;">Total</td>
+                </tr>
+                {% for p in lb.parts %}
+                <tr>
+                  <td style="padding:4px 6px;border-bottom:1px solid #f3f3f3;">{{ p.part_number }}</td>
+                  <td style="padding:4px 6px;border-bottom:1px solid #f3f3f3;">{{ p.description }}</td>
+                  <td style="padding:4px 6px;border-bottom:1px solid #f3f3f3;text-align:right;">{{ p.qty }}</td>
+                  <td style="padding:4px 6px;border-bottom:1px solid #f3f3f3;text-align:right;">{{ p.price_fmt }}</td>
+                  <td style="padding:4px 6px;border-bottom:1px solid #f3f3f3;text-align:right;">${{ "%.2f"|format(p.total) }}</td>
+                </tr>
+                {% endfor %}
+              </table>
+            </td>
+          </tr>
+          {% endif %}
+        </table>
+        {% endfor %}
+        <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
+          <tr>
+            <td style="padding:10px 0 0;font-weight:700;">Grand total</td>
+            <td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:16px;">
+              ${{ "%.2f"|format(t.grand_total) }}
+            </td>
+          </tr>
+        </table>
+        {% endif %}
+
+        {% if attachment_files and attachment_files|length > 0 %}
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:#145e33;border-bottom:2px solid #145e33;padding-bottom:4px;margin:20px 0 10px;">
+          Attachments ({{ attachment_files|length }})
+        </div>
+        <ul style="font-size:13px;color:#444;padding-left:18px;margin:0 0 8px;">
+          {% for a in attachment_files %}
+          <li>{{ a.filename }}</li>
+          {% endfor %}
+        </ul>
+        <p style="font-size:12px;color:#888;margin:0;">See email attachments.</p>
+        {% endif %}
+
+        <!-- CTA -->
+        <p style="text-align:center;margin:28px 0 12px;">
+          <a href="{{ approve_url }}"
+             style="background:#145e33;color:#fff;padding:14px 36px;border-radius:6px;
+                    text-decoration:none;font-weight:700;display:inline-block;font-size:15px;">
+            Review &amp; Authorize
+          </a>
+        </p>
+        <p style="text-align:center;color:#666;font-size:12px;margin:0;">
+          Or copy this link into your browser:<br>
+          <span style="word-break:break-all;">{{ approve_url }}</span>
+        </p>
+
+        <p style="font-size:13px;color:#666;margin-top:28px;line-height:1.5;">
+          If you have any questions before authorizing, please reply to this email and we&rsquo;ll get back to you.
+        </p>
+      </td>
+    </tr>
+
+    <!-- FOOTER -->
+    <tr>
+      <td style="background:#f9f9f9;padding:14px 32px;font-size:12px;color:#888;text-align:center;">
+        Sent by {{ shop_name or "Roobico" }} · This link is unique to {{ recipient_email }}.
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

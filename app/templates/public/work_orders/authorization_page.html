@@ -1,0 +1,227 @@
+{% extends "layouts/public_base.html" %}
+{% block title %}Authorize Work Order{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .auth-card { max-width: 760px; margin: 2rem auto; }
+  .auth-card .card-header {
+    background: #145e33; color: #fff;
+  }
+  .auth-section-title {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+    color: #145e33; border-bottom: 2px solid #145e33; padding-bottom: 4px; margin: 1.25rem 0 .5rem;
+  }
+  .auth-status-badge {
+    display: inline-block; padding: .5rem 1rem; border-radius: 999px; font-weight: 700; font-size: .9rem;
+  }
+  .auth-status-approved { background: #dcfce7; color: #166534; }
+  .auth-status-declined { background: #fee2e2; color: #991b1b; }
+  .auth-status-pending  { background: #fef3c7; color: #92400e; }
+  .auth-grid td.label { color: #888; padding: 4px 0; width: 160px; }
+  .auth-grid td.value { padding: 4px 0; font-weight: 600; }
+  .auth-action-row .btn { min-width: 160px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container">
+  <div class="card shadow-sm auth-card">
+    {% if error %}
+      <div class="card-body text-center py-5">
+        <h3 class="mb-3">Link Unavailable</h3>
+        <p class="text-muted mb-0">{{ error }}</p>
+      </div>
+    {% else %}
+      <div class="card-header">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>
+            <div style="font-size: 1.1rem; font-weight: 700;">{{ ctx.shop_name }}</div>
+            {% if ctx.shop_address %}<div style="font-size: .85rem; opacity: .85;">{{ ctx.shop_address }}</div>{% endif %}
+          </div>
+          <div class="text-end">
+            <div style="font-size: .85rem; opacity: .85;">Work Order</div>
+            <div style="font-size: 1.25rem; font-weight: 700;">#{{ ctx.wo_number }}</div>
+            {% if ctx.wo_date_label %}<div style="font-size: .85rem; opacity: .85;">{{ ctx.wo_date_label }}</div>{% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="card-body">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            {% for cat, msg in messages %}
+              <div class="alert alert-{{ 'danger' if cat == 'error' else cat }} mb-3">{{ msg }}</div>
+            {% endfor %}
+          {% endif %}
+        {% endwith %}
+
+        <h2 class="h5 mb-3">
+          {% if auth.scope == "labor" %}
+            Authorization requested for Labor #{{ ctx.single_labor_number }}
+          {% else %}
+            Authorization requested for the entire Work Order
+          {% endif %}
+        </h2>
+
+        {% if ctx.cust_name %}
+        <div class="auth-section-title">Customer</div>
+        <table class="auth-grid w-100">
+          <tr><td class="label">Name</td><td class="value">{{ ctx.cust_name }}</td></tr>
+          {% if ctx.customer_email %}<tr><td class="label">Email</td><td class="value">{{ ctx.customer_email }}</td></tr>{% endif %}
+          {% if ctx.customer_phone %}<tr><td class="label">Phone</td><td class="value">{{ ctx.customer_phone }}</td></tr>{% endif %}
+        </table>
+        {% endif %}
+
+        {% if ctx.unit_label %}
+        <div class="auth-section-title">Vehicle / Unit</div>
+        <table class="auth-grid w-100">
+          <tr><td class="label">Unit</td><td class="value">{{ ctx.unit_label }}</td></tr>
+          {% if ctx.unit_vin %}<tr><td class="label">VIN</td><td class="value">{{ ctx.unit_vin }}</td></tr>{% endif %}
+          {% if ctx.unit_mileage %}<tr><td class="label">Mileage</td><td class="value">{{ ctx.unit_mileage }}</td></tr>{% endif %}
+        </table>
+        {% endif %}
+
+        {% if auth.scope == "labor" and ctx.single_labor %}
+          <div class="auth-section-title">Labor #{{ ctx.single_labor_number }}</div>
+          <table class="auth-grid w-100">
+            <tr><td class="label">Description</td><td class="value">{{ ctx.single_labor.labor_desc }}</td></tr>
+            {% if ctx.single_labor.hours %}<tr><td class="label">Hours</td><td class="value">{{ ctx.single_labor.hours }}</td></tr>{% endif %}
+            <tr><td class="label">Labor total</td><td class="value">${{ "%.2f"|format(ctx.single_labor.labor_total) }}</td></tr>
+            {% if ctx.single_labor.parts_subtotal %}<tr><td class="label">Parts</td><td class="value">${{ "%.2f"|format(ctx.single_labor.parts_subtotal) }}</td></tr>{% endif %}
+            <tr><td class="label">Block total</td><td class="value"><strong>${{ "%.2f"|format(ctx.single_labor.block_total) }}</strong></td></tr>
+          </table>
+
+          {% if ctx.single_labor.parts and ctx.single_labor.parts|length > 0 %}
+          <div class="auth-section-title">Parts</div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>Part</th>
+                  <th>Description</th>
+                  <th class="text-end">Qty</th>
+                  <th class="text-end">Price</th>
+                  <th class="text-end">Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for p in ctx.single_labor.parts %}
+                <tr>
+                  <td>{{ p.part_number }}</td>
+                  <td>{{ p.description }}</td>
+                  <td class="text-end">{{ p.qty }}</td>
+                  <td class="text-end">{{ p.price_fmt }}</td>
+                  <td class="text-end">${{ "%.2f"|format(p.total) }}</td>
+                </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+          {% endif %}
+        {% else %}
+          <div class="auth-section-title">Work Summary</div>
+          {% for lb in ctx.labors %}
+          <div class="card mb-3">
+            <div class="card-body p-3">
+              <div class="d-flex justify-content-between align-items-start mb-2">
+                <div>
+                  <div class="fw-bold">Labor {{ loop.index }} — {{ lb.labor_desc }}</div>
+                  <div class="text-muted small">
+                    {% if lb.hours %}{{ lb.hours }} h · {% endif %}Labor ${{ "%.2f"|format(lb.labor_total) }}{% if lb.parts_subtotal %} · Parts ${{ "%.2f"|format(lb.parts_subtotal) }}{% endif %}
+                  </div>
+                </div>
+                <div class="fw-bold text-nowrap">${{ "%.2f"|format(lb.block_total) }}</div>
+              </div>
+              {% if lb.parts and lb.parts|length > 0 %}
+              <div class="table-responsive">
+                <table class="table table-sm align-middle mb-0">
+                  <thead class="table-light">
+                    <tr>
+                      <th>Part</th>
+                      <th>Description</th>
+                      <th class="text-end">Qty</th>
+                      <th class="text-end">Price</th>
+                      <th class="text-end">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for p in lb.parts %}
+                    <tr>
+                      <td>{{ p.part_number }}</td>
+                      <td>{{ p.description }}</td>
+                      <td class="text-end">{{ p.qty }}</td>
+                      <td class="text-end">{{ p.price_fmt }}</td>
+                      <td class="text-end">${{ "%.2f"|format(p.total) }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+          <div class="text-end fs-5 fw-bold">Grand total: ${{ "%.2f"|format(ctx.t.grand_total) }}</div>
+        {% endif %}
+
+        {% if ctx.attachment_files and ctx.attachment_files|length > 0 %}
+          <div class="auth-section-title">Attachments ({{ ctx.attachment_files|length }})</div>
+          <ul class="mb-0">
+            {% for a in ctx.attachment_files %}
+            <li>
+              {{ a.filename }}
+              <span class="text-muted small">({{ (a.size / 1024)|round(0)|int }} KB)</span>
+            </li>
+            {% endfor %}
+          </ul>
+          <p class="text-muted small mt-2 mb-0">These files were attached to the email sent to you.</p>
+        {% endif %}
+
+        <hr class="my-4">
+
+        {% if already_responded %}
+          <div class="text-center py-3">
+            {% if auth.status == "approved" %}
+              <div class="auth-status-badge auth-status-approved mb-2">✓ Authorized</div>
+            {% elif auth.status == "declined" %}
+              <div class="auth-status-badge auth-status-declined mb-2">✕ Declined</div>
+            {% else %}
+              <div class="auth-status-badge auth-status-pending mb-2">Pending</div>
+            {% endif %}
+            <p class="text-muted mb-1">
+              Response recorded
+              {% if auth.responded_at %}on {{ auth.responded_at.strftime('%m/%d/%Y %H:%M UTC') }}{% endif %}.
+            </p>
+            {% if auth.response_comment %}
+              <p class="mt-3 mb-0"><em>“{{ auth.response_comment }}”</em></p>
+            {% endif %}
+            {% if just_submitted %}
+              <p class="text-success mt-3 mb-0">Thank you — the shop has been notified.</p>
+            {% endif %}
+          </div>
+        {% else %}
+          <form method="post" action="{{ url_for('work_orders.public_authorization_submit', token=token) }}">
+            <div class="mb-3">
+              <label class="form-label" for="authComment">Comment (optional)</label>
+              <textarea id="authComment" name="comment" class="form-control" rows="3"
+                        placeholder="Add a note for the shop…" maxlength="2000"></textarea>
+            </div>
+            <div class="d-flex justify-content-center gap-3 auth-action-row mt-4 flex-wrap">
+              <button type="submit" name="decision" value="decline" class="btn btn-outline-danger">
+                ✕ Decline
+              </button>
+              <button type="submit" name="decision" value="approve" class="btn btn-success">
+                ✓ Approve
+              </button>
+            </div>
+            <p class="text-muted text-center small mt-3 mb-0">
+              By approving you authorize {{ ctx.shop_name or "the shop" }} to proceed with the
+              {% if auth.scope == "labor" %}selected labor item{% else %}work described above{% endif %}.
+            </p>
+          </form>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
