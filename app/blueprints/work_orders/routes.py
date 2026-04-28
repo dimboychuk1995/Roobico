@@ -1684,13 +1684,8 @@ def deduct_parts_from_inventory(shop_db, labors: list, user_id: ObjectId) -> dic
             continue
 
         current_stock = int(part_doc.get("in_stock") or 0)
-        if current_stock < qty:
-            errors.append(
-                f"Insufficient stock for '{part_number}': "
-                f"need {qty}, have {current_stock}"
-            )
-            continue
-
+        # Allow stock to go negative — operators must be able to create the WO
+        # even if inventory is short.
         new_stock = current_stock - qty
         shop_db.parts.update_one(
             {"_id": part_id},
@@ -1815,14 +1810,10 @@ def adjust_inventory_for_part_changes(shop_db, old_labors: list, new_labors: lis
 
         # qty_diff > 0: more parts needed, deduct from stock
         # qty_diff < 0: fewer parts needed, add back to stock
+        # Allow stock to go negative — operators must be able to save the WO
+        # even if inventory is short; we'll surface the negative balance
+        # elsewhere instead of blocking the save.
         new_stock = current_stock - qty_diff
-
-        if qty_diff > 0 and current_stock < qty_diff:
-            errors.append(
-                f"Insufficient stock for '{part_number}': "
-                f"need {qty_diff} more, have {current_stock}"
-            )
-            continue
 
         shop_db.parts.update_one(
             {"_id": part_id},
