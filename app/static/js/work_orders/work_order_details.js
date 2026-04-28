@@ -972,8 +972,11 @@
     const supplyGrand = (Number.isFinite(supplyGrandStored) && supplyGrandStored > 0)
       ? round2(supplyGrandStored)
       : supplyGrandCalculated;
-    // Detect manual override: stored value diverges from what the percentage would produce.
+    // Detect manual override: stored value > 0 AND diverges from what the percentage would produce.
+    // Stored 0 is treated as "no override" so that older WOs (which always saved 0)
+    // continue to display the calculated value and remain editable.
     if (Number.isFinite(supplyGrandStored)
+        && supplyGrandStored > 0
         && Math.abs(round2(supplyGrandStored) - supplyGrandCalculated) > 0.005) {
       shopSupplyManualOverride = round2(supplyGrandStored);
     } else {
