@@ -484,24 +484,25 @@ def _maintenance_rows(shop_db, customer_id, unit_oid, year, quarter):
     rows = []
     total = 0.0
     for wo in cursor:
-        # Description = labor block descriptions joined.
+        # Description = "Work Order #N, labor1, labor2, ..."
         descs = []
         for block in (wo.get("labors") or []):
-            d = str(block.get("description") or block.get("labor_desc") or "").strip()
+            d = str(block.get("description")
+                    or block.get("labor_desc")
+                    or block.get("name") or "").strip()
             if d:
                 descs.append(d)
-        if not descs:
-            note = str(wo.get("description") or wo.get("notes") or "").strip()
-            if note:
-                descs.append(note)
+        wo_num = str(wo.get("wo_number") or "").strip()
+        prefix = f"Work Order #{wo_num}" if wo_num else "Work Order"
+        description = (prefix + ", " + ", ".join(descs)) if descs else prefix
         cost = float(_work_order_grand_total(wo) or 0)
         total += cost
         rows.append({
             "date": wo.get("work_order_date") or wo.get("created_at"),
             "date_label": _format_date(wo.get("work_order_date")
                                        or wo.get("created_at")),
-            "description": "; ".join(descs) or f"Work Order #{wo.get('wo_number') or ''}".strip(),
-            "wo_number": str(wo.get("wo_number") or ""),
+            "description": description,
+            "wo_number": wo_num,
             "cost": round(cost, 2),
         })
     return rows, round(total, 2)
