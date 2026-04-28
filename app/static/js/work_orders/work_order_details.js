@@ -793,8 +793,7 @@
     const supplyGrandEl = $("shopSupplyGrandTotalDisplay");
     const supplyGrandInput = $("shopSupplyGrandTotalInput");
     const supplyResetBtn = $("shopSupplyResetBtn");
-    const showSupply = (Number.isFinite(shopSupplyPct) && shopSupplyPct > 0) || hasOverride || supplyGrand > 0;
-    if (supplyGrandWrap) supplyGrandWrap.style.display = showSupply ? "" : "none";
+    if (supplyGrandWrap) supplyGrandWrap.style.display = "";
     if (supplyGrandEl) supplyGrandEl.textContent = supplyGrand > 0 ? `$${money(round2(supplyGrand))}` : "—";
     if (supplyGrandInput && document.activeElement !== supplyGrandInput) {
       supplyGrandInput.value = money(round2(supplyGrand));
@@ -1037,10 +1036,7 @@
     const supplyGrandInput = $("shopSupplyGrandTotalInput");
     const supplyResetBtn = $("shopSupplyResetBtn");
     const hasOverride = Number.isFinite(shopSupplyManualOverride) && shopSupplyManualOverride >= 0;
-    const hasSupplyGrand = (Number.isFinite(supplyGrand) && supplyGrand > 0)
-      || hasOverride
-      || (Number.isFinite(shopSupplyPct) && shopSupplyPct > 0);
-    if (supplyGrandWrap) supplyGrandWrap.style.display = hasSupplyGrand ? "" : "none";
+    if (supplyGrandWrap) supplyGrandWrap.style.display = "";
     if (supplyGrandEl) supplyGrandEl.textContent = (Number.isFinite(supplyGrand) && supplyGrand > 0) ? `$${money(round2(supplyGrand))}` : "—";
     if (supplyGrandInput && document.activeElement !== supplyGrandInput) {
       supplyGrandInput.value = money(round2(Number.isFinite(supplyGrand) ? supplyGrand : 0));
