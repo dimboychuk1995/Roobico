@@ -1,0 +1,9 @@
+{% for p in payments %}
+<tr>
+  <td>{{ p.date_label }}</td>
+  <td>{% if p.wo_number %}#{{ p.wo_number }}{% else %}—{% endif %}</td>
+  <td>{{ p.method }}</td>
+  <td class="text-end">${{ "%.2f"|format(p.amount) }}</td>
+  <td class="text-muted small">{{ p.notes }}</td>
+</tr>
+{% endfor %}

@@ -3815,6 +3815,18 @@ def api_send_work_order_email(work_order_id):
     wo_number = shared_ctx["wo_number"]
     shop_name = shared_ctx["shop_name"]
 
+    # Add a customer-portal link so the recipient can browse all their data.
+    try:
+        if wo.get("customer_id"):
+            from app.blueprints.customer_portal.routes import (
+                get_or_create_portal_token,
+                _customer_portal_url,
+            )
+            _portal_doc = get_or_create_portal_token(shop, wo["customer_id"])
+            shared_ctx["portal_url"] = _customer_portal_url(_portal_doc["token"])
+    except Exception:
+        pass
+
     html_body = render_template("emails/work_order_email.html", **shared_ctx)
     pdf_html = render_template("emails/work_order_pdf.html", **shared_ctx)
 
@@ -4133,6 +4145,16 @@ def api_send_authorization_email(work_order_id):
         email_ctx = dict(ctx)
         email_ctx["approve_url"] = approve_url
         email_ctx["recipient_email"] = email
+        try:
+            if wo.get("customer_id"):
+                from app.blueprints.customer_portal.routes import (
+                    get_or_create_portal_token,
+                    _customer_portal_url,
+                )
+                _portal_doc = get_or_create_portal_token(shop, wo["customer_id"])
+                email_ctx["portal_url"] = _customer_portal_url(_portal_doc["token"])
+        except Exception:
+            pass
         html_body = render_template("emails/authorization_email.html", **email_ctx)
 
         if scope == "labor":

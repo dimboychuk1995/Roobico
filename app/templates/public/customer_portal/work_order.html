@@ -1,0 +1,239 @@
+{% extends "layouts/public_base.html" %}
+{% block title %}WO #{{ ctx.wo_number }} — Customer Portal{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .portal-wrap { max-width: 1080px; margin: 1.5rem auto; }
+  .portal-header {
+    background: #145e33; color: #fff; border-radius: 8px;
+    padding: 18px 22px; margin-bottom: 1.25rem;
+  }
+  .portal-section-title {
+    font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+    color: #145e33; border-bottom: 2px solid #145e33; padding-bottom: 4px;
+    margin: 1.25rem 0 .75rem;
+  }
+  .portal-card { border: 1px solid #e5e7eb; border-radius: 6px; }
+  .badge-status-open    { background: #fef3c7; color: #92400e; }
+  .badge-status-paid    { background: #dcfce7; color: #166534; }
+  .badge-status-pending { background: #e5e7eb; color: #374151; }
+  .badge-status-approved{ background: #dcfce7; color: #166534; }
+  .badge-status-declined{ background: #fee2e2; color: #991b1b; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container portal-wrap">
+
+  <div class="portal-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+      <div style="font-size:1.1rem;font-weight:700;">{{ brand.shop_name }}</div>
+      {% if brand.shop_address %}<div style="font-size:.85rem;opacity:.85;">{{ brand.shop_address }}</div>{% endif %}
+    </div>
+    <div class="text-end">
+      <div style="font-size:.8rem;opacity:.85;">Work Order</div>
+      <div style="font-size:1.4rem;font-weight:700;">#{{ ctx.wo_number }}</div>
+      <div style="font-size:.85rem;opacity:.85;">{{ ctx.wo_date_label }}</div>
+    </div>
+  </div>
+
+  <div class="mb-3 d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <a href="{{ url_for('customer_portal.dashboard', token=token) }}" class="btn btn-sm btn-outline-secondary">
+      ← Back to Portal
+    </a>
+    <div class="d-flex gap-2">
+      <span class="badge {% if wo_status == 'paid' %}badge-status-paid{% else %}badge-status-open{% endif %} align-self-center">
+        {{ wo_status|capitalize }}
+      </span>
+      <a href="{{ url_for('customer_portal.work_order_pdf', token=token, wo_id=wo_id) }}"
+         class="btn btn-sm btn-success">
+        ⬇ Download PDF
+      </a>
+    </div>
+  </div>
+
+  <!-- Customer + vehicle -->
+  <div class="row g-3 mb-3">
+    <div class="col-md-6">
+      <div class="card portal-card h-100">
+        <div class="card-body">
+          <div class="portal-section-title mt-0">Customer</div>
+          <div class="fw-semibold">{{ ctx.cust_name }}</div>
+          {% if ctx.customer_email %}<div class="small text-muted">{{ ctx.customer_email }}</div>{% endif %}
+          {% if ctx.customer_phone %}<div class="small text-muted">{{ ctx.customer_phone }}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card portal-card h-100">
+        <div class="card-body">
+          <div class="portal-section-title mt-0">Vehicle / Unit</div>
+          <div class="fw-semibold">{{ ctx.unit_label }}</div>
+          {% if ctx.unit_vin %}<div class="small text-muted">VIN: {{ ctx.unit_vin }}</div>{% endif %}
+          {% if ctx.unit_mileage %}<div class="small text-muted">Mileage: {{ ctx.unit_mileage }}</div>{% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Labors with parts -->
+  <div class="card portal-card mb-3">
+    <div class="card-body">
+      <div class="portal-section-title mt-0">Work Performed</div>
+      {% for lb in ctx.labors %}
+      <div class="border rounded p-3 mb-3">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <div>
+            <div class="fw-bold">Labor {{ loop.index }} — {{ lb.labor_desc }}</div>
+            <div class="text-muted small">
+              {% if lb.hours %}{{ lb.hours }} h · {% endif %}Labor ${{ "%.2f"|format(lb.labor_total) }}{% if lb.parts_subtotal %} · Parts ${{ "%.2f"|format(lb.parts_subtotal) }}{% endif %}
+            </div>
+          </div>
+          <div class="fw-bold text-nowrap">${{ "%.2f"|format(lb.block_total) }}</div>
+        </div>
+        {% if lb.parts and lb.parts|length > 0 %}
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead class="table-light">
+              <tr>
+                <th>Part</th>
+                <th>Description</th>
+                <th class="text-end">Qty</th>
+                <th class="text-end">Price</th>
+                <th class="text-end">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for p in lb.parts %}
+              <tr>
+                <td>{{ p.part_number }}</td>
+                <td>{{ p.description }}</td>
+                <td class="text-end">{{ p.qty }}</td>
+                <td class="text-end">{{ p.price_fmt }}</td>
+                <td class="text-end">${{ "%.2f"|format(p.total) }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Totals -->
+  <div class="card portal-card mb-3">
+    <div class="card-body">
+      <div class="portal-section-title mt-0">Totals</div>
+      <table class="table table-sm mb-0">
+        <tbody>
+          <tr><td>Labor</td><td class="text-end">${{ "%.2f"|format(ctx.t.labor_total) }}</td></tr>
+          <tr><td>Parts</td><td class="text-end">${{ "%.2f"|format(ctx.t.parts_total) }}</td></tr>
+          {% if ctx.t.shop_supply_total %}<tr><td>Shop Supply</td><td class="text-end">${{ "%.2f"|format(ctx.t.shop_supply_total) }}</td></tr>{% endif %}
+          {% if ctx.t.misc_total %}<tr><td>Misc</td><td class="text-end">${{ "%.2f"|format(ctx.t.misc_total) }}</td></tr>{% endif %}
+          {% if ctx.t.core_total %}<tr><td>Cores</td><td class="text-end">${{ "%.2f"|format(ctx.t.core_total) }}</td></tr>{% endif %}
+          <tr class="fw-bold fs-5"><td>Grand Total</td><td class="text-end">${{ "%.2f"|format(ctx.t.grand_total) }}</td></tr>
+          {% if payment_summary %}
+            <tr><td>Paid</td><td class="text-end">${{ "%.2f"|format(payment_summary.paid_amount) }}</td></tr>
+            <tr class="fw-bold {% if payment_summary.is_fully_paid %}text-success{% else %}text-danger{% endif %}">
+              <td>Balance Due</td>
+              <td class="text-end">${{ "%.2f"|format(payment_summary.remaining_balance) }}</td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Payments -->
+  {% if payments %}
+  <div class="card portal-card mb-3">
+    <div class="card-body">
+      <div class="portal-section-title mt-0">Payments</div>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Date</th>
+              <th>Method</th>
+              <th class="text-end">Amount</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for p in payments %}
+            <tr>
+              <td>{{ p.date_label }}</td>
+              <td>{{ p.method }}</td>
+              <td class="text-end">${{ "%.2f"|format(p.amount) }}</td>
+              <td class="text-muted small">{{ p.notes }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Authorizations -->
+  {% if authorizations %}
+  <div class="card portal-card mb-3">
+    <div class="card-body">
+      <div class="portal-section-title mt-0">Authorization History</div>
+      <ul class="list-unstyled mb-0">
+        {% for a in authorizations %}
+        <li class="mb-2">
+          <span class="badge
+            {% if a.status == 'approved' %}badge-status-approved
+            {% elif a.status == 'declined' %}badge-status-declined
+            {% else %}badge-status-pending{% endif %}">
+            {{ a.status|capitalize }}
+          </span>
+          —
+          {% if a.scope == "labor" %}
+            Labor #{{ (a.labor_index or 0) + 1 }}
+          {% else %}
+            Whole work order
+          {% endif %}
+          {% if a.responded_at %}
+            on {{ a.responded_at.strftime('%m/%d/%Y') if a.responded_at.strftime else a.responded_at }}
+          {% endif %}
+          {% if a.response_comment %}
+            <em class="text-muted">— "{{ a.response_comment }}"</em>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Attachments -->
+  {% if attachments_list %}
+  <div class="card portal-card mb-3">
+    <div class="card-body">
+      <div class="portal-section-title mt-0">Attachments ({{ attachments_list|length }})</div>
+      <div class="row g-2">
+        {% for a in attachments_list %}
+        <div class="col-md-6">
+          <a href="{{ url_for('customer_portal.attachment_download', token=token, attachment_id=a.id) }}"
+             class="d-flex align-items-center gap-2 text-decoration-none border rounded p-2"
+             target="_blank">
+            <span style="font-size:1.5rem;">{% if a.is_image %}🖼{% else %}📄{% endif %}</span>
+            <span class="flex-grow-1">
+              <span class="fw-semibold text-dark d-block">{{ a.filename }}</span>
+              <span class="text-muted small">{{ a.size_kb }} KB</span>
+            </span>
+            <span class="text-success small">⬇ Download</span>
+          </a>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}

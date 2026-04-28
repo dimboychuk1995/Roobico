@@ -1,0 +1,60 @@
+{# Renders the Work Orders tab fragment.
+   - When is_append=True (Show more), only the table rows + loadmore are returned.
+     The dashboard JS extracts these by data-portal-rows / data-portal-loadmore. #}
+{% if not is_append %}
+  {% if unit_label_filter %}
+    <div class="alert alert-success py-2 px-3 mb-3 d-flex justify-content-between align-items-center">
+      <div><strong>Vehicle:</strong> {{ unit_label_filter }}</div>
+      <button type="button" class="btn btn-sm btn-outline-success portal-clear-filter-btn">
+        Clear filter
+      </button>
+    </div>
+  {% endif %}
+
+  {% if work_orders %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>WO #</th>
+            <th>Date</th>
+            <th>Vehicle</th>
+            <th>Status</th>
+            <th class="text-end">Total</th>
+            <th class="text-end">Paid</th>
+            <th class="text-end">Balance</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody data-portal-rows>
+          {% include "public/customer_portal/_rows_work_orders.html" %}
+        </tbody>
+      </table>
+    </div>
+    <div data-portal-loadmore class="text-center mt-3">
+      {% if has_more %}
+        <button type="button" class="btn btn-outline-success btn-sm portal-loadmore-btn"
+                data-next-offset="{{ offset + page_size }}">
+          Show more
+        </button>
+      {% endif %}
+    </div>
+  {% else %}
+    <p class="text-muted mb-0">
+      {% if unit_label_filter %}No work orders for this vehicle.{% else %}No work orders yet.{% endif %}
+    </p>
+  {% endif %}
+{% else %}
+  {# Append response: just rows + new loadmore wrapper. #}
+  <tbody data-portal-rows>
+    {% include "public/customer_portal/_rows_work_orders.html" %}
+  </tbody>
+  <div data-portal-loadmore class="text-center mt-3">
+    {% if has_more %}
+      <button type="button" class="btn btn-outline-success btn-sm portal-loadmore-btn"
+              data-next-offset="{{ offset + page_size }}">
+        Show more
+      </button>
+    {% endif %}
+  </div>
+{% endif %}

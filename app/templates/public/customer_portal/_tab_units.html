@@ -1,0 +1,41 @@
+{% if units %}
+<div class="text-muted small mb-2">
+  Click a vehicle to filter Work Orders, Payments and Authorizations by it.
+</div>
+<div class="table-responsive">
+  <table class="table table-sm align-middle mb-0 table-hover">
+    <thead class="table-light">
+      <tr>
+        <th>Unit #</th>
+        <th>Year</th>
+        <th>Make</th>
+        <th>Model</th>
+        <th>VIN</th>
+        <th>Mileage</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in units %}
+      <tr class="portal-unit-row" style="cursor:pointer;"
+          data-unit-id="{{ u.id }}" data-unit-label="{{ u.label }}">
+        <td>{{ u.unit_number or '—' }}</td>
+        <td>{{ u.year or '—' }}</td>
+        <td>{{ u.make or '—' }}</td>
+        <td>{{ u.model or '—' }}</td>
+        <td>{{ u.vin or '—' }}</td>
+        <td>{{ u.mileage or '—' }}</td>
+        <td class="text-end">
+          <button type="button" class="btn btn-sm btn-outline-success portal-unit-history-btn"
+                  data-unit-id="{{ u.id }}" data-unit-label="{{ u.label }}">
+            View history
+          </button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<p class="text-muted mb-0">No vehicles on file.</p>
+{% endif %}

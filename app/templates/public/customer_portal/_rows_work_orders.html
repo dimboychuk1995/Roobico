@@ -1,0 +1,21 @@
+{% for w in work_orders %}
+<tr>
+  <td><strong>#{{ w.wo_number }}</strong></td>
+  <td>{{ w.date_label }}</td>
+  <td>{{ w.unit_label or '—' }}</td>
+  <td>
+    <span class="badge {% if w.status == 'paid' %}badge-status-paid{% else %}badge-status-open{% endif %}">
+      {{ w.status|capitalize }}
+    </span>
+  </td>
+  <td class="text-end">${{ "%.2f"|format(w.grand_total) }}</td>
+  <td class="text-end">${{ "%.2f"|format(w.paid_total) }}</td>
+  <td class="text-end">${{ "%.2f"|format(w.remaining) }}</td>
+  <td class="text-end">
+    <a class="btn btn-sm btn-outline-success"
+       href="{{ url_for('customer_portal.work_order_view', token=token, wo_id=w.id) }}">
+      Open
+    </a>
+  </td>
+</tr>
+{% endfor %}

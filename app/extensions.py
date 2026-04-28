@@ -123,6 +123,11 @@ def ensure_master_collections_indexes(master_db):
     _safe_create_index(master_db.work_order_authorizations, [("token", ASCENDING)], unique=True, name="uniq_wo_auth_token")
     _safe_create_index(master_db.work_order_authorizations, [("shop_id", ASCENDING), ("work_order_id", ASCENDING), ("created_at", DESCENDING)], name="idx_wo_auth_shop_wo_created")
 
+    # Customer portal tokens (read-only customer cabinet links).
+    _safe_create_index(master_db.customer_portal_tokens, [("token", ASCENDING)], unique=True, name="uniq_customer_portal_token")
+    _safe_create_index(master_db.customer_portal_tokens, [("shop_id", ASCENDING), ("customer_id", ASCENDING)], unique=True, name="uniq_customer_portal_shop_customer")
+    _safe_create_index(master_db.customer_portal_tokens, [("expires_at", ASCENDING)], name="idx_customer_portal_expires")
+
 
 def ensure_shop_collections_indexes(shop_db):
     """

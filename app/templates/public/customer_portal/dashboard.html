@@ -1,0 +1,340 @@
+{% extends "layouts/public_base.html" %}
+{% block title %}{{ customer.label }} — Customer Portal{% endblock %}
+
+{% block extra_styles %}
+<style>
+  .portal-wrap { max-width: 1080px; margin: 1.5rem auto; }
+  .portal-header {
+    background: #145e33; color: #fff; border-radius: 8px;
+    padding: 18px 22px; margin-bottom: 1.25rem;
+  }
+  .portal-header .shop-name { font-size: 1.15rem; font-weight: 700; }
+  .portal-header .shop-meta { font-size: .85rem; opacity: .85; }
+  .portal-section-title {
+    font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+    color: #145e33; border-bottom: 2px solid #145e33; padding-bottom: 4px;
+    margin: 0 0 .75rem;
+  }
+  .portal-card { border: 1px solid #e5e7eb; border-radius: 6px; }
+  .badge-status-open    { background: #fef3c7; color: #92400e; }
+  .badge-status-paid    { background: #dcfce7; color: #166534; }
+  .badge-status-pending { background: #e5e7eb; color: #374151; }
+  .badge-status-approved{ background: #dcfce7; color: #166534; }
+  .badge-status-declined{ background: #fee2e2; color: #991b1b; }
+
+  .portal-tabs .nav-link {
+    color: #145e33; font-weight: 600; border: none;
+    border-bottom: 3px solid transparent; border-radius: 0;
+    padding: .65rem 1.1rem;
+  }
+  .portal-tabs .nav-link.active {
+    color: #145e33; background: transparent;
+    border-bottom-color: #145e33;
+  }
+  .portal-tab-loader {
+    display: flex; align-items: center; justify-content: center;
+    padding: 2rem 1rem; color: #6c757d; font-size: .9rem;
+  }
+  .portal-tab-loader .spinner-border {
+    width: 1.1rem; height: 1.1rem; margin-right: .5rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="container portal-wrap">
+
+  <div class="portal-header d-flex justify-content-between align-items-center flex-wrap gap-2">
+    <div>
+      <div class="shop-name">{{ brand.shop_name }}</div>
+      {% if brand.shop_address %}<div class="shop-meta">{{ brand.shop_address }}</div>{% endif %}
+      {% if brand.shop_contact %}<div class="shop-meta">{{ brand.shop_contact }}</div>{% endif %}
+    </div>
+    <div class="text-end">
+      <div style="font-size:.8rem;opacity:.85;">Customer Portal</div>
+      <div style="font-size:1.1rem;font-weight:700;">{{ customer.label }}</div>
+    </div>
+  </div>
+
+  <!-- Customer info -->
+  <div class="card portal-card mb-3">
+    <div class="card-body">
+      <div class="portal-section-title">Your Information</div>
+      <div class="row g-3">
+        <div class="col-md-4">
+          <div class="text-muted small">Name</div>
+          <div class="fw-semibold">{{ customer.label }}</div>
+        </div>
+        {% if customer.email %}
+        <div class="col-md-4">
+          <div class="text-muted small">Email</div>
+          <div class="fw-semibold">{{ customer.email }}</div>
+        </div>
+        {% endif %}
+        {% if customer.phone %}
+        <div class="col-md-4">
+          <div class="text-muted small">Phone</div>
+          <div class="fw-semibold">{{ customer.phone }}</div>
+        </div>
+        {% endif %}
+        {% if customer.address %}
+        <div class="col-12">
+          <div class="text-muted small">Address</div>
+          <div class="fw-semibold">{{ customer.address }}</div>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="card portal-card mb-3">
+    <div class="card-body p-0">
+      <ul class="nav nav-tabs portal-tabs px-2 pt-2" id="portalTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" id="tab-btn-work-orders" type="button" role="tab"
+                  data-bs-toggle="tab" data-bs-target="#tab-pane-work-orders"
+                  data-portal-url="{{ url_for('customer_portal.tab_work_orders', token=token) }}">
+            Work Orders
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="tab-btn-units" type="button" role="tab"
+                  data-bs-toggle="tab" data-bs-target="#tab-pane-units"
+                  data-portal-url="{{ url_for('customer_portal.tab_units', token=token) }}">
+            Vehicles
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="tab-btn-payments" type="button" role="tab"
+                  data-bs-toggle="tab" data-bs-target="#tab-pane-payments"
+                  data-portal-url="{{ url_for('customer_portal.tab_payments', token=token) }}">
+            Payments
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="tab-btn-authorizations" type="button" role="tab"
+                  data-bs-toggle="tab" data-bs-target="#tab-pane-authorizations"
+                  data-portal-url="{{ url_for('customer_portal.tab_authorizations', token=token) }}">
+            Authorizations
+          </button>
+        </li>
+      </ul>
+
+      <div class="tab-content p-3" id="portalTabsContent">
+        <div class="tab-pane fade show active" id="tab-pane-work-orders" role="tabpanel">
+          <div class="portal-tab-loader">
+            <span class="spinner-border text-success" role="status" aria-hidden="true"></span>
+            Loading…
+          </div>
+        </div>
+        <div class="tab-pane fade" id="tab-pane-units" role="tabpanel">
+          <div class="portal-tab-loader">
+            <span class="spinner-border text-success" role="status" aria-hidden="true"></span>
+            Loading…
+          </div>
+        </div>
+        <div class="tab-pane fade" id="tab-pane-payments" role="tabpanel">
+          <div class="portal-tab-loader">
+            <span class="spinner-border text-success" role="status" aria-hidden="true"></span>
+            Loading…
+          </div>
+        </div>
+        <div class="tab-pane fade" id="tab-pane-authorizations" role="tabpanel">
+          <div class="portal-tab-loader">
+            <span class="spinner-border text-success" role="status" aria-hidden="true"></span>
+            Loading…
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="text-muted small text-center mt-3 mb-0">
+    This is a read-only customer portal. To make changes, please contact the shop.
+  </p>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  (function () {
+    // Tabs that respect the unit filter.
+    var FILTERABLE = ['#tab-pane-work-orders', '#tab-pane-payments', '#tab-pane-authorizations'];
+    var loaded = Object.create(null);   // pane selector -> bool
+    var selectedUnitId = null;
+    var selectedUnitLabel = '';
+
+    function paneEl(sel) { return document.querySelector(sel); }
+    function btnFor(sel) { return document.querySelector('#portalTabs [data-bs-target="' + sel + '"]'); }
+
+    function buildUrl(baseUrl, opts) {
+      var u = new URL(baseUrl, window.location.origin);
+      if (opts && opts.unitId) u.searchParams.set('unit_id', opts.unitId);
+      if (opts && opts.offset) u.searchParams.set('offset', opts.offset);
+      return u.toString();
+    }
+
+    function showLoader(pane) {
+      pane.innerHTML =
+        '<div class="portal-tab-loader">' +
+        '<span class="spinner-border text-success" role="status" aria-hidden="true"></span>' +
+        'Loading…</div>';
+    }
+
+    function loadTab(targetSel, opts) {
+      var btn = btnFor(targetSel);
+      if (!btn) return;
+      var url = btn.getAttribute('data-portal-url');
+      var pane = paneEl(targetSel);
+      if (!pane) return;
+
+      var unitId = (FILTERABLE.indexOf(targetSel) !== -1) ? selectedUnitId : null;
+      var fullUrl = buildUrl(url, { unitId: unitId, offset: 0 });
+
+      showLoader(pane);
+      fetch(fullUrl, { credentials: 'same-origin', headers: { 'X-Requested-With': 'fetch' } })
+        .then(function (r) {
+          if (!r.ok) throw new Error('HTTP ' + r.status);
+          return r.text();
+        })
+        .then(function (html) {
+          pane.innerHTML = html;
+          loaded[targetSel] = { unitId: unitId };
+        })
+        .catch(function () {
+          loaded[targetSel] = null;
+          pane.innerHTML =
+            '<div class="text-danger small p-2">Failed to load. ' +
+            '<button type="button" class="btn btn-link btn-sm p-0 align-baseline" ' +
+            'onclick="location.reload()">Retry</button></div>';
+        });
+    }
+
+    function ensureCurrentTabFresh() {
+      // For all filterable tabs that were already loaded, mark stale
+      // so they reload with the new filter when next activated.
+      FILTERABLE.forEach(function (sel) {
+        var state = loaded[sel];
+        if (state && state.unitId !== selectedUnitId) {
+          loaded[sel] = null;
+          var pane = paneEl(sel);
+          if (pane && pane.classList.contains('active')) {
+            loadTab(sel);
+          }
+        }
+      });
+    }
+
+    function setUnitFilter(unitId, unitLabel) {
+      selectedUnitId = unitId || null;
+      selectedUnitLabel = unitLabel || '';
+      ensureCurrentTabFresh();
+    }
+
+    function activateTab(targetSel) {
+      var btn = btnFor(targetSel);
+      if (btn && window.bootstrap && window.bootstrap.Tab) {
+        window.bootstrap.Tab.getOrCreateInstance(btn).show();
+      }
+    }
+
+    // Lazy load on tab show.
+    document.querySelectorAll('#portalTabs [data-bs-toggle="tab"]').forEach(function (btn) {
+      btn.addEventListener('shown.bs.tab', function (e) {
+        var sel = e.target.getAttribute('data-bs-target');
+        if (!loaded[sel]) loadTab(sel);
+      });
+    });
+
+    // Initial active tab.
+    var active = document.querySelector('#portalTabs .nav-link.active');
+    if (active) {
+      var sel = active.getAttribute('data-bs-target');
+      loadTab(sel);
+    }
+
+    // Delegated click handler for unit-row click, view history, show more, clear filter.
+    document.addEventListener('click', function (e) {
+      var unitBtn = e.target.closest('.portal-unit-history-btn, .portal-unit-row');
+      if (unitBtn) {
+        // Avoid double-trigger: button click bubbles from inside row.
+        if (e.target.closest('.portal-unit-history-btn')) {
+          var b = e.target.closest('.portal-unit-history-btn');
+          setUnitFilter(b.getAttribute('data-unit-id'), b.getAttribute('data-unit-label'));
+        } else {
+          var row = e.target.closest('.portal-unit-row');
+          setUnitFilter(row.getAttribute('data-unit-id'), row.getAttribute('data-unit-label'));
+        }
+        // Mark stale BEFORE activating so the lazy-load picks up the new filter.
+        loaded['#tab-pane-work-orders'] = null;
+        var woPane = paneEl('#tab-pane-work-orders');
+        if (woPane && woPane.classList.contains('active')) {
+          loadTab('#tab-pane-work-orders');
+        } else {
+          activateTab('#tab-pane-work-orders');
+        }
+        e.preventDefault();
+        return;
+      }
+
+      var clearBtn = e.target.closest('.portal-clear-filter-btn');
+      if (clearBtn) {
+        setUnitFilter(null, '');
+        // Reload current visible tab.
+        var visible = document.querySelector('#portalTabsContent .tab-pane.active');
+        if (visible) {
+          loaded['#' + visible.id] = null;
+          loadTab('#' + visible.id);
+        }
+        e.preventDefault();
+        return;
+      }
+
+      var moreBtn = e.target.closest('.portal-loadmore-btn');
+      if (moreBtn) {
+        var pane = moreBtn.closest('.tab-pane');
+        if (!pane) return;
+        var btn = btnFor('#' + pane.id);
+        if (!btn) return;
+        var url = btn.getAttribute('data-portal-url');
+        var nextOffset = parseInt(moreBtn.getAttribute('data-next-offset') || '0', 10);
+        var unitId = (FILTERABLE.indexOf('#' + pane.id) !== -1) ? selectedUnitId : null;
+        var fullUrl = buildUrl(url, { unitId: unitId, offset: nextOffset });
+
+        moreBtn.disabled = true;
+        moreBtn.textContent = 'Loading…';
+
+        fetch(fullUrl, { credentials: 'same-origin', headers: { 'X-Requested-With': 'fetch' } })
+          .then(function (r) { if (!r.ok) throw new Error(); return r.text(); })
+          .then(function (html) {
+            // Parse the append response and merge.
+            var tpl = document.createElement('template');
+            tpl.innerHTML = html.trim();
+            var newRows = tpl.content.querySelector('[data-portal-rows]');
+            var newLoadmore = tpl.content.querySelector('[data-portal-loadmore]');
+            var existingTbody = pane.querySelector('[data-portal-rows]');
+            var existingLoadmore = pane.querySelector('[data-portal-loadmore]');
+            if (newRows && existingTbody) {
+              while (newRows.firstChild) {
+                existingTbody.appendChild(newRows.firstChild);
+              }
+            }
+            if (existingLoadmore && newLoadmore) {
+              existingLoadmore.replaceWith(newLoadmore);
+            } else if (existingLoadmore) {
+              existingLoadmore.remove();
+            }
+          })
+          .catch(function () {
+            moreBtn.disabled = false;
+            moreBtn.textContent = 'Show more';
+            window.appAlert && window.appAlert('Failed to load more.', 'error');
+          });
+        e.preventDefault();
+        return;
+      }
+    });
+  })();
+</script>
+{% endblock %}

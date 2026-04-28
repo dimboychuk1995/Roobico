@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="margin:0;padding:20px;background:#f5f5f5;font-family:Arial,Helvetica,sans-serif;color:#333;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+  <tr>
+    <td style="background:#145e33;padding:24px 32px;color:#fff;">
+      <div style="font-size:20px;font-weight:700;">{{ shop_name or "Your Shop" }}</div>
+      {% if shop_address %}<div style="font-size:13px;opacity:.8;">{{ shop_address }}</div>{% endif %}
+      <div style="font-size:22px;font-weight:700;margin-top:18px;border-top:1px solid rgba(255,255,255,.25);padding-top:14px;">
+        Your Customer Portal
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 32px;">
+      <p style="font-size:14px;line-height:1.5;margin-top:0;">
+        Hello{% if cust_name %} {{ cust_name }}{% endif %},
+      </p>
+      <p style="font-size:14px;line-height:1.5;">
+        Use the link below to view your vehicles, work orders, payments and authorization history.
+        It’s read-only — to make changes, just contact us.
+      </p>
+      <table role="presentation" cellpadding="0" cellspacing="0" border="0" align="center" style="margin:32px auto 16px;">
+        <tr>
+          <td align="center" bgcolor="#145e33"
+              style="background:#145e33;border-radius:10px;
+                     box-shadow:0 4px 14px rgba(20,94,51,.35);">
+            <a href="{{ portal_url }}"
+               style="display:inline-block;padding:22px 64px;
+                      font-family:Arial,Helvetica,sans-serif;font-size:22px;
+                      font-weight:800;letter-spacing:.5px;color:#ffffff;
+                      text-decoration:none;text-transform:uppercase;
+                      border-radius:10px;border:1px solid #145e33;
+                      mso-padding-alt:0;line-height:1;">
+              &#x1F511;&nbsp; Go To Customer Portal
+            </a>
+          </td>
+        </tr>
+      </table>
+      <p style="text-align:center;color:#666;font-size:12px;margin:0;">
+        Or copy this link into your browser:<br>
+        <span style="word-break:break-all;">{{ portal_url }}</span>
+      </p>
+      {% if expires_label %}
+      <p style="font-size:12px;color:#888;margin-top:24px;text-align:center;">
+        This link is valid until <strong>{{ expires_label }}</strong>.
+      </p>
+      {% endif %}
+    </td>
+  </tr>
+  <tr>
+    <td style="background:#f9f9f9;padding:14px 32px;font-size:12px;color:#888;text-align:center;">
+      Sent by {{ shop_name or "Roobico" }}.
+    </td>
+  </tr>
+</table>
+</body>
+</html>

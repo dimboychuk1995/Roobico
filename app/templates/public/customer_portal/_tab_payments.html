@@ -1,0 +1,53 @@
+{% if not is_append %}
+  {% if unit_label_filter %}
+    <div class="alert alert-success py-2 px-3 mb-3 d-flex justify-content-between align-items-center">
+      <div><strong>Vehicle:</strong> {{ unit_label_filter }}</div>
+      <button type="button" class="btn btn-sm btn-outline-success portal-clear-filter-btn">
+        Clear filter
+      </button>
+    </div>
+  {% endif %}
+
+  {% if payments %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Date</th>
+            <th>WO</th>
+            <th>Method</th>
+            <th class="text-end">Amount</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody data-portal-rows>
+          {% include "public/customer_portal/_rows_payments.html" %}
+        </tbody>
+      </table>
+    </div>
+    <div data-portal-loadmore class="text-center mt-3">
+      {% if has_more %}
+        <button type="button" class="btn btn-outline-success btn-sm portal-loadmore-btn"
+                data-next-offset="{{ offset + page_size }}">
+          Show more
+        </button>
+      {% endif %}
+    </div>
+  {% else %}
+    <p class="text-muted mb-0">
+      {% if unit_label_filter %}No payments for this vehicle.{% else %}No payments on file.{% endif %}
+    </p>
+  {% endif %}
+{% else %}
+  <tbody data-portal-rows>
+    {% include "public/customer_portal/_rows_payments.html" %}
+  </tbody>
+  <div data-portal-loadmore class="text-center mt-3">
+    {% if has_more %}
+      <button type="button" class="btn btn-outline-success btn-sm portal-loadmore-btn"
+              data-next-offset="{{ offset + page_size }}">
+        Show more
+      </button>
+    {% endif %}
+  </div>
+{% endif %}

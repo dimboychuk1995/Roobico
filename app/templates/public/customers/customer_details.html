@@ -10,6 +10,9 @@
 <div class="d-flex justify-content-end mb-3">
   <div class="d-flex gap-2">
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('customers.customers_page') }}">Back to Customers</a>
+    <button type="button" class="btn btn-outline-info btn-sm" id="sendPortalLinkBtn"
+            data-customer-id="{{ customer_id }}"
+            data-customer-email="{{ customer.email or '' }}">📧 Send Portal Link</button>
     <a class="btn btn-primary btn-sm" href="{{ url_for('work_orders.work_order_details_page', customer_id=customer_id) }}">Create Work Order</a>
   </div>
 </div>
@@ -606,6 +609,43 @@
 </div>
 
 <script src="{{ url_for('static', filename='js/customers/customers.js', v='20260316-payments-delete') }}"></script>
+
+<script>
+(function () {
+  var btn = document.getElementById('sendPortalLinkBtn');
+  if (!btn) return;
+  btn.addEventListener('click', function () {
+    var cid = btn.dataset.customerId;
+    var defaultEmail = btn.dataset.customerEmail || '';
+    var input = window.prompt(
+      'Send portal link to which email address?\n(Comma-separate to send to multiple)',
+      defaultEmail
+    );
+    if (input === null) return;
+    var emails = input.split(',').map(function (e) { return e.trim(); }).filter(function (e) { return e.length > 0; });
+    if (!emails.length) { alert('Please provide at least one email.'); return; }
+
+    btn.disabled = true; var original = btn.textContent; btn.textContent = 'Sending…';
+    fetch('/portal/api/customers/' + encodeURIComponent(cid) + '/send-link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ emails: emails }),
+    })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+      .then(function (res) {
+        if (!res.ok || !res.body.ok) {
+          alert('Failed: ' + (res.body && res.body.error || 'Unknown error'));
+        } else {
+          alert('Portal link sent to:\n' + (res.body.sent_to || []).join(', ') +
+                '\n\nLink valid until: ' + (res.body.expires_at || ''));
+        }
+      })
+      .catch(function (err) { alert('Network error: ' + err.message); })
+      .finally(function () { btn.disabled = false; btn.textContent = original; });
+  });
+})();
+</script>
 
 {{ attachments_modal() }}
 

@@ -1,0 +1,22 @@
+{% for a in authorizations %}
+<tr>
+  <td>#{{ a.wo_number }}</td>
+  <td>
+    {% if a.scope == "labor" %}
+      Labor #{{ (a.labor_index or 0) + 1 }}
+    {% else %}
+      Whole WO
+    {% endif %}
+  </td>
+  <td>
+    <span class="badge
+      {% if a.status == 'approved' %}badge-status-approved
+      {% elif a.status == 'declined' %}badge-status-declined
+      {% else %}badge-status-pending{% endif %}">
+      {{ a.status|capitalize }}
+    </span>
+  </td>
+  <td>{{ a.responded_at or '—' }}</td>
+  <td class="text-muted small">{{ a.comment }}</td>
+</tr>
+{% endfor %}

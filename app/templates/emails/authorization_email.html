@@ -176,6 +176,12 @@
     <!-- FOOTER -->
     <tr>
       <td style="background:#f9f9f9;padding:14px 32px;font-size:12px;color:#888;text-align:center;">
+        {% if portal_url %}
+        <div style="margin-bottom:10px;">
+          You can also view all your work orders, payments and files in your
+          <a href="{{ portal_url }}" style="color:#145e33;font-weight:600;">customer portal</a>.
+        </div>
+        {% endif %}
         Sent by {{ shop_name or "Roobico" }} · This link is unique to {{ recipient_email }}.
       </td>
     </tr>
