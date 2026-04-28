@@ -39,9 +39,18 @@ def send_email(
     if not recipients:
         raise RuntimeError("No recipient email addresses provided.")
 
-    api_key = os.environ.get("RESEND_API_KEY", "")
-    from_addr = from_email or os.environ.get("RESEND_FROM_EMAIL", "")
-    _from_name = from_name or os.environ.get("RESEND_FROM_NAME", "Roobico")
+    api_key = os.environ.get("RESEND_API_KEY", "") or os.environ.get("SMTP_PASS", "")
+    from_addr = (
+        from_email
+        or os.environ.get("RESEND_FROM_EMAIL", "")
+        or os.environ.get("SMTP_FROM_EMAIL", "")
+    )
+    _from_name = (
+        from_name
+        or os.environ.get("RESEND_FROM_NAME", "")
+        or os.environ.get("SMTP_FROM_NAME", "")
+        or "Roobico"
+    )
 
     if not api_key:
         raise RuntimeError(
