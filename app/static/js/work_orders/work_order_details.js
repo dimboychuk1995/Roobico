@@ -2849,10 +2849,17 @@
     }
 
     function refreshEditorGate() {
+      // For an already-created WO the editor is always enabled — we don't
+      // want the mileage gate to hide it while the value is still being
+      // fetched asynchronously.
+      if (isCreated) {
+        setEditorEnabled(true);
+        return;
+      }
       const customerId = customerHidden ? String(customerHidden.value || "").trim() : "";
       const unitId = unitHidden ? String(unitHidden.value || "").trim() : "";
       const mv = unitMileageInput ? String(unitMileageInput.value || "").trim() : "";
-      const ok = !!customerId && !!unitId && !!mv && mileageConfirmed;
+      const ok = !!customerId && !!unitId && !!mv;
       setEditorEnabled(ok);
       // Keep the Create WO button disabled until everything is set.
       // (Once the WO is created, applyStateFromStatus hides the create button
@@ -2860,7 +2867,7 @@
       if (!isCreated && createBtn) {
         createBtn.disabled = !ok;
         createBtn.classList.toggle("disabled", !ok);
-        createBtn.title = ok ? "" : "Select customer, unit and confirm mileage to create the work order.";
+        createBtn.title = ok ? "" : "Select customer, unit and enter mileage to create the work order.";
       }
       if (hint) {
         if (!customerId) {
@@ -2869,8 +2876,6 @@
           hint.textContent = "Select a unit to continue.";
         } else if (!mv) {
           hint.textContent = "Enter the current mileage to continue.";
-        } else if (!mileageConfirmed) {
-          hint.textContent = "Please confirm the mileage by re-entering it to continue.";
         }
       }
     }
@@ -2878,18 +2883,12 @@
     function submitCreate() {
       if (!woForm) return;
 
-      // ✅ Mileage is REQUIRED and must be confirmed (re-typed) before creating WO
+      // ✅ Mileage is REQUIRED before creating WO
       if (unitMileageInput) {
         const mv = String(unitMileageInput.value || "").trim();
         if (!mv) {
           unitMileageInput.focus();
           toast("Please enter the current mileage before creating the work order.");
-          return;
-        }
-        if (!mileageConfirmed) {
-          unitMileageInput.focus();
-          unitMileageInput.select();
-          toast("Please confirm the mileage by re-entering it.");
           return;
         }
       }
@@ -3224,16 +3223,21 @@
         return;
       }
       
-      // Fetch and display current mileage
+      // Fetch and display current mileage as a placeholder hint so the
+      // user can start typing into an empty input without having to
+      // delete the previous value first.
       const unitDetails = await fetchUnitDetails(unitId);
       if (unitDetails) {
+        const prevMileage = unitDetails.mileage ? String(unitDetails.mileage) : "";
         if (unitMileageInput) {
-          unitMileageInput.value = unitDetails.mileage || "";
-          // Mark as unconfirmed (gray) — user must re-enter
-          unitMileageInput.style.color = unitDetails.mileage ? "#aaa" : "";
+          unitMileageInput.value = "";
+          unitMileageInput.style.color = "";
+          unitMileageInput.placeholder = prevMileage
+            ? "Previous: " + prevMileage
+            : "0";
         }
-        if (unitMileageHidden) unitMileageHidden.value = unitDetails.mileage || "";
-        mileageConfirmed = false; // always require re-confirmation
+        if (unitMileageHidden) unitMileageHidden.value = "";
+        mileageConfirmed = false; // user must enter the current mileage
       }
       refreshEditorGate();
     });
