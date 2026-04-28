@@ -119,6 +119,13 @@
             Authorizations
           </button>
         </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" id="tab-btn-maintenance" type="button" role="tab"
+                  data-bs-toggle="tab" data-bs-target="#tab-pane-maintenance"
+                  data-portal-url="{{ url_for('customer_portal.tab_maintenance', token=token) }}">
+            Maintenance Files
+          </button>
+        </li>
       </ul>
 
       <div class="tab-content p-3" id="portalTabsContent">
@@ -141,6 +148,12 @@
           </div>
         </div>
         <div class="tab-pane fade" id="tab-pane-authorizations" role="tabpanel">
+          <div class="portal-tab-loader">
+            <span class="spinner-border text-success" role="status" aria-hidden="true"></span>
+            Loading…
+          </div>
+        </div>
+        <div class="tab-pane fade" id="tab-pane-maintenance" role="tabpanel">
           <div class="portal-tab-loader">
             <span class="spinner-border text-success" role="status" aria-hidden="true"></span>
             Loading…
@@ -288,6 +301,18 @@
           loadTab('#' + visible.id);
         }
         e.preventDefault();
+        return;
+      }
+
+      var mtBtn = e.target.closest('.portal-mt-download');
+      if (mtBtn) {
+        var mtRow = mtBtn.closest('tr');
+        var q = mtRow.querySelector('.portal-mt-quarter').value;
+        var y = mtRow.querySelector('.portal-mt-year').value;
+        var base = mtBtn.getAttribute('data-base-url');
+        mtBtn.setAttribute('href',
+          base + '?year=' + encodeURIComponent(y) + '&quarter=' + encodeURIComponent(q));
+        // Let default navigation proceed (target=_blank).
         return;
       }
 

@@ -451,6 +451,142 @@ def _unit_label_for(shop_db, unit_oid):
     return unit_label(u) if u else ""
 
 
+# ──────────────────────── Maintenance Files (quarterly) ────────────────────────
+
+QUARTER_MONTHS = {
+    1: [1, 2, 3],
+    2: [4, 5, 6],
+    3: [7, 8, 9],
+    4: [10, 11, 12],
+}
+
+
+def _quarter_range(year: int, quarter: int):
+    from calendar import monthrange
+    months = QUARTER_MONTHS.get(int(quarter)) or QUARTER_MONTHS[1]
+    start = datetime(int(year), months[0], 1)
+    last_day = monthrange(int(year), months[-1])[1]
+    end = datetime(int(year), months[-1], last_day, 23, 59, 59)
+    return start, end
+
+
+def _maintenance_rows(shop_db, customer_id, unit_oid, year, quarter):
+    """Return WO rows for the given unit + quarter as maintenance entries."""
+    from app.blueprints.work_orders.routes import _work_order_grand_total
+    start, end = _quarter_range(year, quarter)
+    cursor = shop_db.work_orders.find({
+        "customer_id": customer_id,
+        "unit_id": unit_oid,
+        "is_active": True,
+        "work_order_date": {"$gte": start, "$lte": end},
+    }).sort("work_order_date", 1)
+
+    rows = []
+    total = 0.0
+    for wo in cursor:
+        # Description = labor block descriptions joined.
+        descs = []
+        for block in (wo.get("labors") or []):
+            d = str(block.get("description") or block.get("labor_desc") or "").strip()
+            if d:
+                descs.append(d)
+        if not descs:
+            note = str(wo.get("description") or wo.get("notes") or "").strip()
+            if note:
+                descs.append(note)
+        cost = float(_work_order_grand_total(wo) or 0)
+        total += cost
+        rows.append({
+            "date": wo.get("work_order_date") or wo.get("created_at"),
+            "date_label": _format_date(wo.get("work_order_date")
+                                       or wo.get("created_at")),
+            "description": "; ".join(descs) or f"Work Order #{wo.get('wo_number') or ''}".strip(),
+            "wo_number": str(wo.get("wo_number") or ""),
+            "cost": round(cost, 2),
+        })
+    return rows, round(total, 2)
+
+
+def _maintenance_unit_view(unit):
+    """Vehicle identification block — only Make/Model/Year/VIN filled."""
+    return {
+        "make": str(unit.get("make") or "").strip(),
+        "model": str(unit.get("model") or "").strip(),
+        "year": str(unit.get("year") or "").strip(),
+        "vin": str(unit.get("vin") or "").strip(),
+        "unit_number": str(unit.get("unit_number") or "").strip(),
+    }
+
+
+@customer_portal_bp.get("/portal/<token>/tab/maintenance")
+def tab_maintenance(token):
+    _doc, shop_db, _shop, customer = _portal_fragment_or_404(token)
+    units = _list_customer_units(shop_db, customer["_id"])
+    current_year = datetime.utcnow().year
+    years = list(range(current_year - 4, current_year + 1))
+    return render_template(
+        "public/customer_portal/_tab_maintenance.html",
+        units=units, years=years, current_year=current_year, token=token,
+    )
+
+
+@customer_portal_bp.get("/portal/<token>/maintenance/<unit_id>/pdf")
+def maintenance_pdf(token, unit_id):
+    doc, shop_db, shop, customer, err = _resolve_portal_token(token)
+    if err or not customer:
+        abort(404)
+    unit_oid = _oid(unit_id)
+    if not unit_oid:
+        abort(404)
+    unit = shop_db.units.find_one({
+        "_id": unit_oid, "customer_id": customer["_id"], "is_active": True,
+    })
+    if not unit:
+        abort(404)
+
+    try:
+        year = int(request.args.get("year") or datetime.utcnow().year)
+        quarter = int(request.args.get("quarter") or 1)
+    except (TypeError, ValueError):
+        abort(400)
+    if quarter not in (1, 2, 3, 4):
+        abort(400)
+
+    _touch_token(doc)
+
+    rows, total = _maintenance_rows(
+        shop_db, customer["_id"], unit_oid, year, quarter,
+    )
+    cust = _customer_display(customer)
+
+    # Quarterly grid: 5 years (current_year-4 .. current_year), all 12 months.
+    current_year = datetime.utcnow().year
+    grid_years = list(range(current_year - 4, current_year + 1))
+    months = ["January", "February", "March", "April", "May", "June",
+              "July", "August", "September", "October", "November", "December"]
+    selected_months = set(QUARTER_MONTHS[quarter])
+
+    html = render_template(
+        "public/customer_portal/maintenance_pdf.html",
+        company_name=cust["label"],
+        shop_name=str(shop.get("name") or "").strip(),
+        unit=_maintenance_unit_view(unit),
+        year=year, quarter=quarter,
+        grid_years=grid_years, months=months,
+        selected_months=selected_months, selected_year=year,
+        rows=rows, total=total,
+    )
+    pdf = render_html_to_pdf(html)
+    if not pdf:
+        abort(500)
+    fname = (f"Maintenance-{(unit.get('unit_number') or unit_id)}-"
+             f"Q{quarter}-{year}.pdf")
+    return send_file(
+        io.BytesIO(pdf), mimetype="application/pdf",
+        as_attachment=True, download_name=fname,
+    )
+
+
 @customer_portal_bp.get("/portal/<token>/work-orders/<wo_id>")
 def work_order_view(token, wo_id):
     from app.blueprints.work_orders.routes import (

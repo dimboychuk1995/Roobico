@@ -1,0 +1,58 @@
+{% if not units %}
+  <p class="text-muted mb-0">No vehicles on file.</p>
+{% else %}
+  <div class="text-muted small mb-3">
+    Generate quarterly maintenance reports (PDF) for each vehicle.
+    Choose a quarter and year, then download.
+  </div>
+
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Unit #</th>
+          <th>Year</th>
+          <th>Make</th>
+          <th>Model</th>
+          <th>VIN</th>
+          <th style="min-width: 110px;">Quarter</th>
+          <th style="min-width: 110px;">Year</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in units %}
+        <tr>
+          <td>{{ u.unit_number or '—' }}</td>
+          <td>{{ u.year or '—' }}</td>
+          <td>{{ u.make or '—' }}</td>
+          <td>{{ u.model or '—' }}</td>
+          <td>{{ u.vin or '—' }}</td>
+          <td>
+            <select class="form-select form-select-sm portal-mt-quarter">
+              <option value="1">Q1 (Jan–Mar)</option>
+              <option value="2">Q2 (Apr–Jun)</option>
+              <option value="3">Q3 (Jul–Sep)</option>
+              <option value="4">Q4 (Oct–Dec)</option>
+            </select>
+          </td>
+          <td>
+            <select class="form-select form-select-sm portal-mt-year">
+              {% for y in years %}
+                <option value="{{ y }}" {% if y == current_year %}selected{% endif %}>{{ y }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td class="text-end">
+            <a class="btn btn-sm btn-success portal-mt-download"
+               data-base-url="{{ url_for('customer_portal.maintenance_pdf', token=token, unit_id=u.id) }}"
+               href="#" target="_blank" rel="noopener">
+              Download PDF
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endif %}
