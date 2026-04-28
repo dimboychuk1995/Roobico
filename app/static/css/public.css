@@ -1020,23 +1020,24 @@ span.flatpickr-weekday {
   border-width: 1px;
 }
 
+/* Unified tab style across the app (matches Customer Portal). */
 .nav-tabs {
-  border-bottom: 0;
+  border-bottom: 1px solid #e5e7eb;
   display: flex;
-  justify-content: center;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.15rem;
   flex-wrap: wrap;
-  padding-bottom: 0.2rem;
+  padding-bottom: 0;
 }
 
 .nav-tabs .nav-link {
-  border: 1px solid #e2e8f0;
-  border-radius: 999px;
-  background: #f8fafc;
-  color: #475569;
+  color: #145e33;
   font-weight: 600;
-  padding: 0.45rem 0.95rem;
+  border: none;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  padding: 0.65rem 1.1rem;
+  background: transparent;
   transition: none;
 }
 
@@ -1048,16 +1049,23 @@ span.flatpickr-weekday {
 
 .nav-tabs .nav-link:hover,
 .nav-tabs .nav-link:focus {
-  border-color: #6db88a;
-  background: #edf7f0;
-  color: var(--primary);
+  color: #145e33;
+  background: transparent;
+  border-color: transparent transparent #c8e0d3;
+  isolation: auto;
 }
 
-.nav-tabs .nav-link.active {
-  border-color: var(--primary);
-  color: #ffffff;
-  background: var(--primary);
-  box-shadow: 0 2px 8px rgba(26, 122, 66, 0.25);
+.nav-tabs .nav-link.active,
+.nav-tabs .nav-item.show .nav-link {
+  color: #145e33;
+  background: transparent;
+  border-color: transparent transparent #145e33;
+  box-shadow: none;
+}
+
+.nav-tabs .nav-link.disabled {
+  color: #9ca3af;
+  border-color: transparent;
 }
 
 a {
