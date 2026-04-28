@@ -493,7 +493,7 @@
 		var _urlParams = new URLSearchParams(window.location.search);
 		form._dateUserTouched = _urlParams.has("date_preset") || _urlParams.has("date_from") || _urlParams.has("date_to");
 
-		ensureSearchButton(form, input);
+		// No visible Search button – search runs live on input / filter change.
 
 		function submitIfChanged() {
 			var nextSignature = buildFormSignature(form, input);
@@ -509,12 +509,28 @@
 			window.location.assign(buildSearchUrl(form, input).toString());
 		}
 
+		var inputDebounceTimer = null;
+		var INPUT_DEBOUNCE_MS = useAjaxSearch ? 250 : 450;
+		input.addEventListener("input", function () {
+			if (inputDebounceTimer) {
+				clearTimeout(inputDebounceTimer);
+			}
+			inputDebounceTimer = setTimeout(function () {
+				inputDebounceTimer = null;
+				submitIfChanged();
+			}, INPUT_DEBOUNCE_MS);
+		});
+
 		form.addEventListener("submit", function (event) {
 			if (!useAjaxSearch) {
 				return;
 			}
 
 			event.preventDefault();
+			if (inputDebounceTimer) {
+				clearTimeout(inputDebounceTimer);
+				inputDebounceTimer = null;
+			}
 			submitIfChanged();
 		});
 
@@ -537,47 +553,14 @@
 					presetSelect.value = "custom";
 				}
 			}
+			submitIfChanged();
 		});
 	}
 
 	function ensureSearchButton(form, input) {
-		if (!form || !input) return;
-
-		var existingSubmit = form.querySelector('button[type="submit"], input[type="submit"]');
-		if (existingSubmit) {
-			return;
-		}
-
-		var btn = document.createElement("button");
-		btn.type = "submit";
-		btn.className = "btn btn-sm btn-primary";
-		btn.textContent = "Search";
-
-		var resetControl = form.querySelector('a.btn, button[type="reset"], input[type="reset"]');
-		if (resetControl) {
-			var resetParent = resetControl.parentElement;
-			if (resetParent) {
-				btn.classList.add("me-2");
-				resetParent.insertBefore(btn, resetControl);
-				return;
-			}
-		}
-
-		var wrapper = document.createElement("div");
-		wrapper.className = "col-auto roobico-search-btn-wrap";
-		wrapper.appendChild(btn);
-
-		var inputContainer = input.closest(".col-12, .col-auto, .col-md-8, .col-lg-6") || input.parentElement;
-		if (inputContainer && inputContainer.parentNode) {
-			if (inputContainer.nextSibling) {
-				inputContainer.parentNode.insertBefore(wrapper, inputContainer.nextSibling);
-			} else {
-				inputContainer.parentNode.appendChild(wrapper);
-			}
-			return;
-		}
-
-		form.appendChild(wrapper);
+		// Live search is now driven by input / change events – no Search
+		// button is injected.  Function kept as a no-op for backward compat.
+		return;
 	}
 
 	function bindAutoSearchForms() {

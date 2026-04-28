@@ -36,7 +36,7 @@
     {% block content %}{% endblock %}
   </main>
 
-  <script src="{{ url_for('static', filename='js/public.js', v='20260317-preset-range-sync') }}"></script>
+  <script src="{{ url_for('static', filename='js/public.js', v='20260427-live-search') }}"></script>
   <script>window.MAPBOX_ACCESS_TOKEN = {{ (mapbox_access_token or '')|tojson }};</script>
   <script src="{{ url_for('static', filename='js/address_autocomplete.js', v='20260420c-mapbox') }}" defer></script>
 

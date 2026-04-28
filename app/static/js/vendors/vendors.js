@@ -448,20 +448,26 @@
       });
     }
 
-    // Date preset change — sync date inputs (no auto-load)
+    // Date preset change — sync date inputs and reload
     if (ordersEls.datePreset && ordersEls.datePreset.dataset.bound !== "1") {
       ordersEls.datePreset.dataset.bound = "1";
       ordersEls.datePreset.addEventListener("change", function () {
         applyVendorDatePreset(ordersEls.datePreset.value);
+        syncDateInputsToState();
+        ordersState.page = 1;
+        loadVendorOrders(1);
       });
     }
 
-    // Date from/to manual change — switch preset to custom
+    // Date from/to manual change — switch preset to custom and reload
     function onDateInputChange() {
       var els2 = getOrdersEls();
       if (els2.datePreset && els2.datePreset.value !== "custom") {
         els2.datePreset.value = "custom";
       }
+      syncDateInputsToState();
+      ordersState.page = 1;
+      loadVendorOrders(1);
     }
     if (ordersEls.dateFrom && ordersEls.dateFrom.dataset.bound !== "1") {
       ordersEls.dateFrom.dataset.bound = "1";
@@ -472,15 +478,7 @@
       ordersEls.dateTo.addEventListener("change", onDateInputChange);
     }
 
-    // Search button — apply filters and reload
-    if (ordersEls.searchBtn && ordersEls.searchBtn.dataset.bound !== "1") {
-      ordersEls.searchBtn.dataset.bound = "1";
-      ordersEls.searchBtn.addEventListener("click", function () {
-        syncDateInputsToState();
-        ordersState.page = 1;
-        loadVendorOrders(1);
-      });
-    }
+    // Search button removed — filters apply automatically on change.
 
     // Reset button
     if (ordersEls.dateReset && ordersEls.dateReset.dataset.bound !== "1") {
