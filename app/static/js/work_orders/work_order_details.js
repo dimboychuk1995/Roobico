@@ -2242,6 +2242,14 @@
       throw new Error(msg);
     }
 
+    // Many of our endpoints return HTTP 200 with {ok:false, error:"..."} on
+    // application-level failures. Treat that as an error so callers don't
+    // silently report success while nothing was persisted.
+    if (data && typeof data === "object" && data.ok === false) {
+      const msg = data.error || data.message || "Request failed.";
+      throw new Error(msg);
+    }
+
     return data;
   }
 
