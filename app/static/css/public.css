@@ -1024,6 +1024,7 @@ span.flatpickr-weekday {
 .nav-tabs {
   border-bottom: 1px solid #e5e7eb;
   display: flex;
+  justify-content: center;
   align-items: center;
   gap: 0.15rem;
   flex-wrap: wrap;
