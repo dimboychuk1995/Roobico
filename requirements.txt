@@ -9,3 +9,4 @@ openai>=1.30.0
 PyMuPDF
 rapidfuzz>=3.9
 azure-ai-documentintelligence>=1.0.0
+gunicorn>=21.0.0
