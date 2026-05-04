@@ -2970,14 +2970,13 @@ def api_work_order_update(work_order_id):
     user_id = current_user_id()
 
     # ✅ Adjust inventory for part changes
+    # Treat inventory issues (e.g. unknown part numbers, missing inventory rows)
+    # as non-fatal warnings: stock is already allowed to go negative, and
+    # blocking the save here prevents users from editing WOs that contain
+    # one-off / legacy / preset parts not present in the inventory catalog.
     old_labors = wo.get("labors") or []
     inventory_adjustment = adjust_inventory_for_part_changes(shop_db, old_labors, labors, user_id)
-    if not inventory_adjustment["success"] and inventory_adjustment["errors"]:
-        return jsonify({
-            "ok": False,
-            "error": "inventory_adjustment_failed",
-            "details": inventory_adjustment["errors"]
-        }), 200
+    inventory_warnings = list(inventory_adjustment.get("errors") or [])
 
     # ✅ Update unit mileage if provided
     if unit_mileage is not None:
@@ -3025,6 +3024,7 @@ def api_work_order_update(work_order_id):
         "ok": True,
         "inventory_adjusted": len(inventory_adjustment["adjusted"]) > 0,
         "inventory_changes": inventory_adjustment["adjusted"],
+        "inventory_warnings": inventory_warnings,
         "cores_synced": len(core_sync.get("changes") or []) > 0,
         "core_changes": core_sync.get("changes") or [],
         "core_sync_errors": core_sync.get("errors") or [],
