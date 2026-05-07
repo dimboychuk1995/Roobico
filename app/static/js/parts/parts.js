@@ -163,13 +163,12 @@
 				const price = parseFloat((tr.querySelector(".price-input")?.value || "0"));
 				const coreHasCharge = tr.getAttribute("data-core-has-charge") === "true";
 				const coreCost = parseFloat(tr.getAttribute("data-core-cost") || "0");
+				const coreToggle = tr.querySelector(".item-core-toggle");
+				const coreIncluded = coreToggle ? !!coreToggle.checked : (coreHasCharge && coreCost > 0);
 				
 				if (qty > 0 && price >= 0) {
-					// Base price * quantity
 					total += price * qty;
-					
-					// Add core charge per unit if applicable
-					if (coreHasCharge && coreCost > 0) {
+					if (coreHasCharge && coreCost > 0 && coreIncluded) {
 						total += coreCost * qty;
 					}
 				}
@@ -860,9 +859,15 @@
 			const inStock = parseInt(item.in_stock || 0, 10);
 			const coreHasCharge = item.core_has_charge || false;
 			const coreCost = Number(item.core_cost || 0).toFixed(2);
-			
-			const coreIndicator = coreHasCharge && coreCost > 0
-				? `<span class="badge bg-warning text-dark ms-1" title="Core charge: $${coreCost} per unit">Core</span>`
+			const coreIncludedDefault = (item.include_core === undefined || item.include_core === null)
+				? (coreHasCharge && Number(coreCost) > 0)
+				: !!item.include_core;
+
+			const corePriceCell = (coreHasCharge && Number(coreCost) > 0)
+				? `<div class="form-check form-switch mt-1 d-inline-flex align-items-center" style="margin: 0;">
+					<input class="form-check-input item-core-toggle" type="checkbox" ${coreIncludedDefault ? 'checked' : ''}>
+					<label class="form-check-label small text-muted ms-1" style="margin-bottom: 0;">+ Core $${coreCost}</label>
+				</div>`
 				: '';
 
 			const tr = document.createElement("tr");
@@ -870,7 +875,7 @@
 			tr.setAttribute("data-core-has-charge", coreHasCharge ? "true" : "false");
 			tr.setAttribute("data-core-cost", coreCost);
 			tr.innerHTML = `
-				<td class="fw-semibold">${escapeHtml(pn)}${coreIndicator}</td>
+				<td class="fw-semibold">${escapeHtml(pn)}</td>
 				<td class="text-muted">${escapeHtml(desc) || "-"}</td>
 				<td class="text-end text-muted">${inStock}</td>
 				<td class="text-end">
@@ -878,6 +883,7 @@
 				</td>
 				<td class="text-end">
 					<input class="form-control form-control-sm text-end price-input" type="number" min="0" step="0.01" value="${price}" required>
+					${corePriceCell}
 				</td>
 				<td class="text-end">
 					<button type="button" class="btn btn-sm btn-outline-danger remove-item-btn">Remove</button>
@@ -902,22 +908,34 @@
 			const isReceived = currentOrderStatus === "received";
 			
 			orderItems.forEach(item => {
-				const coreIndicator = item.core_has_charge && item.core_cost > 0
-					? `<span class="badge bg-warning text-dark ms-1" title="Core charge: $${Number(item.core_cost).toFixed(2)} per unit">Core</span>`
-					: '';
+				const coreHasCharge = !!item.core_has_charge;
+				const coreCost = Number(item.core_cost || 0);
+				const coreCharge = Number(item.core_charge || 0);
+				// If the saved order had core_charge > 0, treat it as included.
+				// Otherwise default ON for parts that have a core (matches new-row behavior).
+				const coreIncluded = coreHasCharge && coreCost > 0
+					? (coreCharge > 0)
+					: false;
 				const inStock = parseInt(item.in_stock || 0, 10);
-				
+
+				const corePriceCell = (coreHasCharge && coreCost > 0)
+					? `<div class="form-check form-switch mt-1 d-inline-flex align-items-center" style="margin: 0;">
+						<input class="form-check-input item-core-toggle" type="checkbox" ${coreIncluded ? 'checked' : ''} ${isReceived ? 'disabled' : ''}>
+						<label class="form-check-label small text-muted ms-1" style="margin-bottom: 0;">+ Core $${coreCost.toFixed(2)}</label>
+					</div>`
+					: '';
+
 				const tr = document.createElement("tr");
 				tr.setAttribute("data-part-id", item.part_id);
-				tr.setAttribute("data-core-has-charge", item.core_has_charge ? "true" : "false");
-				tr.setAttribute("data-core-cost", item.core_cost || "0");
-				
+				tr.setAttribute("data-core-has-charge", coreHasCharge ? "true" : "false");
+				tr.setAttribute("data-core-cost", coreCost.toFixed(2));
+
 				const removeBtn = isReceived
 					? `<button type="button" class="btn btn-sm btn-outline-danger remove-item-btn" disabled title="Unreceive order to delete items">Remove</button>`
 					: `<button type="button" class="btn btn-sm btn-outline-danger remove-item-btn">Remove</button>`;
-				
+
 				tr.innerHTML = `
-					<td class="fw-semibold">${escapeHtml(item.part_number)}${coreIndicator}</td>
+					<td class="fw-semibold">${escapeHtml(item.part_number)}</td>
 					<td class="text-muted">${escapeHtml(item.description) || "-"}</td>
 					<td class="text-end text-muted">${inStock}</td>
 					<td class="text-end">
@@ -925,6 +943,7 @@
 					</td>
 					<td class="text-end">
 						<input class="form-control form-control-sm text-end price-input" type="number" min="0" step="0.01" value="${item.price}" required ${isReceived ? 'disabled' : ''}>
+						${corePriceCell}
 					</td>
 					<td class="text-end">
 						${removeBtn}
@@ -1030,6 +1049,12 @@
 			}
 		});
 
+		itemsBody.addEventListener("change", function (e) {
+			if (e.target.classList.contains("item-core-toggle")) {
+				calculateOrderTotal();
+			}
+		});
+
 		nonInventoryBody.addEventListener("input", function (e) {
 			if (e.target.classList.contains("non-inv-desc") || e.target.classList.contains("non-inv-amount")) {
 				ensureTrailingNonInventoryRow(vendorSelect.disabled);
@@ -1083,12 +1108,15 @@
 				const pid = tr.getAttribute("data-part-id");
 				const qty = parseInt((tr.querySelector(".qty-input")?.value || "0"), 10);
 				const price = parseFloat((tr.querySelector(".price-input")?.value || "0"));
+				const coreHasCharge = tr.getAttribute("data-core-has-charge") === "true";
+				const coreToggle = tr.querySelector(".item-core-toggle");
+				const includeCore = coreHasCharge && (coreToggle ? !!coreToggle.checked : true);
 
 				if (!pid) continue;
 				if (!qty || qty <= 0) { showError("Qty must be > 0."); return; }
 				if (price < 0) { showError("Price cannot be negative."); return; }
 
-				items.push({ part_id: pid, quantity: qty, price: price });
+				items.push({ part_id: pid, quantity: qty, price: price, include_core: includeCore });
 			}
 
 			createOrderBtn.disabled = true;
@@ -1404,8 +1432,13 @@
 						details += `</tr></thead><tbody>`;
 						for (const item of matched) {
 							const mp = item.matched_part;
-							details += `<tr data-scan-matched="1" data-scan-part-id="${escapeHtml(mp.part_id)}">
-								<td><strong>${escapeHtml(mp.part_number)}</strong></td>
+							const hasCore = !!mp.core_has_charge && Number(mp.core_cost || 0) > 0;
+							const coreCost = Number(mp.core_cost || 0).toFixed(2);
+							const coreBadge = hasCore
+								? ` <span class="badge bg-warning text-dark" title="Core charge: $${coreCost} per unit">+ Core $${coreCost}</span>`
+								: '';
+							details += `<tr data-scan-matched="1" data-scan-part-id="${escapeHtml(mp.part_id)}" data-scan-core-has-charge="${hasCore ? 'true' : 'false'}" data-scan-core-cost="${coreCost}">
+								<td><strong>${escapeHtml(mp.part_number)}</strong>${coreBadge}</td>
 								<td class="text-muted">${escapeHtml(mp.description || item.description)}</td>
 								<td><input type="number" class="form-control form-control-sm scan-match-qty" min="1" step="1" value="${item.quantity}"></td>
 								<td><input type="number" class="form-control form-control-sm scan-match-price" min="0" step="0.01" value="${Number(item.price).toFixed(2)}"></td>
@@ -1611,14 +1644,16 @@
 			const desc = tr.querySelector("td.text-muted")?.textContent || "";
 			const qty = parseInt(tr.querySelector(".scan-match-qty")?.value || "1", 10);
 			const price = parseFloat(tr.querySelector(".scan-match-price")?.value || "0");
+			const coreHasCharge = tr.dataset.scanCoreHasCharge === "true";
+			const coreCost = parseFloat(tr.dataset.scanCoreCost || "0");
 
 			addOrIncrementItem({
 				id: partId,
 				part_number: partNumber,
 				description: desc,
 				average_cost: price,
-				core_has_charge: false,
-				core_cost: 0,
+				core_has_charge: coreHasCharge,
+				core_cost: coreCost,
 			});
 			const row = itemsBody.querySelector(`tr[data-part-id="${partId}"]`);
 			if (row) {

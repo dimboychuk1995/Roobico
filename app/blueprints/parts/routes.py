@@ -176,7 +176,8 @@ def _parts_order_amounts(order_doc: dict):
             continue
         qty = max(0, _parse_int(item.get("quantity"), default=0))
         price = max(0.0, _parse_float(item.get("price"), default=0.0))
-        items_amount += qty * price
+        core = max(0.0, _parse_float(item.get("core_charge"), default=0.0))
+        items_amount += qty * (price + core)
 
     non_inventory_amount = 0.0
     for line in (order_doc.get("non_inventory_amounts") or []):
@@ -1578,6 +1579,8 @@ def parts_api_orders_parse_invoice():
                     "description": part_doc.get("description", ""),
                     "in_stock": part_doc.get("in_stock", 0),
                     "average_cost": part_doc.get("average_cost", 0),
+                    "core_has_charge": bool(part_doc.get("core_has_charge", False)),
+                    "core_cost": float(part_doc.get("core_cost") or 0.0),
                 }
 
         items_with_matches.append({
@@ -1671,12 +1674,19 @@ def parts_api_orders_create():
         if not part:
             continue
 
+        # Per-unit core charge: included only if frontend toggle is on AND part has a core charge.
+        include_core = bool(it.get("include_core"))
+        core_charge = 0.0
+        if include_core and bool(part.get("core_has_charge")):
+            core_charge = max(0.0, _parse_float(part.get("core_cost"), default=0.0))
+
         items.append({
             "part_id": pid,
             "part_number": part.get("part_number"),
             "description": part.get("description"),
             "price": float(price),
             "quantity": int(qty),
+            "core_charge": float(core_charge),
         })
 
     if not items and not non_inventory_amounts:
@@ -1792,6 +1802,7 @@ def parts_api_orders_get(order_id: str):
                 "description": item.get("description") or "",
                 "quantity": quantity or 0,
                 "price": float(price or 0),
+                "core_charge": float(_parse_float(item.get("core_charge"), default=0.0)),
                 "core_has_charge": bool(part_data.get("core_has_charge", False)),
                 "core_cost": float(part_data.get("core_cost") or 0.0),
             })
@@ -1887,12 +1898,18 @@ def parts_api_orders_update(order_id: str):
         if not part:
             continue
 
+        include_core = bool(it.get("include_core"))
+        core_charge = 0.0
+        if include_core and bool(part.get("core_has_charge")):
+            core_charge = max(0.0, _parse_float(part.get("core_cost"), default=0.0))
+
         items.append({
             "part_id": pid,
             "part_number": part.get("part_number"),
             "description": part.get("description"),
             "price": float(price),
             "quantity": int(qty),
+            "core_charge": float(core_charge),
         })
 
     if not items and not non_inventory_amounts:
@@ -2164,8 +2181,13 @@ def parts_api_orders_receive(order_id: str):
         return jsonify({"ok": False, "error": "Vendor Bill is too long (max 120)."}), 400
 
     items = order.get("items") or []
-    if not isinstance(items, list) or len(items) == 0:
-        return jsonify({"ok": False, "error": "Order has no items."}), 400
+    if not isinstance(items, list):
+        items = []
+    non_inventory_amounts = order.get("non_inventory_amounts") or []
+    if not isinstance(non_inventory_amounts, list):
+        non_inventory_amounts = []
+    if len(items) == 0 and len(non_inventory_amounts) == 0:
+        return jsonify({"ok": False, "error": "Order has no items or non inventory amounts."}), 400
 
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))

@@ -407,6 +407,22 @@ a.text-decoration-none:focus-visible > .card {
   color: var(--primary-deep);
 }
 
+.gs-badge-inactive {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.4rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #b45309;
+  background: #fef3c7;
+  border: 1px solid #fcd34d;
+  border-radius: 0.25rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  vertical-align: middle;
+}
+
 .gs-empty {
   padding: 0.6rem 0.75rem;
   font-size: 0.95rem;

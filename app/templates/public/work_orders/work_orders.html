@@ -97,6 +97,7 @@
                   <th>Customer</th>
                   <th data-sort-field="work_order_date">Date</th>
                   <th>Unit</th>
+                  <th class="text-end">Mileage</th>
                   <th class="text-end">Labor</th>
                   <th class="text-end">Parts</th>
                   <th class="text-end">Tax</th>
@@ -112,6 +113,7 @@
                     <td>{{ w.customer }}</td>
                     <td>{{ w.date }}</td>
                     <td>{{ w.unit }}</td>
+                    <td class="text-end text-nowrap">{% if w.mileage %}{{ "{:,}".format(w.mileage|int) }}{% else %}-{% endif %}</td>
                     <td class="text-end">${{ "%.2f"|format(w.labor_total) }}</td>
                     <td class="text-end">${{ "%.2f"|format(w.parts_total) }}</td>
                     <td class="text-end">${{ "%.2f"|format(w.sales_tax_total or 0) }}</td>

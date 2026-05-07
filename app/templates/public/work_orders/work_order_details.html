@@ -814,10 +814,11 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
           </div>
           <div class="modal-body">
-            <div class="mb-3 position-relative">
+            <div class="mb-3">
               <input type="hidden" id="presetSelectedId" value="">
-              <input type="text" class="form-control" id="presetSearchInput" placeholder="Search preset..." autocomplete="off">
-              <div id="presetSearchDrop" class="list-group position-absolute shadow-sm" style="z-index:1060; display:none; max-height:260px; overflow:auto; width:100%;"></div>
+              <select id="presetSelect" class="form-select" style="width:100%;">
+                <option value=""></option>
+              </select>
             </div>
           </div>
           <div class="modal-footer">

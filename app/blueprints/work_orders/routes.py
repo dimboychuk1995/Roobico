@@ -1042,9 +1042,11 @@ def get_work_orders_list(
             customers_map[c.get("_id")] = customer_label(c)
 
     units_map = {}
+    units_mileage_map = {}
     if unit_ids:
         for u in shop_db.units.find({"_id": {"$in": unit_ids}}):
             units_map[u.get("_id")] = unit_label(u)
+            units_mileage_map[u.get("_id")] = u.get("mileage")
 
     items = []
     for x in rows:
@@ -1064,6 +1066,7 @@ def get_work_orders_list(
                 "customer": customers_map.get(x.get("customer_id")) or "-",
                 "date": format_preferred_date_label(x.get("work_order_date"), x.get("created_at")),
                 "unit": units_map.get(x.get("unit_id")) or "-",
+                "mileage": x.get("mileage") or units_mileage_map.get(x.get("unit_id")),
                 "labor_total": labor_total,
                 "parts_total": parts_total,
                 "sales_tax_total": sales_tax_total,
@@ -1170,9 +1173,11 @@ def get_estimates_list(
             customers_map[c.get("_id")] = customer_label(c)
 
     units_map = {}
+    units_mileage_map = {}
     if unit_ids:
         for u in shop_db.units.find({"_id": {"$in": unit_ids}}):
             units_map[u.get("_id")] = unit_label(u)
+            units_mileage_map[u.get("_id")] = u.get("mileage")
 
     items = []
     for x in rows:
@@ -1192,6 +1197,7 @@ def get_estimates_list(
                 "customer": customers_map.get(x.get("customer_id")) or "-",
                 "date": format_preferred_date_label(x.get("work_order_date"), x.get("created_at")),
                 "unit": units_map.get(x.get("unit_id")) or "-",
+                "mileage": x.get("mileage"),
                 "labor_total": labor_total,
                 "parts_total": parts_total,
                 "sales_tax_total": sales_tax_total,
@@ -2932,6 +2938,26 @@ def api_work_order_update(work_order_id):
     unit_mileage = data.get("unit_mileage")
     work_order_date = shop_local_date_to_utc(data.get("work_order_date"), default_today=True)
 
+    # Allow changing customer/unit on existing WO
+    new_customer_id = oid(data.get("customer_id")) if data.get("customer_id") else None
+    new_unit_id = oid(data.get("unit_id")) if data.get("unit_id") else None
+    if new_customer_id:
+        cust = shop_db.customers.find_one(
+            {"_id": new_customer_id, "shop_id": shop["_id"], "is_active": True},
+            {"_id": 1},
+        )
+        if not cust:
+            return jsonify({"ok": False, "error": "customer_not_found"}), 200
+    if new_unit_id:
+        unit_doc = shop_db.units.find_one(
+            {"_id": new_unit_id, "shop_id": shop["_id"], "is_active": True},
+            {"_id": 1, "customer_id": 1},
+        )
+        if not unit_doc:
+            return jsonify({"ok": False, "error": "unit_not_found"}), 200
+        if new_customer_id and unit_doc.get("customer_id") != new_customer_id:
+            return jsonify({"ok": False, "error": "unit_customer_mismatch"}), 200
+
     if not isinstance(labors, list):
         return jsonify({"ok": False, "error": "labors_required"}), 200
 
@@ -2980,7 +3006,7 @@ def api_work_order_update(work_order_id):
 
     # ✅ Update unit mileage if provided
     if unit_mileage is not None:
-        unit_id = wo.get("unit_id")
+        unit_id = new_unit_id or wo.get("unit_id")
         if unit_id:
             try:
                 shop_db.units.update_one(
@@ -2998,19 +3024,25 @@ def api_work_order_update(work_order_id):
 
     core_sync = sync_work_order_cores(shop_db, shop, old_labors, labors, user_id)
 
+    set_fields = {
+        "labors": labors,
+        "work_order_date": work_order_date,
+        "totals": totals,  # ✅ сохраняем totals от фронта
+        # ✅ update inventory tracking
+        "inventory_adjusted_at": now,
+        "inventory_adjustment_count": (wo.get("inventory_adjustment_count", 0) or 0) + len(inventory_adjustment["adjusted"]),
+        "updated_at": now,
+        "updated_by": user_id,
+    }
+    if new_customer_id:
+        set_fields["customer_id"] = new_customer_id
+    if new_unit_id:
+        set_fields["unit_id"] = new_unit_id
+
     shop_db.work_orders.update_one(
         {"_id": wo_id},
         {
-            "$set": {
-                "labors": labors,
-                "work_order_date": work_order_date,
-                "totals": totals,  # ✅ сохраняем totals от фронта
-                # ✅ update inventory tracking
-                "inventory_adjusted_at": now,
-                "inventory_adjustment_count": (wo.get("inventory_adjustment_count", 0) or 0) + len(inventory_adjustment["adjusted"]),
-                "updated_at": now,
-                "updated_by": user_id,
-            },
+            "$set": set_fields,
             "$unset": {
                 "blocks": "",
                 "labor_total": "",

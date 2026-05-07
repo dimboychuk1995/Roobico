@@ -371,15 +371,16 @@ def global_search_api():
         email = cn.get("email") or ""
         return name, phone, email
 
-    # 1. Units  (unit_number, vin)
+    # 1. Units  (unit_number, vin) — include inactive ones with an "Inactive" marker
     units = list(
         db.units.find(
             {"$or": [
                 {"unit_number": pattern},
                 {"vin": pattern},
             ]},
-            {"unit_number": 1, "year": 1, "make": 1, "model": 1, "vin": 1, "customer_id": 1},
-        ).limit(_GLOBAL_SEARCH_LIMIT)
+            {"unit_number": 1, "year": 1, "make": 1, "model": 1, "vin": 1,
+             "customer_id": 1, "is_active": 1},
+        ).sort([("is_active", -1)]).limit(_GLOBAL_SEARCH_LIMIT)
     )
     if units:
         # resolve customer names
@@ -408,7 +409,12 @@ def global_search_api():
                 parts_l.append(company)
             label = " · ".join(parts_l) or "—"
             cid = u.get("customer_id") or ""
-            items.append({"label": label, "url": f"/customers/{cid}/units/{u['_id']}"})
+            inactive = u.get("is_active") is False
+            items.append({
+                "label": label,
+                "url": f"/customers/{cid}/units/{u['_id']}",
+                "inactive": inactive,
+            })
         groups.append({"category": "Units", "items": items})
 
     # 2. Customers  (company, name)

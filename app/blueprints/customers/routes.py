@@ -1029,7 +1029,7 @@ def customer_unit_details_page(customer_id, unit_id):
 
     shop_db = coll.database
     unit = shop_db.units.find_one(
-        {"_id": uid, "customer_id": cid, "shop_id": shop["_id"], "is_active": True}
+        {"_id": uid, "customer_id": cid, "shop_id": shop["_id"]}
     )
     if not unit:
         flash("Unit not found for this customer.", "error")

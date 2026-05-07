@@ -1704,69 +1704,52 @@
     return cachedPresetsList;
   }
 
-  function bindPresetSearch(searchInput, dropDiv, hiddenInput) {
-    searchInput.value = "";
-    hiddenInput.value = "";
-    dropDiv.innerHTML = "";
-    dropDiv.style.display = "none";
-
+  function bindPresetSearch(selectEl, hiddenInput, modalEl) {
+    if (!selectEl || !hasSelect2()) {
+      // Fallback (no jQuery/Select2): keep it minimal
+      hiddenInput.value = "";
+      return;
+    }
+    const $select = window.jQuery(selectEl);
     const applyBtn = document.getElementById("presetApplyBtn");
     if (applyBtn) applyBtn.disabled = true;
+    hiddenInput.value = "";
 
-    // Remove old listeners by replacing handler references
-    const handlers = searchInput._presetHandlers;
-    if (handlers) {
-      searchInput.removeEventListener("input", handlers.onInput);
-      searchInput.removeEventListener("focus", handlers.onFocus);
-      searchInput.removeEventListener("blur", handlers.onBlur);
+    if ($select.data("select2")) {
+      $select.off(".woPresetSelect2");
+      $select.select2("destroy");
     }
+    selectEl.innerHTML = '<option value=""></option>';
 
     loadPresetsList().then(function (items) {
-      const list = items.map(function (p) { return { value: p.id, label: p.name }; });
+      (items || []).forEach(function (p) {
+        const opt = document.createElement("option");
+        opt.value = p.id;
+        opt.textContent = p.name;
+        selectEl.appendChild(opt);
+      });
 
-      function renderList(filtered) {
-        dropDiv.innerHTML = "";
-        filtered.forEach(function (entry) {
-          const a = document.createElement("a");
-          a.href = "#";
-          a.className = "list-group-item list-group-item-action py-1 px-2";
-          a.style.fontSize = "0.9em";
-          a.textContent = entry.label;
-          a.addEventListener("mousedown", function (e) {
-            e.preventDefault();
-            hiddenInput.value = entry.value;
-            searchInput.value = entry.label;
-            dropDiv.style.display = "none";
-            if (applyBtn) applyBtn.disabled = false;
-          });
-          dropDiv.appendChild(a);
-        });
-        dropDiv.style.display = filtered.length ? "block" : "none";
-      }
+      $select.select2({
+        width: "100%",
+        placeholder: "Search preset...",
+        allowClear: true,
+        minimumResultsForSearch: 0,
+        dropdownParent: modalEl ? window.jQuery(modalEl) : window.jQuery(document.body),
+        dropdownCssClass: "ss-work-order-select2-dropdown",
+        selectionCssClass: "ss-work-order-select2-selection",
+      });
 
-      function onInput() {
-        const q = searchInput.value.toLowerCase();
+      $select.val("").trigger("change.select2");
+
+      $select.on("select2:select.woPresetSelect2", function (e) {
+        const id = e.params && e.params.data ? e.params.data.id : "";
+        hiddenInput.value = id || "";
+        if (applyBtn) applyBtn.disabled = !id;
+      });
+      $select.on("select2:clear.woPresetSelect2", function () {
         hiddenInput.value = "";
         if (applyBtn) applyBtn.disabled = true;
-        const filtered = q ? list.filter(function (e) { return e.label.toLowerCase().indexOf(q) !== -1; }) : list;
-        renderList(filtered);
-      }
-
-      function onFocus() {
-        const q = searchInput.value.toLowerCase();
-        const filtered = q ? list.filter(function (e) { return e.label.toLowerCase().indexOf(q) !== -1; }) : list;
-        renderList(filtered);
-      }
-
-      function onBlur() {
-        setTimeout(function () { dropDiv.style.display = "none"; }, 150);
-      }
-
-      searchInput.addEventListener("input", onInput);
-      searchInput.addEventListener("focus", onFocus);
-      searchInput.addEventListener("blur", onBlur);
-
-      searchInput._presetHandlers = { onInput: onInput, onFocus: onFocus, onBlur: onBlur };
+      });
     });
   }
 
@@ -3355,8 +3338,7 @@
     // ── Add Preset ──
     const addPresetModalEl = $("addPresetModal");
     const presetSelectedId = $("presetSelectedId");
-    const presetSearchInput = $("presetSearchInput");
-    const presetSearchDrop = $("presetSearchDrop");
+    const presetSelectEl = $("presetSelect");
     const presetApplyBtn = $("presetApplyBtn");
 
     blocksContainer.addEventListener("click", function (e) {
@@ -3368,10 +3350,18 @@
       if (!blockEl) return;
 
       presetTargetBlock = blockEl;
-      bindPresetSearch(presetSearchInput, presetSearchDrop, presetSelectedId);
+      bindPresetSearch(presetSelectEl, presetSelectedId, addPresetModalEl);
 
       if (addPresetModalEl && window.bootstrap && window.bootstrap.Modal) {
         const modal = window.bootstrap.Modal.getOrCreateInstance(addPresetModalEl);
+        // Auto-open Select2 dropdown (focuses its search input) once shown
+        const onShown = function () {
+          addPresetModalEl.removeEventListener("shown.bs.modal", onShown);
+          if (presetSelectEl && hasSelect2()) {
+            try { window.jQuery(presetSelectEl).select2("open"); } catch {}
+          }
+        };
+        addPresetModalEl.addEventListener("shown.bs.modal", onShown);
         modal.show();
       }
     });
@@ -4221,12 +4211,19 @@
         
         // ✅ Get current mileage from input
         const unit_mileage = unitMileageInput ? String(unitMileageInput.value || "").trim() : "";
+        const customer_id = String(customerSel?.value || "").trim();
+        const unit_id = String(unitSel?.value || "").trim();
+
+        if (!customer_id) { toast("Please select a customer."); return; }
+        if (!unit_id) { toast("Please select a unit."); return; }
 
         await apiPostJson(
           `/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/update`,
           {
             labors,
             totals,
+            customer_id,
+            unit_id,
             unit_mileage: unit_mileage ? unit_mileage : undefined,
             work_order_date: workOrderDateInput ? String(workOrderDateInput.value || "").trim() : undefined,
           }

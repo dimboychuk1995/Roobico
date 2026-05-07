@@ -306,10 +306,13 @@
 
   function positionResults() {
     var rect = input.getBoundingClientRect();
+    var desiredWidth = Math.max(900, rect.width);
+    var maxWidth = Math.max(320, window.innerWidth - rect.left - 16);
+    var width = Math.min(desiredWidth, maxWidth);
     resultsBox.style.position = "fixed";
     resultsBox.style.top  = (rect.bottom + 4) + "px";
     resultsBox.style.left = rect.left + "px";
-    resultsBox.style.width = Math.max(680, rect.width) + "px";
+    resultsBox.style.width = width + "px";
   }
 
   function showResults() {
@@ -328,7 +331,8 @@
       html += '<div class="gs-group">';
       html += '<div class="gs-category">' + escHtml(g.category) + '</div>';
       g.items.forEach(function (item) {
-        html += '<a class="gs-item" href="' + escAttr(item.url) + '">' + escHtml(item.label) + '</a>';
+        var badge = item.inactive ? ' <span class="gs-badge-inactive">Inactive</span>' : '';
+        html += '<a class="gs-item" href="' + escAttr(item.url) + '">' + escHtml(item.label) + badge + '</a>';
       });
       html += '</div>';
     });
