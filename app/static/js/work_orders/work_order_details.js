@@ -1204,7 +1204,7 @@
   }
 
   async function fetchParts(q) {
-    const url = `/work_orders/api/parts/search?q=${encodeURIComponent(q)}&limit=20`;
+    const url = `/work_orders/api/parts/search?q=${encodeURIComponent(q)}&limit=30`;
     const res = await fetch(url, { headers: { "Accept": "application/json" } });
     if (!res.ok) return [];
     const data = await res.json();
@@ -3773,7 +3773,7 @@
           if (q.length < 3) { hide(); return; }
           timer = setTimeout(async () => {
             try {
-              const r = await fetch(`/work_orders/api/parts/search?q=${encodeURIComponent(q)}&limit=15`);
+              const r = await fetch(`/work_orders/api/parts/search?q=${encodeURIComponent(q)}&limit=25`);
               const d = await r.json();
               const items = (d && d.items) || [];
               if (!items.length) {

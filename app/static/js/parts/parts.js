@@ -808,7 +808,7 @@
 			if (searchAbort) searchAbort.abort();
 			searchAbort = new AbortController();
 
-			const res = await fetch(`/parts/api/search?q=${encodeURIComponent(q)}&limit=20`, {
+			const res = await fetch(`/parts/api/search?q=${encodeURIComponent(q)}&limit=30`, {
 				signal: searchAbort.signal,
 			});
 			return await res.json();

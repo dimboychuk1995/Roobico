@@ -1357,7 +1357,7 @@ def parts_api_search():
     Search parts for dropdown/autocomplete.
     Query params:
       q: search string
-      limit: optional (default 20, max 50)
+      limit: optional (default 30, max 60)
 
     Returns: { ok: true, items: [{id, part_number, description, average_cost, vendor_id}] }
     """
@@ -1366,11 +1366,11 @@ def parts_api_search():
         return {"ok": False, "error": "Shop database not configured."}, 400
 
     q = (request.args.get("q") or "").strip()
-    limit = _parse_int(request.args.get("limit") or "20", default=20)
+    limit = _parse_int(request.args.get("limit") or "30", default=30)
     if limit <= 0:
-        limit = 20
-    if limit > 50:
-        limit = 50
+        limit = 30
+    if limit > 60:
+        limit = 60
 
     # Если пустой запрос — не грузим базу
     if not q:

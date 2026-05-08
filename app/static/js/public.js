@@ -35,10 +35,26 @@
 			actionPath: getFormActionPath(form),
 			tabValue: getFormTabValue(form),
 			shouldRestoreFocus: isFocused,
+			liveValue: isFocused ? String(input.value || "") : null,
 			selectionStart: isFocused ? input.selectionStart : null,
 			selectionEnd: isFocused ? input.selectionEnd : null,
 			selectionDirection: isFocused ? input.selectionDirection : null,
 		};
+	}
+
+	// Capture state of the currently-focused search input directly from the
+	// live DOM. Used right before innerHTML swap so we preserve any keystrokes
+	// the user typed while the AJAX request was in flight.
+	function captureLiveSearchFocusState() {
+		var active = document.activeElement;
+		if (!active || active.tagName !== "INPUT" || active.name !== "q") {
+			return null;
+		}
+		var form = active.form || active.closest("form");
+		if (!form) {
+			return null;
+		}
+		return captureInputFocusState(form, active);
 	}
 
 	function findMatchingSearchInput(focusState) {
@@ -74,17 +90,23 @@
 			return;
 		}
 
+		// If we captured the live value (typed-during-fetch included), write it
+		// back into the freshly rendered input so no keystrokes are lost.
+		if (typeof focusState.liveValue === "string" && input.value !== focusState.liveValue) {
+			input.value = focusState.liveValue;
+		}
+
 		input.focus({ preventScroll: true });
 
-		if (
-			typeof focusState.selectionStart === "number" &&
-			typeof focusState.selectionEnd === "number"
-		) {
-			input.setSelectionRange(
-				focusState.selectionStart,
-				focusState.selectionEnd,
-				focusState.selectionDirection || "none"
-			);
+		var maxPos = (input.value || "").length;
+		var start = focusState.selectionStart;
+		var end = focusState.selectionEnd;
+		if (typeof start === "number" && typeof end === "number") {
+			if (start > maxPos) start = maxPos;
+			if (end > maxPos) end = maxPos;
+			try {
+				input.setSelectionRange(start, end, focusState.selectionDirection || "none");
+			} catch (e) { /* non-text input types */ }
 		}
 	}
 
@@ -124,6 +146,23 @@
 		return url.pathname + "?" + url.searchParams.toString();
 	}
 
+	// Find the search input inside `root` whose owning form matches the
+	// given action path + tab. Used to pair the live focused input with its
+	// counterpart in a freshly fetched document so we can transplant it.
+	function findSearchInputInRoot(root, actionPath, tabValue) {
+		if (!root) return null;
+		var inputs = root.querySelectorAll('form[method="get"] input[name="q"]');
+		for (var i = 0; i < inputs.length; i += 1) {
+			var candidate = inputs[i];
+			var form = candidate.form || candidate.closest("form");
+			if (!form) continue;
+			if (getFormActionPath(form) !== actionPath) continue;
+			if (getFormTabValue(form) !== tabValue) continue;
+			return candidate;
+		}
+		return null;
+	}
+
 	function replaceMainContent(html) {
 		var parser = new DOMParser();
 		var doc = parser.parseFromString(html, "text/html");
@@ -160,8 +199,88 @@
 		}
 
 		function finishReplace() {
-			currentMainCol.innerHTML = newMainCol.innerHTML;
+			// --- Preserve focused search input across the swap ---------------
+			// If the user is focused in an <input name="q">, we transplant the
+			// exact DOM node into the new tree. To keep native focus + caret,
+			// the input must NEVER leave the document during the swap. We
+			// park it in a hidden, in-document holder, perform the content
+			// swap, then move it into its new place — focus survives because
+			// the element is always attached to the live document.
+			var liveInput = null;
+			var liveInputActionPath = "";
+			var liveInputTabValue = "";
+			var holder = null;
+			// Capture caret state BEFORE any DOM mutation. Used as a fallback
+			// if some inline initializer (Bootstrap, modal, flatpickr…) steals
+			// focus during script re-execution.
+			var savedSelectionStart = null;
+			var savedSelectionEnd = null;
+			var savedSelectionDirection = null;
+			var active = document.activeElement;
+			if (active && active.tagName === "INPUT" && active.name === "q") {
+				var liveForm = active.form || active.closest("form");
+				if (liveForm && currentMainCol.contains(active)) {
+					liveInput = active;
+					liveInputActionPath = getFormActionPath(liveForm);
+					liveInputTabValue = getFormTabValue(liveForm);
+					try {
+						savedSelectionStart = liveInput.selectionStart;
+						savedSelectionEnd = liveInput.selectionEnd;
+						savedSelectionDirection = liveInput.selectionDirection;
+					} catch (e) { /* non-text input */ }
+					holder = document.createElement("div");
+					holder.setAttribute("aria-hidden", "true");
+					holder.style.cssText =
+						"position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;overflow:hidden;";
+					document.body.appendChild(holder);
+					// Moving a focused element between in-document parents
+					// preserves focus and selection in all major browsers.
+					holder.appendChild(liveInput);
+				}
+			}
 
+			// --- Preserve scroll position -----------------------------------
+			var scrollX = window.scrollX || window.pageXOffset || 0;
+			var scrollY = window.scrollY || window.pageYOffset || 0;
+
+			// --- Swap content -----------------------------------------------
+			// Use replaceChildren with the imported (detached) nodes so the
+			// transplanted live input keeps its identity. innerHTML would
+			// re-parse and destroy any preserved nodes.
+			var imported = document.importNode(newMainCol, true);
+			var importedChildren = [];
+			while (imported.firstChild) {
+				importedChildren.push(imported.firstChild);
+				imported.removeChild(imported.firstChild);
+			}
+			currentMainCol.replaceChildren.apply(currentMainCol, importedChildren);
+
+			// Now move the live input into its new place inside the freshly
+			// attached tree, replacing the server-rendered counterpart.
+			if (liveInput) {
+				var newCounterpart = findSearchInputInRoot(
+					currentMainCol,
+					liveInputActionPath,
+					liveInputTabValue
+				);
+				if (newCounterpart && newCounterpart.parentNode) {
+					// Mirror server-rendered `value` attribute (defaultValue)
+					// without touching the live `value` property — preserves
+					// any keystrokes the user typed during the in-flight fetch.
+					var serverValueAttr = newCounterpart.getAttribute("value");
+					if (serverValueAttr === null) {
+						liveInput.removeAttribute("value");
+					} else {
+						liveInput.setAttribute("value", serverValueAttr);
+					}
+					newCounterpart.parentNode.replaceChild(liveInput, newCounterpart);
+				}
+				if (holder && holder.parentNode) {
+					holder.parentNode.removeChild(holder);
+				}
+			}
+
+			// Re-execute inline scripts so per-page initializers run again.
 			var scripts = currentMainCol.querySelectorAll("script");
 			for (var i = 0; i < scripts.length; i += 1) {
 				var oldScript = scripts[i];
@@ -178,8 +297,58 @@
 				document.title = doc.title;
 			}
 
+			// Restore scroll BEFORE notifying so listeners don't see a jump.
+			window.scrollTo(scrollX, scrollY);
+
 			window.dispatchEvent(new CustomEvent("roobico:content-replaced"));
 			bindAutoSearchForms();
+
+			// --- Robust focus restoration -----------------------------------
+			// Some inline page initializers (Bootstrap dropdowns/modals, the
+			// flatpickr autoFocus reset, focus()-based widgets) steal focus
+			// either synchronously or via microtask / rAF / setTimeout(0).
+			// Re-assert focus + caret position multiple times to win every
+			// race. Each attempt is a no-op if focus is already on the input.
+			if (liveInput && liveInput.isConnected) {
+				var attemptsLeft = 4;
+
+				function ensureFocus() {
+					if (!liveInput.isConnected) return;
+					if (document.activeElement !== liveInput) {
+						try {
+							liveInput.focus({ preventScroll: true });
+						} catch (e) { /* no-op */ }
+					}
+					if (
+						savedSelectionStart != null &&
+						savedSelectionEnd != null &&
+						document.activeElement === liveInput
+					) {
+						var maxPos = (liveInput.value || "").length;
+						var s = Math.min(savedSelectionStart, maxPos);
+						var e2 = Math.min(savedSelectionEnd, maxPos);
+						try {
+							liveInput.setSelectionRange(s, e2, savedSelectionDirection || "none");
+						} catch (e) { /* no-op */ }
+					}
+					attemptsLeft -= 1;
+					if (attemptsLeft > 0 && document.activeElement !== liveInput) {
+						(window.requestAnimationFrame || setTimeout)(ensureFocus);
+					}
+				}
+
+				// Sync attempt — beats any same-tick focus stealer that ran
+				// before this point.
+				ensureFocus();
+				// Microtask — beats queueMicrotask focus stealers.
+				Promise.resolve().then(ensureFocus);
+				// Next animation frame — beats rAF stealers.
+				if (typeof window.requestAnimationFrame === "function") {
+					window.requestAnimationFrame(ensureFocus);
+				}
+				// Macrotask — beats setTimeout(0) stealers (e.g. Bootstrap).
+				setTimeout(ensureFocus, 0);
+			}
 		}
 
 		if (cssPromises.length > 0) {
@@ -318,15 +487,19 @@
 
 	async function runSearch(form, input) {
 		var url = buildSearchUrl(form, input);
-		var focusState = captureInputFocusState(form, input);
 
 		if (activeSearchController) {
 			activeSearchController.abort();
 		}
 		activeSearchController = new AbortController();
 
-		try {
+		// Show a subtle loading hint only if the request is slow (>400ms).
+		// This avoids the dim "page refresh" flash on every keystroke.
+		var loadingTimer = setTimeout(function () {
 			document.body.classList.add("is-search-loading");
+		}, 400);
+
+		try {
 			var response = await fetch(url.toString(), {
 				method: "GET",
 				headers: {
@@ -354,14 +527,15 @@
 				window.location.assign(url.toString());
 				return;
 			}
-
-			restoreInputFocusState(focusState);
+			// Focus + caret are preserved by replaceMainContent which
+			// transplants the live <input> node into the new tree.
 		} catch (error) {
 			if (error && error.name === "AbortError") {
 				return;
 			}
 			window.location.assign(url.toString());
 		} finally {
+			clearTimeout(loadingTimer);
 			document.body.classList.remove("is-search-loading");
 		}
 	}
@@ -476,14 +650,13 @@
 		if (form.dataset.autoSearchBound === "1") {
 			return;
 		}
+		form.dataset.autoSearchBound = "1";
 
 		var input = form.querySelector('input[name="q"]');
 		if (!input) {
 			return;
 		}
 
-		form.dataset.autoSearchBound = "1";
-		var lastSubmittedSignature = buildFormSignature(form, input);
 		var actionPath = getFormActionPath(form);
 		var useAjaxSearch = !/^\/parts(\/|$)/.test(actionPath);
 
@@ -493,43 +666,41 @@
 		var _urlParams = new URLSearchParams(window.location.search);
 		form._dateUserTouched = _urlParams.has("date_preset") || _urlParams.has("date_from") || _urlParams.has("date_to");
 
-		// No visible Search button – search runs live on input / filter change.
-
-		function submitIfChanged() {
-			var nextSignature = buildFormSignature(form, input);
-			if (nextSignature === lastSubmittedSignature) {
-				return;
-			}
-			lastSubmittedSignature = nextSignature;
-			if (useAjaxSearch) {
-				runSearch(form, input);
-				return;
-			}
-
-			window.location.assign(buildSearchUrl(form, input).toString());
+		// Resolve the live form at fire time. After an AJAX search swap, the
+		// `<input>` node is transplanted into a freshly rendered form, so the
+		// form node we captured in this closure becomes detached. Always read
+		// from `input.form` to operate on the current live form.
+		function currentForm() {
+			return input.form || input.closest("form") || form;
 		}
 
-		var inputDebounceTimer = null;
-		var INPUT_DEBOUNCE_MS = useAjaxSearch ? 250 : 450;
-		input.addEventListener("input", function () {
-			if (inputDebounceTimer) {
-				clearTimeout(inputDebounceTimer);
+		function submitIfChanged() {
+			var liveForm = currentForm();
+			var nextSignature = buildFormSignature(liveForm, input);
+			if (nextSignature === (input.dataset.lastSearchSignature || "")) {
+				return;
 			}
-			inputDebounceTimer = setTimeout(function () {
-				inputDebounceTimer = null;
-				submitIfChanged();
-			}, INPUT_DEBOUNCE_MS);
-		});
+			input.dataset.lastSearchSignature = nextSignature;
+			if (useAjaxSearch) {
+				runSearch(liveForm, input);
+				return;
+			}
 
+			window.location.assign(buildSearchUrl(liveForm, input).toString());
+		}
+
+		// Form-level listeners (submit/change) are bound only to this form
+		// node. The form gets replaced on every AJAX swap, so re-bind here
+		// each time `setupAutoSearch` is called for a fresh form.
 		form.addEventListener("submit", function (event) {
 			if (!useAjaxSearch) {
 				return;
 			}
 
 			event.preventDefault();
-			if (inputDebounceTimer) {
-				clearTimeout(inputDebounceTimer);
-				inputDebounceTimer = null;
+			if (input._inputDebounceTimer) {
+				clearTimeout(input._inputDebounceTimer);
+				input._inputDebounceTimer = null;
 			}
 			submitIfChanged();
 		});
@@ -542,18 +713,42 @@
 			if (target.name === "q") {
 				return;
 			}
+			var liveForm = currentForm();
 			if (target.name === "date_preset") {
-				form._dateUserTouched = true;
-				applyDatePresetToForm(form, target.value);
+				liveForm._dateUserTouched = true;
+				applyDatePresetToForm(liveForm, target.value);
 			}
 			if (target.name === "date_from" || target.name === "date_to") {
-				form._dateUserTouched = true;
-				var presetSelect = form.querySelector('select[name="date_preset"]');
+				liveForm._dateUserTouched = true;
+				var presetSelect = liveForm.querySelector('select[name="date_preset"]');
 				if (presetSelect && presetSelect.value !== "custom") {
 					presetSelect.value = "custom";
 				}
 			}
 			submitIfChanged();
+		});
+
+		// Input-level listener: bind ONCE per input lifetime. The input node
+		// is preserved across AJAX swaps (transplanted into the new form), so
+		// we must not attach duplicate listeners.
+		if (input.dataset.autoSearchInputBound === "1") {
+			// Initialize signature for the new form so a re-bind doesn't
+			// trigger an immediate refetch.
+			input.dataset.lastSearchSignature = buildFormSignature(currentForm(), input);
+			return;
+		}
+		input.dataset.autoSearchInputBound = "1";
+		input.dataset.lastSearchSignature = buildFormSignature(currentForm(), input);
+
+		var INPUT_DEBOUNCE_MS = useAjaxSearch ? 250 : 450;
+		input.addEventListener("input", function () {
+			if (input._inputDebounceTimer) {
+				clearTimeout(input._inputDebounceTimer);
+			}
+			input._inputDebounceTimer = setTimeout(function () {
+				input._inputDebounceTimer = null;
+				submitIfChanged();
+			}, INPUT_DEBOUNCE_MS);
 		});
 	}
 
