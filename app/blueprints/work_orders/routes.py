@@ -1087,6 +1087,7 @@ def get_work_orders_list(
 
     customer_ids = [x.get("customer_id") for x in rows if x.get("customer_id")]
     unit_ids = [x.get("unit_id") for x in rows if x.get("unit_id")]
+    wo_ids = [x.get("_id") for x in rows if x.get("_id")]
 
     customers_map = {}
     if customer_ids:
@@ -1100,6 +1101,15 @@ def get_work_orders_list(
             units_map[u.get("_id")] = unit_label(u)
             units_mileage_map[u.get("_id")] = u.get("mileage")
 
+    paid_map: dict = {}
+    if wo_ids:
+        pay_pipeline = [
+            {"$match": {"work_order_id": {"$in": wo_ids}, "is_active": True}},
+            {"$group": {"_id": "$work_order_id", "paid": {"$sum": {"$ifNull": ["$amount", 0]}}}},
+        ]
+        for r in shop_db.work_order_payments.aggregate(pay_pipeline):
+            paid_map[r.get("_id")] = float(r.get("paid") or 0)
+
     items = []
     for x in rows:
         totals = x.get("totals") if isinstance(x.get("totals"), dict) else {}
@@ -1110,6 +1120,8 @@ def get_work_orders_list(
         grand_total = round2(totals.get("grand_total") if totals.get("grand_total") is not None else x.get("grand_total"))
 
         status = (x.get("status") or "open").strip().lower()
+        paid_amount = round2(paid_map.get(x.get("_id"), 0))
+        balance = round2(max(0.0, grand_total - paid_amount))
 
         items.append(
             {
@@ -1123,6 +1135,8 @@ def get_work_orders_list(
                 "parts_total": parts_total,
                 "sales_tax_total": sales_tax_total,
                 "grand_total": grand_total,
+                "paid_amount": paid_amount,
+                "balance": balance,
                 "is_paid": status == "paid",
                 "status": status,
                 "is_in_progress": status == "in_progress",
