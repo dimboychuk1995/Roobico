@@ -185,16 +185,23 @@ def _sync_work_order_payment_state(shop_db, wo: dict, user_id, now):
         return None
 
     summary = _build_work_order_payment_summary(wo, _sum_active_work_order_payments(shop_db, wo_id))
+    # Preserve "in_progress" status when there's no payment yet (computed status would be "open")
+    new_status = summary["status"]
+    current_status = (wo.get("status") or "open").strip().lower()
+    if new_status == "open" and current_status == "in_progress" and (summary.get("paid_amount") or 0) <= 0.01:
+        new_status = "in_progress"
     shop_db.work_orders.update_one(
         {"_id": wo_id},
         {
             "$set": {
-                "status": summary["status"],
+                "status": new_status,
                 "updated_at": now,
                 "updated_by": user_id,
             }
         },
     )
+    summary["status"] = new_status
+    summary["is_in_progress"] = new_status == "in_progress"
     return summary
 
 
@@ -999,6 +1006,8 @@ def get_work_orders_list(
         query["status"] = "paid"
     elif paid_status == "unpaid":
         query["status"] = {"$ne": "paid"}
+    elif paid_status == "in_progress":
+        query["status"] = "in_progress"
 
     search_filter = build_regex_search_filter(
         q,
@@ -1115,6 +1124,8 @@ def get_work_orders_list(
                 "sales_tax_total": sales_tax_total,
                 "grand_total": grand_total,
                 "is_paid": status == "paid",
+                "status": status,
+                "is_in_progress": status == "in_progress",
             }
         )
 
@@ -2503,7 +2514,7 @@ def create_work_order():
         "wo_number": wo_number,
         "customer_id": customer_id,
         "unit_id": unit_id,
-        "status": "open",
+        "status": "in_progress" if (request.form.get("create_status") or "").strip().lower() == "in_progress" else "open",
         "labors": labors,
         "work_order_date": work_order_date,
 
@@ -3082,6 +3093,11 @@ def api_work_order_update(work_order_id):
     if new_unit_id:
         set_fields["unit_id"] = new_unit_id
 
+    # ✅ Optional explicit status transition: "open" (completed) or "in_progress"
+    save_status = (data.get("save_status") or "").strip().lower()
+    if save_status in ("open", "in_progress"):
+        set_fields["status"] = save_status
+
     shop_db.work_orders.update_one(
         {"_id": wo_id},
         {
@@ -3097,6 +3113,7 @@ def api_work_order_update(work_order_id):
 
     return jsonify({
         "ok": True,
+        "status": set_fields.get("status") or (wo.get("status") or "open"),
         "inventory_adjusted": len(inventory_adjustment["adjusted"]) > 0,
         "inventory_changes": inventory_adjustment["adjusted"],
         "inventory_warnings": inventory_warnings,
@@ -3537,14 +3554,14 @@ def api_work_order_set_status(work_order_id):
     data = request.get_json(silent=True) or {}
     status = (data.get("status") or "").strip().lower()
 
-    if status not in ("open", "paid"):
+    if status not in ("open", "paid", "in_progress"):
         return jsonify({"ok": False, "error": "invalid_status"}), 200
 
     now = utcnow()
     user_id = current_user_id()
 
-    # If changing to "open" (unpaid), delete all payment records for this work order
-    if status == "open":
+    # If changing to "open" (unpaid) or "in_progress", delete all payment records for this work order
+    if status in ("open", "in_progress"):
         shop_db.work_order_payments.delete_many({"work_order_id": wo_id})
 
     shop_db.work_orders.update_one(

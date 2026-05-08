@@ -143,6 +143,59 @@
   box-shadow: none;
 }
 
+/* --- Goal mini donuts (Labor / Parts Sales / Total) --- */
+.dashboard-goals-row {
+  align-items: stretch;
+}
+
+.dashboard-goal-mini {
+  position: relative;
+  width: 186px;
+  height: 186px;
+  margin: 0 auto;
+}
+
+.dashboard-goal-mini-ring {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: conic-gradient(
+    from -90deg,
+    #1a7a42 0%,
+    #1a7a42 var(--pct, 0%),
+    #e2e8f0 var(--pct, 0%),
+    #e2e8f0 100%
+  );
+  box-shadow:
+    inset 0 0 0 1px rgba(0, 0, 0, 0.06),
+    0 8px 20px rgba(0, 0, 0, 0.1);
+}
+
+.dashboard-goal-mini-ring::after {
+  content: "";
+  position: absolute;
+  inset: 30px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: inset 0 0 0 1px #e2e8f0;
+}
+
+.dashboard-goal-mini-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.dashboard-goal-mini-percent {
+  font-weight: 700;
+  font-size: 1.15rem;
+  color: #1f2937;
+}
+
 .dashboard-async-card {
   position: relative;
 }

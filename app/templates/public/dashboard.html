@@ -121,16 +121,100 @@
     <div class="card mb-3">
       <div class="card-body dashboard-async-card" data-block="goal-progress">
         <div class="dashboard-card-loader"><span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span></div>
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <div class="small text-muted">Goal Progress (Selected Period)</div>
-          <div class="small text-muted">Goal: <span id="dashGoalCount">{{ goal_count or 0 }}</span></div>
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <div class="small text-muted">
+            Goals Progress (<span id="dashGoalsPeriodLabel">Selected Period</span>)
+            <span class="text-muted ms-1" id="dashGoalsProrationNote" style="display:none;">— prorated from monthly</span>
+          </div>
+          <button type="button" class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" id="dashGoalsEditBtn"
+                  data-bs-toggle="modal" data-bs-target="#dashGoalsModal" title="Edit monthly goals">
+            <i class="bi bi-gear-fill"></i>
+            <span>Edit Goals</span>
+          </button>
         </div>
-        <div class="progress dashboard-goal-progress mb-2" id="dashGoalProgress" role="progressbar" aria-label="Goal progress" aria-valuenow="{{ '%.0f'|format(goal_percent or 0) }}" aria-valuemin="0" aria-valuemax="100">
-          <div class="progress-bar" id="dashGoalProgressBar" style="width: {{ '%.2f'|format(goal_percent or 0) }}%"></div>
+        <div class="row g-3 dashboard-goals-row">
+          <div class="col-12 col-md-4 text-center">
+            <div class="small text-muted mb-1">Labor</div>
+            <div class="dashboard-goal-mini">
+              <div class="dashboard-goal-mini-ring" id="dashGoalLaborRing" style="--pct: 0%"></div>
+              <div class="dashboard-goal-mini-center">
+                <div class="dashboard-goal-mini-percent" id="dashGoalLaborPercent">0%</div>
+              </div>
+            </div>
+            <div class="small mt-2">
+              <strong id="dashGoalLaborActual">$0.00</strong>
+              <span class="text-muted">/ <span id="dashGoalLaborTarget">$0.00</span></span>
+            </div>
+          </div>
+          <div class="col-12 col-md-4 text-center">
+            <div class="small text-muted mb-1">Parts Sales</div>
+            <div class="dashboard-goal-mini">
+              <div class="dashboard-goal-mini-ring" id="dashGoalPartsRing" style="--pct: 0%"></div>
+              <div class="dashboard-goal-mini-center">
+                <div class="dashboard-goal-mini-percent" id="dashGoalPartsPercent">0%</div>
+              </div>
+            </div>
+            <div class="small mt-2">
+              <strong id="dashGoalPartsActual">$0.00</strong>
+              <span class="text-muted">/ <span id="dashGoalPartsTarget">$0.00</span></span>
+            </div>
+          </div>
+          <div class="col-12 col-md-4 text-center">
+            <div class="small text-muted mb-1">Total</div>
+            <div class="dashboard-goal-mini">
+              <div class="dashboard-goal-mini-ring" id="dashGoalTotalRing" style="--pct: 0%"></div>
+              <div class="dashboard-goal-mini-center">
+                <div class="dashboard-goal-mini-percent" id="dashGoalTotalPercent">0%</div>
+              </div>
+            </div>
+            <div class="small mt-2">
+              <strong id="dashGoalTotalActual">$0.00</strong>
+              <span class="text-muted">/ <span id="dashGoalTotalTarget">$0.00</span></span>
+            </div>
+          </div>
         </div>
-        <div class="small text-muted" id="dashGoalSummary">
-          Current: <strong>{{ period_wo_total or 0 }}</strong> / {{ goal_count or 0 }}
-          ({{ '%.1f'|format(goal_percent or 0) }}%)
+      </div>
+    </div>
+
+    <!-- Goals Edit Modal -->
+    <div class="modal fade" id="dashGoalsModal" tabindex="-1" aria-labelledby="dashGoalsModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="dashGoalsModalLabel">Monthly Goals</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="small text-muted mb-3">
+              Goals are entered per month. For other periods (week, quarter, year, custom),
+              the value will be auto-prorated by the number of days.
+            </p>
+            <form id="dashGoalsForm" class="row g-3">
+              <div class="col-12">
+                <label class="form-label small mb-1" for="dashGoalLaborInput">Labor (per month, $)</label>
+                <input type="number" class="form-control form-control-sm" id="dashGoalLaborInput"
+                       name="labor" min="0" step="0.01"
+                       value="{{ '%.2f'|format((monthly_goals or {}).get('labor', 0)) }}" />
+              </div>
+              <div class="col-12">
+                <label class="form-label small mb-1" for="dashGoalPartsInput">Parts Sales (per month, $)</label>
+                <input type="number" class="form-control form-control-sm" id="dashGoalPartsInput"
+                       name="parts_sales" min="0" step="0.01"
+                       value="{{ '%.2f'|format((monthly_goals or {}).get('parts_sales', 0)) }}" />
+              </div>
+              <div class="col-12">
+                <label class="form-label small mb-1" for="dashGoalTotalInput">Total (per month, $)</label>
+                <input type="number" class="form-control form-control-sm" id="dashGoalTotalInput"
+                       name="total" min="0" step="0.01"
+                       value="{{ '%.2f'|format((monthly_goals or {}).get('total', 0)) }}" />
+              </div>
+              <div class="col-12 small text-danger" id="dashGoalsFormError" style="display:none;"></div>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-sm btn-primary" id="dashGoalsSaveBtn">Save</button>
+          </div>
         </div>
       </div>
     </div>
@@ -167,6 +251,7 @@
 <script>
   window.DASHBOARD_METRICS_API_URL = "{{ dashboard_metrics_api_url }}";
   window.DASHBOARD_METRICS_BLOCK_API_TEMPLATE = "{{ url_for('dashboard.dashboard_metrics_block_api', block_name='__BLOCK__') }}";
+  window.DASHBOARD_GOALS_SAVE_URL = "{{ dashboard_goals_save_url }}";
   (function bootDashboardMetricsInit() {
     var attempts = 0;
     function run() {

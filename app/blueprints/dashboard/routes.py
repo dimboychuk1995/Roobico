@@ -141,6 +141,7 @@ def _to_float(value):
 
 
 def _parse_goal_count(args) -> int:
+    # Deprecated: kept for backward compatibility with older URLs that may include ?goal=.
     goal_raw = str(args.get("goal") or "").strip()
     try:
         goal_count = int(goal_raw) if goal_raw else 120
@@ -149,6 +150,110 @@ def _parse_goal_count(args) -> int:
     if goal_count < 1:
         goal_count = 1
     return goal_count
+
+
+DEFAULT_DASHBOARD_GOALS = {
+    "labor": 0.0,
+    "parts_sales": 0.0,
+    "total": 0.0,
+}
+
+# Average days per month, used to prorate monthly goals to arbitrary periods.
+_AVG_DAYS_PER_MONTH = 30.4375
+
+
+def _get_dashboard_goals(shop) -> dict:
+    raw = (shop or {}).get("dashboard_goals") if isinstance(shop, dict) else None
+    if not isinstance(raw, dict):
+        raw = {}
+    return {
+        "labor": max(0.0, _to_float(raw.get("labor"))),
+        "parts_sales": max(0.0, _to_float(raw.get("parts_sales"))),
+        "total": max(0.0, _to_float(raw.get("total"))),
+    }
+
+
+def _save_dashboard_goals(shop, payload) -> dict:
+    if not isinstance(shop, dict) or not shop.get("_id"):
+        return DEFAULT_DASHBOARD_GOALS.copy()
+    cleaned = {
+        "labor": max(0.0, _to_float((payload or {}).get("labor"))),
+        "parts_sales": max(0.0, _to_float((payload or {}).get("parts_sales"))),
+        "total": max(0.0, _to_float((payload or {}).get("total"))),
+    }
+    master = get_master_db()
+    master.shops.update_one(
+        {"_id": shop["_id"]},
+        {"$set": {"dashboard_goals": cleaned, "dashboard_goals_updated_at": datetime.now(timezone.utc)}},
+    )
+    return cleaned
+
+
+def _period_days(created_from, created_to_exclusive) -> float:
+    if not created_from or not created_to_exclusive:
+        return 0.0
+    delta = created_to_exclusive - created_from
+    return max(0.0, delta.total_seconds() / 86400.0)
+
+
+def _full_preset_days(preset: str, created_from, created_to_exclusive) -> float:
+    """Return the natural full length (in days) of the selected preset.
+
+    For in-progress presets (this_week / this_quarter / this_year) we extend the
+    range to the end of the calendar period so the goal isn't under-counted just
+    because the period hasn't ended yet.
+    """
+    preset = str(preset or "").strip().lower()
+    if not created_from:
+        return _period_days(created_from, created_to_exclusive)
+
+    if preset == "this_week":
+        # Mon..Sun = 7 days
+        return 7.0
+    if preset == "this_quarter":
+        # Extend created_from to the start of the next quarter.
+        start_month = ((created_from.month - 1) // 3) * 3 + 1
+        next_q_year = created_from.year
+        next_q_month = start_month + 3
+        if next_q_month > 12:
+            next_q_month -= 12
+            next_q_year += 1
+        next_q_start = created_from.replace(
+            year=next_q_year, month=next_q_month, day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+        delta = next_q_start - created_from.replace(month=start_month, day=1, hour=0, minute=0, second=0, microsecond=0)
+        return max(0.0, delta.total_seconds() / 86400.0)
+    if preset == "this_year":
+        next_year_start = created_from.replace(
+            year=created_from.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0
+        )
+        year_start = created_from.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+        delta = next_year_start - year_start
+        return max(0.0, delta.total_seconds() / 86400.0)
+
+    # last_*, today, yesterday, custom, all_time -> actual selected range
+    return _period_days(created_from, created_to_exclusive)
+
+
+def _prorate_monthly_goal(monthly_goal: float, date_preset: str, created_from, created_to_exclusive) -> float:
+    """Convert a monthly goal to the selected period.
+
+    - this_month / last_month: use monthly goal as-is (no proration).
+    - all_time / no period: fall back to the monthly goal.
+    - this_week / this_quarter / this_year: use the FULL calendar period length
+      (not truncated to today), so the target reflects the whole upcoming period.
+    - last_*, custom, today, yesterday: scale by the actual days in range.
+    """
+    base = max(0.0, _to_float(monthly_goal))
+    if base <= 0:
+        return 0.0
+    preset = str(date_preset or "").strip().lower()
+    if preset in ("this_month", "last_month"):
+        return base
+    days = _full_preset_days(preset, created_from, created_to_exclusive)
+    if days <= 0:
+        return base
+    return base * (days / _AVG_DAYS_PER_MONTH)
 
 
 def _build_created_filter(created_from, created_to_exclusive):
@@ -160,11 +265,26 @@ def _build_created_filter(created_from, created_to_exclusive):
     return created_filter
 
 
+def _build_preferred_date_filter(date_field: str, created_from, created_to_exclusive):
+    """Match table behavior: filter on ``date_field`` (e.g. work_order_date / order_date),
+    falling back to ``created_at`` when the preferred field is missing/None."""
+    range_filter = _build_created_filter(created_from, created_to_exclusive)
+    if not range_filter:
+        return None
+    return {
+        "$or": [
+            {date_field: range_filter},
+            {date_field: {"$exists": False}, "created_at": range_filter},
+            {date_field: None, "created_at": range_filter},
+        ]
+    }
+
+
 def _build_period_work_orders_query(shop, created_from, created_to_exclusive):
     query = {"shop_id": shop["_id"], "is_active": True}
-    created_filter = _build_created_filter(created_from, created_to_exclusive)
-    if created_filter:
-        query["created_at"] = created_filter
+    preferred_filter = _build_preferred_date_filter("work_order_date", created_from, created_to_exclusive)
+    if preferred_filter:
+        query = {"$and": [query, preferred_filter]}
     return query
 
 
@@ -306,10 +426,10 @@ def _compute_mechanic_hours_metrics(shop_db, shop, created_from, created_to_excl
 
 
 def _compute_parts_orders_metrics(shop_db, shop, created_from, created_to_exclusive):
-    created_filter = _build_created_filter(created_from, created_to_exclusive)
+    preferred_filter = _build_preferred_date_filter("order_date", created_from, created_to_exclusive)
     parts_orders_query = {"shop_id": shop["_id"], "is_active": {"$ne": False}}
-    if created_filter:
-        parts_orders_query["created_at"] = created_filter
+    if preferred_filter:
+        parts_orders_query = {"$and": [parts_orders_query, preferred_filter]}
 
     period_parts_orders_rows = list(
         shop_db.parts_orders.find(
@@ -412,18 +532,59 @@ def _compute_parts_orders_metrics(shop_db, shop, created_from, created_to_exclus
     }
 
 
-def _compute_goal_progress_metrics(shop_db, shop, created_from, created_to_exclusive, goal_count: int):
-    period_total = shop_db.work_orders.count_documents(
-        _build_period_work_orders_query(shop, created_from, created_to_exclusive)
-    )
-    all_time_wo_total = shop_db.work_orders.count_documents({"shop_id": shop["_id"], "is_active": True})
-    goal_percent = min(100.0, (period_total / goal_count) * 100.0)
+def _compute_goal_progress_metrics(shop_db, shop, created_from, created_to_exclusive, date_preset: str):
+    monthly = _get_dashboard_goals(shop)
+    labor_goal = _round2(_prorate_monthly_goal(monthly["labor"], date_preset, created_from, created_to_exclusive))
+    parts_goal = _round2(_prorate_monthly_goal(monthly["parts_sales"], date_preset, created_from, created_to_exclusive))
+    total_goal = _round2(_prorate_monthly_goal(monthly["total"], date_preset, created_from, created_to_exclusive))
+
+    wo_money = _compute_wo_money_metrics(shop_db, shop, created_from, created_to_exclusive)
+    labor_actual = _round2(wo_money.get("period_labor_total") or 0)
+    parts_actual = _round2(wo_money.get("period_parts_total") or 0)
+    total_actual = _round2(wo_money.get("period_grand_total") or 0)
+
+    def _pct(actual, goal):
+        if goal <= 0:
+            return 0.0
+        return min(100.0, (actual / goal) * 100.0)
+
     return {
-        "goal_count": goal_count,
-        "period_wo_total": period_total,
-        "all_time_wo_total": all_time_wo_total,
-        "goal_percent": goal_percent,
+        "goals_monthly": monthly,
+        "goals_period": {
+            "labor": labor_goal,
+            "parts_sales": parts_goal,
+            "total": total_goal,
+        },
+        "goals_actual": {
+            "labor": labor_actual,
+            "parts_sales": parts_actual,
+            "total": total_actual,
+        },
+        "goals_percent": {
+            "labor": _pct(labor_actual, labor_goal),
+            "parts_sales": _pct(parts_actual, parts_goal),
+            "total": _pct(total_actual, total_goal),
+        },
+        "goals_period_label": _humanize_preset(date_preset),
     }
+
+
+def _humanize_preset(preset: str) -> str:
+    mapping = {
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "this_week": "This Week",
+        "last_week": "Last Week",
+        "this_month": "This Month",
+        "last_month": "Last Month",
+        "this_quarter": "This Quarter",
+        "last_quarter": "Last Quarter",
+        "this_year": "This Year",
+        "last_year": "Last Year",
+        "all_time": "All Time",
+        "custom": "Custom Range",
+    }
+    return mapping.get(str(preset or "").strip().lower(), "Selected Period")
 
 
 def _compute_outstanding_balance_metrics(shop_db, shop):
@@ -463,13 +624,13 @@ def _compute_outstanding_balance_metrics(shop_db, shop):
     return {"outstanding_balance": outstanding_balance}
 
 
-def _compute_dashboard_block_metrics(block_name, shop_db, shop, created_from, created_to_exclusive, goal_count: int):
+def _compute_dashboard_block_metrics(block_name, shop_db, shop, created_from, created_to_exclusive, date_preset: str):
     if block_name == "wo-money":
         return _compute_wo_money_metrics(shop_db, shop, created_from, created_to_exclusive)
     if block_name == "parts-orders":
         return _compute_parts_orders_metrics(shop_db, shop, created_from, created_to_exclusive)
     if block_name == "goal-progress":
-        return _compute_goal_progress_metrics(shop_db, shop, created_from, created_to_exclusive, goal_count)
+        return _compute_goal_progress_metrics(shop_db, shop, created_from, created_to_exclusive, date_preset)
     if block_name == "outstanding-balance":
         return _compute_outstanding_balance_metrics(shop_db, shop)
     if block_name == "mechanic-hours":
@@ -502,7 +663,7 @@ def dashboard():
     created_from = date_filters["created_from"]
     created_to_exclusive = date_filters["created_to_exclusive"]
 
-    goal_count = _parse_goal_count(request.args)
+    monthly_goals = _get_dashboard_goals(shop)
 
     return _render_app_page(
         "public/dashboard.html",
@@ -510,7 +671,7 @@ def dashboard():
         date_from=date_from,
         date_to=date_to,
         date_preset=date_preset,
-        goal_count=goal_count,
+        monthly_goals=monthly_goals,
         period_paid_amount=0.0,
         period_unpaid_amount=0.0,
         period_labor_total=0.0,
@@ -533,15 +694,13 @@ def dashboard():
         period_parts_orders_items_amount=0.0,
         period_parts_orders_non_inventory_amount=0.0,
         period_parts_orders_total_amount=0.0,
-        period_wo_total=0,
-        all_time_wo_total=0,
-        goal_percent=0.0,
         outstanding_balance=0.0,
         dashboard_metrics_api_url=url_for("dashboard.dashboard_metrics_api"),
+        dashboard_goals_save_url=url_for("dashboard.dashboard_goals_save_api"),
     )
 
 
-def _compute_dashboard_metrics(shop_db, shop, created_from, created_to_exclusive, goal_count: int):
+def _compute_dashboard_metrics(shop_db, shop, created_from, created_to_exclusive, date_preset: str):
     metrics = {}
     for block_name in DASHBOARD_BLOCK_NAMES:
         metrics.update(
@@ -551,7 +710,7 @@ def _compute_dashboard_metrics(shop_db, shop, created_from, created_to_exclusive
                 shop=shop,
                 created_from=created_from,
                 created_to_exclusive=created_to_exclusive,
-                goal_count=goal_count,
+                date_preset=date_preset,
             )
         )
     return metrics
@@ -568,15 +727,14 @@ def dashboard_metrics_api():
     date_filters = _get_date_range_filters(request.args)
     created_from = date_filters["created_from"]
     created_to_exclusive = date_filters["created_to_exclusive"]
-
-    goal_count = _parse_goal_count(request.args)
+    date_preset = date_filters["date_preset"]
 
     metrics = _compute_dashboard_metrics(
         shop_db=shop_db,
         shop=shop,
         created_from=created_from,
         created_to_exclusive=created_to_exclusive,
-        goal_count=goal_count,
+        date_preset=date_preset,
     )
 
     return jsonify({"ok": True, **metrics})
@@ -596,7 +754,7 @@ def dashboard_metrics_block_api(block_name: str):
     date_filters = _get_date_range_filters(request.args)
     created_from = date_filters["created_from"]
     created_to_exclusive = date_filters["created_to_exclusive"]
-    goal_count = _parse_goal_count(request.args)
+    date_preset = date_filters["date_preset"]
 
     metrics = _compute_dashboard_block_metrics(
         block_name,
@@ -604,6 +762,19 @@ def dashboard_metrics_block_api(block_name: str):
         shop=shop,
         created_from=created_from,
         created_to_exclusive=created_to_exclusive,
-        goal_count=goal_count,
+        date_preset=date_preset,
     )
     return jsonify({"ok": True, "block": block_name, "data": metrics})
+
+
+@dashboard_bp.post("/dashboard/api/goals")
+@login_required
+@permission_required("dashboard.view")
+def dashboard_goals_save_api():
+    shop_db, shop = _get_active_shop_db()
+    if shop is None:
+        return jsonify({"ok": False, "error": "Shop database not configured for this shop."}), 400
+
+    payload = request.get_json(silent=True) or {}
+    cleaned = _save_dashboard_goals(shop, payload)
+    return jsonify({"ok": True, "goals_monthly": cleaned})

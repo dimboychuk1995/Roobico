@@ -53,6 +53,7 @@
               <option value="all" {% if (paid_status or 'all') == 'all' %}selected{% endif %}>All</option>
               <option value="paid" {% if paid_status == 'paid' %}selected{% endif %}>Paid</option>
               <option value="unpaid" {% if paid_status == 'unpaid' %}selected{% endif %}>Unpaid</option>
+              <option value="in_progress" {% if paid_status == 'in_progress' %}selected{% endif %}>In Progress</option>
             </select>
           </div>
           <div class="col-12">
@@ -121,6 +122,8 @@
                     <td class="text-center">
                       {% if w.is_paid %}
                         <span class="badge bg-success">Paid</span>
+                      {% elif w.is_in_progress %}
+                        <span class="badge bg-info text-dark">In Progress</span>
                       {% else %}
                         <button
                           type="button"

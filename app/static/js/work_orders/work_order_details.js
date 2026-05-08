@@ -2281,7 +2281,25 @@
     const show = (el, v) => { if (el) el.style.display = v ? "" : "none"; };
     const enable = (el, v) => { if (el) el.disabled = !v; };
 
+    // Keep the create-WO split-button group in sync with the create button visibility.
+    const createGroup = document.getElementById("createWorkOrderGroup");
+    const createDropdownToggle = document.getElementById("createWorkOrderDropdownToggle");
+    const showCreateGroup = (v) => {
+      if (createGroup) createGroup.style.display = v ? "" : "none";
+      if (createDropdownToggle) createDropdownToggle.disabled = !v;
+    };
+
+    // Same for the save split-button group.
+    const saveGroup = document.getElementById("saveWorkOrderGroup");
+    const saveDropdownToggle = document.getElementById("saveWorkOrderDropdownToggle");
+    const showSaveGroup = (v) => {
+      if (saveGroup) saveGroup.style.display = v ? "" : "none";
+      if (saveDropdownToggle) saveDropdownToggle.disabled = !v;
+    };
+
     if (mode === "creating") {
+      showCreateGroup(true);
+      showSaveGroup(false);
       show(createBtn, true); enable(createBtn, false);
       if (createBtn) createBtn.textContent = "Creating…";
       show(editBtn, false);
@@ -2295,6 +2313,8 @@
     }
 
     if (mode === "created_locked_open") {
+      showCreateGroup(false);
+      showSaveGroup(false);
       show(createBtn, false);
       show(editBtn, true); enable(editBtn, true);
       show(saveBtn, false);
@@ -2307,6 +2327,8 @@
     }
 
     if (mode === "editing_open") {
+      showCreateGroup(false);
+      showSaveGroup(true);
       show(createBtn, false);
       show(editBtn, false);
       show(saveBtn, true); enable(saveBtn, true);
@@ -2319,6 +2341,8 @@
     }
 
     if (mode === "paid") {
+      showCreateGroup(false);
+      showSaveGroup(false);
       show(createBtn, false);
       show(editBtn, false);
       show(saveBtn, false);
@@ -2904,7 +2928,7 @@
       }
     }
 
-    function submitCreate() {
+    function submitCreate(status) {
       if (!woForm) return;
 
       // ✅ Mileage is REQUIRED before creating WO
@@ -2920,7 +2944,18 @@
       // ✅ перед отправкой формы на create кладём totals_json
       const totals = serializeTotals(blocksContainer);
       upsertHiddenJsonInput(woForm, "totals_json", totals);
-      
+
+      // ✅ optional create status (e.g. "in_progress")
+      const desiredStatus = String(status || "").toLowerCase() === "in_progress" ? "in_progress" : "";
+      let statusInput = woForm.querySelector('input[name="create_status"]');
+      if (!statusInput) {
+        statusInput = document.createElement("input");
+        statusInput.type = "hidden";
+        statusInput.name = "create_status";
+        woForm.appendChild(statusInput);
+      }
+      statusInput.value = desiredStatus;
+
       // ✅ Sync mileage to hidden field before submit
       if (unitMileageInput && unitMileageHidden) {
         unitMileageHidden.value = String(unitMileageInput.value || "").trim();
@@ -2933,7 +2968,8 @@
     }
 
     // create still uses normal form POST
-    createBtn?.addEventListener("click", submitCreate);
+    createBtn?.addEventListener("click", () => submitCreate());
+    document.getElementById("createInProgressWorkOrderBtn")?.addEventListener("click", () => submitCreate("in_progress"));
 
     unitVinInput?.addEventListener("input", debouncedVinLookup);
     unitVinInput?.addEventListener("blur", debouncedVinLookup);
@@ -4169,7 +4205,11 @@
       if (!isCreated) {
         // до create: только create, форма активна по unit
         setButtonsState("created_locked_open", els); // не показываем
-        if (createBtn) createBtn.style.display = "";
+        const createGroup = document.getElementById("createWorkOrderGroup");
+        const createDropdownToggle = document.getElementById("createWorkOrderDropdownToggle");
+        if (createGroup) createGroup.style.display = "";
+        if (createBtn) { createBtn.style.display = ""; createBtn.disabled = false; createBtn.textContent = "Create Work Order"; }
+        if (createDropdownToggle) createDropdownToggle.disabled = false;
         if (editBtn) editBtn.style.display = "none";
         if (saveBtn) saveBtn.style.display = "none";
         if (paidBtn) paidBtn.style.display = "none";
@@ -4202,13 +4242,13 @@
     });
 
     // save -> API update labors + totals
-    saveBtn?.addEventListener("click", async function () {
+    async function saveWorkOrderEdits(saveStatus) {
       if (!isCreated || !workOrderId) return;
 
       try {
         const labors = serializeBlocks(blocksContainer);
         const totals = serializeTotals(blocksContainer);
-        
+
         // ✅ Get current mileage from input
         const unit_mileage = unitMileageInput ? String(unitMileageInput.value || "").trim() : "";
         const customer_id = String(customerSel?.value || "").trim();
@@ -4217,26 +4257,41 @@
         if (!customer_id) { toast("Please select a customer."); return; }
         if (!unit_id) { toast("Please select a unit."); return; }
 
-        await apiPostJson(
+        const payload = {
+          labors,
+          totals,
+          customer_id,
+          unit_id,
+          unit_mileage: unit_mileage ? unit_mileage : undefined,
+          work_order_date: workOrderDateInput ? String(workOrderDateInput.value || "").trim() : undefined,
+        };
+        // "open" = saved as completed (default), "in_progress" = still in progress
+        const desired = String(saveStatus || "open").toLowerCase();
+        payload.save_status = desired === "in_progress" ? "in_progress" : "open";
+
+        const resp = await apiPostJson(
           `/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/update`,
-          {
-            labors,
-            totals,
-            customer_id,
-            unit_id,
-            unit_mileage: unit_mileage ? unit_mileage : undefined,
-            work_order_date: workOrderDateInput ? String(workOrderDateInput.value || "").trim() : undefined,
-          }
+          payload
         );
+
+        // Update local status from server response if present
+        if (resp && resp.status) {
+          workOrderStatus = String(resp.status).toLowerCase();
+        } else {
+          workOrderStatus = payload.save_status;
+        }
 
         // после сохранения снова лочим
         setEditingMode(false, els);
         setButtonsState("created_locked_open", els);
-        toast("Saved.");
+        toast(workOrderStatus === "in_progress" ? "Saved as In Progress." : "Saved.");
       } catch (e) {
         toast(e.message || "Save failed.");
       }
-    });
+    }
+
+    saveBtn?.addEventListener("click", () => saveWorkOrderEdits("open"));
+    document.getElementById("saveInProgressWorkOrderBtn")?.addEventListener("click", () => saveWorkOrderEdits("in_progress"));
 
     // paid -> open payment modal
     paidBtn?.addEventListener("click", async function () {

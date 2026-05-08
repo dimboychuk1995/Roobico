@@ -563,6 +563,11 @@ def register_tenant():
             "status": "active",
             "is_active": True,
             "is_primary": True,
+            "dashboard_goals": {
+                "labor": 60000.0,
+                "parts_sales": 80000.0,
+                "total": 140000.0,
+            },
             "created_at": created_at,
             "updated_at": created_at,
         }

@@ -328,37 +328,69 @@ def wo_presets_detail(preset_id: str):
     if not doc:
         return jsonify({"error": "not_found"}), 404
 
-    # Enrich parts with live core/misc data from parts collection
+    # Enrich parts with live core/misc data from parts collection.
+    # If a row's stored part_id is stale (part deleted/recreated), fall back to
+    # part_number lookup so the WO still gets up-to-date cost/core/misc data.
     raw_parts = doc.get("parts") or []
     part_ids = []
+    fallback_part_numbers = []
     for p in raw_parts:
         pid_str = p.get("part_id")
         if pid_str:
             o = _maybe_oid(pid_str)
             if o:
                 part_ids.append(o)
+        pn = str(p.get("part_number") or "").strip()
+        if pn:
+            fallback_part_numbers.append(pn)
+
+    proj = {
+        "_id": 1,
+        "part_number": 1,
+        "average_cost": 1,
+        "core_has_charge": 1,
+        "core_cost": 1,
+        "misc_has_charge": 1,
+        "misc_charges": 1,
+    }
 
     parts_lookup = {}
     if part_ids:
         for pdoc in sdb.parts.find(
             {"_id": {"$in": part_ids}, "is_active": True},
-            {
-                "_id": 1,
-                "average_cost": 1,
-                "core_has_charge": 1,
-                "core_cost": 1,
-                "misc_has_charge": 1,
-                "misc_charges": 1,
-            },
+            proj,
         ):
             parts_lookup[str(pdoc["_id"])] = pdoc
 
+    parts_by_number = {}
+    if fallback_part_numbers:
+        for pdoc in sdb.parts.find(
+            {"part_number": {"$in": fallback_part_numbers}, "is_active": True},
+            proj,
+        ):
+            pn_key = str(pdoc.get("part_number") or "").strip()
+            if pn_key and pn_key not in parts_by_number:
+                parts_by_number[pn_key] = pdoc
+
+    # Cache pending preset patches (stale part_id -> fresh _id) to apply once.
+    preset_patches = []  # list of (row_index, fresh_id_str)
+
     enriched_parts = []
-    for p in raw_parts:
+    for idx, p in enumerate(raw_parts):
         ep = dict(p)
         pid_str = p.get("part_id")
-        if pid_str and pid_str in parts_lookup:
-            live = parts_lookup[pid_str]
+        live = parts_lookup.get(pid_str) if pid_str else None
+        # Fallback: stale or missing part_id, but we have a matching part_number.
+        if live is None:
+            pn_key = str(p.get("part_number") or "").strip()
+            if pn_key and pn_key in parts_by_number:
+                live = parts_by_number[pn_key]
+                fresh_id = str(live.get("_id"))
+                ep["part_id"] = fresh_id
+                if pid_str != fresh_id:
+                    preset_patches.append((idx, fresh_id))
+
+        if live is not None:
             ep["core_has_charge"] = bool(live.get("core_has_charge"))
             ep["core_cost"] = float(live.get("core_cost") or 0)
             misc_items = []
@@ -373,6 +405,15 @@ def wo_presets_detail(preset_id: str):
             if live.get("average_cost") is not None:
                 ep["cost"] = float(live["average_cost"])
         enriched_parts.append(ep)
+
+    # Persist any healed part_id references back into the preset doc so the
+    # next load is fast and consistent.
+    if preset_patches:
+        update_set = {f"parts.{i}.part_id": pid for i, pid in preset_patches}
+        try:
+            sdb.wo_presets.update_one({"_id": doc["_id"]}, {"$set": update_set})
+        except Exception:
+            pass
 
     return jsonify({
         "id": str(doc["_id"]),

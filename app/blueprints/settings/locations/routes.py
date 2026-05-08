@@ -824,6 +824,11 @@ def api_locations_create():
         "status": "active",
         "is_active": True,
         "is_primary": False,
+        "dashboard_goals": {
+            "labor": 60000.0,
+            "parts_sales": 80000.0,
+            "total": 140000.0,
+        },
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }

@@ -160,17 +160,97 @@
   }
 
   function renderGoalProgress(data) {
-    const goalCount = asNumber(data.goal_count);
-    const goalPercent = clampPercent(data.goal_percent);
-    setText('dashGoalCount', String(goalCount));
-    const goalProgress = document.getElementById('dashGoalProgress');
-    const goalProgressBar = document.getElementById('dashGoalProgressBar');
-    if (goalProgress) goalProgress.setAttribute('aria-valuenow', String(Math.round(goalPercent)));
-    if (goalProgressBar) goalProgressBar.style.width = `${goalPercent.toFixed(2)}%`;
-    setText(
-      'dashGoalSummary',
-      `Current: ${asNumber(data.period_wo_total)} / ${goalCount} (${goalPercent.toFixed(1)}%)`
-    );
+    const periodLabel = data && data.goals_period_label ? String(data.goals_period_label) : 'Selected Period';
+    const labelEl = document.getElementById('dashGoalsPeriodLabel');
+    if (labelEl) labelEl.textContent = periodLabel;
+
+    const proratedNote = document.getElementById('dashGoalsProrationNote');
+    if (proratedNote) {
+      const isMonth = periodLabel === 'This Month' || periodLabel === 'Last Month';
+      proratedNote.style.display = isMonth ? 'none' : '';
+    }
+
+    const period = (data && data.goals_period) || {};
+    const actual = (data && data.goals_actual) || {};
+    const percent = (data && data.goals_percent) || {};
+
+    const groups = [
+      { key: 'labor', ringId: 'dashGoalLaborRing', percentId: 'dashGoalLaborPercent',
+        actualId: 'dashGoalLaborActual', targetId: 'dashGoalLaborTarget' },
+      { key: 'parts_sales', ringId: 'dashGoalPartsRing', percentId: 'dashGoalPartsPercent',
+        actualId: 'dashGoalPartsActual', targetId: 'dashGoalPartsTarget' },
+      { key: 'total', ringId: 'dashGoalTotalRing', percentId: 'dashGoalTotalPercent',
+        actualId: 'dashGoalTotalActual', targetId: 'dashGoalTotalTarget' },
+    ];
+
+    groups.forEach((g) => {
+      const pct = clampPercent(percent[g.key]);
+      const ring = document.getElementById(g.ringId);
+      if (ring) {
+        ring.style.setProperty('--pct', `${pct.toFixed(2)}%`);
+      }
+      setText(g.percentId, `${pct.toFixed(1)}%`);
+      setText(g.actualId, money(actual[g.key]));
+      setText(g.targetId, money(period[g.key]));
+    });
+  }
+
+  function initGoalsModal() {
+    const saveBtn = document.getElementById('dashGoalsSaveBtn');
+    if (!saveBtn || saveBtn.dataset.bound === '1') return;
+    saveBtn.dataset.bound = '1';
+
+    saveBtn.addEventListener('click', async function () {
+      const url = window.DASHBOARD_GOALS_SAVE_URL;
+      if (!url) return;
+
+      const errEl = document.getElementById('dashGoalsFormError');
+      if (errEl) { errEl.style.display = 'none'; errEl.textContent = ''; }
+
+      const payload = {
+        labor: asNumber(document.getElementById('dashGoalLaborInput')?.value),
+        parts_sales: asNumber(document.getElementById('dashGoalPartsInput')?.value),
+        total: asNumber(document.getElementById('dashGoalTotalInput')?.value),
+      };
+
+      saveBtn.disabled = true;
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+          credentials: 'same-origin',
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data || !data.ok) {
+          throw new Error((data && data.error) || `HTTP ${res.status}`);
+        }
+
+        const modalEl = document.getElementById('dashGoalsModal');
+        if (modalEl && window.bootstrap && window.bootstrap.Modal) {
+          const inst = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+          inst.hide();
+        }
+
+        // Refresh just the goal-progress card
+        const card = document.querySelector('.dashboard-async-card[data-block="goal-progress"]');
+        if (card) {
+          activeBatchId += 1;
+          loadBlockMetrics(card, activeBatchId);
+        }
+      } catch (err) {
+        if (errEl) {
+          errEl.textContent = `Failed to save: ${err && err.message ? err.message : err}`;
+          errEl.style.display = '';
+        }
+      } finally {
+        saveBtn.disabled = false;
+      }
+    });
   }
 
   function renderOutstandingBalance(data) {
@@ -270,6 +350,7 @@
 
   function init() {
     loadMetrics();
+    initGoalsModal();
   }
 
   window.roobicoInitDashboardMetrics = init;
