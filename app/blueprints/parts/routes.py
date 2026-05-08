@@ -592,6 +592,10 @@ def parts_page():
 
     q = (request.args.get("q") or "").strip()
 
+    paid_status = (request.args.get("paid_status") or "all").strip().lower()
+    if paid_status not in ("all", "paid", "unpaid"):
+        paid_status = "all"
+
     date_filters = _get_date_range_filters(request.args)
     date_preset = date_filters["date_preset"]
     date_from = date_filters["date_from"]
@@ -781,6 +785,11 @@ def parts_page():
     }
     if orders_coll is not None and active_tab == "orders":
         orders_query = {"shop_id": shop["_id"], "is_active": {"$ne": False}}
+
+        if paid_status == "paid":
+            orders_query["payment_status"] = "paid"
+        elif paid_status == "unpaid":
+            orders_query["payment_status"] = {"$ne": "paid"}
 
         created_filter = _build_preferred_date_filter(
             "order_date",
@@ -1069,6 +1078,7 @@ def parts_page():
         date_preset=date_preset,
         date_from=date_from,
         date_to=date_to,
+        paid_status=paid_status,
         today_date_input_value=get_active_shop_today_iso(),
         sort_by=(request.args.get("sort_by") or "").strip(),
         sort_dir=(request.args.get("sort_dir") or "").strip(),

@@ -206,8 +206,15 @@
       <div class="card-body">
         <form method="get" class="row g-2 align-items-center mb-3 wo-filter-form">
           <input type="hidden" name="tab" value="orders" />
-          <div class="col-12 col-md-8 col-lg-6">
+          <div class="col-12 col-md-6 col-lg-4">
             <input type="text" name="q" class="form-control form-control-sm" placeholder="Search part orders by any field..." value="{{ q or '' }}" />
+          </div>
+          <div class="col-12 col-md-3 col-lg-2">
+            <select name="paid_status" class="form-select form-select-sm" aria-label="Paid status filter">
+              <option value="all" {% if (paid_status or 'all') == 'all' %}selected{% endif %}>All</option>
+              <option value="paid" {% if paid_status == 'paid' %}selected{% endif %}>Paid</option>
+              <option value="unpaid" {% if paid_status == 'unpaid' %}selected{% endif %}>Unpaid</option>
+            </select>
           </div>
           <div class="col-12">
             <div class="row g-2 align-items-center wo-date-row">
@@ -335,9 +342,9 @@
               {% if orders_pagination.pages > 1 %}
                 <div class="btn-group btn-group-sm wo-pagination-actions" role="group" aria-label="Parts orders pagination">
                   <a class="btn btn-outline-secondary {% if not orders_pagination.has_prev %}disabled{% endif %}"
-                    href="{{ url_for('parts.parts_page', tab='orders', q=q, date_preset=date_preset, date_from=date_from, date_to=date_to, orders_page=orders_pagination.prev_page, orders_per_page=orders_pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
+                    href="{{ url_for('parts.parts_page', tab='orders', q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to, orders_page=orders_pagination.prev_page, orders_per_page=orders_pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
                   <a class="btn btn-outline-secondary {% if not orders_pagination.has_next %}disabled{% endif %}"
-                    href="{{ url_for('parts.parts_page', tab='orders', q=q, date_preset=date_preset, date_from=date_from, date_to=date_to, orders_page=orders_pagination.next_page, orders_per_page=orders_pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
+                    href="{{ url_for('parts.parts_page', tab='orders', q=q, paid_status=paid_status, date_preset=date_preset, date_from=date_from, date_to=date_to, orders_page=orders_pagination.next_page, orders_per_page=orders_pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
                 </div>
               {% else %}
                 <div class="wo-pagination-actions"></div>
