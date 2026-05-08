@@ -4,8 +4,8 @@
 
 {% block extra_styles %}
   {{ super() }}
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css', v='20260414-redesign') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/attachments.css', v='20260409') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css', v='20260508-hard') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/attachments.css', v='20260508-hard') }}">
 {% endblock %}
 
 {% block content %}
@@ -268,7 +268,7 @@
   })();
 </script>
 
-<script src="{{ url_for('static', filename='js/dashboard/dashboard.js', v='20260508-goals') }}"></script>
+<script src="{{ url_for('static', filename='js/dashboard/dashboard.js', v='20260508-hard') }}"></script>
 
 <script>
 (function () {
@@ -365,5 +365,5 @@
   });
 })();
 </script>
-<script src="{{ url_for('static', filename='js/attachments.js', v='20260409') }}"></script>
+<script src="{{ url_for('static', filename='js/attachments.js', v='20260508-hard') }}"></script>
 {% endblock %}
