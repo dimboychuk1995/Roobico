@@ -196,7 +196,7 @@
               <span>Parts: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('parts_total', 0)) }}</strong></span>
               <span>Total: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('grand_total', 0)) }}</strong></span>
               <span>Paid: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('paid_total', 0)) }}</strong></span>
-              <span>Remaining: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('remaining_total', 0)) }}</strong></span>
+              <span>Unpaid: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('unpaid_total', 0)) }}</strong></span>
             </div>
           </div>
           {% if pagination.pages > 1 %}

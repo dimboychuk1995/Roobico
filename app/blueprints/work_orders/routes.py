@@ -912,12 +912,51 @@ def get_work_orders_totals(shop_db, query: dict):
     pipeline = [
         {"$match": query},
         {
+            "$lookup": {
+                "from": "work_order_payments",
+                "let": {"wid": "$_id"},
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    {"$eq": ["$work_order_id", "$$wid"]},
+                                    {"$eq": ["$is_active", True]},
+                                ]
+                            }
+                        }
+                    },
+                    {"$group": {"_id": None, "paid": {"$sum": {"$ifNull": ["$amount", 0]}}}},
+                ],
+                "as": "_pay",
+            }
+        },
+        {
+            "$addFields": {
+                "_grand": {"$ifNull": ["$totals.grand_total", {"$ifNull": ["$grand_total", 0]}]},
+                "_labor": {"$ifNull": ["$totals.labor_total", {"$ifNull": ["$labor_total", 0]}]},
+                "_parts": {"$ifNull": ["$totals.parts_total", {"$ifNull": ["$parts_total", 0]}]},
+                "_tax": {"$ifNull": ["$totals.sales_tax_total", {"$ifNull": ["$sales_tax_total", 0]}]},
+                "_paid": {"$ifNull": [{"$arrayElemAt": ["$_pay.paid", 0]}, 0]},
+            }
+        },
+        {
+            "$addFields": {
+                # Per-WO floor: unpaid never goes below 0 even if a WO is overpaid.
+                "_unpaid": {"$max": [0, {"$subtract": ["$_grand", "$_paid"]}]},
+                # Cap paid at grand total to keep paid + unpaid == grand.
+                "_paidc": {"$min": ["$_grand", "$_paid"]},
+            }
+        },
+        {
             "$group": {
                 "_id": None,
-                "labor_total": {"$sum": {"$ifNull": ["$totals.labor_total", {"$ifNull": ["$labor_total", 0]}]}},
-                "parts_total": {"$sum": {"$ifNull": ["$totals.parts_total", {"$ifNull": ["$parts_total", 0]}]}},
-                "sales_tax_total": {"$sum": {"$ifNull": ["$totals.sales_tax_total", {"$ifNull": ["$sales_tax_total", 0]}]}},
-                "grand_total": {"$sum": {"$ifNull": ["$totals.grand_total", {"$ifNull": ["$grand_total", 0]}]}},
+                "labor_total": {"$sum": "$_labor"},
+                "parts_total": {"$sum": "$_parts"},
+                "sales_tax_total": {"$sum": "$_tax"},
+                "grand_total": {"$sum": "$_grand"},
+                "paid_total": {"$sum": "$_paidc"},
+                "unpaid_total": {"$sum": "$_unpaid"},
             }
         },
     ]
@@ -929,6 +968,8 @@ def get_work_orders_totals(shop_db, query: dict):
             "parts_total": 0.0,
             "sales_tax_total": 0.0,
             "grand_total": 0.0,
+            "paid_total": 0.0,
+            "unpaid_total": 0.0,
         }
 
     row = rows[0] if isinstance(rows[0], dict) else {}
@@ -937,6 +978,8 @@ def get_work_orders_totals(shop_db, query: dict):
         "parts_total": round2(row.get("parts_total") or 0),
         "sales_tax_total": round2(row.get("sales_tax_total") or 0),
         "grand_total": round2(row.get("grand_total") or 0),
+        "paid_total": round2(row.get("paid_total") or 0),
+        "unpaid_total": round2(row.get("unpaid_total") or 0),
     }
 
 

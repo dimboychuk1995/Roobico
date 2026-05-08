@@ -157,24 +157,70 @@ def _get_customer_work_orders_totals(shop_db, query: dict):
     pipeline = [
         {"$match": query},
         {
+            "$lookup": {
+                "from": "work_order_payments",
+                "let": {"wid": "$_id"},
+                "pipeline": [
+                    {
+                        "$match": {
+                            "$expr": {
+                                "$and": [
+                                    {"$eq": ["$work_order_id", "$$wid"]},
+                                    {"$eq": ["$is_active", True]},
+                                ]
+                            }
+                        }
+                    },
+                    {"$group": {"_id": None, "paid": {"$sum": {"$ifNull": ["$amount", 0]}}}},
+                ],
+                "as": "_pay",
+            }
+        },
+        {
+            "$addFields": {
+                "_grand": {"$ifNull": ["$totals.grand_total", {"$ifNull": ["$grand_total", 0]}]},
+                "_labor": {"$ifNull": ["$totals.labor_total", {"$ifNull": ["$labor_total", 0]}]},
+                "_parts": {"$ifNull": ["$totals.parts_total", {"$ifNull": ["$parts_total", 0]}]},
+                "_paid": {"$ifNull": [{"$arrayElemAt": ["$_pay.paid", 0]}, 0]},
+            }
+        },
+        {
+            "$addFields": {
+                # Per-WO floor: unpaid never goes below 0 even if a WO is overpaid.
+                "_unpaid": {"$max": [0, {"$subtract": ["$_grand", "$_paid"]}]},
+                # Cap paid at grand total to keep paid + unpaid == grand.
+                "_paidc": {"$min": ["$_grand", "$_paid"]},
+            }
+        },
+        {
             "$group": {
                 "_id": None,
-                "labor_total": {"$sum": {"$ifNull": ["$totals.labor_total", {"$ifNull": ["$labor_total", 0]}]}},
-                "parts_total": {"$sum": {"$ifNull": ["$totals.parts_total", {"$ifNull": ["$parts_total", 0]}]}},
-                "grand_total": {"$sum": {"$ifNull": ["$totals.grand_total", {"$ifNull": ["$grand_total", 0]}]}},
+                "labor_total": {"$sum": "$_labor"},
+                "parts_total": {"$sum": "$_parts"},
+                "grand_total": {"$sum": "$_grand"},
+                "paid_total": {"$sum": "$_paidc"},
+                "unpaid_total": {"$sum": "$_unpaid"},
             }
         },
     ]
 
     rows = list(shop_db.work_orders.aggregate(pipeline))
     if not rows:
-        return {"labor_total": 0.0, "parts_total": 0.0, "grand_total": 0.0}
+        return {
+            "labor_total": 0.0,
+            "parts_total": 0.0,
+            "grand_total": 0.0,
+            "paid_total": 0.0,
+            "unpaid_total": 0.0,
+        }
 
     row = rows[0] if isinstance(rows[0], dict) else {}
     return {
         "labor_total": _round2(row.get("labor_total") or 0),
         "parts_total": _round2(row.get("parts_total") or 0),
         "grand_total": _round2(row.get("grand_total") or 0),
+        "paid_total": _round2(row.get("paid_total") or 0),
+        "unpaid_total": _round2(row.get("unpaid_total") or 0),
     }
 
 
@@ -1074,18 +1120,9 @@ def customer_unit_details_page(customer_id, unit_id):
 
         work_orders_totals = _get_customer_work_orders_totals(shop_db, wo_query)
 
-        # Compute total paid across all matching WOs for remaining calculation
-        all_wo_ids = [
-            doc["_id"]
-            for doc in shop_db.work_orders.find(wo_query, {"_id": 1})
-        ]
-        all_paid_map = _build_paid_map(shop_db.work_order_payments, all_wo_ids)
-        total_paid = _round2(sum(all_paid_map.values()))
-        total_remaining = _round2(work_orders_totals["grand_total"] - total_paid)
-        if total_remaining < 0:
-            total_remaining = 0.0
-        work_orders_totals["paid_total"] = total_paid
-        work_orders_totals["remaining_total"] = total_remaining
+        # Backwards-compat alias for the unit_details template (older field names).
+        work_orders_totals.setdefault("paid_total", 0.0)
+        work_orders_totals["remaining_total"] = work_orders_totals.get("unpaid_total", 0.0)
 
         rows, pagination = paginate_find(
             shop_db.work_orders,

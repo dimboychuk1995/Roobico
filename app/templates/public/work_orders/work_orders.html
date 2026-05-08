@@ -160,6 +160,7 @@
                   <span>Parts: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('parts_total', 0)) }}</strong></span>
                   <span>Tax: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('sales_tax_total', 0)) }}</strong></span>
                   <span>Total: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('grand_total', 0)) }}</strong></span>
+                  <span>Unpaid: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('unpaid_total', 0)) }}</strong></span>
                 </div>
               </div>
               {% if pagination.pages > 1 %}

@@ -27,89 +27,6 @@
 		return tabInput ? String(tabInput.value || "") : "";
 	}
 
-	function captureInputFocusState(form, input) {
-		var activeElement = document.activeElement;
-		var isFocused = activeElement === input;
-
-		return {
-			actionPath: getFormActionPath(form),
-			tabValue: getFormTabValue(form),
-			shouldRestoreFocus: isFocused,
-			liveValue: isFocused ? String(input.value || "") : null,
-			selectionStart: isFocused ? input.selectionStart : null,
-			selectionEnd: isFocused ? input.selectionEnd : null,
-			selectionDirection: isFocused ? input.selectionDirection : null,
-		};
-	}
-
-	// Capture state of the currently-focused search input directly from the
-	// live DOM. Used right before innerHTML swap so we preserve any keystrokes
-	// the user typed while the AJAX request was in flight.
-	function captureLiveSearchFocusState() {
-		var active = document.activeElement;
-		if (!active || active.tagName !== "INPUT" || active.name !== "q") {
-			return null;
-		}
-		var form = active.form || active.closest("form");
-		if (!form) {
-			return null;
-		}
-		return captureInputFocusState(form, active);
-	}
-
-	function findMatchingSearchInput(focusState) {
-		var forms = document.querySelectorAll('form[method="get"]');
-		for (var i = 0; i < forms.length; i += 1) {
-			var form = forms[i];
-			var input = form.querySelector('input[name="q"]');
-			if (!input) {
-				continue;
-			}
-
-			if (getFormActionPath(form) !== focusState.actionPath) {
-				continue;
-			}
-
-			if (getFormTabValue(form) !== focusState.tabValue) {
-				continue;
-			}
-
-			return input;
-		}
-
-		return null;
-	}
-
-	function restoreInputFocusState(focusState) {
-		if (!focusState || !focusState.shouldRestoreFocus) {
-			return;
-		}
-
-		var input = findMatchingSearchInput(focusState);
-		if (!input) {
-			return;
-		}
-
-		// If we captured the live value (typed-during-fetch included), write it
-		// back into the freshly rendered input so no keystrokes are lost.
-		if (typeof focusState.liveValue === "string" && input.value !== focusState.liveValue) {
-			input.value = focusState.liveValue;
-		}
-
-		input.focus({ preventScroll: true });
-
-		var maxPos = (input.value || "").length;
-		var start = focusState.selectionStart;
-		var end = focusState.selectionEnd;
-		if (typeof start === "number" && typeof end === "number") {
-			if (start > maxPos) start = maxPos;
-			if (end > maxPos) end = maxPos;
-			try {
-				input.setSelectionRange(start, end, focusState.selectionDirection || "none");
-			} catch (e) { /* non-text input types */ }
-		}
-	}
-
 	function buildSearchUrl(form, input) {
 		var url = new URL(getFormActionPath(form), window.location.origin);
 		var formData = new FormData(form);
@@ -750,12 +667,6 @@
 				submitIfChanged();
 			}, INPUT_DEBOUNCE_MS);
 		});
-	}
-
-	function ensureSearchButton(form, input) {
-		// Live search is now driven by input / change events – no Search
-		// button is injected.  Function kept as a no-op for backward compat.
-		return;
 	}
 
 	function bindAutoSearchForms() {

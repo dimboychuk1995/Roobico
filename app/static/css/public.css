@@ -172,10 +172,6 @@ small,
   white-space: nowrap;
 }
 
-.app-sidebar-link::before {
-  content: none;
-}
-
 .app-sidebar-toggle {
   min-width: 2rem;
   padding: 0.18rem 0.35rem;
@@ -186,7 +182,6 @@ small,
 }
 
 .app-sidebar-toggle:hover {
-  color: #ffffff;
   background: rgba(255,255,255,0.1);
   border-color: rgba(255,255,255,0.2);
 }
@@ -209,7 +204,6 @@ small,
   border-color: transparent !important;
   background: rgba(255,255,255,0.08) !important;
   color: #ffffff;
-  transform: none;
 }
 
 .app-sidebar-link:focus-visible {
@@ -224,7 +218,6 @@ small,
   background: var(--sidebar-active) !important;
   color: #ffffff !important;
   box-shadow: none;
-  transform: translateX(0);
   font-weight: 600;
   border-left: 3px solid #22a050 !important;
 }
@@ -251,7 +244,6 @@ small,
   padding: 0.62rem 0.45rem;
 }
 
-.app-shell.sidebar-collapsed .app-sidebar-link::before,
 .app-shell.sidebar-collapsed .app-sidebar-text {
   display: none;
 }
@@ -957,7 +949,7 @@ span.flatpickr-weekday {
 }
 
 .table > tbody > tr {
-  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+  transition: background-color 0.15s ease;
 }
 
 .table > tbody > tr:nth-child(odd) {
@@ -966,14 +958,6 @@ span.flatpickr-weekday {
 
 .table > tbody > tr:nth-child(even) {
   background-color: #f8fafc;
-}
-
-.table > tbody > tr:hover {
-  box-shadow: none;
-}
-
-.table > tbody > tr:focus-within {
-  box-shadow: none;
 }
 
 .table > tbody > tr:hover > td {
@@ -1006,6 +990,19 @@ span.flatpickr-weekday {
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
+}
+
+/* Touch devices have no :hover. Always show row action buttons there
+   so they remain reachable. */
+@media (hover: none) {
+  .table > tbody > tr > td.text-end:has(.btn, button, form, a) .btn,
+  .table > tbody > tr > td.text-end:has(.btn, button, form, a) button,
+  .table > tbody > tr > td.text-end:has(.btn, button, form, a) form,
+  .table > tbody > tr > td.text-end:has(.btn, button, form, a) a {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
 }
 
 .badge {

@@ -138,6 +138,7 @@
     setText('dashPeriodLaborTotal', money(data.period_labor_total));
     setText('dashPeriodPartsTotal', money(data.period_parts_total));
     setText('dashPeriodGrandTotal', money(data.period_grand_total));
+    setText('dashPeriodUnpaidTotal', money(data.period_unpaid_amount));
   }
 
   function renderPartsOrders(data) {
