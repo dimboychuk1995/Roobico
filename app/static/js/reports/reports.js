@@ -138,7 +138,7 @@
   function buildSummaryHtml(summary, tab) {
     var layouts = {
       "sales_summary": [
-        ["revenue_total", "labor_total", "parts_total", "misc_charges_total", "sales_tax_total"],
+        ["revenue_total", "labor_total", "parts_total", "sales_tax_total"],
         ["orders_count", "avg_ticket"]
       ],
       "payments_summary": [
@@ -214,7 +214,7 @@
 
   function buildTheadHtml(tab) {
     if (tab === "sales_summary") {
-      return '<tr class="text-muted"><th>Customer</th><th class="text-end">Orders</th><th class="text-end">Labor</th><th class="text-end">Parts</th><th class="text-end">Misc Charges</th><th class="text-end">Tax</th><th class="text-end">Revenue</th></tr>';
+      return '<tr class="text-muted"><th>Customer</th><th class="text-end">Orders</th><th class="text-end">Labor</th><th class="text-end">Parts</th><th class="text-end">Tax</th><th class="text-end">Revenue</th></tr>';
     }
     if (tab === "payments_summary") {
       return '<tr class="text-muted"><th>Customer</th><th class="text-end">Payments</th><th class="text-end">Amount</th></tr>';
@@ -240,7 +240,6 @@
         '<td class="text-end">' + (row.orders_count || 0) + '</td>' +
         '<td class="text-end">$' + fmtMoney(row.labor_total) + '</td>' +
         '<td class="text-end">$' + fmtMoney(row.parts_total) + '</td>' +
-        '<td class="text-end">$' + fmtMoney(row.misc_charges_total) + '</td>' +
         '<td class="text-end">$' + fmtMoney(row.sales_tax_total) + '</td>' +
         '<td class="text-end fw-semibold">$' + fmtMoney(row.grand_total) + '</td></tr>';
     }

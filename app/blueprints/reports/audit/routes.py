@@ -185,6 +185,14 @@ def _build_date_filter(date_ctx: dict, field: str = "created_at", fallback_field
     return {field: range_filter}
 
 
+def _preferred_dt(doc: dict, primary: str = "work_order_date", fallback: str = "created_at"):
+    """Return preferred date matching how tables display dates."""
+    val = doc.get(primary) if isinstance(doc, dict) else None
+    if isinstance(val, datetime):
+        return val
+    return doc.get(fallback) if isinstance(doc, dict) else None
+
+
 def _customer_label(doc: dict) -> str:
     company = str(doc.get("company_name") or "").strip()
     if company:
@@ -243,20 +251,27 @@ def _get_customer_options(shop_db, shop_id: ObjectId):
 
 
 def _wo_totals(wo: dict):
+    """Match Work Orders table column semantics:
+      - labor_total = labor + shop_supply
+      - parts_total = parts + cores + misc (full stored parts_total)
+      - sales_tax_total
+      - grand_total = labor_total + parts_total + sales_tax_total
+    """
     totals = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
     labor = totals.get("labor_total") if totals.get("labor_total") is not None else wo.get("labor_total")
     parts = totals.get("parts_total") if totals.get("parts_total") is not None else wo.get("parts_total")
     misc = totals.get("misc_total") or 0
+    core = totals.get("core_total") or 0
+    parts_pure = totals.get("parts")
     tax = totals.get("sales_tax_total") if totals.get("sales_tax_total") is not None else wo.get("sales_tax_total")
     grand = totals.get("grand_total") if totals.get("grand_total") is not None else wo.get("grand_total")
-    misc_total = _round2(misc)
-    parts_total = _round2(parts)
-    # parts_total in DB already includes misc_total, so subtract to get pure parts
-    parts_only = _round2(parts_total - misc_total)
     return {
         "labor_total": _round2(labor),
-        "parts_total": parts_only,
-        "misc_charges_total": misc_total,
+        # Match WO table "Parts" column exactly (includes cores + misc)
+        "parts_total": _round2(parts),
+        "parts_pure": _round2(parts_pure if parts_pure is not None else (float(parts or 0) - float(core or 0) - float(misc or 0))),
+        "core_total": _round2(core),
+        "misc_charges_total": _round2(misc),
         "sales_tax_total": _round2(tax),
         "grand_total": _round2(grand),
     }
@@ -267,7 +282,7 @@ def _report_sales_summary(shop_db, shop_id, date_ctx, include_customer_ids, excl
         "shop_id": shop_id,
         "is_active": True,
     }
-    query = _append_and(query, _build_date_filter(date_ctx, field="created_at"))
+    query = _append_and(query, _build_date_filter(date_ctx, field="work_order_date", fallback_field="created_at"))
 
     if include_customer_ids:
         query = _append_and(query, {"customer_id": {"$in": include_customer_ids}})
@@ -277,7 +292,7 @@ def _report_sales_summary(shop_db, shop_id, date_ctx, include_customer_ids, excl
     rows_by_customer = {}
     time_buckets: dict[str, dict] = {}
 
-    for wo in shop_db.work_orders.find(query, {"customer_id": 1, "created_at": 1, "totals": 1, "labor_total": 1, "parts_total": 1, "sales_tax_total": 1, "grand_total": 1}):
+    for wo in shop_db.work_orders.find(query, {"customer_id": 1, "created_at": 1, "work_order_date": 1, "totals": 1, "labor_total": 1, "parts_total": 1, "sales_tax_total": 1, "grand_total": 1}):
         customer_id = wo.get("customer_id")
         if not customer_id:
             continue
@@ -290,7 +305,6 @@ def _report_sales_summary(shop_db, shop_id, date_ctx, include_customer_ids, excl
                 "orders_count": 0,
                 "labor_total": 0.0,
                 "parts_total": 0.0,
-                "misc_charges_total": 0.0,
                 "sales_tax_total": 0.0,
                 "grand_total": 0.0,
             },
@@ -299,12 +313,11 @@ def _report_sales_summary(shop_db, shop_id, date_ctx, include_customer_ids, excl
         bucket["orders_count"] += 1
         bucket["labor_total"] = _round2(bucket["labor_total"] + totals["labor_total"])
         bucket["parts_total"] = _round2(bucket["parts_total"] + totals["parts_total"])
-        bucket["misc_charges_total"] = _round2(bucket["misc_charges_total"] + totals["misc_charges_total"])
         bucket["sales_tax_total"] = _round2(bucket["sales_tax_total"] + totals["sales_tax_total"])
         bucket["grand_total"] = _round2(bucket["grand_total"] + totals["grand_total"])
 
-        # Chart time bucket
-        tk = _time_bucket_key(wo.get("created_at"), chart_bucket)
+        # Chart time bucket — use same date semantics as WO table
+        tk = _time_bucket_key(_preferred_dt(wo, "work_order_date", "created_at"), chart_bucket)
         if tk:
             tb = time_buckets.setdefault(tk, {"revenue": 0.0, "labor": 0.0, "parts": 0.0})
             tb["revenue"] = _round2(tb["revenue"] + totals["grand_total"])
@@ -317,7 +330,6 @@ def _report_sales_summary(shop_db, shop_id, date_ctx, include_customer_ids, excl
     total_revenue = _round2(sum(float(r.get("grand_total") or 0) for r in rows))
     total_labor = _round2(sum(float(r.get("labor_total") or 0) for r in rows))
     total_parts = _round2(sum(float(r.get("parts_total") or 0) for r in rows))
-    total_misc = _round2(sum(float(r.get("misc_charges_total") or 0) for r in rows))
     total_tax = _round2(sum(float(r.get("sales_tax_total") or 0) for r in rows))
 
     labels = _fill_bucket_gaps(time_buckets, chart_bucket)
@@ -338,7 +350,6 @@ def _report_sales_summary(shop_db, shop_id, date_ctx, include_customer_ids, excl
             "avg_ticket": _round2(total_revenue / total_orders) if total_orders else 0.0,
             "labor_total": total_labor,
             "parts_total": total_parts,
-            "misc_charges_total": total_misc,
             "sales_tax_total": total_tax,
         },
         "rows": rows,
@@ -457,7 +468,7 @@ def _report_customer_balances(shop_db, shop_id, date_ctx, include_customer_ids, 
         "shop_id": shop_id,
         "is_active": True,
     }
-    query = _append_and(query, _build_date_filter(date_ctx, field="created_at"))
+    query = _append_and(query, _build_date_filter(date_ctx, field="work_order_date", fallback_field="created_at"))
     if include_customer_ids:
         query = _append_and(query, {"customer_id": {"$in": include_customer_ids}})
     if exclude_customer_ids:
@@ -556,53 +567,88 @@ def _report_customer_balances(shop_db, shop_id, date_ctx, include_customer_ids, 
     }
 
 
+def _build_parts_order_paid_map(shop_db, order_ids: list):
+    """Sum active payments from parts_order_payments per order. Mirrors
+    `_build_parts_order_paid_map` in parts/routes.py used by the Parts Orders table."""
+    out: dict = {}
+    if not order_ids:
+        return out
+    pipeline = [
+        {"$match": {"parts_order_id": {"$in": order_ids}, "is_active": True}},
+        {"$group": {"_id": "$parts_order_id", "paid_total": {"$sum": {"$ifNull": ["$amount", 0]}}}},
+    ]
+    for row in shop_db.parts_order_payments.aggregate(pipeline):
+        oid = row.get("_id")
+        if oid is not None:
+            out[oid] = float(row.get("paid_total") or 0)
+    return out
+
+
 def _report_vendor_balances(shop_db, shop_id, date_ctx):
     query = {
         "shop_id": shop_id,
         "is_active": {"$ne": False},
     }
-    query = _append_and(query, _build_date_filter(date_ctx, field="created_at"))
+    query = _append_and(query, _build_date_filter(date_ctx, field="order_date", fallback_field="created_at"))
 
-    pipeline = [
-        {"$match": query},
-        {
-            "$group": {
-                "_id": "$vendor_id",
-                "orders_count": {"$sum": 1},
-                "total_amount": {"$sum": {"$ifNull": ["$total_amount", 0]}},
-                "paid_amount": {"$sum": {"$ifNull": ["$paid_amount", 0]}},
-                "remaining_balance": {"$sum": {"$ifNull": ["$remaining_balance", 0]}},
-            }
-        },
-    ]
+    orders = list(shop_db.parts_orders.find(query, {
+        "_id": 1,
+        "vendor_id": 1,
+        "items": 1,
+        "non_inventory_amounts": 1,
+    }))
+
+    order_ids = [o.get("_id") for o in orders if o.get("_id")]
+    paid_map = _build_parts_order_paid_map(shop_db, order_ids)
 
     vendor_map = {}
     for v in shop_db.vendors.find(
-        {
-            "shop_id": shop_id,
-        },
+        {"shop_id": shop_id},
         {"name": 1},
     ):
         vid = v.get("_id")
         if vid:
             vendor_map[str(vid)] = str(v.get("name") or "-").strip() or "-"
 
-    rows = []
-    for row in shop_db.parts_orders.aggregate(pipeline):
-        vendor_id = row.get("_id")
+    rows_by_vendor: dict[str, dict] = {}
+    for order in orders:
+        vendor_id = order.get("vendor_id")
         sid = str(vendor_id) if vendor_id else ""
-        rows.append(
+        bucket = rows_by_vendor.setdefault(
+            sid,
             {
                 "vendor_id": sid,
                 "vendor_label": vendor_map.get(sid) or "-",
-                "orders_count": int(row.get("orders_count") or 0),
-                "total_amount": _round2(row.get("total_amount") or 0),
-                "paid_amount": _round2(row.get("paid_amount") or 0),
-                "remaining_balance": _round2(row.get("remaining_balance") or 0),
-            }
+                "orders_count": 0,
+                "total_amount": 0.0,
+                "paid_amount": 0.0,
+                "remaining_balance": 0.0,
+            },
         )
 
-    rows.sort(key=lambda x: x.get("remaining_balance", 0), reverse=True)
+        # Live total = qty*(price+core_charge) + sum(non_inventory_amounts)
+        order_total = 0.0
+        for item in (order.get("items") or []):
+            if not isinstance(item, dict):
+                continue
+            qty = max(0, int(item.get("quantity") or 0))
+            price = max(0.0, float(item.get("price") or 0))
+            core_charge = max(0.0, float(item.get("core_charge") or 0))
+            order_total += qty * (price + core_charge)
+        for line in (order.get("non_inventory_amounts") or []):
+            if not isinstance(line, dict):
+                continue
+            order_total += max(0.0, float(line.get("amount") or 0))
+        order_total = _round2(order_total)
+        paid = _round2(max(0.0, paid_map.get(order.get("_id"), 0.0)))
+        balance = _round2(max(0.0, order_total - paid))
+
+        bucket["orders_count"] += 1
+        bucket["total_amount"] = _round2(bucket["total_amount"] + order_total)
+        bucket["paid_amount"] = _round2(bucket["paid_amount"] + paid)
+        bucket["remaining_balance"] = _round2(bucket["remaining_balance"] + balance)
+
+    rows = sorted(rows_by_vendor.values(), key=lambda x: x.get("remaining_balance", 0), reverse=True)
 
     return {
         "title": "Vendor Balances",
@@ -622,36 +668,21 @@ def _report_parts_orders_summary(shop_db, shop_id, date_ctx, include_vendor_ids,
         "shop_id": shop_id,
         "is_active": {"$ne": False},
     }
-    query = _append_and(query, _build_date_filter(date_ctx, field="created_at"))
+    query = _append_and(query, _build_date_filter(date_ctx, field="order_date", fallback_field="created_at"))
     if include_vendor_ids:
         query = _append_and(query, {"vendor_id": {"$in": include_vendor_ids}})
 
     orders = list(shop_db.parts_orders.find(query, {
+        "_id": 1,
         "vendor_id": 1,
         "created_at": 1,
+        "order_date": 1,
         "items": 1,
         "non_inventory_amounts": 1,
-        "total_amount": 1,
-        "paid_amount": 1,
-        "remaining_balance": 1,
     }))
 
-    # Collect all part_ids to look up core charges
-    all_part_ids = set()
-    for order in orders:
-        for item in (order.get("items") or []):
-            pid = item.get("part_id")
-            if pid:
-                all_part_ids.add(pid)
-
-    core_map: dict = {}
-    if all_part_ids:
-        for part in shop_db.parts.find(
-            {"_id": {"$in": list(all_part_ids)}},
-            {"core_has_charge": 1, "core_cost": 1},
-        ):
-            if part.get("core_has_charge"):
-                core_map[part["_id"]] = max(0.0, float(part.get("core_cost") or 0))
+    order_ids = [o.get("_id") for o in orders if o.get("_id")]
+    paid_map = _build_parts_order_paid_map(shop_db, order_ids)
 
     rows_by_vendor: dict[str, dict] = {}
     time_buckets: dict[str, dict] = {}
@@ -680,7 +711,9 @@ def _report_parts_orders_summary(shop_db, shop_id, date_ctx, include_vendor_ids,
         )
         bucket["orders_count"] += 1
 
-        # Parts items total
+        # Parts items total — match Parts Orders table convention:
+        #   items_amount = qty * (price + core_charge)
+        # Break out parts (qty*price) and cores (qty*core_charge) separately.
         items_total = 0.0
         cores_total = 0.0
         for item in (order.get("items") or []):
@@ -688,11 +721,9 @@ def _report_parts_orders_summary(shop_db, shop_id, date_ctx, include_vendor_ids,
                 continue
             qty = max(0, int(item.get("quantity") or 0))
             price = max(0.0, float(item.get("price") or 0))
+            core_charge = max(0.0, float(item.get("core_charge") or 0))
             items_total += qty * price
-            # Core charges from parts collection
-            pid = item.get("part_id")
-            if pid and pid in core_map:
-                cores_total += qty * core_map[pid]
+            cores_total += qty * core_charge
 
         bucket["parts_total"] = _round2(bucket["parts_total"] + items_total)
         bucket["cores_total"] = _round2(bucket["cores_total"] + cores_total)
@@ -710,15 +741,20 @@ def _report_parts_orders_summary(shop_db, shop_id, date_ctx, include_vendor_ids,
                 bucket[type_key] = _round2(bucket[type_key] + amount)
 
         bucket["non_inventory_total"] = _round2(bucket["non_inventory_total"] + ni_total)
-        bucket["total_amount"] = _round2(bucket["total_amount"] + float(order.get("total_amount") or 0))
-        bucket["paid_amount"] = _round2(bucket["paid_amount"] + float(order.get("paid_amount") or 0))
-        bucket["remaining_balance"] = _round2(bucket["remaining_balance"] + float(order.get("remaining_balance") or 0))
 
-        # Chart time bucket
-        tk = _time_bucket_key(order.get("created_at"), chart_bucket)
+        # Live total/paid/balance — same as Parts Orders table
+        order_total = _round2(items_total + cores_total + ni_total)
+        paid = _round2(max(0.0, paid_map.get(order.get("_id"), 0.0)))
+        balance = _round2(max(0.0, order_total - paid))
+        bucket["total_amount"] = _round2(bucket["total_amount"] + order_total)
+        bucket["paid_amount"] = _round2(bucket["paid_amount"] + paid)
+        bucket["remaining_balance"] = _round2(bucket["remaining_balance"] + balance)
+
+        # Chart time bucket — same date semantics as Parts Orders table
+        tk = _time_bucket_key(_preferred_dt(order, "order_date", "created_at"), chart_bucket)
         if tk:
             tb = time_buckets.setdefault(tk, {"total": 0.0, "parts": 0.0, "non_inv": 0.0})
-            tb["total"] = _round2(tb["total"] + float(order.get("total_amount") or 0))
+            tb["total"] = _round2(tb["total"] + order_total)
             tb["parts"] = _round2(tb["parts"] + items_total)
             tb["non_inv"] = _round2(tb["non_inv"] + ni_total)
 
@@ -775,7 +811,7 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, chart_bucket="month"):
         "shop_id": shop_id,
         "is_active": True,
     }
-    wo_query = _append_and(wo_query, _build_date_filter(date_ctx, field="created_at"))
+    wo_query = _append_and(wo_query, _build_date_filter(date_ctx, field="work_order_date", fallback_field="created_at"))
 
     wo_count = 0
     sales_labor = 0.0
@@ -791,19 +827,13 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, chart_bucket="month"):
     for wo in shop_db.work_orders.find(wo_query, {
         "totals": 1, "labor_total": 1, "parts_total": 1,
         "sales_tax_total": 1, "grand_total": 1, "labors": 1,
-        "created_at": 1,
+        "created_at": 1, "work_order_date": 1,
     }):
         t = _wo_totals(wo)
-        bk = _time_bucket_key(wo.get("created_at"), chart_bucket)
-        totals = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
-        # Use totals.parts (pure base: price*qty) when available;
-        # fall back to parts_total minus core and misc for legacy WOs.
-        parts_base = totals.get("parts")
-        core_total = _round2(totals.get("core_total") or 0)
-        if parts_base is not None:
-            parts_base = _round2(parts_base)
-        else:
-            parts_base = _round2(t["parts_total"] - core_total)
+        bk = _time_bucket_key(_preferred_dt(wo, "work_order_date", "created_at"), chart_bucket)
+        # Pure base parts (qty*price) — fall back via stored parts_total minus cores+misc.
+        parts_base = _round2(t["parts_pure"])
+        core_total = _round2(t["core_total"])
 
         wo_count += 1
         sales_labor += t["labor_total"]
@@ -882,31 +912,60 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, chart_bucket="month"):
         "shop_id": shop_id,
         "is_active": {"$ne": False},
     }
-    po_query = _append_and(po_query, _build_date_filter(date_ctx, field="created_at"))
+    po_query = _append_and(po_query, _build_date_filter(date_ctx, field="order_date", fallback_field="created_at"))
+
+    po_orders = list(shop_db.parts_orders.find(po_query, {
+        "_id": 1,
+        "items": 1,
+        "non_inventory_amounts": 1,
+    }))
+    po_order_ids = [o.get("_id") for o in po_orders if o.get("_id")]
+    po_paid_map = _build_parts_order_paid_map(shop_db, po_order_ids)
 
     po_count = 0
-    po_total = 0.0
+    po_items_total = 0.0  # qty*price (without cores)
+    po_cores_total = 0.0  # qty*core_charge
     po_non_inventory = 0.0
+    po_total = 0.0
     po_paid = 0.0
     po_balance = 0.0
 
-    for order in shop_db.parts_orders.find(po_query, {
-        "total_amount": 1, "paid_amount": 1, "remaining_balance": 1,
-        "non_inventory_amounts": 1,
-    }):
+    for order in po_orders:
         po_count += 1
-        po_total += float(order.get("total_amount") or 0)
-        po_paid += float(order.get("paid_amount") or 0)
-        po_balance += float(order.get("remaining_balance") or 0)
+        items_amount = 0.0
+        cores_amount = 0.0
+        for item in (order.get("items") or []):
+            if not isinstance(item, dict):
+                continue
+            qty = max(0, int(item.get("quantity") or 0))
+            price = max(0.0, float(item.get("price") or 0))
+            core_charge = max(0.0, float(item.get("core_charge") or 0))
+            items_amount += qty * price
+            cores_amount += qty * core_charge
+
+        ni_amount = 0.0
         for line in (order.get("non_inventory_amounts") or []):
             if isinstance(line, dict):
-                po_non_inventory += max(0.0, float(line.get("amount") or 0))
+                ni_amount += max(0.0, float(line.get("amount") or 0))
 
-    po_total = _round2(po_total)
+        order_total = items_amount + cores_amount + ni_amount
+        paid = max(0.0, po_paid_map.get(order.get("_id"), 0.0))
+        balance = max(0.0, order_total - paid)
+
+        po_items_total += items_amount
+        po_cores_total += cores_amount
+        po_non_inventory += ni_amount
+        po_total += order_total
+        po_paid += paid
+        po_balance += balance
+
+    po_items_total = _round2(po_items_total)
+    po_cores_total = _round2(po_cores_total)
     po_non_inventory = _round2(po_non_inventory)
+    po_total = _round2(po_total)
     po_paid = _round2(po_paid)
     po_balance = _round2(po_balance)
-    po_parts_only = _round2(po_total - po_non_inventory)
+    po_parts_only = po_items_total
 
     # --- Combined ---
     net_revenue = _round2(sales_revenue - po_total)
@@ -948,6 +1007,10 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, chart_bucket="month"):
         {
             "category": "Parts Orders — Parts",
             "amount": po_parts_only,
+        },
+        {
+            "category": "Parts Orders — Cores",
+            "amount": po_cores_total,
         },
         {
             "category": "Parts Orders — Non-Inventory",
@@ -1013,15 +1076,15 @@ def _report_mechanic_hours(shop_db, shop_id, date_ctx, chart_bucket="month"):
         "shop_id": shop_id,
         "is_active": True,
     }
-    wo_query = _append_and(wo_query, _build_date_filter(date_ctx, field="created_at"))
+    wo_query = _append_and(wo_query, _build_date_filter(date_ctx, field="work_order_date", fallback_field="created_at"))
 
     mechanics: dict[str, dict] = {}
     time_buckets: dict[str, dict[str, float]] = {}
 
-    for wo in shop_db.work_orders.find(wo_query, {"labors": 1, "created_at": 1}):
+    for wo in shop_db.work_orders.find(wo_query, {"labors": 1, "created_at": 1, "work_order_date": 1}):
         wo_id = wo.get("_id")
         wo_ids_seen: dict[str, set] = {}
-        wo_dt = wo.get("created_at")
+        wo_dt = _preferred_dt(wo, "work_order_date", "created_at")
 
         for block in (wo.get("labors") or []):
             if not isinstance(block, dict):

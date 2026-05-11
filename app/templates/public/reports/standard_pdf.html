@@ -58,7 +58,6 @@
             <th class="text-end">Orders</th>
             <th class="text-end">Labor</th>
             <th class="text-end">Parts</th>
-            <th class="text-end">Misc Charges</th>
             <th class="text-end">Tax</th>
             <th class="text-end">Revenue</th>
           </tr>
@@ -121,7 +120,6 @@
               <td class="text-end">{{ row.orders_count }}</td>
               <td class="text-end">${{ "%.2f"|format(row.labor_total or 0) }}</td>
               <td class="text-end">${{ "%.2f"|format(row.parts_total or 0) }}</td>
-              <td class="text-end">${{ "%.2f"|format(row.misc_charges_total or 0) }}</td>
               <td class="text-end">${{ "%.2f"|format(row.sales_tax_total or 0) }}</td>
               <td class="text-end">${{ "%.2f"|format(row.grand_total or 0) }}</td>
             </tr>
