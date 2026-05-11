@@ -4,37 +4,24 @@
 {% block page_title %}Work Orders{% endblock %}
 
 {% block app_content %}
-<div class="text-center mb-3">
-    <h1 class="h4 mb-1">Work Orders</h1>
-    <p class="text-muted mb-0">Manage work orders, payments, and estimates for the active shop.</p>
-</div>
-<div class="d-flex justify-content-end mb-3">
-  <div class="d-flex gap-2">
+<div class="page-header">
+  <h1 class="page-header__title">Work Orders</h1>
+  <ul class="nav page-header__tabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <button class="nav-link active" id="tab-work-orders" data-bs-toggle="tab" data-bs-target="#content-work-orders" type="button" role="tab" aria-controls="content-work-orders" aria-selected="true">Work Orders</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab-payments" data-bs-toggle="tab" data-bs-target="#content-payments" type="button" role="tab" aria-controls="content-payments" aria-selected="false">Payments</button>
+    </li>
+    <li class="nav-item" role="presentation">
+      <button class="nav-link" id="tab-estimates" data-bs-toggle="tab" data-bs-target="#content-estimates" type="button" role="tab" aria-controls="content-estimates" aria-selected="false">Estimates</button>
+    </li>
+  </ul>
+  <div class="page-header__actions">
     <a class="btn btn-primary btn-sm" href="{{ url_for('work_orders.work_order_details_page') }}">
       Create Work Order
     </a>
   </div>
-</div>
-
-<!-- Navigation Tabs -->
-<div class="mt-3">
-  <ul class="nav nav-tabs" role="tablist">
-    <li class="nav-item" role="presentation">
-      <button class="nav-link active" id="tab-work-orders" data-bs-toggle="tab" data-bs-target="#content-work-orders" type="button" role="tab" aria-controls="content-work-orders" aria-selected="true">
-        Work Orders
-      </button>
-    </li>
-    <li class="nav-item" role="presentation">
-      <button class="nav-link" id="tab-payments" data-bs-toggle="tab" data-bs-target="#content-payments" type="button" role="tab" aria-controls="content-payments" aria-selected="false">
-        Payments
-      </button>
-    </li>
-    <li class="nav-item" role="presentation">
-      <button class="nav-link" id="tab-estimates" data-bs-toggle="tab" data-bs-target="#content-estimates" type="button" role="tab" aria-controls="content-estimates" aria-selected="false">
-        Estimates
-      </button>
-    </li>
-  </ul>
 </div>
 
 <!-- Tab Content -->

@@ -1,3 +1,71 @@
+/* ── Unified page header (title — tabs — actions in one line) ───────── */
+.page-header {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0.65rem 0.25rem 0.85rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #e6eae7;
+  flex-wrap: wrap;
+}
+.page-header__title {
+  flex: 0 0 auto;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+.page-header__tabs {
+  flex: 1 1 auto;
+  display: flex;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-bottom: 0;
+}
+.page-header__tabs .nav-link {
+  border: 0 !important;
+  background: transparent;
+  color: #475569;
+  font-weight: 500;
+  padding: 0.4rem 0.9rem;
+  border-radius: 0;
+  position: relative;
+}
+.page-header__tabs .nav-link:hover {
+  color: #1a7a42;
+}
+.page-header__tabs .nav-link.active {
+  color: #1a7a42;
+  background: transparent;
+  font-weight: 600;
+}
+.page-header__tabs .nav-link.active::after {
+  content: "";
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: -0.85rem;
+  height: 2px;
+  background: #1a7a42;
+  border-radius: 2px;
+}
+.page-header__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+@media (max-width: 768px) {
+  .page-header { gap: 0.5rem; }
+  .page-header__tabs { justify-content: flex-start; flex-basis: 100%; order: 3; }
+  .page-header__actions { order: 2; }
+}
+
 .dashboard-donut-wrap {
   position: relative;
   width: 186px;

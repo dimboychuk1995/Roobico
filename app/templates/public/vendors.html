@@ -4,19 +4,16 @@
 {% block page_title %}Vendors{% endblock %}
 
 {% block app_content %}
-<div class="text-center mb-3">
-    <h1 class="h4 mb-1">Vendors</h1>
-    <p class="text-muted mb-0">Manage your vendors list for the active shop.</p>
-</div>
-{% if "vendors.edit" in user_permissions %}
-<div class="d-flex justify-content-end mb-3">
-  <div class="d-flex gap-2">
+<div class="page-header">
+  <h1 class="page-header__title">Vendors</h1>
+  {% if "vendors.edit" in user_permissions %}
+  <div class="page-header__actions">
     <button class="btn btn-primary btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#createVendorModal">
       Add Vendor
     </button>
   </div>
+  {% endif %}
 </div>
-{% endif %}
 
 <div class="card">
   <div class="card-body">

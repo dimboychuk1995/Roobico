@@ -4,19 +4,14 @@
 {% block app_content %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/roles.css') }}">
 
-<div class="rp-page-header">
-  <div>
-    <h1 class="rp-page-title">Roles & Permissions</h1>
-    <p class="rp-page-sub">
-      Define what each role can do. Per-user overrides take priority — and <strong>Deny</strong> always wins.
-    </p>
-  </div>
-  <div class="d-flex gap-2">
-    <a class="rp-btn rp-btn-outline" href="{{ url_for('settings.users_index') }}">
+<div class="page-header">
+  <h1 class="page-header__title">Roles & Permissions</h1>
+  <div class="page-header__actions">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('settings.users_index') }}">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
       Users
     </a>
-    <a class="rp-btn rp-btn-outline" href="{{ url_for('main.settings') }}">All Settings</a>
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('main.settings') }}">All Settings</a>
   </div>
 </div>
 
