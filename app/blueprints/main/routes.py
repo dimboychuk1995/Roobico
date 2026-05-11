@@ -141,6 +141,13 @@ def _render_app_page(template_name: str, active_page: str, **ctx):
     # ✅ Прокидываем в g
     g.user_permissions = perms_set
 
+    # ✅ Фильтруем nav: скрываем разделы, на которые нет прав
+    try:
+        from app.utils.permissions import filter_nav_items
+        visible_nav_items = filter_nav_items(NAV_ITEMS)
+    except Exception:
+        visible_nav_items = NAV_ITEMS
+
     payload = dict(
         app_user_display=app_user_display,
         app_tenant_display=app_tenant_display,
@@ -150,7 +157,7 @@ def _render_app_page(template_name: str, active_page: str, **ctx):
         shop_options=shop_options,
         active_shop_id=active_shop_id,
 
-        nav_items=NAV_ITEMS,
+        nav_items=visible_nav_items,
         active_page=active_page,
 
         # ✅ для шаблонов
@@ -276,13 +283,6 @@ def settings_organization_save():
         session.modified = True
 
     return jsonify({"ok": True})
-
-
-@main_bp.get("/settings/roles")
-@login_required
-@permission_required("settings.manage_roles")
-def settings_roles():
-    return _render_app_page("public/settings/roles.html", active_page="settings")
 
 
 @main_bp.get("/settings/workflows")

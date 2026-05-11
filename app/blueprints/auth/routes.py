@@ -28,55 +28,21 @@ def _safe_list(v):
 
 def _compute_effective_permissions(user_doc: dict, tenant_doc: dict) -> list[str]:
     """
-    Effective permissions:
-    1) берем роль(и) из master.users (обычно user_doc["role"])
-    2) читаем permissions из tenant_db.roles
-    3) применяем overrides (если есть):
-       - permissions_allow: добавляем
-       - permissions_deny: вычитаем
-       - если вдруг есть user_doc["permissions"] как явный override — используем его как базу (highest priority)
+    Effective permissions for login. Делегируем общему компьютеру в utils.permissions:
+      - role из user.role (key в tenant_db.roles)
+      - allow_permissions добавляются
+      - deny_permissions вычитаются (deny > allow > role)
+      - owner всегда полный доступ (синхронизируется автоматически)
     """
+    from app.utils.permissions import compute_user_permissions
+
     tenant_db_name = (tenant_doc.get("db_name") or "").strip()
     if not tenant_db_name:
         return []
 
     client = get_mongo_client()
     tdb = client[tenant_db_name]
-
-    # Highest priority override: если кто-то вручную вписал permissions прямо в user doc
-    direct = user_doc.get("permissions")
-    if isinstance(direct, list) and direct:
-        base = {str(p).strip() for p in direct if str(p).strip()}
-    else:
-        base = set()
-
-        # Роли по умолчанию у тебя строкой: user_doc["role"] = "owner"/"viewer"/...
-        role_key = (user_doc.get("role") or "viewer").strip()
-
-        # Также поддержим вариант, если когда-то появится roles: ["owner","manager"]
-        roles_list = user_doc.get("roles")
-        role_keys = []
-        if isinstance(roles_list, list) and roles_list:
-            role_keys = [str(x).strip() for x in roles_list if str(x).strip()]
-        else:
-            role_keys = [role_key]
-
-        for rk in role_keys:
-            role_doc = tdb.roles.find_one({"key": rk})
-            if role_doc and isinstance(role_doc.get("permissions"), list):
-                base |= {str(p).strip() for p in role_doc["permissions"] if str(p).strip()}
-
-    # allow/deny overrides (если есть)
-    allow = user_doc.get("permissions_allow")
-    deny = user_doc.get("permissions_deny")
-
-    if isinstance(allow, list) and allow:
-        base |= {str(p).strip() for p in allow if str(p).strip()}
-
-    if isinstance(deny, list) and deny:
-        base -= {str(p).strip() for p in deny if str(p).strip()}
-
-    return sorted(base)
+    return sorted(compute_user_permissions(user_doc, tdb))
 
 
 @auth_bp.post("/login")

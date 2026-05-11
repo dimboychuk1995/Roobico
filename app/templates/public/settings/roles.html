@@ -2,17 +2,118 @@
 {% block page_title %}Settings — Roles & Permissions{% endblock %}
 
 {% block app_content %}
-<div class="text-center mb-3">
-    <h1 class="h4 mb-1">Roles & Permissions</h1>
-    <p class="text-muted mb-0">Create roles and assign permissions.</p>
-</div>
-<div class="d-flex justify-content-end mb-3">
-  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('main.settings') }}">Back to Settings</a>
-</div>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/roles.css') }}">
 
-<div class="card">
-  <div class="card-body">
-    <p class="text-muted mb-0">Empty page.</p>
+<div class="rp-page-header">
+  <div>
+    <h1 class="rp-page-title">Roles & Permissions</h1>
+    <p class="rp-page-sub">
+      Define what each role can do. Per-user overrides take priority — and <strong>Deny</strong> always wins.
+    </p>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="rp-btn rp-btn-outline" href="{{ url_for('settings.users_index') }}">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Users
+    </a>
+    <a class="rp-btn rp-btn-outline" href="{{ url_for('main.settings') }}">All Settings</a>
   </div>
 </div>
+
+<div class="row g-3" id="roles-app">
+  <!-- Left column: roles list -->
+  <div class="col-12 col-lg-4 col-xl-3">
+    <div class="rp-card">
+      <div class="rp-card-header">
+        <span class="rp-title">Roles</span>
+        <button id="btn-new-role" type="button" class="rp-btn rp-btn-primary ms-auto">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          New role
+        </button>
+      </div>
+      <ul class="rp-roles-list" id="roles-list">
+        <li class="rp-empty" style="min-height:160px;">
+          <div class="rp-empty-icon">
+            <div class="spinner-border spinner-border-sm" role="status"></div>
+          </div>
+          <div class="rp-empty-hint">Loading roles…</div>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Right column: editor -->
+  <div class="col-12 col-lg-8 col-xl-9">
+    <div class="rp-card">
+      <div class="rp-editor-toolbar">
+        <input id="role-name-input"
+               type="text"
+               class="rp-name-input"
+               placeholder="Select a role to edit"
+               disabled />
+        <span id="role-meta" class="rp-meta-line"></span>
+        <div class="rp-toolbar-actions">
+          <button id="btn-clone-role" type="button" class="rp-btn rp-btn-outline" disabled title="Clone role">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            Clone
+          </button>
+          <button id="btn-delete-role" type="button" class="rp-btn rp-btn-danger" disabled title="Delete role">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+            Delete
+          </button>
+          <button id="btn-save-role" type="button" class="rp-btn rp-btn-success" disabled>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+            Save
+          </button>
+        </div>
+      </div>
+
+      <div class="rp-card-body">
+        <!-- Empty state -->
+        <div id="role-editor-empty" class="rp-empty">
+          <div class="rp-empty-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/></svg>
+          </div>
+          <div class="rp-empty-title">Select a role to edit</div>
+          <div class="rp-empty-hint">Or click <strong>New role</strong> to create a custom one.</div>
+        </div>
+
+        <!-- Editor -->
+        <div id="role-editor" class="d-none">
+          <div class="rp-controls-bar">
+            <div class="rp-search">
+              <input id="perm-filter" type="search" placeholder="Search permissions…">
+            </div>
+            <button id="btn-expand-all" type="button" class="rp-btn rp-btn-ghost">Expand all</button>
+            <button id="btn-collapse-all" type="button" class="rp-btn rp-btn-ghost">Collapse all</button>
+            <button id="btn-select-all" type="button" class="rp-btn rp-btn-ghost">Select all</button>
+            <button id="btn-clear-all" type="button" class="rp-btn rp-btn-ghost">Clear all</button>
+            <div class="rp-summary">
+              Selected <span id="perm-summary" class="rp-pill">0 / 0</span>
+            </div>
+          </div>
+
+          <div id="permissions-tree" class="rp-tree"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+window.ROLES_DATA = {
+  permissionGroups: {{ permission_groups|tojson }},
+  permissionLabels: {{ permission_labels|tojson }},
+  protectedRoleKeys: {{ protected_role_keys|tojson }},
+  systemRoleKeys: {{ system_role_keys|tojson }},
+  endpoints: {
+    listRoles: "{{ url_for('settings.api_roles_list') }}",
+    createRole: "{{ url_for('settings.api_roles_create') }}",
+    updateRoleTpl: "{{ url_for('settings.api_roles_update', role_id='__id__') }}",
+    deleteRoleTpl: "{{ url_for('settings.api_roles_delete', role_id='__id__') }}",
+    cloneRoleTpl: "{{ url_for('settings.api_roles_clone', role_id='__id__') }}"
+  }
+};
+</script>
+<script src="{{ url_for('static', filename='js/settings/roles.js') }}"></script>
 {% endblock %}

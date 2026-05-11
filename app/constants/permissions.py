@@ -5,45 +5,219 @@ from __future__ import annotations
 # 1) ЕДИНЫЙ КАТАЛОГ PERMISSIONS (источник истины)
 #    Формат ключей: <module>.<action>
 # =========================================================
+#
+# Группировка дана в PERMISSION_GROUPS ниже — она используется UI
+# (tree view) и при сидинге дефолтных ролей.
+# =========================================================
 PERMISSIONS: dict[str, str] = {
-    # Dashboard
+    # ── Dashboard ───────────────────────────────────────────
     "dashboard.view": "View dashboard",
+    "dashboard.edit_goals": "Edit dashboard goals",
 
-    # Parts
-    "parts.view": "View parts",
+    # ── Calendar ────────────────────────────────────────────
+    "calendar.view": "View calendar",
+    "calendar.create": "Create appointments",
+    "calendar.edit": "Edit appointments",
+    "calendar.delete": "Delete appointments",
+    "calendar.manage_settings": "Manage calendar settings (statuses/presets)",
+
+    # ── Customers ───────────────────────────────────────────
+    "customers.view": "View customers list & details",
+    "customers.create": "Create customers",
+    "customers.edit": "Edit customers",
+    "customers.deactivate": "Deactivate customers",
+    "customers.manage_units": "Create/edit customer units",
+    "customers.manage_portal": "Manage customer portal links",
+
+    # ── Vendors ─────────────────────────────────────────────
+    "vendors.view": "View vendors",
+    "vendors.create": "Create vendors",
+    "vendors.edit": "Edit vendors",
+    "vendors.deactivate": "Deactivate vendors",
+
+    # ── Parts (catalog / inventory) ─────────────────────────
+    "parts.view": "View parts catalog",
     "parts.create": "Create parts",
     "parts.edit": "Edit parts",
     "parts.delete": "Delete parts",
+    "parts.adjust_stock": "Adjust part stock manually",
+    "parts.view_costs": "View part costs (avg cost / cost columns)",
 
-    # Work Orders
-    "work_orders.view": "View work orders",
+    # ── Parts Orders ────────────────────────────────────────
+    "parts_orders.view": "View parts orders",
+    "parts_orders.create": "Create parts orders",
+    "parts_orders.edit": "Edit parts orders",
+    "parts_orders.delete": "Delete parts orders",
+    "parts_orders.receive": "Receive / un-receive parts orders",
+    "parts_orders.manage_payments": "Record / delete parts order payments",
+
+    # ── Work Orders ─────────────────────────────────────────
+    "work_orders.view": "View work orders & estimates",
     "work_orders.create": "Create work orders",
     "work_orders.edit": "Edit work orders",
     "work_orders.change_status": "Change work order status",
     "work_orders.delete": "Delete work orders",
+    "work_orders.manage_payments": "Record / delete work order payments",
+    "work_orders.send_to_customer": "Send work order / authorization to customer",
+    "work_orders.export_pdf": "Export work order PDF",
+    "work_orders.view_costs": "View part costs inside WO",
 
-    # Vendors
-    "vendors.view": "Vendor: view",
-    "vendors.edit": "Vendor: edit",
-    "vendors.deactivate": "Vendor: deactivate",
+    # ── Attachments ─────────────────────────────────────────
+    "attachments.view": "View attachments",
+    "attachments.upload": "Upload attachments",
+    "attachments.delete": "Delete attachments",
 
-    # Customers (NEW)
-    "customers.view": "Customer: view",
-    "customers.edit": "Customer: edit/create",
-    "customers.deactivate": "Customer: deactivate",
-
-    # Reports
+    # ── Reports ─────────────────────────────────────────────
     "reports.view": "View reports",
-    "reports.export": "Export reports",
+    "reports.export": "Export reports (Excel/PDF)",
+    "reports.view_audit": "View audit journal",
 
-    # Settings
-    "settings.view": "View settings",
-    "settings.manage_org": "Manage organization settings",
+    # ── Import / Export ─────────────────────────────────────
+    "import_export.view": "Open Import / Export tool",
+    "import_export.import": "Run data imports",
+    "import_export.export": "Run data exports",
+
+    # ── Settings ────────────────────────────────────────────
+    "settings.view": "View settings index",
+    "settings.manage_org": "Manage organization & general settings",
+    "settings.manage_locations": "Manage shops / locations",
     "settings.manage_users": "Manage users",
     "settings.manage_roles": "Manage roles & permissions",
+    "settings.manage_parts_settings": "Manage parts categories / locations / pricing",
+    "settings.manage_wo_presets": "Manage work order presets",
+    "settings.manage_wo_settings": "Manage work order settings (labor rates / supply / cores)",
+    "settings.manage_workflows": "Manage workflows",
+    "settings.manage_notifications": "Manage notification settings",
+    "settings.manage_pdf_design": "Manage PDF design",
 }
 
 ALL_PERMISSIONS: list[str] = sorted(PERMISSIONS.keys())
+
+
+# =========================================================
+# 2) ГРУППИРОВКА ДЛЯ UI (tree view)
+#    Каждый блок: { key, label, items: [perm_key, ...] }
+#    Порядок групп — порядок их отображения на странице.
+# =========================================================
+PERMISSION_GROUPS: list[dict] = [
+    {
+        "key": "dashboard",
+        "label": "Dashboard",
+        "items": ["dashboard.view", "dashboard.edit_goals"],
+    },
+    {
+        "key": "calendar",
+        "label": "Calendar",
+        "items": [
+            "calendar.view",
+            "calendar.create",
+            "calendar.edit",
+            "calendar.delete",
+            "calendar.manage_settings",
+        ],
+    },
+    {
+        "key": "customers",
+        "label": "Customers",
+        "items": [
+            "customers.view",
+            "customers.create",
+            "customers.edit",
+            "customers.deactivate",
+            "customers.manage_units",
+            "customers.manage_portal",
+        ],
+    },
+    {
+        "key": "vendors",
+        "label": "Vendors",
+        "items": [
+            "vendors.view",
+            "vendors.create",
+            "vendors.edit",
+            "vendors.deactivate",
+        ],
+    },
+    {
+        "key": "parts",
+        "label": "Parts (catalog & inventory)",
+        "items": [
+            "parts.view",
+            "parts.create",
+            "parts.edit",
+            "parts.delete",
+            "parts.adjust_stock",
+            "parts.view_costs",
+        ],
+    },
+    {
+        "key": "parts_orders",
+        "label": "Parts Orders",
+        "items": [
+            "parts_orders.view",
+            "parts_orders.create",
+            "parts_orders.edit",
+            "parts_orders.delete",
+            "parts_orders.receive",
+            "parts_orders.manage_payments",
+        ],
+    },
+    {
+        "key": "work_orders",
+        "label": "Work Orders",
+        "items": [
+            "work_orders.view",
+            "work_orders.create",
+            "work_orders.edit",
+            "work_orders.change_status",
+            "work_orders.delete",
+            "work_orders.manage_payments",
+            "work_orders.send_to_customer",
+            "work_orders.export_pdf",
+            "work_orders.view_costs",
+        ],
+    },
+    {
+        "key": "attachments",
+        "label": "Attachments",
+        "items": [
+            "attachments.view",
+            "attachments.upload",
+            "attachments.delete",
+        ],
+    },
+    {
+        "key": "reports",
+        "label": "Reports",
+        "items": ["reports.view", "reports.export", "reports.view_audit"],
+    },
+    {
+        "key": "import_export",
+        "label": "Import / Export",
+        "items": [
+            "import_export.view",
+            "import_export.import",
+            "import_export.export",
+        ],
+    },
+    {
+        "key": "settings",
+        "label": "Settings",
+        "items": [
+            "settings.view",
+            "settings.manage_org",
+            "settings.manage_locations",
+            "settings.manage_users",
+            "settings.manage_roles",
+            "settings.manage_parts_settings",
+            "settings.manage_wo_presets",
+            "settings.manage_wo_settings",
+            "settings.manage_workflows",
+            "settings.manage_notifications",
+            "settings.manage_pdf_design",
+        ],
+    },
+]
 
 
 def _all() -> set[str]:
@@ -59,19 +233,23 @@ def _safe_subset(keys: set[str]) -> set[str]:
     return {k for k in keys if k in allp}
 
 
+# Системные роли, которые нельзя удалять или переименовывать.
+# Owner — особо защищён (его нельзя редактировать вообще, у него всегда все права).
+SYSTEM_ROLE_KEYS: set[str] = {
+    "owner",
+    "general_manager",
+    "manager",
+    "parts_manager",
+    "senior_mechanic",
+    "mechanic",
+    "viewer",
+}
+
+PROTECTED_ROLE_KEYS: set[str] = {"owner"}
+
+
 # =========================================================
-# 2) ДЕФОЛТНЫЕ РОЛИ (seed в tenant DB)
-#
-# Роли по твоему списку:
-# - Owner: первый пользователь, полный доступ
-# - General manager: полный доступ
-# - Manager: всё, кроме распределения ролей
-# - Parts manager: parts.* + WO view + dashboard view + reports view
-# - Senior mechanic: WO view/create + parts view + reports view
-# - Mechanic: WO view
-#
-# Я ДОПОЛНИЛ:
-# - Viewer: только просмотр (удобно для офис/аудит)
+# 3) ДЕФОЛТНЫЕ РОЛИ (seed в tenant DB при создании tenant)
 # =========================================================
 def build_default_roles() -> list[dict]:
     allp = _all()
@@ -80,67 +258,85 @@ def build_default_roles() -> list[dict]:
     owner = allp
     general_manager = allp
 
-    # Manager: всё кроме управления ролями (распределение ролей)
+    # Manager: всё кроме управления ролями
     manager = allp - {"settings.manage_roles"}
 
-    # Parts manager:
-    # - все права по parts
-    # - work_orders: view
-    # - dashboard: view
-    # - reports: view
-    # - vendors: view (чтобы мог смотреть/выбирать поставщиков)
+    # Parts manager
     parts_manager = _safe_subset({
         "dashboard.view",
-        "reports.view",
+        "calendar.view",
+        "customers.view",
+        "vendors.view",
+        "vendors.create",
+        "vendors.edit",
         "parts.view",
         "parts.create",
         "parts.edit",
         "parts.delete",
+        "parts.adjust_stock",
+        "parts.view_costs",
+        "parts_orders.view",
+        "parts_orders.create",
+        "parts_orders.edit",
+        "parts_orders.delete",
+        "parts_orders.receive",
+        "parts_orders.manage_payments",
         "work_orders.view",
-        "vendors.view",
-    })
-
-    # Senior mechanic:
-    # - work_orders: view, create
-    # - parts: view (чтобы мог смотреть что списывать)
-    # - reports: view (если нужны отчеты по WO/часам)
-    # - dashboard: view (обычно да)
-    senior_mechanic = _safe_subset({
-        "dashboard.view",
-        "reports.view",
-        "parts.view",
-        "work_orders.view",
-        "work_orders.create",
-    })
-
-    # Mechanic:
-    # - только просмотр WO (по твоему)
-    # (я оставил без dashboard/reports, чтобы было строго как ты сказал)
-    mechanic = _safe_subset({
-        "work_orders.view",
-    })
-
-    # Viewer (минимальный просмотр)
-    # + vendors.view, customers.view (офис/аудит часто надо видеть справочники)
-    viewer = _safe_subset({
-        "dashboard.view",
-        "parts.view",
-        "work_orders.view",
+        "attachments.view",
+        "attachments.upload",
         "reports.view",
         "settings.view",
-        "vendors.view",
+        "settings.manage_parts_settings",
+    })
+
+    # Senior mechanic
+    senior_mechanic = _safe_subset({
+        "dashboard.view",
+        "calendar.view",
+        "calendar.create",
+        "calendar.edit",
         "customers.view",
+        "vendors.view",
+        "parts.view",
+        "parts_orders.view",
+        "work_orders.view",
+        "work_orders.create",
+        "work_orders.edit",
+        "work_orders.change_status",
+        "work_orders.export_pdf",
+        "attachments.view",
+        "attachments.upload",
+        "reports.view",
+    })
+
+    # Mechanic — только просмотр своих WO
+    mechanic = _safe_subset({
+        "calendar.view",
+        "work_orders.view",
+        "attachments.view",
+    })
+
+    # Viewer — read-only офис/аудит
+    viewer = _safe_subset({
+        "dashboard.view",
+        "calendar.view",
+        "customers.view",
+        "vendors.view",
+        "parts.view",
+        "parts_orders.view",
+        "work_orders.view",
+        "attachments.view",
+        "reports.view",
+        "reports.view_audit",
+        "settings.view",
     })
 
     return [
-        # system roles
-        {"key": "owner", "name": "Owner", "permissions": sorted(owner), "is_system": True},
+        {"key": "owner", "name": "Owner", "permissions": sorted(owner), "is_system": True, "is_protected": True},
         {"key": "general_manager", "name": "General manager", "permissions": sorted(general_manager), "is_system": True},
         {"key": "manager", "name": "Manager", "permissions": sorted(manager), "is_system": True},
         {"key": "parts_manager", "name": "Parts manager", "permissions": sorted(parts_manager), "is_system": True},
         {"key": "senior_mechanic", "name": "Senior mechanic", "permissions": sorted(senior_mechanic), "is_system": True},
         {"key": "mechanic", "name": "Mechanic", "permissions": sorted(mechanic), "is_system": True},
-
-        # optional helpful role
         {"key": "viewer", "name": "Viewer", "permissions": sorted(viewer), "is_system": True},
     ]

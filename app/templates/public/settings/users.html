@@ -96,6 +96,17 @@
                       Edit
                     </button>
 
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-outline-secondary user-perms-btn"
+                      data-user-id="{{ u.get('_id_str') }}"
+                      data-user-name="{{ display_name|e }}"
+                      title="Manage per-user permissions"
+                    >
+                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px;"><path d="M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/></svg>
+                      Permissions
+                    </button>
+
                     {% if u.get('_id_str') != (session.get('user_id') or '')|string and u.get('is_active', True) %}
                       <form method="post" action="{{ url_for('settings.users_deactivate', user_id=u.get('_id_str')) }}" class="d-inline">
                         <input type="hidden" name="q" value="{{ q or '' }}">
@@ -361,12 +372,120 @@
 
 <!-- Roles & Permissions -->
 <div class="card mt-4">
-  <div class="card-body">
-    <h2 class="h6 mb-1">Roles & Permissions</h2>
-    <p class="text-muted mb-0">Create roles and assign permissions. <span class="badge text-bg-secondary">Coming soon</span></p>
+  <div class="card-body d-flex justify-content-between align-items-center gap-3">
+    <div>
+      <h2 class="h6 mb-1">Roles & Permissions</h2>
+      <p class="text-muted mb-0 small">Define what each role can do. Per-user overrides take priority.</p>
+    </div>
+    <a href="{{ url_for('settings.roles_index') }}" class="btn btn-sm btn-outline-primary">Manage roles</a>
   </div>
 </div>
 
 <script src="{{ url_for('static', filename='js/settings/users.js') }}"></script>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/roles.css') }}">
+
+<!-- ── Per-user permissions modal ── -->
+<div class="modal fade" id="userPermsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered">
+    <div class="modal-content" style="border-radius:16px; overflow:hidden;">
+      <div class="modal-header" style="background:linear-gradient(180deg,#fcfdfd 0%,#f6f8f7 100%);">
+        <div class="d-flex align-items-center gap-3 flex-grow-1">
+          <div style="width:40px;height:40px;border-radius:12px;background:#edf7f0;color:#1a7a42;display:flex;align-items:center;justify-content:center;flex:0 0 40px;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/></svg>
+          </div>
+          <div class="min-width-0">
+            <div class="fw-semibold" style="font-size:1.05rem; color:#0f172a;">
+              <span id="userPermsName">user</span>
+            </div>
+            <div class="text-muted small">
+              Role: <span id="userPermsRole" class="rp-tag rp-tag-system">—</span>
+            </div>
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body" style="background:#f8fafc;">
+        <div id="userPermsAlert" class="alert alert-warning d-none mb-3"></div>
+        <div class="alert alert-light border mb-3" style="border-radius:12px;">
+          <div class="small text-muted">
+            <strong>How it works:</strong> the role provides a baseline. <strong>Allow</strong> grants extra
+            permissions on top, and <strong>Deny</strong> removes them. <strong>Deny always wins.</strong>
+          </div>
+        </div>
+
+        <div id="userPermsLoading" class="rp-empty">
+          <div class="rp-empty-icon"><div class="spinner-border spinner-border-sm" role="status"></div></div>
+          <div class="rp-empty-hint">Loading permissions…</div>
+        </div>
+
+        <div id="userPermsBody" class="d-none">
+          <!-- summary stats -->
+          <div class="rp-up-summary">
+            <div class="rp-up-stat">
+              <div class="rp-up-stat-label">From role</div>
+              <div class="rp-up-stat-value" id="up-stat-role">0</div>
+            </div>
+            <div class="rp-up-stat is-allow">
+              <div class="rp-up-stat-label">Allow override</div>
+              <div class="rp-up-stat-value" id="up-stat-allow">0</div>
+            </div>
+            <div class="rp-up-stat is-deny">
+              <div class="rp-up-stat-label">Deny override</div>
+              <div class="rp-up-stat-value" id="up-stat-deny">0</div>
+            </div>
+            <div class="rp-up-stat is-eff">
+              <div class="rp-up-stat-label">Effective</div>
+              <div class="rp-up-stat-value" id="up-stat-eff">0</div>
+            </div>
+          </div>
+
+          <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+            <div class="rp-search" style="flex:1 1 240px; max-width:300px;">
+              <input id="userPermsFilter" type="search" placeholder="Search permissions…">
+            </div>
+            <div class="btn-group btn-group-sm" role="group" aria-label="View">
+              <button type="button" class="rp-btn rp-btn-ghost" data-up-view="all">All</button>
+              <button type="button" class="rp-btn rp-btn-ghost" data-up-view="overrides">Overrides only</button>
+              <button type="button" class="rp-btn rp-btn-ghost" data-up-view="effective">Effective</button>
+            </div>
+          </div>
+
+          <div class="rp-up-table">
+            <table class="table table-sm align-middle mb-0">
+              <thead>
+                <tr>
+                  <th>Permission</th>
+                  <th class="text-center" style="width:90px;">Role</th>
+                  <th class="text-center" style="width:90px;">Allow</th>
+                  <th class="text-center" style="width:90px;">Deny</th>
+                  <th class="text-center" style="width:120px;">Effective</th>
+                </tr>
+              </thead>
+              <tbody id="userPermsTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-footer" style="background:#fff;">
+        <button type="button" class="rp-btn rp-btn-outline" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" id="userPermsSaveBtn" class="rp-btn rp-btn-success" disabled>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          Save changes
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+window.USER_PERMS_ENDPOINTS = {
+  getTpl: "{{ url_for('settings.api_user_permissions_get', user_id='__id__') }}",
+  putTpl: "{{ url_for('settings.api_user_permissions_update', user_id='__id__') }}"
+};
+</script>
+<script src="{{ url_for('static', filename='js/settings/user_permissions.js') }}"></script>
 
 {% endblock %}

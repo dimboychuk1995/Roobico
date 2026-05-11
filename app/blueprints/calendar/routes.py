@@ -10,7 +10,7 @@ from app.blueprints.main.routes import NAV_ITEMS
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import login_required, SESSION_TENANT_ID, SESSION_USER_ID
 from app.utils.layout import render_internal_page
-from app.utils.permissions import filter_nav_items
+from app.utils.permissions import filter_nav_items, permission_required
 
 
 # ── helpers ──────────────────────────────────────────────────
@@ -145,6 +145,7 @@ def _get_statuses(db):
 
 @calendar_bp.get("/calendar")
 @login_required
+@permission_required("calendar.view")
 def calendar_page():
     layout_nav = filter_nav_items(NAV_ITEMS)
     return render_internal_page(
@@ -158,6 +159,7 @@ def calendar_page():
 
 @calendar_bp.get("/calendar/api/customers")
 @login_required
+@permission_required("calendar.view")
 def api_customers():
     try:
         db, shop = _get_shop_db()
@@ -176,6 +178,7 @@ def api_customers():
 
 @calendar_bp.get("/calendar/api/units/<customer_id>")
 @login_required
+@permission_required("calendar.view")
 def api_units(customer_id):
     try:
         db, shop = _get_shop_db()
@@ -195,6 +198,7 @@ def api_units(customer_id):
 
 @calendar_bp.get("/calendar/api/mechanics")
 @login_required
+@permission_required("calendar.view")
 def api_mechanics():
     try:
         _, shop = _get_shop_db()
@@ -207,6 +211,7 @@ def api_mechanics():
 
 @calendar_bp.get("/calendar/api/statuses")
 @login_required
+@permission_required("calendar.view")
 def api_statuses():
     db, _ = _get_shop_db()
     return jsonify(_get_statuses(db))
@@ -214,6 +219,7 @@ def api_statuses():
 
 @calendar_bp.get("/calendar/api/presets")
 @login_required
+@permission_required("calendar.view")
 def api_presets():
     db, shop = _get_shop_db()
     if db is None:
@@ -229,6 +235,7 @@ def api_presets():
 
 @calendar_bp.put("/calendar/api/statuses")
 @login_required
+@permission_required("calendar.manage_settings")
 def api_save_statuses():
     import re
     db, _ = _get_shop_db()
@@ -270,6 +277,7 @@ def api_save_statuses():
 
 @calendar_bp.get("/calendar/api/events")
 @login_required
+@permission_required("calendar.view")
 def api_events():
     db, shop = _get_shop_db()
     if db is None:
@@ -315,6 +323,7 @@ def api_events():
 
 @calendar_bp.post("/calendar/api/events")
 @login_required
+@permission_required("calendar.create")
 def api_create_event():
     db, shop = _get_shop_db()
     if db is None:
@@ -405,6 +414,7 @@ def api_create_event():
 
 @calendar_bp.put("/calendar/api/events/<event_id>")
 @login_required
+@permission_required("calendar.edit")
 def api_update_event(event_id):
     db, shop = _get_shop_db()
     eid = _oid(event_id)
@@ -471,6 +481,7 @@ def api_update_event(event_id):
 
 @calendar_bp.delete("/calendar/api/events/<event_id>")
 @login_required
+@permission_required("calendar.delete")
 def api_delete_event(event_id):
     db, shop = _get_shop_db()
     eid = _oid(event_id)

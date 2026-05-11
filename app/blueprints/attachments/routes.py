@@ -12,6 +12,7 @@ from flask import request, jsonify, session, make_response
 from app.blueprints.attachments import attachments_bp
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import login_required, SESSION_TENANT_ID, SESSION_USER_ID
+from app.utils.permissions import permission_required
 from app.utils.attachments import (
     ENTITY_TYPES,
     validate_upload,
@@ -75,6 +76,7 @@ def _get_shop_db(master):
 # ── Upload (one or many) ─────────────────────────────────────────────
 @attachments_bp.route("/api/upload", methods=["POST"])
 @login_required
+@permission_required("attachments.upload")
 def api_upload():
     """
     POST multipart/form-data
@@ -132,6 +134,7 @@ def api_upload():
 # ── List ──────────────────────────────────────────────────────────────
 @attachments_bp.route("/api/list", methods=["GET"])
 @login_required
+@permission_required("attachments.view")
 def api_list():
     """
     GET ?entity_type=...&entity_id=...&parent_id=...
@@ -158,6 +161,7 @@ def api_list():
 # ── Download / view ───────────────────────────────────────────────────
 @attachments_bp.route("/api/<attachment_id>/download", methods=["GET"])
 @login_required
+@permission_required("attachments.view")
 def api_download(attachment_id):
     """Serve the raw file with proper Content-Type for inline viewing."""
     master = get_master_db()
@@ -188,6 +192,7 @@ def api_download(attachment_id):
 # ── Delete ────────────────────────────────────────────────────────────
 @attachments_bp.route("/api/<attachment_id>/delete", methods=["POST", "DELETE"])
 @login_required
+@permission_required("attachments.delete")
 def api_delete(attachment_id):
     master = get_master_db()
     db, shop = _get_shop_db(master)

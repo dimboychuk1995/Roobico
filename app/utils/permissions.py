@@ -8,7 +8,7 @@ from flask import session, request, redirect, url_for, flash, jsonify, g
 
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import SESSION_USER_ID, SESSION_TENANT_DB
-from app.constants.permissions import ALL_PERMISSIONS
+from app.constants.permissions import ALL_PERMISSIONS, PROTECTED_ROLE_KEYS
 
 
 def _maybe_object_id(value):
@@ -21,7 +21,6 @@ def _maybe_object_id(value):
 
 
 def _is_api_request() -> bool:
-    # простой и надежный детектор
     path = (request.path or "").lower()
     if path.startswith("/api/") or "/api/" in path:
         return True
@@ -39,37 +38,89 @@ def get_tenant_db():
     return client[db_name]
 
 
-def _load_master_user():
+def _load_master_user(user_id=None):
     master = get_master_db()
-    user_id = _maybe_object_id(session.get(SESSION_USER_ID))
-    if not user_id:
+    user_oid = _maybe_object_id(user_id or session.get(SESSION_USER_ID))
+    if not user_oid:
         return None
-    return master.users.find_one({"_id": user_id, "is_active": True})
+    return master.users.find_one({"_id": user_oid, "is_active": True})
 
 
-def _sync_owner_role_permissions(tdb, role_doc) -> None:
+def _sync_protected_role_permissions(tdb, role_doc) -> None:
     """
-    Чтобы owner АВТОМАТИЧЕСКИ получал новые permissions,
-    при каждом запросе проверяем role.permissions и дописываем недостающие.
+    Owner и любые PROTECTED_ROLE_KEYS всегда получают ВСЕ permissions
+    автоматически (даже если в каталог добавили новые ключи).
     """
-    if not role_doc or role_doc.get("key") != "owner":
+    if not role_doc:
+        return
+    if role_doc.get("key") not in PROTECTED_ROLE_KEYS:
         return
 
     existing = set(role_doc.get("permissions") or [])
-    missing = set(ALL_PERMISSIONS) - existing
-    if not missing:
+    desired = set(ALL_PERMISSIONS)
+    if existing == desired:
         return
 
     tdb.roles.update_one(
         {"_id": role_doc["_id"]},
-        {"$addToSet": {"permissions": {"$each": sorted(missing)}}},
+        {"$set": {"permissions": sorted(desired), "is_protected": True, "is_system": True}},
     )
 
 
-def get_effective_permissions():
+def _user_allow_set(user: dict) -> set[str]:
+    """Read user's allow overrides (supports both legacy and new field name)."""
+    out: set[str] = set()
+    for key in ("allow_permissions", "permissions_allow"):
+        v = user.get(key)
+        if isinstance(v, list):
+            out |= {str(x).strip() for x in v if str(x).strip()}
+    return out
+
+
+def _user_deny_set(user: dict) -> set[str]:
+    out: set[str] = set()
+    for key in ("deny_permissions", "permissions_deny"):
+        v = user.get(key)
+        if isinstance(v, list):
+            out |= {str(x).strip() for x in v if str(x).strip()}
+    return out
+
+
+def compute_user_permissions(user: dict, tdb=None) -> set[str]:
     """
-    Возвращает set[str] итоговых прав текущего пользователя.
-    Кэшируется в g на время запроса.
+    Чистый компьютер: вернёт set прав для данного user_doc.
+    Используется в auth (login) и в декораторе.
+
+    Приоритет (от низкого к высокому):
+      1) role.permissions (из tenant_db.roles, ключ = user.role)
+      2) user.allow_permissions  -> добавляются
+      3) user.deny_permissions   -> вычитаются (deny выше, чем allow)
+    """
+    if user is None:
+        return set()
+    if tdb is None:
+        tdb = get_tenant_db()
+    if tdb is None:
+        return set()
+
+    role_key = (user.get("role") or "viewer").strip().lower()
+    role_doc = tdb.roles.find_one({"key": role_key})
+    _sync_protected_role_permissions(tdb, role_doc)
+    if role_doc and role_doc.get("key") in PROTECTED_ROLE_KEYS:
+        # owner & co. — всегда полный список
+        role_perms = set(ALL_PERMISSIONS)
+    else:
+        role_perms = set(role_doc.get("permissions") or []) if role_doc else set()
+
+    allow = _user_allow_set(user)
+    deny = _user_deny_set(user)
+
+    return (role_perms | allow) - deny
+
+
+def get_effective_permissions() -> set[str]:
+    """
+    Per-request cache of current user's effective permissions.
     """
     if hasattr(g, "effective_permissions"):
         return g.effective_permissions
@@ -79,36 +130,41 @@ def get_effective_permissions():
         g.effective_permissions = set()
         return g.effective_permissions
 
-    tdb = get_tenant_db()
-    if tdb is None:   # <-- ВАЖНО: только сравнение с None
-        g.effective_permissions = set()
-        return g.effective_permissions
+    perms = compute_user_permissions(user, get_tenant_db())
+    g.effective_permissions = perms
+    # Также обновим кэш в session, чтобы шаблоны могли использовать
+    # session["user_permissions"] без отдельного запроса.
+    session["user_permissions"] = sorted(perms)
+    session.modified = True
+    return perms
 
-    role_key = (user.get("role") or "viewer").strip().lower()
-    role_doc = tdb.roles.find_one({"key": role_key})
 
-    _sync_owner_role_permissions(tdb, role_doc)
-
-    role_perms = set(role_doc.get("permissions") or []) if role_doc else set()
-
-    allow = set(user.get("allow_permissions") or [])
-    deny = set(user.get("deny_permissions") or [])
-
-    effective = (role_perms | allow) - deny
-    g.effective_permissions = effective
-    return effective
+def refresh_session_permissions(user_id=None) -> set[str]:
+    """
+    Пересобрать и записать в сессию права пользователя.
+    Вызывать после изменения роли/allow/deny/правки роли в админке.
+    """
+    user = _load_master_user(user_id=user_id)
+    if user is None:
+        return set()
+    perms = compute_user_permissions(user, get_tenant_db())
+    if user_id is None or str(user.get("_id")) == str(session.get(SESSION_USER_ID)):
+        session["user_permissions"] = sorted(perms)
+        session.modified = True
+        if hasattr(g, "effective_permissions"):
+            g.effective_permissions = perms
+    return perms
 
 
 def has_permission(permission_key: str) -> bool:
-    perms = get_effective_permissions()
-    return permission_key in perms
+    return permission_key in get_effective_permissions()
 
 
 def permission_required(permission_key: str):
     """
-    Декоратор для страниц/методов:
-    - для HTML: flash + редирект на dashboard
-    - для API: 403 JSON
+    Декоратор:
+      - HTML: flash + redirect на dashboard
+      - API:  403 JSON
     """
     def decorator(view_func):
         @wraps(view_func)
@@ -125,15 +181,34 @@ def permission_required(permission_key: str):
     return decorator
 
 
+# ──────────────────────────────────────────────────────────────
+# Меню
+# ──────────────────────────────────────────────────────────────
+
+# Маппинг nav-key → required permission. Для пунктов без явного perm
+# используется fallback по ключу.
+_NAV_PERM_DEFAULTS = {
+    "dashboard": "dashboard.view",
+    "calendar": "calendar.view",
+    "parts": "parts.view",
+    "vendors": "vendors.view",
+    "customers": "customers.view",
+    "work_orders": "work_orders.view",
+    "settings": "settings.view",
+    "reports": "reports.view",
+    "import_export": "import_export.view",
+}
+
+
 def filter_nav_items(nav_items: list[dict]) -> list[dict]:
     """
     Убираем пункты меню, к которым нет доступа.
-    item может иметь поле 'perm'. Если perm нет — пункт доступен всем logged-in.
+    Берём perm из item['perm'] либо из дефолтного маппинга по item['key'].
     """
     perms = get_effective_permissions()
     out = []
     for item in nav_items:
-        perm = item.get("perm")
+        perm = item.get("perm") or _NAV_PERM_DEFAULTS.get(item.get("key"))
         if not perm or perm in perms:
             out.append(item)
     return out
