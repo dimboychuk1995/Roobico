@@ -1366,6 +1366,11 @@ def get_customers(shop_db):
             "label": customer_label(x),
             "default_labor_rate": resolve_customer_rate_code(x.get("default_labor_rate")),
             "taxable": bool(x.get("taxable", False)),
+            "company_name": (x.get("company_name") or "").strip(),
+            "contact_name": get_main_contact_name(x, entity_type="customer"),
+            "phone": get_main_contact_phone(x, entity_type="customer"),
+            "email": get_main_contact_email(x, entity_type="customer"),
+            "address": (x.get("address") or "").strip(),
         }
         for x in rows
     ]
@@ -1648,6 +1653,11 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
                 "label": customer_label(c),
                 "default_labor_rate": _resolve_rate(c.get("default_labor_rate")),
                 "taxable": bool(c.get("taxable", False)),
+                "company_name": (c.get("company_name") or "").strip(),
+                "contact_name": get_main_contact_name(c, entity_type="customer"),
+                "phone": get_main_contact_phone(c, entity_type="customer"),
+                "email": get_main_contact_email(c, entity_type="customer"),
+                "address": (c.get("address") or "").strip(),
             }
 
     customers = [selected_customer] if selected_customer else []
@@ -3793,13 +3803,19 @@ def _build_wo_pdf_context(shop_db, shop, wo):
             "parts": parts_detail,
         })
 
+    paid_total = _sum_active_work_order_payments(shop_db, wo.get("_id"))
+    pay_summary = _build_work_order_payment_summary(wo, paid_total)
     t = {
         "labor_total": round2(totals_doc.get("labor_total") or totals_doc.get("labor") or 0),
         "parts_total": round2(totals_doc.get("parts_total") or totals_doc.get("parts") or 0),
         "core_total": round2(totals_doc.get("core_total") or 0),
         "shop_supply_total": round2(totals_doc.get("shop_supply_total") or 0),
         "misc_total": round2(totals_doc.get("misc_total") or 0),
-        "grand_total": _work_order_grand_total(wo),
+        "sales_tax_total": round2(totals_doc.get("sales_tax_total") or 0),
+        "grand_total": pay_summary["grand_total"],
+        "paid_total": pay_summary["paid_amount"],
+        "remaining_balance": pay_summary["remaining_balance"],
+        "is_fully_paid": pay_summary["is_fully_paid"],
     }
 
     pdf_cfg = shop_db.pdf_design.find_one({"shop_id": shop["_id"]}) or {}
@@ -4012,11 +4028,19 @@ def api_send_payment_receipt(payment_id):
     paid_total = _sum_active_work_order_payments(shop_db, payment.get("work_order_id"))
     summary = _build_work_order_payment_summary(wo, paid_total)
 
+    pdf_cfg = shop_db.pdf_design.find_one({"shop_id": shop["_id"]}) or {}
+    shop_logo_url = ""
+    if pdf_cfg.get("show_logo", True) and shop.get("logo_data"):
+        ct = shop.get("logo_content_type") or "image/png"
+        b64 = base64.b64encode(bytes(shop["logo_data"])).decode("ascii")
+        shop_logo_url = f"data:{ct};base64,{b64}"
+
     html_body = render_template(
         "emails/payment_receipt_email.html",
         shop_name=shop_name,
         shop_address=shop_address,
         shop_contact=shop_contact,
+        shop_logo_url=shop_logo_url,
         wo_number=str(wo.get("wo_number") or ""),
         pay_date_label=pay_date_label,
         cust_name=cust_name,

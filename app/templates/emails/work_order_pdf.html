@@ -78,7 +78,7 @@
       margin-left: auto;
     }
     .tot-tbl td {
-      padding: 3px 8px;
+      padding: 4px 8px;
       border-bottom: 0.5pt solid #dddddd;
     }
     .tot-lbl { text-align: right; font-weight: bold; color: #333333; min-width: 120px; }
@@ -86,9 +86,34 @@
     .grand-row td {
       font-size: 11pt;
       font-weight: bold;
+      border-top: none;
+      border-bottom: none;
+      padding-top: 4px;
+      padding-bottom: 4px;
+    }
+    .balance-row td {
+      font-size: 11pt;
+      font-weight: bold;
+      border-top: none;
+      border-bottom: none;
+      padding-top: 4px;
+      padding-bottom: 4px;
+    }
+    .tot-spacer-grand td {
       border-top: 2pt solid {{ hdr_color }};
       border-bottom: none;
-      padding-top: 5px;
+      padding: 0;
+      font-size: 1pt;
+      line-height: 8pt;
+      height: 8pt;
+    }
+    .tot-spacer-balance td {
+      border-top: 1.5pt solid #999999;
+      border-bottom: none;
+      padding: 0;
+      font-size: 1pt;
+      line-height: 8pt;
+      height: 8pt;
     }
 .italic-note { font-style: italic; font-size: 7.5pt; color: #777777; }
     .footer-note { font-size: 7pt; color: #777777; margin-top: 14px; white-space: pre-wrap; }
@@ -168,18 +193,6 @@
 
   <div class="divider"></div>
 
-  <!-- WO INFO ROW -->
-  <table class="info-row-tbl" cellpadding="0" cellspacing="0">
-    <tr>
-      <th>Work Order</th>
-      {% if unit_number and pdf_cfg.get('show_unit_number', true) %}<th>Unit #</th>{% endif %}
-    </tr>
-    <tr>
-      <td>{{ wo_number }}</td>
-      {% if unit_number and pdf_cfg.get('show_unit_number', true) %}<td>{{ unit_number }}</td>{% endif %}
-    </tr>
-  </table>
-
   <!-- BILL TO -->
   <table width="100%" cellpadding="0" cellspacing="0">
     <tr>
@@ -237,7 +250,7 @@
           </span>
           {% endif %}
         </td>
-        <td class="tr">{{ "%.5f" | format(h if h > 0 else 1) }}</td>
+        <td class="tr">{{ "%g" | format(h if h > 0 else 1) }}</td>
         <td class="tr">${{ "%.2f" | format((labor.labor_base / h) if h > 0 else labor.labor_base) }}</td>
         <td class="tr">${{ "%.2f" | format(labor.labor_base) }}</td>
       </tr>
@@ -249,7 +262,7 @@
         <td>
           {{ p.description or p.part_number }}{% if p.part_number and p.description and p.part_number != p.description %} - {{ p.part_number }}{% endif %}
         </td>
-        <td class="tr">{{ "%.5f" | format(p.qty) }}</td>
+        <td class="tr">{{ "%g" | format(p.qty) }}</td>
         <td class="tr">${{ "%.2f" | format(p.price) }}</td>
         <td class="tr">${{ "%.2f" | format(p.total) }}</td>
       </tr>
@@ -325,11 +338,35 @@
             <td class="tot-val">${{ "%.2f" | format(t.misc_total) }}</td>
           </tr>
           {% endif %}
+          {% if t.sales_tax_total and t.sales_tax_total > 0 %}
+          <tr>
+            <td class="tot-lbl">Sales Tax</td>
+            <td class="tot-val">${{ "%.2f" | format(t.sales_tax_total) }}</td>
+          </tr>
+          {% endif %}
+          <tr class="tot-spacer-grand"><td>&nbsp;</td><td>&nbsp;</td></tr>
           <tr class="grand-row">
             <td class="tot-lbl">Total</td>
             <td class="tot-val">${{ "%.2f" | format(t.grand_total) }}</td>
           </tr>
+          {% if t.paid_total and t.paid_total > 0 and pdf_cfg.get('show_balance_due', true) %}
+          <tr>
+            <td class="tot-lbl" style="color:#145e33;">Paid</td>
+            <td class="tot-val" style="color:#145e33;font-weight:bold;">-${{ "%.2f" | format(t.paid_total) }}</td>
+          </tr>
+          <tr class="tot-spacer-balance"><td>&nbsp;</td><td>&nbsp;</td></tr>
+          <tr class="balance-row">
+            <td class="tot-lbl" style="color:{% if t.is_fully_paid %}#145e33{% else %}#b45309{% endif %};">Balance Due</td>
+            <td class="tot-val" style="color:{% if t.is_fully_paid %}#145e33{% else %}#b45309{% endif %};font-weight:bold;">${{ "%.2f" | format(t.remaining_balance) }}</td>
+          </tr>
+          {% endif %}
         </table>
+
+        {% if t.is_fully_paid and t.paid_total and t.paid_total > 0 and pdf_cfg.get('show_balance_due', true) %}
+        <div style="text-align: right; margin-top: 8px;">
+          <span style="display: inline-block; padding: 4px 12px; border: 1.5pt solid #145e33; color: #145e33; font-weight: bold; font-size: 10pt; letter-spacing: 1pt; text-transform: uppercase;">Paid in Full</span>
+        </div>
+        {% endif %}
       </td>
     </tr>
   </table>

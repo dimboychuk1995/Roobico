@@ -434,6 +434,7 @@ _PDF_DESIGN_BOOL_FIELDS = [
     "show_core_charges",
     "show_misc_charges",
     "show_shop_supply",
+    "show_balance_due",
 ]
 
 _PDF_DESIGN_TEXT_FIELDS = [

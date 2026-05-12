@@ -125,6 +125,8 @@
       toggle("prevCoreTot", cb("show_core_charges"));
       toggle("prevMiscTot", cb("show_misc_charges"));
       toggle("prevShopSupplyTot", cb("show_shop_supply"));
+      toggle("prevPaidRow", cb("show_balance_due"));
+      toggle("prevBalanceRow", cb("show_balance_due"));
 
       // Footer text
       var ty = document.getElementById("prevThankYou");
@@ -175,6 +177,7 @@
         show_core_charges: !!form.querySelector('input[name="show_core_charges"]').checked,
         show_misc_charges: !!form.querySelector('input[name="show_misc_charges"]').checked,
         show_shop_supply: !!form.querySelector('input[name="show_shop_supply"]').checked,
+        show_balance_due: !!form.querySelector('input[name="show_balance_due"]').checked,
         thank_you_message: (thankYouInput ? thankYouInput.value : "").trim(),
         footer_notes: (footerNotesInput ? footerNotesInput.value : "").trim(),
       };

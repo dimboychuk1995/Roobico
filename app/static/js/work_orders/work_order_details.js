@@ -185,6 +185,62 @@
     return !!found.taxable;
   }
 
+  function findCustomerById(customers, customerId) {
+    if (!Array.isArray(customers) || !customerId) return null;
+    return customers.find(x => String(x.id || "") === String(customerId)) || null;
+  }
+
+  function renderCustomerInfoBlock(customers, customerId) {
+    const block = document.getElementById("customerInfoBlock");
+    if (!block) return;
+    const customer = findCustomerById(customers, customerId);
+    if (!customer) {
+      block.style.display = "none";
+      return;
+    }
+    const setText = (id, value) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const text = String(value || "").trim();
+      el.textContent = text || "-";
+    };
+    setText("customerInfoCompany", customer.company_name);
+    setText("customerInfoName", customer.contact_name);
+    setText("customerInfoAddress", customer.address);
+
+    const phoneEl = document.getElementById("customerInfoPhone");
+    if (phoneEl) {
+      const phone = String(customer.phone || "").trim();
+      if (phone) {
+        phoneEl.innerHTML = "";
+        const a = document.createElement("a");
+        a.href = "tel:" + phone.replace(/[^\d+]/g, "");
+        a.textContent = phone;
+        phoneEl.appendChild(a);
+      } else {
+        phoneEl.textContent = "-";
+      }
+    }
+    const emailEl = document.getElementById("customerInfoEmail");
+    if (emailEl) {
+      const email = String(customer.email || "").trim();
+      if (email) {
+        emailEl.innerHTML = "";
+        const a = document.createElement("a");
+        a.href = "mailto:" + email;
+        a.textContent = email;
+        emailEl.appendChild(a);
+      } else {
+        emailEl.textContent = "-";
+      }
+    }
+    const linkEl = document.getElementById("customerInfoOpenLink");
+    if (linkEl) {
+      linkEl.href = "/customers/" + encodeURIComponent(String(customer.id));
+    }
+    block.style.display = "";
+  }
+
   function normalizeRateKey(v) {
     const key = String(v || "")
       .trim()
@@ -2626,6 +2682,9 @@
           // Restore value and rebuild Select2
           customerSel.value = selectedVal;
           rebuildEnhancedSelect(customerSel);
+          // Refresh customer info block in case the preselected customer
+          // was only loaded with a label until now.
+          try { renderCustomerInfoBlock(customersData, selectedVal); } catch {}
         })
         .catch(function () {
           if (loadingHint) loadingHint.textContent = "Failed to load customers";
@@ -3251,6 +3310,7 @@
       if (customerHidden) customerHidden.value = customerId;
       if (createUnitCustomerHidden) createUnitCustomerHidden.value = customerId;
       if (addUnitBtn) addUnitBtn.disabled = !customerId;
+      renderCustomerInfoBlock(customersData, customerId);
 
       const defaultRateCode = getCustomerDefaultLaborRate(customersData, customerId);
       applyDefaultLaborRateToAll(blocksContainer, defaultRateCode, false);
@@ -4566,6 +4626,201 @@
       });
     }
 
+    function setupWoCostModal(blocksContainer, mechanicsData) {
+      const btn = $("woCostBtn");
+      const modalEl = $("woCostModal");
+      if (!btn || !modalEl) return;
+
+      const STORAGE_KEY = "roobico:woCost:mechanicRates";
+      const fmt = (n) => `$${money(round2(Number.isFinite(n) ? n : 0))}`;
+
+      function loadRates() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          const parsed = raw ? JSON.parse(raw) : {};
+          return parsed && typeof parsed === "object" ? parsed : {};
+        } catch { return {}; }
+      }
+      function saveRates(rates) {
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(rates || {})); } catch {}
+      }
+
+      function collectMechanics(blocksContainer) {
+        const map = new Map();
+        const blocks = Array.from(blocksContainer?.querySelectorAll(".wo-labor") || []);
+        blocks.forEach((bEl) => {
+          const assignments = getLaborAssignments(bEl);
+          assignments.forEach((a) => {
+            const id = String(a.user_id || "").trim();
+            if (!id || map.has(id)) return;
+            const fromList = (Array.isArray(mechanicsData) ? mechanicsData : [])
+              .find((m) => String(m.id || "") === id);
+            map.set(id, {
+              user_id: id,
+              name: String(a.name || (fromList && fromList.name) || "Mechanic").trim(),
+              role: String(a.role || (fromList && fromList.role) || "").trim(),
+            });
+          });
+        });
+        return Array.from(map.values()).sort((x, y) => x.name.localeCompare(y.name));
+      }
+
+      function readBlock(bEl) {
+        const description = String(bEl.querySelector(".labor-description")?.value || "").trim() || "Labor";
+        const hours = Math.max(0, toNum(bEl.querySelector(".labor-hours")?.value) || 0);
+        const assignments = getLaborAssignments(bEl);
+
+        let partsCost = 0;
+        const partsRows = Array.from(bEl.querySelectorAll("tbody.partsTbody tr.parts-row"));
+        partsRows.forEach((tr) => {
+          const qty = Math.max(0, toNum(tr.querySelector(".part-qty")?.value) || 0);
+          const cost = Math.max(0, toNum(tr.querySelector(".part-cost")?.value) || 0);
+          if (qty > 0 && cost > 0) partsCost += qty * cost;
+        });
+
+        const revenue = parseMoneyText(bEl.querySelector(".laborFullTotalDisplay")?.textContent || "0");
+
+        return {
+          description,
+          hours: round2(hours),
+          assignments,
+          partsCost: round2(partsCost),
+          revenue: round2(revenue),
+        };
+      }
+
+      function render() {
+        const tbody = $("woCostLaborsTbody");
+        const mechBody = $("woCostMechanicsTbody");
+        const mechTable = $("woCostMechanicsTable");
+        const mechEmpty = $("woCostMechanicsEmpty");
+        const empty = $("woCostEmpty");
+        if (!tbody || !mechBody) return;
+
+        const blocks = Array.from(blocksContainer?.querySelectorAll(".wo-labor") || []);
+        if (!blocks.length) {
+          tbody.innerHTML = "";
+          mechBody.innerHTML = "";
+          if (empty) empty.style.display = "";
+          if (mechTable) mechTable.style.display = "none";
+          if (mechEmpty) mechEmpty.style.display = "none";
+          ["woCostTotalLabor","woCostTotalParts","woCostTotalCost","woCostTotalRevenue","woCostTotalProfit"]
+            .forEach((id) => { const el = $(id); if (el) el.textContent = fmt(0); });
+          return;
+        }
+        if (empty) empty.style.display = "none";
+
+        const rates = loadRates();
+        const mechanics = collectMechanics(blocksContainer);
+
+        if (!mechanics.length) {
+          mechBody.innerHTML = "";
+          if (mechTable) mechTable.style.display = "none";
+          if (mechEmpty) mechEmpty.style.display = "";
+        } else {
+          if (mechEmpty) mechEmpty.style.display = "none";
+          if (mechTable) mechTable.style.display = "";
+          mechBody.innerHTML = mechanics.map((m) => {
+            const rate = Number.isFinite(toNum(rates[m.user_id])) ? toNum(rates[m.user_id]) : 0;
+            return `
+              <tr>
+                <td>${escapeText(m.name)}</td>
+                <td class="text-muted">${escapeText(m.role || "—")}</td>
+                <td>
+                  <input type="number" class="form-control form-control-sm wo-cost-mech-rate"
+                         data-mech-id="${escapeText(m.user_id)}"
+                         inputmode="decimal" min="0" step="0.01"
+                         value="${rate > 0 ? round2(rate) : ""}"
+                         placeholder="0.00">
+                </td>
+              </tr>
+            `;
+          }).join("");
+        }
+
+        let totalLabor = 0, totalParts = 0, totalRevenue = 0;
+        const rows = blocks.map((bEl, idx) => {
+          const info = readBlock(bEl);
+          let laborCost = 0;
+          info.assignments.forEach((a) => {
+            const r = Number.isFinite(toNum(rates[a.user_id])) ? toNum(rates[a.user_id]) : 0;
+            const pct = Number.isFinite(toNum(a.percent)) ? toNum(a.percent) : 0;
+            laborCost += info.hours * r * (pct / 100);
+          });
+          laborCost = round2(laborCost);
+          const totalCost = round2(laborCost + info.partsCost);
+          const profit = round2(info.revenue - totalCost);
+
+          totalLabor += laborCost;
+          totalParts += info.partsCost;
+          totalRevenue += info.revenue;
+
+          const mechSummary = info.assignments.length
+            ? info.assignments.map((a) => {
+                const pct = Number.isFinite(toNum(a.percent)) ? round2(toNum(a.percent)) : 0;
+                return `${escapeText(a.name || "Mechanic")} (${pct}%)`;
+              }).join(", ")
+            : '<span class="text-muted">—</span>';
+
+          const profitClass = profit >= 0 ? "text-success" : "text-danger";
+
+          return `
+            <tr>
+              <td>
+                <div class="fw-semibold">#${idx + 1}</div>
+                <div class="small">${escapeText(info.description)}</div>
+              </td>
+              <td class="text-end">${money(info.hours)}</td>
+              <td class="small">${mechSummary}</td>
+              <td class="text-end">${fmt(laborCost)}</td>
+              <td class="text-end">${fmt(info.partsCost)}</td>
+              <td class="text-end fw-semibold">${fmt(totalCost)}</td>
+              <td class="text-end">${fmt(info.revenue)}</td>
+              <td class="text-end fw-semibold ${profitClass}">${fmt(profit)}</td>
+            </tr>
+          `;
+        }).join("");
+        tbody.innerHTML = rows;
+
+        const totalCost = round2(totalLabor + totalParts);
+        const totalProfit = round2(totalRevenue - totalCost);
+        const set = (id, v) => { const el = $(id); if (el) el.textContent = fmt(v); };
+        set("woCostTotalLabor", totalLabor);
+        set("woCostTotalParts", totalParts);
+        set("woCostTotalCost", totalCost);
+        set("woCostTotalRevenue", totalRevenue);
+        const profitEl = $("woCostTotalProfit");
+        if (profitEl) {
+          profitEl.textContent = fmt(totalProfit);
+          profitEl.classList.remove("text-success", "text-danger");
+          profitEl.classList.add(totalProfit >= 0 ? "text-success" : "text-danger");
+        }
+      }
+
+      const mechBody = $("woCostMechanicsTbody");
+      mechBody?.addEventListener("input", function (e) {
+        const input = e.target.closest(".wo-cost-mech-rate");
+        if (!input) return;
+        const id = String(input.dataset.mechId || "").trim();
+        if (!id) return;
+        const rates = loadRates();
+        const v = toNum(input.value);
+        if (Number.isFinite(v) && v > 0) rates[id] = round2(v);
+        else delete rates[id];
+        saveRates(rates);
+        render();
+      });
+
+      btn.addEventListener("click", function () {
+        if (!window.bootstrap || !window.bootstrap.Modal) return;
+        render();
+        const modal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+      });
+    }
+
+    setupWoCostModal(blocksContainer, mechanicsData);
+
     if (emailBtn) {
       emailBtn.addEventListener("click", async function () {
         if (!isCreated || !workOrderId) return;
@@ -4729,6 +4984,7 @@
 
     const initialCustomerId = String(customerSel?.value || "").trim();
     currentCustomerTaxable = getCustomerTaxable(customersData, initialCustomerId);
+    renderCustomerInfoBlock(customersData, initialCustomerId);
     // For an already-created WO, prefer the per-WO override stored on the
     // totals snapshot so that a manual taxable toggle survives reloads.
     if (isCreated && totalsSnapshot && Object.prototype.hasOwnProperty.call(totalsSnapshot, "is_taxable")) {

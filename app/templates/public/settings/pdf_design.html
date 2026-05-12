@@ -155,6 +155,10 @@
               <input class="form-check-input" type="checkbox" name="show_shop_supply" id="showShopSupply" {{ 'checked' if cfg.get('show_shop_supply', true) }}>
               <label class="form-check-label" for="showShopSupply">Show shop supply</label>
             </div>
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" name="show_balance_due" id="showBalanceDue" {{ 'checked' if cfg.get('show_balance_due', true) }}>
+              <label class="form-check-label" for="showBalanceDue">Show paid amount &amp; balance due</label>
+            </div>
           </div>
         </div>
       </div>
@@ -230,18 +234,6 @@
 
           <div id="prevDivider" style="border-top: 1.5pt solid; margin-bottom: 6px;"></div>
 
-          <!-- WO Info Row -->
-          <table width="100%" style="border-collapse: collapse; margin-bottom: 6px; font-size: 6pt;">
-            <tr id="prevInfoRowHeader">
-              <th style="color: #fff; padding: 1px 4px; text-align: left; font-size: 5pt;">Work Order</th>
-              <th style="color: #fff; padding: 1px 4px; text-align: left; font-size: 5pt;" id="prevInfoUnitHdr">Unit #</th>
-            </tr>
-            <tr>
-              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0;">WO-1001</td>
-              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0;" id="prevInfoUnitVal">1234</td>
-            </tr>
-          </table>
-
           <!-- Bill To -->
           <table width="100%" style="margin-bottom: 6px;">
             <tr>
@@ -282,14 +274,14 @@
                 Oil Change
                 <span style="font-size: 5pt; color: #666; display: block;" id="prevLaborMeta">Hours: 1.0 · Rate: STANDARD</span>
               </td>
-              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">1.00000</td>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">1</td>
               <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">$85.00</td>
               <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">$85.00</td>
             </tr>
             <tr id="prevPartsTable">
               <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0;">Parts</td>
               <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0;">Oil Filter - FL400S</td>
-              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">1.00000</td>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">1</td>
               <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">$12.99</td>
               <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">$12.99</td>
             </tr>
@@ -306,7 +298,7 @@
             <tr>
               <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0;">Labor</td>
               <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0;">Brake Inspection</td>
-              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">0.50000</td>
+              <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">0.5</td>
               <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">$85.00</td>
               <td style="padding: 2px 4px; border-bottom: 0.5pt solid #e0e0e0; text-align: right;">$42.50</td>
             </tr>
@@ -332,7 +324,9 @@
                   <tr id="prevCoreTot"><td style="text-align: right; font-weight: bold; color: #333; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">Core Charges</td><td style="text-align: right; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">$5.00</td></tr>
                   <tr id="prevShopSupplyTot"><td style="text-align: right; font-weight: bold; color: #333; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">Shop Supplies</td><td style="text-align: right; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">$3.50</td></tr>
                   <tr id="prevMiscTot"><td style="text-align: right; font-weight: bold; color: #333; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">Misc</td><td style="text-align: right; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">$2.50</td></tr>
-                  <tr id="prevTotals"><td style="text-align: right; font-size: 7pt; font-weight: bold; padding: 3px 5px; border-top: 1.5pt solid;">Total</td><td style="text-align: right; font-size: 7pt; font-weight: bold; padding: 3px 5px; border-top: 1.5pt solid;">$108.99</td></tr>
+                  <tr id="prevTotals"><td style="text-align: right; font-size: 7pt; font-weight: bold; padding: 5px 5px 4px; border-top: 1.5pt solid;">Total</td><td style="text-align: right; font-size: 7pt; font-weight: bold; padding: 5px 5px 4px; border-top: 1.5pt solid;">$108.99</td></tr>
+                  <tr id="prevPaidRow"><td style="text-align: right; font-weight: bold; color: #145e33; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">Paid</td><td style="text-align: right; font-weight: bold; color: #145e33; padding: 2px 5px; border-bottom: 0.5pt solid #ddd;">-$50.00</td></tr>
+                  <tr id="prevBalanceRow"><td style="text-align: right; font-size: 7pt; font-weight: bold; color: #b45309; padding: 5px 5px 4px; border-top: 1pt solid #999;">Balance Due</td><td style="text-align: right; font-size: 7pt; font-weight: bold; color: #b45309; padding: 5px 5px 4px; border-top: 1pt solid #999;">$58.99</td></tr>
                 </table>
               </td>
             </tr>
