@@ -1,3 +1,4 @@
+import os
 import time
 
 from flask import Flask, g, session
@@ -8,11 +9,25 @@ from app.extensions import init_mongo, get_master_db
 from app.utils.auth import SESSION_USER_ID, SESSION_TENANT_ID
 from app.blueprints.reports.audit.journal import build_request_id, write_audit_journal
 
+# Версия статики, общая для всего процесса. Пересчитывается при рестарте
+# приложения (на сервере gunicorn перезапускается каждым деплоем) — это
+# гарантирует, что после деплоя браузеры подтянут свежие CSS/JS вместо
+# старых из локального кеша.
+ASSET_VERSION = str(int(time.time()))
+
+
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
     init_mongo(app)
+
+    # Автоматически добавляем ?v=<ASSET_VERSION> ко всем url_for('static', ...)
+    # — единый cache-buster, чтобы не плодить ручные ?v=... в шаблонах.
+    @app.url_defaults
+    def _add_static_version(endpoint, values):
+        if endpoint == "static" or endpoint.endswith(".static"):
+            values.setdefault("v", ASSET_VERSION)
 
     # Expose selected config keys to all templates.
     @app.context_processor
