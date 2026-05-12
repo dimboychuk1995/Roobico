@@ -85,6 +85,25 @@ def create_app():
         if elapsed > 50:
             app.logger.info(f"[PERF] {_req.method} {_req.path} → {response.status_code} in {elapsed:.0f}ms")
         write_audit_journal(response=response)
+
+        # Запрещаем браузеру кешировать динамический HTML, иначе после
+        # деплоя пользователи продолжают видеть старую разметку (без
+        # новых блоков, кнопок и т.п.) пока не сделают жёсткий refresh.
+        # Для статики (/static/*) этот хук тоже срабатывает, но она
+        # отдаётся nginx-ом напрямую (location /static), поэтому не
+        # пересекается. На всякий случай не трогаем уже выставленные
+        # заголовки кеша.
+        ctype = (response.mimetype or "").lower()
+        path = _req.path or ""
+        if (
+            ctype.startswith("text/html")
+            and not path.startswith("/static/")
+            and "Cache-Control" not in response.headers
+        ):
+            response.headers["Cache-Control"] = "no-store, max-age=0, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+
         return response
 
     @app.teardown_request
