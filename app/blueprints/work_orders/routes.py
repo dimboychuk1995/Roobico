@@ -27,6 +27,7 @@ from app.utils.contacts import get_contacts, get_main_contact_email, get_main_co
 from app.utils.email_sender import send_email
 from app.utils.pdf_utils import render_html_to_pdf
 from app.utils.sales_tax import get_shop_zip_code, get_zip_sales_tax_rate
+from app.utils.issue_describer import polish_issue_description
 
 
 def utcnow():
@@ -727,6 +728,13 @@ def normalize_saved_labors(raw, shop_db=None):
             or ""
         ).strip()
 
+        issue_description = str(
+            labor_src.get("issue_description")
+            if labor_src.get("issue_description") is not None
+            else block.get("issue_description")
+            or ""
+        ).strip()
+
         assigned_src = labor_src.get("assigned_mechanics")
         if not isinstance(assigned_src, list):
             assigned_src = block.get("assigned_mechanics")
@@ -785,6 +793,7 @@ def normalize_saved_labors(raw, shop_db=None):
                     "hours": labor_hours,
                     "rate_code": labor_rate_code,
                     "assigned_mechanics": assigned_mechanics,
+                    "issue_description": issue_description,
                 },
                 "parts": parts_out,
             }
@@ -2390,7 +2399,7 @@ def create_work_order():
     labors_map: dict[int, dict] = {}
 
     # labor
-    labor_re = re.compile(r"^(?:labors|blocks)\[(\d+)\]\[(labor_description|labor_hours|labor_rate_code|labor_total_ui|labor_full_total|assigned_mechanics_json)\]$")
+    labor_re = re.compile(r"^(?:labors|blocks)\[(\d+)\]\[(labor_description|labor_hours|labor_rate_code|labor_total_ui|labor_full_total|assigned_mechanics_json|issue_description)\]$")
     # parts
     parts_re = re.compile(
         r"^(?:labors|blocks)\[(\d+)\]\[parts\]\[(\d+)\]\[(part_id|part_number|description|qty|cost|price|core_charge|misc_charge|misc_charge_description|one_time_part)\]$"
@@ -2413,6 +2422,8 @@ def create_work_order():
                 b["labor"]["labor_full_total"] = round2(val)
             elif field == "assigned_mechanics_json":
                 b["labor"]["assigned_mechanics_json"] = (val or "").strip()
+            elif field == "issue_description":
+                b["labor"]["issue_description"] = (val or "").strip()
             continue
 
         m = parts_re.match(key)
@@ -2469,6 +2480,7 @@ def create_work_order():
                 "rate_code": (labor.get("rate_code") or "").strip(),
                 "labor_full_total": round2(labor.get("labor_full_total")),
                 "assigned_mechanics": assigned_mechanics,
+                "issue_description": (labor.get("issue_description") or "").strip(),
             },
             "parts": parts_clean,
         })
@@ -3753,6 +3765,7 @@ def _build_wo_pdf_context(shop_db, shop, wo):
         desc = str(labor_src.get("description") or block.get("labor_description") or "").strip()
         hours = str(labor_src.get("hours") or block.get("labor_hours") or "").strip()
         rate_code = str(labor_src.get("rate_code") or block.get("labor_rate_code") or "").strip()
+        issue_description = str(labor_src.get("issue_description") or block.get("issue_description") or "").strip()
 
         block_totals = totals_labors[i] if i < len(totals_labors) and isinstance(totals_labors[i], dict) else {}
         labor_base = round2(block_totals.get("labor") or 0)
@@ -3792,6 +3805,7 @@ def _build_wo_pdf_context(shop_db, shop, wo):
             "hours": hours,
             "labor_hours": hours,
             "rate_code": rate_code,
+            "issue_description": issue_description,
             "labor_base": labor_base,
             "shop_supply": shop_supply,
             "labor_total": labor_total_val,
@@ -4300,6 +4314,71 @@ def api_send_authorization_email(work_order_id):
                         "failed": failed}), 500
 
     return jsonify({"ok": True, "sent_to": sent_to, "failed": failed}), 200
+
+
+# ---------------------------------------------------------------------------
+# Describe Issue — AI polish + per-labor save
+# ---------------------------------------------------------------------------
+
+@work_orders_bp.post("/work_orders/api/ai/polish-issue")
+@login_required
+@permission_required("work_orders.create")
+def api_polish_issue_description():
+    data = request.get_json(silent=True) or {}
+    text = str(data.get("text") or "").strip()
+    if not text:
+        return jsonify({"ok": False, "error": "Text is empty."}), 400
+    try:
+        result = polish_issue_description(text)
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"AI request failed: {exc}"}), 500
+    return jsonify({"ok": True, **result}), 200
+
+
+@work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/labors/<int:labor_index>/issue-description")
+@login_required
+@permission_required("work_orders.create")
+def api_save_labor_issue_description(work_order_id, labor_index):
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "Shop not found"}), 404
+
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return jsonify({"ok": False, "error": "Invalid work order ID"}), 400
+
+    wo = shop_db.work_orders.find_one(
+        {"_id": wo_id, "shop_id": shop["_id"], "is_active": True},
+        {"labors": 1},
+    )
+    if not wo:
+        return jsonify({"ok": False, "error": "Work order not found"}), 404
+
+    labors_count = len(wo.get("labors") or [])
+    if labor_index < 0 or labor_index >= labors_count:
+        return jsonify({"ok": False, "error": "labor_index out of range"}), 400
+
+    data = request.get_json(silent=True) or {}
+    text = str(data.get("text") or "").strip()
+    if len(text) > 4000:
+        text = text[:4000]
+
+    update_res = shop_db.work_orders.update_one(
+        {"_id": wo_id, "shop_id": shop["_id"], "is_active": True},
+        {
+            "$set": {
+                f"labors.{labor_index}.labor.issue_description": text,
+                f"labors.{labor_index}.issue_description": text,
+                "updated_at": utcnow(),
+                "updated_by": current_user_id(),
+            }
+        },
+    )
+    if update_res.matched_count == 0:
+        return jsonify({"ok": False, "error": "Failed to save."}), 500
+    return jsonify({"ok": True, "issue_description": text}), 200
 
 
 def _resolve_token(token):

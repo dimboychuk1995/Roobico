@@ -85,6 +85,7 @@
           <div class="auth-section-title">Labor #{{ ctx.single_labor_number }}</div>
           <table class="auth-grid w-100">
             <tr><td class="label">Description</td><td class="value">{{ ctx.single_labor.labor_desc }}</td></tr>
+            {% if ctx.single_labor.issue_description %}<tr><td class="label">Reported issue</td><td class="value">{{ ctx.single_labor.issue_description }}</td></tr>{% endif %}
             {% if ctx.single_labor.hours %}<tr><td class="label">Hours</td><td class="value">{{ ctx.single_labor.hours }}</td></tr>{% endif %}
             <tr><td class="label">Labor total</td><td class="value">${{ "%.2f"|format(ctx.single_labor.labor_total) }}</td></tr>
             {% if ctx.single_labor.parts_subtotal %}<tr><td class="label">Parts</td><td class="value">${{ "%.2f"|format(ctx.single_labor.parts_subtotal) }}</td></tr>{% endif %}
@@ -126,6 +127,7 @@
               <div class="d-flex justify-content-between align-items-start mb-2">
                 <div>
                   <div class="fw-bold">Labor {{ loop.index }} — {{ lb.labor_desc }}</div>
+                  {% if lb.issue_description %}<div class="text-muted small fst-italic mt-1">Reported issue: {{ lb.issue_description }}</div>{% endif %}
                   <div class="text-muted small">
                     {% if lb.hours %}{{ lb.hours }} h · {% endif %}Labor ${{ "%.2f"|format(lb.labor_total) }}{% if lb.parts_subtotal %} · Parts ${{ "%.2f"|format(lb.parts_subtotal) }}{% endif %}
                   </div>

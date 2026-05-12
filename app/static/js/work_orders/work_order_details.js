@@ -1464,11 +1464,12 @@
 
     blockEl.querySelector(".labor-description").name = `labors[${idx}][labor_description]`;
     blockEl.querySelector(".labor-hours").name = `labors[${idx}][labor_hours]`;
-    blockEl.querySelector(".labor-rate").name = `labors[${idx}][labor_rate_code]`;
-    const laborTotalInput = blockEl.querySelector(".labor-total-input");
+    blockEl.querySelector(".labor-rate").name = `labors[${idx}][labor_rate_code]`;    const laborTotalInput = blockEl.querySelector(".labor-total-input");
     if (laborTotalInput) laborTotalInput.name = `labors[${idx}][labor_total_ui]`;
     const laborAssignmentsInput = blockEl.querySelector(".labor-assignments-json");
     if (laborAssignmentsInput) laborAssignmentsInput.name = `labors[${idx}][assigned_mechanics_json]`;
+    const laborIssueInput = blockEl.querySelector(".labor-issue-description");
+    if (laborIssueInput) laborIssueInput.name = `labors[${idx}][issue_description]`;
 
     // Renumber labor attachment collapse and parent_id
     const attCollapse = blockEl.querySelector(".labor-att-collapse");
@@ -1517,6 +1518,10 @@
     clone.querySelectorAll(".labor-assignments-json").forEach(i => {
       i.value = "[]";
     });
+    clone.querySelectorAll(".labor-issue-description").forEach(i => {
+      i.value = "";
+    });
+    delete clone.dataset.issueDescription;
     clone.querySelectorAll(".laborAssignSummary").forEach(el => {
       el.textContent = "Assigned: —";
     });
@@ -2140,6 +2145,11 @@
       );
       setLaborAssignments(el, assignments);
 
+      const issueDesc = String(b?.labor?.issue_description ?? b?.issue_description ?? "").trim();
+      el.dataset.issueDescription = issueDesc;
+      const issueInput = el.querySelector(".labor-issue-description");
+      if (issueInput) issueInput.value = issueDesc;
+
       const tbody = el.querySelector(".partsTbody");
       if (!tbody) return;
 
@@ -2258,6 +2268,7 @@
         labor_rate_code,
         labor_full_total,
         assigned_mechanics,
+        issue_description: String(bEl.dataset.issueDescription || bEl.querySelector(".labor-issue-description")?.value || ""),
         parts,
       });
     });
@@ -4058,6 +4069,7 @@
       if (firstBlock) {
         firstBlock.querySelectorAll("input").forEach(i => { i.value = ""; });
         firstBlock.querySelectorAll(".labor-assignments-json").forEach(i => { i.value = "[]"; });
+        delete firstBlock.dataset.issueDescription;
         firstBlock.querySelectorAll(".laborAssignSummary").forEach(el => {
           el.textContent = "Assigned: —";
         });
@@ -4931,6 +4943,153 @@
         const idx = blocks.indexOf(blockEl);
         if (idx < 0) return;
         sendAuthorization("labor", idx, null);
+      });
+    }
+
+    // Per-labor "Describe Issue" link — opens AI-powered modal to draft/polish
+    // the issue text that will be sent to the customer for authorization.
+    const describeModalEl = document.getElementById("describeIssueModal");
+    const describeText = document.getElementById("describeIssueText");
+    const describePolishBtn = document.getElementById("describeIssuePolishBtn");
+    const describeSaveBtn = document.getElementById("describeIssueSaveBtn");
+    const describeLangBadge = document.getElementById("describeIssueLangBadge");
+    const describeOriginalWrap = document.getElementById("describeIssueOriginalWrap");
+    const describeOriginal = document.getElementById("describeIssueOriginal");
+    const describeCharCount = document.getElementById("describeIssueCharCount");
+    const describeLaborLabel = document.getElementById("describeIssueLaborLabel");
+    let describeModal = null;
+    let describeActiveBlock = null;
+    let describeActiveIdx = -1;
+
+    function setDescribePolishLoading(loading) {
+      if (!describePolishBtn) return;
+      const label = describePolishBtn.querySelector(".describe-issue-polish-label");
+      const spinner = describePolishBtn.querySelector(".describe-issue-polish-spinner");
+      describePolishBtn.disabled = loading;
+      if (label) label.style.display = loading ? "none" : "";
+      if (spinner) spinner.style.display = loading ? "" : "none";
+    }
+
+    function updateDescribeCharCount() {
+      if (describeCharCount && describeText) {
+        describeCharCount.textContent = String(describeText.value.length);
+      }
+    }
+
+    if (describeText) {
+      describeText.addEventListener("input", updateDescribeCharCount);
+    }
+
+    if (describeModalEl && blocksContainer) {
+      blocksContainer.addEventListener("click", function (event) {
+        const link = event.target.closest(".laborDescribeIssueBtn");
+        if (!link) return;
+        event.preventDefault();
+        const blockEl = link.closest(".wo-labor");
+        if (!blockEl) return;
+        const blocks = Array.from(blocksContainer.querySelectorAll(".wo-labor"));
+        const idx = blocks.indexOf(blockEl);
+        if (idx < 0) return;
+
+        describeActiveBlock = blockEl;
+        describeActiveIdx = idx;
+
+        const current = String(
+          blockEl.dataset.issueDescription
+          || blockEl.querySelector(".labor-issue-description")?.value
+          || ""
+        );
+        if (describeText) describeText.value = current;
+        if (describeLangBadge) describeLangBadge.textContent = "";
+        if (describeOriginalWrap) describeOriginalWrap.style.display = "none";
+        if (describeOriginal) describeOriginal.textContent = "";
+        if (describeLaborLabel) describeLaborLabel.textContent = `(Labor #${idx + 1})`;
+        updateDescribeCharCount();
+
+        if (!describeModal) {
+          describeModal = new bootstrap.Modal(describeModalEl);
+        }
+        describeModal.show();
+      });
+    }
+
+    if (describePolishBtn) {
+      describePolishBtn.addEventListener("click", async function () {
+        if (!describeText) return;
+        const text = describeText.value.trim();
+        if (!text) {
+          toast("Please type something first.", "error");
+          return;
+        }
+        setDescribePolishLoading(true);
+        try {
+          const res = await fetch("/work_orders/api/ai/polish-issue", {
+            method: "POST",
+            headers: { "Accept": "application/json", "Content-Type": "application/json" },
+            body: JSON.stringify({ text }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data || !data.ok) {
+            throw new Error((data && (data.error || data.message)) || "Failed to polish text.");
+          }
+          if (describeOriginal) describeOriginal.textContent = text;
+          if (describeOriginalWrap) describeOriginalWrap.style.display = "";
+          describeText.value = String(data.polished || "");
+          updateDescribeCharCount();
+          if (describeLangBadge) {
+            const lang = String(data.language || "").toUpperCase();
+            describeLangBadge.textContent = data.is_english
+              ? "Polished (EN)"
+              : `Translated from ${lang || "auto"} → EN`;
+          }
+        } catch (err) {
+          toast(err.message || "AI polish failed.", "error");
+        } finally {
+          setDescribePolishLoading(false);
+        }
+      });
+    }
+
+    if (describeSaveBtn) {
+      describeSaveBtn.addEventListener("click", async function () {
+        if (!describeActiveBlock || describeActiveIdx < 0 || !describeText) {
+          if (describeModal) describeModal.hide();
+          return;
+        }
+        const value = describeText.value.trim().slice(0, 4000);
+        describeActiveBlock.dataset.issueDescription = value;
+        const hidden = describeActiveBlock.querySelector(".labor-issue-description");
+        if (hidden) hidden.value = value;
+
+        // If WO already exists, persist immediately so the next Send for Authorization
+        // sees the latest text even before a Save All round-trip.
+        if (isCreated && workOrderId) {
+          describeSaveBtn.disabled = true;
+          try {
+            const res = await fetch(
+              `/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/labors/${describeActiveIdx}/issue-description`,
+              {
+                method: "POST",
+                headers: { "Accept": "application/json", "Content-Type": "application/json" },
+                body: JSON.stringify({ text: value }),
+              }
+            );
+            const data = await res.json();
+            if (!res.ok || !data || !data.ok) {
+              throw new Error((data && (data.error || data.message)) || "Failed to save.");
+            }
+            toast("Issue description saved.", "success");
+          } catch (err) {
+            toast(err.message || "Failed to save issue description.", "error");
+            describeSaveBtn.disabled = false;
+            return;
+          }
+          describeSaveBtn.disabled = false;
+        } else {
+          toast("Issue description updated. It will be saved with the work order.", "success");
+        }
+
+        if (describeModal) describeModal.hide();
       });
     }
 

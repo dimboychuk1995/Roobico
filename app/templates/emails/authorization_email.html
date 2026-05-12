@@ -79,6 +79,9 @@
             <td style="color:#888;width:130px;padding:3px 0;">Description</td>
             <td style="font-weight:600;">{{ single_labor.labor_desc }}</td>
           </tr>
+          {% if single_labor.issue_description %}
+          <tr><td style="color:#888;padding:3px 0;vertical-align:top;">Reported issue</td><td style="font-style:italic;color:#444;">{{ single_labor.issue_description }}</td></tr>
+          {% endif %}
           {% if single_labor.hours %}
           <tr><td style="color:#888;padding:3px 0;">Hours</td><td>{{ single_labor.hours }}</td></tr>
           {% endif %}
@@ -98,6 +101,7 @@
           <tr style="background:#f9f9f9;">
             <td style="padding:8px 10px;" colspan="2">
               <div style="font-weight:700;">Labor {{ loop.index }} — {{ lb.labor_desc }}</div>
+              {% if lb.issue_description %}<div style="color:#555;font-size:12px;font-style:italic;margin-top:3px;">Reported issue: {{ lb.issue_description }}</div>{% endif %}
               <div style="color:#666;font-size:12px;margin-top:2px;">
                 {% if lb.hours %}{{ lb.hours }} h · {% endif %}Labor ${{ "%.2f"|format(lb.labor_total) }}{% if lb.parts_subtotal %} · Parts ${{ "%.2f"|format(lb.parts_subtotal) }}{% endif %}
               </div>
