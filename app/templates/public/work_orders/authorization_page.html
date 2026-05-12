@@ -47,13 +47,12 @@
       </div>
 
       <div class="card-body">
-        {% with messages = get_flashed_messages(with_categories=true) %}
-          {% if messages %}
-            {% for cat, msg in messages %}
-              <div class="alert alert-{{ 'danger' if cat == 'error' else cat }} mb-3">{{ msg }}</div>
-            {% endfor %}
-          {% endif %}
-        {% endwith %}
+        {# Flash messages намеренно НЕ показываем на публичной странице
+           авторизации — иначе админу, открывшему ссылку в том же браузере,
+           вылазит весь журнал его действий ("Work order created", "Inventory
+           deducted" и т.п.). Сами flash при этом «съедаются», чтобы не
+           всплыть на следующей странице админа. #}
+        {% set _ = get_flashed_messages() %}
 
         <h2 class="h5 mb-3">
           {% if auth.scope == "labor" %}
