@@ -4683,11 +4683,14 @@
         const assignments = getLaborAssignments(bEl);
 
         let partsCost = 0;
+        let partsSale = 0;
         const partsRows = Array.from(bEl.querySelectorAll("tbody.partsTbody tr.parts-row"));
         partsRows.forEach((tr) => {
           const qty = Math.max(0, toNum(tr.querySelector(".part-qty")?.value) || 0);
           const cost = Math.max(0, toNum(tr.querySelector(".part-cost")?.value) || 0);
+          const price = Math.max(0, toNum(tr.querySelector(".part-price")?.value) || 0);
           if (qty > 0 && cost > 0) partsCost += qty * cost;
+          if (qty > 0 && price > 0) partsSale += qty * price;
         });
 
         const revenue = parseMoneyText(bEl.querySelector(".laborFullTotalDisplay")?.textContent || "0");
@@ -4697,6 +4700,7 @@
           hours: round2(hours),
           assignments,
           partsCost: round2(partsCost),
+          partsSale: round2(partsSale),
           revenue: round2(revenue),
         };
       }
@@ -4716,7 +4720,7 @@
           if (empty) empty.style.display = "";
           if (mechTable) mechTable.style.display = "none";
           if (mechEmpty) mechEmpty.style.display = "none";
-          ["woCostTotalLabor","woCostTotalParts","woCostTotalCost","woCostTotalRevenue","woCostTotalProfit"]
+          ["woCostTotalLabor","woCostTotalParts","woCostTotalPartsSale","woCostTotalCost","woCostTotalRevenue","woCostTotalProfit"]
             .forEach((id) => { const el = $(id); if (el) el.textContent = fmt(0); });
           return;
         }
@@ -4750,7 +4754,7 @@
           }).join("");
         }
 
-        let totalLabor = 0, totalParts = 0, totalRevenue = 0;
+        let totalLabor = 0, totalParts = 0, totalPartsSale = 0, totalRevenue = 0;
         const rows = blocks.map((bEl, idx) => {
           const info = readBlock(bEl);
           let laborCost = 0;
@@ -4765,6 +4769,7 @@
 
           totalLabor += laborCost;
           totalParts += info.partsCost;
+          totalPartsSale += info.partsSale;
           totalRevenue += info.revenue;
 
           const mechSummary = info.assignments.length
@@ -4786,6 +4791,7 @@
               <td class="small">${mechSummary}</td>
               <td class="text-end">${fmt(laborCost)}</td>
               <td class="text-end">${fmt(info.partsCost)}</td>
+              <td class="text-end">${fmt(info.partsSale)}</td>
               <td class="text-end fw-semibold">${fmt(totalCost)}</td>
               <td class="text-end">${fmt(info.revenue)}</td>
               <td class="text-end fw-semibold ${profitClass}">${fmt(profit)}</td>
@@ -4799,6 +4805,7 @@
         const set = (id, v) => { const el = $(id); if (el) el.textContent = fmt(v); };
         set("woCostTotalLabor", totalLabor);
         set("woCostTotalParts", totalParts);
+        set("woCostTotalPartsSale", totalPartsSale);
         set("woCostTotalCost", totalCost);
         set("woCostTotalRevenue", totalRevenue);
         const profitEl = $("woCostTotalProfit");
