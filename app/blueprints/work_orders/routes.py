@@ -3776,8 +3776,30 @@ def _build_wo_pdf_context(shop_db, shop, wo):
         misc_t = round2(block_totals.get("misc_total") or 0)
         block_total = round2(block_totals.get("labor_full_total") or (labor_total_val + parts_subtotal))
 
+        normalized_parts = normalize_parts_payload(block.get("parts") or [])
+
+        # Misc charges are stored as a JSON list on the FIRST part row's
+        # misc_charge_description. Parse it once per labor block so the PDF
+        # can render each item as a separate line.
+        misc_items_built = []
+        first_row_misc = _parse_misc_items(
+            (normalized_parts[0] or {}).get("misc_charge_description")
+        ) if normalized_parts else []
+        for item in first_row_misc:
+            price = round2(item.get("price") or 0)
+            iqty = f64(item.get("quantity") if item.get("quantity") is not None else 0) or 0
+            if price <= 0 or iqty <= 0:
+                continue
+            misc_items_built.append({
+                "description": str(item.get("description") or "").strip() or "Misc Charge",
+                "qty": iqty,
+                "price": price,
+                "total": round2(price * iqty),
+            })
+        has_json_misc = bool(first_row_misc)
+
         parts_detail = []
-        for p in normalize_parts_payload(block.get("parts") or []):
+        for p in normalized_parts:
             qty = i32(p.get("qty")) or 0
             if qty <= 0:
                 continue
@@ -3786,7 +3808,10 @@ def _build_wo_pdf_context(shop_db, shop, wo):
             price = round2(p.get("price") or 0)
             core_per = round2(p.get("core_charge") or 0)
             misc_per = round2(p.get("misc_charge") or 0)
-            misc_desc = str(p.get("misc_charge_description") or "").strip()
+            # If the misc list is stored as JSON on the first row, don't show
+            # the JSON blob as a per-part description (legacy fallback only).
+            raw_misc_desc = str(p.get("misc_charge_description") or "").strip()
+            legacy_misc_desc = "" if has_json_misc else raw_misc_desc
             parts_detail.append({
                 "part_number": part_number,
                 "description": description,
@@ -3796,8 +3821,8 @@ def _build_wo_pdf_context(shop_db, shop, wo):
                 "price_fmt": f"${price:.2f}",
                 "total": round2(price * qty),
                 "core": round2(core_per * qty),
-                "misc": round2(misc_per * qty),
-                "misc_desc": misc_desc,
+                "misc": 0 if has_json_misc else round2(misc_per * qty),
+                "misc_desc": legacy_misc_desc,
             })
 
         labors_built.append({
@@ -3815,6 +3840,7 @@ def _build_wo_pdf_context(shop_db, shop, wo):
             "misc_total": misc_t,
             "block_total": block_total,
             "parts": parts_detail,
+            "misc_items": misc_items_built,
         })
 
     paid_total = _sum_active_work_order_payments(shop_db, wo.get("_id"))

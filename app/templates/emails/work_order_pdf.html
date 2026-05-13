@@ -283,9 +283,21 @@
       {% endfor %}
       {% endif %}
 
+      {% if labor.misc_items and pdf_cfg.get('show_misc_charges', true) %}
+      {% for m in labor.misc_items %}
+      <tr>
+        <td>Misc</td>
+        <td>{{ m.description }}</td>
+        <td class="tr">{{ "%g" | format(m.qty) }}</td>
+        <td class="tr">${{ "%.2f" | format(m.price) }}</td>
+        <td class="tr">${{ "%.2f" | format(m.total) }}</td>
+      </tr>
+      {% endfor %}
+      {% endif %}
+
       <tr class="subtotal-row">
         <td colspan="4" style="text-align: right;">Subtotal</td>
-        <td class="tr">${{ "%.2f" | format(labor.labor_base + labor.parts_subtotal + labor.core_total + labor.misc_total) }}</td>
+        <td class="tr">${{ "%.2f" | format(labor.block_total) }}</td>
       </tr>
     </tbody>
   </table>
