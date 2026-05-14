@@ -2,6 +2,7 @@ import os
 import time
 
 from flask import Flask, g, session, request, redirect
+from werkzeug.middleware.proxy_fix import ProxyFix
 from bson import ObjectId
 
 from app.config import Config
@@ -32,6 +33,13 @@ PUBLIC_HOST_ENDPOINTS = frozenset({
 def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
+
+    # We sit behind Cloudflare → nginx → gunicorn (unix socket). Trust the
+    # X-Forwarded-Proto / X-Forwarded-For headers from one proxy hop so that
+    # request.is_secure and url_for(_external=True) report HTTPS correctly
+    # (otherwise emailed links — customer portal, password reset, WO PDFs —
+    # would all be built with http://).
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=0)
 
     init_mongo(app)
 
