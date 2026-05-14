@@ -8,6 +8,7 @@ import secrets, time
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import login_user, logout_user, SESSION_USER_ID, SESSION_TENANT_ID, SESSION_TENANT_DB
 from app.utils.email_sender import send_email
+from app.utils.hosts import app_url, public_url
 from . import auth_bp
 
 
@@ -88,7 +89,9 @@ def login():
     session["user_permissions"] = perms
     session.modified = True
 
-    return redirect(url_for("dashboard.dashboard"))
+    # In production this points at https://app.roobico.com/dashboard so the
+    # browser leaves the public login host and lands on the application host.
+    return redirect(app_url("dashboard.dashboard"))
 
 
 @auth_bp.get("/logout")
@@ -127,7 +130,12 @@ def forgot_password():
                 "reset_token_created": time.time(),
             }},
         )
-        reset_url = url_for("auth.reset_password_page", token=token, _external=True)
+        # Reset link must always point at the public host (roobico.com),
+        # even if the request came through app.roobico.com somehow.
+        reset_url = public_url("auth.reset_password_page", token=token)
+        if not reset_url.startswith("http"):
+            # Dev fallback: ENFORCE_HOST_SPLIT off → keep _external behaviour.
+            reset_url = url_for("auth.reset_password_page", token=token, _external=True)
         html = f"""
         <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:2rem;">
             <h2 style="color:#0f172a;">Password Reset</h2>

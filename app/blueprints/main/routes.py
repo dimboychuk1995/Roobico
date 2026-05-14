@@ -5,6 +5,7 @@ from bson import ObjectId
 
 from app.utils.auth import login_required, SESSION_USER_ID, SESSION_TENANT_ID
 from app.utils.permissions import permission_required
+from app.utils.hosts import app_url
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.display_datetime import get_active_shop_timezone_name
 from . import main_bp
@@ -12,6 +13,11 @@ from . import main_bp
 
 @main_bp.get("/")
 def index():
+    # If the visitor is already logged in, send them straight to the
+    # dashboard on the application host (app.roobico.com in prod). Without
+    # this the login form would re-appear after returning to roobico.com.
+    if session.get(SESSION_USER_ID) and session.get(SESSION_TENANT_ID):
+        return redirect(app_url("dashboard.dashboard"))
     return render_template("public/auth.html")
 
 

@@ -1,7 +1,7 @@
 import os
 import time
 
-from flask import Flask, g, session
+from flask import Flask, g, session, request, redirect
 from bson import ObjectId
 
 from app.config import Config
@@ -14,6 +14,19 @@ from app.blueprints.reports.audit.journal import build_request_id, write_audit_j
 # гарантирует, что после деплоя браузеры подтянут свежие CSS/JS вместо
 # старых из локального кеша.
 ASSET_VERSION = str(int(time.time()))
+
+
+# Endpoints that MUST live on the public host (roobico.com).
+# Everything else MUST live on the app host (app.roobico.com).
+PUBLIC_HOST_ENDPOINTS = frozenset({
+    "main.index",
+    "auth.login",
+    "auth.logout",
+    "auth.forgot_password_page",
+    "auth.forgot_password",
+    "auth.reset_password_page",
+    "auth.reset_password",
+})
 
 
 def create_app():
@@ -37,6 +50,55 @@ def create_app():
         }
 
     # каждый запрос: если есть сессия — поднимем g.user и g.tenant
+    @app.before_request
+    def enforce_host_split():
+        """
+        Production routing rule:
+          * roobico.com  → only login / forgot-password / reset / logout
+          * app.roobico.com → everything else (dashboard, customer portal,
+            public auth-token pages sent by email, etc.)
+        Anything reaching the wrong host is 301'd to the right one. Disabled
+        by default in dev (ENFORCE_HOST_SPLIT=false) and never engages for
+        hosts we don't recognise (localhost, IP access, etc.).
+        """
+        if not app.config.get("ENFORCE_HOST_SPLIT"):
+            return None
+
+        endpoint = request.endpoint or ""
+        # Static / no-endpoint requests pass through; nginx serves /static
+        # directly anyway.
+        if endpoint == "static" or endpoint.endswith(".static") or not endpoint:
+            return None
+
+        # Pull just the hostname (strip port, lowercase).
+        host = (request.host or "").split(":", 1)[0].lower()
+        public_host = (app.config.get("PUBLIC_HOST") or "").lower()
+        app_host = (app.config.get("APP_HOST") or "").lower()
+        public_aliases = {
+            h.lower() for h in app.config.get("PUBLIC_HOST_ALIASES") or []
+        }
+
+        if host not in {public_host, app_host} | public_aliases:
+            # Unknown host (dev, IP, preview) → no rewriting.
+            return None
+
+        is_public_endpoint = endpoint in PUBLIC_HOST_ENDPOINTS
+        on_public_host = host in {public_host} | public_aliases
+        on_app_host = host == app_host
+
+        target_base = None
+        if on_public_host and not is_public_endpoint:
+            target_base = app.config.get("APP_BASE_URL")
+        elif on_app_host and is_public_endpoint:
+            target_base = app.config.get("PUBLIC_BASE_URL")
+
+        if not target_base:
+            return None
+
+        # Preserve the original path + query string when redirecting.
+        target = target_base.rstrip("/") + request.full_path.rstrip("?")
+        return redirect(target, code=301)
+
     @app.before_request
     def load_current_context():
         g._request_start_time = time.perf_counter()

@@ -1,7 +1,46 @@
 import os
 
+
+def _parse_bool(val: str | None, default: bool = False) -> bool:
+    if val is None:
+        return default
+    return str(val).strip().lower() in ("1", "true", "yes", "on")
+
+
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key")
+
+    # ── Hosts / domain split ──────────────────────────────────────────────────
+    # roobico.com  → public host (login / forgot-password / reset / logout)
+    # app.roobico.com → application host (everything else, incl. customer portal)
+    #
+    # In dev (any host that isn't one of these) enforcement is skipped, so
+    # localhost / 127.0.0.1 / IP access continue to "just work".
+    PUBLIC_HOST = os.environ.get("PUBLIC_HOST", "roobico.com")
+    APP_HOST = os.environ.get("APP_HOST", "app.roobico.com")
+    PUBLIC_HOST_ALIASES = [
+        h.strip().lower()
+        for h in os.environ.get("PUBLIC_HOST_ALIASES", "www.roobico.com").split(",")
+        if h.strip()
+    ]
+
+    PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", f"https://{PUBLIC_HOST}")
+    APP_BASE_URL = os.environ.get("APP_BASE_URL", f"https://{APP_HOST}")
+
+    # Master switch for the host-split logic. Auto-disabled for non-prod hosts.
+    # Defaults to off so local dev (`python run.py`) continues to work without
+    # extra env vars. Set ENFORCE_HOST_SPLIT=true in production .env.
+    ENFORCE_HOST_SPLIT = _parse_bool(os.environ.get("ENFORCE_HOST_SPLIT"), False)
+
+    # ── Session cookie ────────────────────────────────────────────────────────
+    # In production share cookies across roobico.com and app.roobico.com so
+    # login on the public host is recognised on the app host. In dev the
+    # defaults stay browser-default (host-only, non-secure) so http://localhost
+    # keeps working.
+    SESSION_COOKIE_DOMAIN = os.environ.get("SESSION_COOKIE_DOMAIN") or None
+    SESSION_COOKIE_SECURE = _parse_bool(os.environ.get("SESSION_COOKIE_SECURE"), False)
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
 
     # MongoDB connection string (server-level URI)
     # Example: mongodb://localhost:27017
