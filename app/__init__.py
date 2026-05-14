@@ -29,6 +29,10 @@ PUBLIC_HOST_ENDPOINTS = frozenset({
     "auth.reset_password",
 })
 
+# Admin-only endpoints (admin.roobico.com). All admin_panel.* views are
+# admin-host bound; everything else is forbidden on the admin host.
+ADMIN_BLUEPRINT_NAME = "admin_panel"
+
 
 def create_app():
     app = Flask(__name__)
@@ -40,6 +44,11 @@ def create_app():
     # (otherwise emailed links — customer portal, password reset, WO PDFs —
     # would all be built with http://).
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=0)
+
+    # Per-host session cookies: admin uses a separate, host-only cookie so
+    # tenant app sessions can never be promoted to admin and vice versa.
+    from app.utils.sessions import HostAwareSessionInterface
+    app.session_interface = HostAwareSessionInterface()
 
     init_mongo(app)
 
@@ -82,20 +91,32 @@ def create_app():
         host = (request.host or "").split(":", 1)[0].lower()
         public_host = (app.config.get("PUBLIC_HOST") or "").lower()
         app_host = (app.config.get("APP_HOST") or "").lower()
+        admin_host = (app.config.get("ADMIN_HOST") or "").lower()
         public_aliases = {
             h.lower() for h in app.config.get("PUBLIC_HOST_ALIASES") or []
         }
 
-        if host not in {public_host, app_host} | public_aliases:
+        known_hosts = {public_host, app_host, admin_host} | public_aliases
+        known_hosts.discard("")
+        if host not in known_hosts:
             # Unknown host (dev, IP, preview) → no rewriting.
             return None
 
         is_public_endpoint = endpoint in PUBLIC_HOST_ENDPOINTS
+        is_admin_endpoint = endpoint.startswith(f"{ADMIN_BLUEPRINT_NAME}.")
         on_public_host = host in {public_host} | public_aliases
         on_app_host = host == app_host
+        on_admin_host = bool(admin_host) and host == admin_host
 
         target_base = None
-        if on_public_host and not is_public_endpoint:
+
+        # Admin host: only admin_panel.* allowed; otherwise bounce to app.
+        if on_admin_host and not is_admin_endpoint:
+            target_base = app.config.get("APP_BASE_URL")
+        # Admin endpoints are admin-host only.
+        elif is_admin_endpoint and not on_admin_host:
+            target_base = app.config.get("ADMIN_BASE_URL")
+        elif on_public_host and not is_public_endpoint:
             target_base = app.config.get("APP_BASE_URL")
         elif on_app_host and is_public_endpoint:
             target_base = app.config.get("PUBLIC_BASE_URL")
@@ -199,6 +220,7 @@ def create_app():
     from app.blueprints.attachments import attachments_bp
     from app.blueprints.import_export import import_export_bp
     from app.blueprints.customer_portal import customer_portal_bp
+    from app.blueprints.admin_panel import admin_panel_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(reports_bp)
@@ -214,5 +236,6 @@ def create_app():
     app.register_blueprint(attachments_bp)
     app.register_blueprint(import_export_bp)
     app.register_blueprint(customer_portal_bp)
+    app.register_blueprint(admin_panel_bp)
 
     return app

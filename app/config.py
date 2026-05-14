@@ -18,6 +18,7 @@ class Config:
     # localhost / 127.0.0.1 / IP access continue to "just work".
     PUBLIC_HOST = os.environ.get("PUBLIC_HOST", "roobico.com")
     APP_HOST = os.environ.get("APP_HOST", "app.roobico.com")
+    ADMIN_HOST = os.environ.get("ADMIN_HOST", "admin.roobico.com")
     PUBLIC_HOST_ALIASES = [
         h.strip().lower()
         for h in os.environ.get("PUBLIC_HOST_ALIASES", "www.roobico.com").split(",")
@@ -26,6 +27,7 @@ class Config:
 
     PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", f"https://{PUBLIC_HOST}")
     APP_BASE_URL = os.environ.get("APP_BASE_URL", f"https://{APP_HOST}")
+    ADMIN_BASE_URL = os.environ.get("ADMIN_BASE_URL", f"https://{ADMIN_HOST}")
 
     # Master switch for the host-split logic. Auto-disabled for non-prod hosts.
     # Defaults to off so local dev (`python run.py`) continues to work without
@@ -41,6 +43,11 @@ class Config:
     SESSION_COOKIE_SECURE = _parse_bool(os.environ.get("SESSION_COOKIE_SECURE"), False)
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
+
+    # Admin gets a completely separate cookie scoped only to admin.roobico.com
+    # so that being logged into the tenant app (`app.roobico.com`) gives no
+    # status whatsoever in the admin panel, and vice versa.
+    ADMIN_SESSION_COOKIE_NAME = os.environ.get("ADMIN_SESSION_COOKIE_NAME", "admin_session")
 
     # MongoDB connection string (server-level URI)
     # Example: mongodb://localhost:27017
