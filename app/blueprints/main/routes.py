@@ -14,13 +14,16 @@ from . import main_bp
 
 @main_bp.get("/")
 def index():
-    # Admin host gets its own placeholder — keeps `/` clean for both
-    # tenant login and admin landing without two blueprints fighting for
-    # the same URL rule.
+    # Admin host gets its own dispatch — straight to the admin login or
+    # dashboard depending on session state. The admin session cookie is
+    # isolated from the tenant cookie (see HostAwareSessionInterface).
     host = (request.host or "").split(":", 1)[0].lower()
     admin_host = (current_app.config.get("ADMIN_HOST") or "").lower()
     if admin_host and host == admin_host:
-        return render_template("admin_panel/placeholder.html")
+        from app.utils.admin_auth import get_current_admin
+        if get_current_admin():
+            return redirect(url_for("admin_panel.dashboard"))
+        return redirect(url_for("admin_panel.login_page"))
 
     # If the visitor is already logged in, send them straight to the
     # dashboard on the application host (app.roobico.com in prod). Without

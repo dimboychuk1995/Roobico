@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Roobico Admin — base</title>
+  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='images/favicon.ico') }}">
+  <style>
+    *,*::before,*::after { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #0f172a;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    a { color: #60a5fa; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .admin-shell {
+      display: flex;
+      min-height: 100vh;
+    }
+    .admin-side {
+      width: 240px;
+      background: #0b1220;
+      border-right: 1px solid #1f2937;
+      padding: 1.5rem 1rem;
+    }
+    .admin-side h1 {
+      font-size: 1.05rem;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: #16a34a;
+      margin: 0 0 1.5rem 0;
+    }
+    .admin-side nav a {
+      display: block;
+      padding: .5rem .75rem;
+      border-radius: 6px;
+      color: #cbd5e1;
+      font-size: .9rem;
+    }
+    .admin-side nav a:hover,
+    .admin-side nav a.active {
+      background: #1f2937;
+      text-decoration: none;
+    }
+    .admin-main { flex: 1; padding: 2rem 2.5rem; }
+    .admin-topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 2rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid #1f2937;
+    }
+    .admin-topbar .who { font-size: .85rem; color: #94a3b8; }
+    .admin-topbar .who strong { color: #e2e8f0; }
+    .flash {
+      padding: .6rem .9rem;
+      border-radius: 6px;
+      margin-bottom: 1rem;
+      font-size: .9rem;
+    }
+    .flash.error { background: #7f1d1d; color: #fee2e2; }
+    .flash.success { background: #14532d; color: #dcfce7; }
+    .flash.info { background: #1e3a8a; color: #dbeafe; }
+
+    .card-centered {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .auth-card {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      padding: 2.5rem 2.75rem;
+      width: 100%;
+      max-width: 380px;
+    }
+    .auth-card h1 {
+      margin: 0 0 .25rem 0;
+      font-size: 1.4rem;
+    }
+    .auth-card .sub {
+      color: #94a3b8;
+      font-size: .85rem;
+      margin-bottom: 1.5rem;
+    }
+    .field { margin-bottom: 1rem; }
+    .field label {
+      display: block;
+      font-size: .7rem;
+      text-transform: uppercase;
+      letter-spacing: .12em;
+      color: #94a3b8;
+      margin-bottom: .35rem;
+    }
+    .field input {
+      width: 100%;
+      padding: .6rem .75rem;
+      border: 1px solid #1f2937;
+      background: #0b1220;
+      color: #e2e8f0;
+      border-radius: 6px;
+      font-size: .95rem;
+    }
+    .field input:focus {
+      outline: none;
+      border-color: #16a34a;
+    }
+    .btn-primary {
+      width: 100%;
+      padding: .7rem;
+      background: #16a34a;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: .85rem;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    .btn-primary:hover { background: #15803d; }
+  </style>
+</head>
+<body>
+  {% block body %}{% endblock %}
+</body>
+</html>

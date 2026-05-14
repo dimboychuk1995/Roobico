@@ -128,6 +128,10 @@ def ensure_master_collections_indexes(master_db):
     _safe_create_index(master_db.customer_portal_tokens, [("shop_id", ASCENDING), ("customer_id", ASCENDING)], unique=True, name="uniq_customer_portal_shop_customer")
     _safe_create_index(master_db.customer_portal_tokens, [("expires_at", ASCENDING)], name="idx_customer_portal_expires")
 
+    # Admin panel users (admin.roobico.com). Completely separate from
+    # tenant users — never join, never share permissions.
+    _safe_create_index(master_db.admin_users, [("email", ASCENDING)], unique=True, name="uniq_admin_user_email")
+
 
 def ensure_shop_collections_indexes(shop_db):
     """

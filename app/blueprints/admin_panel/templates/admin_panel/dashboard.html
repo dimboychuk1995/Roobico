@@ -1,0 +1,31 @@
+{% extends "admin_panel/_base.html" %}
+
+{% block body %}
+<div class="admin-shell">
+  <aside class="admin-side">
+    <h1>Roobico Admin</h1>
+    <nav>
+      <a href="{{ url_for('admin_panel.dashboard') }}" class="active">Dashboard</a>
+    </nav>
+  </aside>
+
+  <main class="admin-main">
+    <div class="admin-topbar">
+      <div class="who">Signed in as <strong>{{ admin.email }}</strong></div>
+      <a href="{{ url_for('admin_panel.logout') }}">Log out</a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, msg in messages %}
+        <div class="flash {{ category }}">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <h2 style="margin-top:0;">Welcome</h2>
+    <p style="color:#94a3b8; max-width:560px;">
+      The admin panel skeleton is up. Functionality (tenants, users, audit,
+      tools) will be added incrementally in the next steps.
+    </p>
+  </main>
+</div>
+{% endblock %}
