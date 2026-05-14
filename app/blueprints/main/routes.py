@@ -8,11 +8,20 @@ from app.utils.permissions import permission_required
 from app.utils.hosts import app_url
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.display_datetime import get_active_shop_timezone_name
+from flask import current_app
 from . import main_bp
 
 
 @main_bp.get("/")
 def index():
+    # Admin host gets its own placeholder — keeps `/` clean for both
+    # tenant login and admin landing without two blueprints fighting for
+    # the same URL rule.
+    host = (request.host or "").split(":", 1)[0].lower()
+    admin_host = (current_app.config.get("ADMIN_HOST") or "").lower()
+    if admin_host and host == admin_host:
+        return render_template("admin_panel/placeholder.html")
+
     # If the visitor is already logged in, send them straight to the
     # dashboard on the application host (app.roobico.com in prod). Without
     # this the login form would re-appear after returning to roobico.com.

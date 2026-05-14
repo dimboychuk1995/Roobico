@@ -104,14 +104,18 @@ def create_app():
 
         is_public_endpoint = endpoint in PUBLIC_HOST_ENDPOINTS
         is_admin_endpoint = endpoint.startswith(f"{ADMIN_BLUEPRINT_NAME}.")
+        # `main.index` is the literal `/` route — it dispatches by Host
+        # itself (renders admin placeholder on the admin host), so we must
+        # let it through on every known host instead of redirecting it.
+        is_root_index = endpoint == "main.index"
         on_public_host = host in {public_host} | public_aliases
         on_app_host = host == app_host
         on_admin_host = bool(admin_host) and host == admin_host
 
         target_base = None
 
-        # Admin host: only admin_panel.* allowed; otherwise bounce to app.
-        if on_admin_host and not is_admin_endpoint:
+        # Admin host: only admin_panel.* (and root index) allowed; otherwise bounce to app.
+        if on_admin_host and not (is_admin_endpoint or is_root_index):
             target_base = app.config.get("APP_BASE_URL")
         # Admin endpoints are admin-host only.
         elif is_admin_endpoint and not on_admin_host:
