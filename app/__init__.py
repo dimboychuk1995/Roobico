@@ -105,7 +105,10 @@ def create_app():
 
         # Preserve the original path + query string when redirecting.
         target = target_base.rstrip("/") + request.full_path.rstrip("?")
-        return redirect(target, code=301)
+        # 302 (not 301): browsers cache 301s indefinitely, which makes any
+        # future change to the host split impossible to recover from
+        # without users manually clearing their cache.
+        return redirect(target, code=302)
 
     @app.before_request
     def load_current_context():
