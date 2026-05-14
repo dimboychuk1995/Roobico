@@ -132,6 +132,11 @@ def ensure_master_collections_indexes(master_db):
     # tenant users — never join, never share permissions.
     _safe_create_index(master_db.admin_users, [("email", ASCENDING)], unique=True, name="uniq_admin_user_email")
 
+    # Admin panel audit log: every state-changing action from admin.roobico.com.
+    _safe_create_index(master_db.admin_audit, [("created_at", DESCENDING)], name="idx_admin_audit_created_desc")
+    _safe_create_index(master_db.admin_audit, [("admin_id", ASCENDING), ("created_at", DESCENDING)], name="idx_admin_audit_admin_created")
+    _safe_create_index(master_db.admin_audit, [("target_type", ASCENDING), ("target_id", ASCENDING), ("created_at", DESCENDING)], name="idx_admin_audit_target")
+
 
 def ensure_shop_collections_indexes(shop_db):
     """

@@ -125,8 +125,164 @@
       cursor: pointer;
     }
     .btn-primary:hover { background: #15803d; }
-  </style>
-</head>
+
+    /* Tables, badges, secondary buttons */
+    .page-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 1rem;
+      margin: 0 0 1.25rem 0;
+    }
+    .page-head h2 { margin: 0; font-size: 1.4rem; }
+    .page-head .filters { display: flex; gap: .5rem; align-items: center; }
+    .page-head input[type="text"], .page-head select {
+      background: #0b1220;
+      color: #e2e8f0;
+      border: 1px solid #1f2937;
+      padding: .45rem .6rem;
+      border-radius: 6px;
+      font-size: .9rem;
+    }
+    .crumbs {
+      font-size: .8rem;
+      color: #64748b;
+      margin-bottom: .5rem;
+    }
+    .crumbs a { color: #94a3b8; }
+    table.data {
+      width: 100%;
+      border-collapse: collapse;
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    table.data th, table.data td {
+      padding: .65rem .85rem;
+      text-align: left;
+      border-bottom: 1px solid #1f2937;
+      font-size: .9rem;
+      vertical-align: middle;
+    }
+    table.data thead th {
+      background: #0b1220;
+      font-size: .7rem;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: #94a3b8;
+      font-weight: 600;
+    }
+    table.data tbody tr:last-child td { border-bottom: none; }
+    table.data tbody tr:hover { background: #0b1220; }
+    table.data a { color: #93c5fd; }
+    .badge {
+      display: inline-block;
+      padding: .15rem .55rem;
+      border-radius: 999px;
+      font-size: .7rem;
+      font-weight: 600;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+    }
+    .badge.ok { background: #14532d; color: #bbf7d0; }
+    .badge.bad { background: #7f1d1d; color: #fecaca; }
+    .badge.muted { background: #1f2937; color: #cbd5e1; }
+    .btn {
+      display: inline-block;
+      padding: .35rem .7rem;
+      border-radius: 6px;
+      font-size: .75rem;
+      font-weight: 600;
+      letter-spacing: .04em;
+      text-transform: uppercase;
+      border: 1px solid transparent;
+      background: #1f2937;
+      color: #e2e8f0;
+      cursor: pointer;
+      text-decoration: none;
+    }
+    .btn:hover { background: #334155; text-decoration: none; }
+    .btn.danger { background: #7f1d1d; color: #fee2e2; }
+    .btn.danger:hover { background: #991b1b; }
+    .btn.success { background: #14532d; color: #dcfce7; }
+    .btn.success:hover { background: #166534; }
+    .inline-form { display: inline; }
+    .section { margin-top: 2rem; }
+    .section h3 {
+      font-size: .8rem;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: #94a3b8;
+      margin: 0 0 .75rem 0;
+      font-weight: 700;
+    }
+    .meta-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: .85rem 1.5rem;
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 8px;
+      padding: 1rem 1.25rem;
+    }
+    .meta-grid div .lbl {
+      display: block;
+      font-size: .65rem;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: #64748b;
+      margin-bottom: .15rem;
+    }
+    .meta-grid div .val {
+      font-size: .9rem;
+      color: #e2e8f0;
+      word-break: break-word;
+    }
+    .stat-cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    .stat {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 8px;
+      padding: 1rem 1.1rem;
+    }
+    .stat .lbl {
+      font-size: .65rem;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      color: #64748b;
+    }
+    .stat .num {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #e2e8f0;
+      margin-top: .25rem;
+    }
+    .stat .num small { font-size: .85rem; color: #64748b; font-weight: 400; }
+    .empty {
+      padding: 1.25rem;
+      background: #111827;
+      border: 1px dashed #1f2937;
+      border-radius: 8px;
+      color: #64748b;
+      font-size: .9rem;
+      text-align: center;
+    }
+    .plan-form { display: flex; gap: .5rem; align-items: center; }
+    .plan-form select {
+      background: #0b1220;
+      color: #e2e8f0;
+      border: 1px solid #1f2937;
+      padding: .35rem .5rem;
+      border-radius: 6px;
+      font-size: .85rem;
+    }
+  </style></head>
 <body>
   {% block body %}{% endblock %}
 </body>

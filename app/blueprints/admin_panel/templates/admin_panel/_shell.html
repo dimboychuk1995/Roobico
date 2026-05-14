@@ -1,0 +1,32 @@
+{% extends "admin_panel/_base.html" %}
+
+{# Shared shell: sidebar + topbar + flashes. Children fill `content`. #}
+
+{% block body %}
+<div class="admin-shell">
+  <aside class="admin-side">
+    <h1>Roobico Admin</h1>
+    <nav>
+      <a href="{{ url_for('admin_panel.dashboard') }}"
+         class="{{ 'active' if active == 'dashboard' else '' }}">Dashboard</a>
+      <a href="{{ url_for('admin_panel.tenants_list') }}"
+         class="{{ 'active' if active == 'tenants' else '' }}">Tenants</a>
+    </nav>
+  </aside>
+
+  <main class="admin-main">
+    <div class="admin-topbar">
+      <div class="who">Signed in as <strong>{{ admin.email }}</strong></div>
+      <a href="{{ url_for('admin_panel.logout') }}">Log out</a>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, msg in messages %}
+        <div class="flash {{ category }}">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% endblock %}

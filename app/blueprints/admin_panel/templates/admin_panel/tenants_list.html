@@ -1,0 +1,71 @@
+{% extends "admin_panel/_shell.html" %}
+{% set active = "tenants" %}
+
+{% block content %}
+<div class="page-head">
+  <h2>Tenants</h2>
+  <form method="get" action="{{ url_for('admin_panel.tenants_list') }}" class="filters">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search name / slug / email">
+    <select name="status">
+      <option value="all"      {% if status_filter == 'all' %}selected{% endif %}>All</option>
+      <option value="active"   {% if status_filter == 'active' %}selected{% endif %}>Active</option>
+      <option value="inactive" {% if status_filter == 'inactive' %}selected{% endif %}>Inactive</option>
+    </select>
+    <button type="submit" class="btn">Filter</button>
+  </form>
+</div>
+
+{% if tenants %}
+<table class="data">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Slug</th>
+      <th>Plan</th>
+      <th>Locations</th>
+      <th>Users</th>
+      <th>Status</th>
+      <th>Created</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for t in tenants %}
+    <tr>
+      <td>
+        <a href="{{ url_for('admin_panel.tenant_detail', tenant_id=t._id|string) }}">
+          {{ t.name or '(unnamed)' }}
+        </a>
+        <div style="font-size:.75rem; color:#64748b;">{{ t.email or '' }}</div>
+      </td>
+      <td><code style="color:#94a3b8;">{{ t.slug }}</code></td>
+      <td>
+        {% if t.plan and t.plan != '—' %}
+          <span class="badge muted">{{ t.plan }}</span>
+        {% else %}
+          <span style="color:#64748b;">—</span>
+        {% endif %}
+      </td>
+      <td>{{ t.shops_count }}</td>
+      <td>{{ t.users_count }}</td>
+      <td>
+        {% if t.status == 'active' %}
+          <span class="badge ok">Active</span>
+        {% else %}
+          <span class="badge bad">{{ t.status or 'inactive' }}</span>
+        {% endif %}
+      </td>
+      <td style="color:#64748b; font-size:.8rem;">
+        {{ t.created_at.strftime('%Y-%m-%d') if t.created_at else '' }}
+      </td>
+      <td style="text-align:right;">
+        <a class="btn" href="{{ url_for('admin_panel.tenant_detail', tenant_id=t._id|string) }}">Open</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">No tenants match the current filter.</div>
+{% endif %}
+{% endblock %}

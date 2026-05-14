@@ -1,0 +1,164 @@
+{% extends "admin_panel/_shell.html" %}
+{% set active = "tenants" %}
+
+{% block content %}
+<div class="crumbs">
+  <a href="{{ url_for('admin_panel.tenants_list') }}">Tenants</a>
+  &nbsp;/&nbsp; {{ tenant.name or tenant.slug }}
+</div>
+
+<div class="page-head">
+  <h2>
+    {{ tenant.name or '(unnamed)' }}
+    {% if tenant.status == 'active' %}
+      <span class="badge ok" style="margin-left:.5rem; vertical-align:middle;">Active</span>
+    {% else %}
+      <span class="badge bad" style="margin-left:.5rem; vertical-align:middle;">{{ tenant.status or 'inactive' }}</span>
+    {% endif %}
+  </h2>
+  <form method="post"
+        action="{{ url_for('admin_panel.tenant_toggle_active', tenant_id=tenant._id|string) }}"
+        class="inline-form"
+        onsubmit="return confirm('{{ 'Deactivate' if tenant.status == 'active' else 'Reactivate' }} tenant {{ tenant.name }}?');">
+    <button type="submit" class="btn {{ 'danger' if tenant.status == 'active' else 'success' }}">
+      {{ 'Deactivate tenant' if tenant.status == 'active' else 'Reactivate tenant' }}
+    </button>
+  </form>
+</div>
+
+<div class="meta-grid">
+  <div><span class="lbl">Slug</span><span class="val"><code>{{ tenant.slug }}</code></span></div>
+  <div><span class="lbl">DB name</span><span class="val"><code>{{ tenant.db_name }}</code></span></div>
+  <div><span class="lbl">Email</span><span class="val">{{ tenant.email or '—' }}</span></div>
+  <div><span class="lbl">Phone</span><span class="val">{{ tenant.phone or '—' }}</span></div>
+  <div><span class="lbl">Address</span><span class="val">{{ tenant.address or '—' }}</span></div>
+  <div><span class="lbl">Timezone</span><span class="val">{{ tenant.timezone or '—' }}</span></div>
+  <div><span class="lbl">Created</span><span class="val">{{ tenant.created_at.strftime('%Y-%m-%d %H:%M') if tenant.created_at else '—' }}</span></div>
+  <div><span class="lbl">Updated</span><span class="val">{{ tenant.updated_at.strftime('%Y-%m-%d %H:%M') if tenant.updated_at else '—' }}</span></div>
+  <div>
+    <span class="lbl">Subscription plan</span>
+    <span class="val">
+      <form method="post"
+            action="{{ url_for('admin_panel.tenant_update_plan', tenant_id=tenant._id|string) }}"
+            class="plan-form">
+        <select name="plan">
+          {% for choice in plan_choices %}
+            <option value="{{ choice }}" {% if tenant.plan == choice %}selected{% endif %}>{{ choice }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="btn">Save</button>
+      </form>
+    </span>
+  </div>
+</div>
+
+<!-- LOCATIONS -->
+<div class="section">
+  <h3>Locations ({{ shops|length }})</h3>
+  {% if shops %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Slug</th>
+        <th>Address</th>
+        <th>Primary</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in shops %}
+      <tr>
+        <td>{{ s.name or '(unnamed)' }}</td>
+        <td><code style="color:#94a3b8;">{{ s.slug }}</code></td>
+        <td style="color:#94a3b8; font-size:.85rem;">{{ s.address or '—' }}</td>
+        <td>
+          {% if s.is_primary %}<span class="badge muted">primary</span>{% endif %}
+        </td>
+        <td>
+          {% if s.is_active %}
+            <span class="badge ok">Active</span>
+          {% else %}
+            <span class="badge bad">Inactive</span>
+          {% endif %}
+        </td>
+        <td style="text-align:right;">
+          <form method="post"
+                action="{{ url_for('admin_panel.shop_toggle_active', shop_id=s._id|string) }}"
+                class="inline-form"
+                onsubmit="return confirm('{{ 'Deactivate' if s.is_active else 'Reactivate' }} location {{ s.name }}?');">
+            <button type="submit" class="btn {{ 'danger' if s.is_active else 'success' }}">
+              {{ 'Deactivate' if s.is_active else 'Reactivate' }}
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No locations for this tenant.</div>
+  {% endif %}
+</div>
+
+<!-- USERS -->
+<div class="section">
+  <h3>Users ({{ users|length }})</h3>
+  {% if users %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Email</th>
+        <th>Role</th>
+        <th>Locations</th>
+        <th>Status</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.name or ((u.first_name or '') ~ ' ' ~ (u.last_name or '')) | trim or '—' }}</td>
+        <td>{{ u.email or '—' }}</td>
+        <td>
+          {% if u.role %}
+            <span class="badge muted">{{ u.role }}</span>
+          {% else %}
+            <span style="color:#64748b;">—</span>
+          {% endif %}
+        </td>
+        <td style="font-size:.8rem; color:#94a3b8;">
+          {% if u.shop_names %}
+            {{ u.shop_names | join(', ') }}
+          {% else %}
+            <span style="color:#64748b;">—</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if u.is_active %}
+            <span class="badge ok">Active</span>
+          {% else %}
+            <span class="badge bad">Inactive</span>
+          {% endif %}
+        </td>
+        <td style="text-align:right;">
+          <form method="post"
+                action="{{ url_for('admin_panel.user_toggle_active', user_id=u._id|string) }}"
+                class="inline-form"
+                onsubmit="return confirm('{{ 'Deactivate' if u.is_active else 'Reactivate' }} user {{ u.email }}?');">
+            <button type="submit" class="btn {{ 'danger' if u.is_active else 'success' }}">
+              {{ 'Deactivate' if u.is_active else 'Reactivate' }}
+            </button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No users for this tenant.</div>
+  {% endif %}
+</div>
+{% endblock %}
