@@ -123,7 +123,125 @@
     color: #cbd5e1;
     margin-top: 4px;
   }
+  .sub-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    align-items: stretch;
+  }
+  .sub-card {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 14px 16px;
+    min-width: 260px;
+    flex: 1 1 280px;
+  }
+  .sub-state-active   { color:#22c55e; }
+  .sub-state-ending   { color:#f59e0b; }
+  .sub-state-expired  { color:#ef4444; }
+  .sub-state-none     { color:#94a3b8; }
+  .sub-form { display:flex; flex-wrap:wrap; gap:.5rem .75rem; align-items:end; }
+  .sub-form label { display:flex; flex-direction:column; font-size:.75rem; color:#94a3b8; gap:2px; }
+  .sub-form input[type="number"], .sub-form input[type="date"], .sub-form select, .sub-form textarea {
+    background:#020617; color:#f1f5f9; border:1px solid #1e293b; border-radius:6px;
+    padding:6px 8px; font-size:.85rem; min-width:140px;
+  }
+  .sub-form textarea { width:100%; min-height:42px; }
+  .sub-form .full { flex-basis:100%; }
+  .sub-quick { display:flex; gap:.5rem; flex-wrap:wrap; margin-bottom:.5rem; }
 </style>
+
+<!-- SUBSCRIPTION -->
+<div class="section">
+  <h3>Subscription</h3>
+  <div class="sub-row">
+    <div class="sub-card">
+      <div class="billing-label">Status</div>
+      <div class="billing-value
+        {% if subscription.state == 'active' %}sub-state-active
+        {% elif subscription.state == 'ending_soon' %}sub-state-ending
+        {% elif subscription.state == 'expired' %}sub-state-expired
+        {% else %}sub-state-none{% endif %}">
+        {% if subscription.state == 'active' %}Active
+        {% elif subscription.state == 'ending_soon' %}Ending soon
+        {% elif subscription.state == 'expired' %}Expired
+        {% else %}—{% endif %}
+      </div>
+      <div class="billing-sub">
+        {% if subscription.until %}
+          Paid until <strong>{{ subscription.until.strftime('%Y-%m-%d %H:%M') }} UTC</strong>
+          {% if subscription.days_left is not none %}
+            · {{ subscription.days_left }} day{{ '' if subscription.days_left == 1 else 's' }} left
+          {% endif %}
+        {% else %}
+          No active subscription period set.
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="sub-card" style="flex:2 1 480px;">
+      <div class="billing-label" style="margin-bottom:.5rem;">Quick extend</div>
+      <div class="sub-quick">
+        {% for m in [1, 3, 6, 12] %}
+        <form method="post"
+              action="{{ url_for('admin_panel.tenant_extend_subscription', tenant_id=tenant._id|string) }}"
+              style="margin:0;">
+          <input type="hidden" name="mode" value="months">
+          <input type="hidden" name="months" value="{{ m }}">
+          <input type="hidden" name="extend_from_current" value="on">
+          <button type="submit" class="btn">+{{ m }} mo</button>
+        </form>
+        {% endfor %}
+        {% if subscription.until %}
+        <form method="post"
+              action="{{ url_for('admin_panel.tenant_clear_subscription', tenant_id=tenant._id|string) }}"
+              onsubmit="return confirm('Clear subscription period for {{ tenant.name }}?');"
+              style="margin:0;">
+          <button type="submit" class="btn danger">Clear period</button>
+        </form>
+        {% endif %}
+      </div>
+
+      <div class="billing-label" style="margin:.75rem 0 .5rem;">Custom extension</div>
+      <form method="post"
+            action="{{ url_for('admin_panel.tenant_extend_subscription', tenant_id=tenant._id|string) }}"
+            class="sub-form">
+        <label>
+          <span>Mode</span>
+          <select name="mode">
+            <option value="days">By days</option>
+            <option value="months" selected>By months</option>
+            <option value="until">Until exact date</option>
+          </select>
+        </label>
+        <label>
+          <span>Days</span>
+          <input type="number" name="days" min="1" max="3650" value="30">
+        </label>
+        <label>
+          <span>Months</span>
+          <input type="number" name="months" min="1" max="120" value="1">
+        </label>
+        <label>
+          <span>Until (UTC date)</span>
+          <input type="date" name="until">
+        </label>
+        <label style="flex-direction:row; align-items:center; gap:6px;">
+          <input type="checkbox" name="extend_from_current" {% if subscription.until and subscription.state != 'expired' %}checked{% endif %}>
+          <span style="color:#cbd5e1;">Stack on top of current end date</span>
+        </label>
+        <label class="full">
+          <span>Note (optional, audit log)</span>
+          <textarea name="note" maxlength="500" placeholder="e.g. Manual payment received via Zelle, invoice #123"></textarea>
+        </label>
+        <div class="full">
+          <button type="submit" class="btn success">Apply extension</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 
 <!-- LOCATIONS -->
 <div class="section">

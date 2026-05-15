@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -183,6 +183,30 @@ def tenant_detail(tenant_id: str):
         "mech_total": mech_active + mech_inactive,
     }
 
+    # Subscription period (manual for now; Stripe will populate this later).
+    sub_until = tenant.get("subscription_until")
+    sub_status = (tenant.get("subscription_status") or "").lower()
+    now = datetime.utcnow()
+    if isinstance(sub_until, datetime):
+        delta = sub_until - now
+        days_left = int(delta.total_seconds() // 86400)
+        if delta.total_seconds() <= 0:
+            sub_state = "expired"
+        elif days_left <= 7:
+            sub_state = "ending_soon"
+        else:
+            sub_state = "active"
+    else:
+        days_left = None
+        sub_state = sub_status or "none"
+
+    subscription = {
+        "until": sub_until,
+        "days_left": days_left,
+        "state": sub_state,
+        "status_raw": sub_status,
+    }
+
     return render_template(
         "admin_panel/tenant_detail.html",
         admin=admin,
@@ -191,6 +215,7 @@ def tenant_detail(tenant_id: str):
         users=users,
         plan_choices=PLAN_CHOICES,
         billing=billing,
+        subscription=subscription,
     )
 
 
@@ -256,6 +281,141 @@ def tenant_update_plan(tenant_id: str):
         extra={"tenant_name": tenant.get("name")},
     )
     flash(f"Plan changed: {old_plan or '—'} → {plan}.", "success")
+    return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
+
+
+# ---------------------------------------------------------------------------
+# Subscription period (manual extension)
+# ---------------------------------------------------------------------------
+
+def _parse_extend_input(form) -> tuple[datetime | None, str]:
+    """
+    Returns (new_paid_until, mode) or (None, "") on invalid input.
+    Modes: "days", "months", "until".
+    """
+    mode = (form.get("mode") or "").strip().lower()
+    now = datetime.utcnow()
+
+    if mode == "days":
+        try:
+            days = int(form.get("days") or "0")
+        except ValueError:
+            return None, ""
+        if days <= 0 or days > 3650:
+            return None, ""
+        return now + timedelta(days=days), "days"
+
+    if mode == "months":
+        try:
+            months = int(form.get("months") or "0")
+        except ValueError:
+            return None, ""
+        if months <= 0 or months > 120:
+            return None, ""
+        # Approx 30 days/month — admin sees the resulting date and can correct.
+        return now + timedelta(days=30 * months), "months"
+
+    if mode == "until":
+        raw = (form.get("until") or "").strip()
+        if not raw:
+            return None, ""
+        try:
+            dt = datetime.strptime(raw, "%Y-%m-%d")
+        except ValueError:
+            return None, ""
+        # Set to end of that day so the tenant has the full day.
+        dt = dt.replace(hour=23, minute=59, second=59, microsecond=0)
+        if dt <= now:
+            return None, ""
+        return dt, "until"
+
+    return None, ""
+
+
+@admin_panel_bp.post("/admin/tenants/<tenant_id>/extend-subscription")
+@admin_required
+def tenant_extend_subscription(tenant_id: str):
+    admin = get_current_admin()
+    master = get_master_db()
+    tid = _oid(tenant_id)
+    tenant = master.tenants.find_one({"_id": tid})
+    if not tenant:
+        abort(404)
+
+    new_until, mode = _parse_extend_input(request.form)
+    if not new_until:
+        flash("Invalid extension input.", "error")
+        return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
+
+    extend_from_current = (request.form.get("extend_from_current") == "on")
+    current_until = tenant.get("subscription_until")
+    if extend_from_current and isinstance(current_until, datetime) and current_until > datetime.utcnow():
+        # Add the same delta on top of the current end date instead of "from now".
+        delta = new_until - datetime.utcnow()
+        new_until = current_until + delta
+
+    note = (request.form.get("note") or "").strip()[:500]
+
+    update = {
+        "subscription_until": new_until,
+        "subscription_status": "active",
+        "updated_at": datetime.utcnow(),
+    }
+    master.tenants.update_one({"_id": tid}, {"$set": update})
+
+    log_admin_action(
+        admin,
+        action="tenant.extend_subscription",
+        target_type="tenant",
+        target_id=tid,
+        before={"subscription_until": current_until},
+        after={"subscription_until": new_until},
+        extra={
+            "tenant_name": tenant.get("name"),
+            "mode": mode,
+            "extend_from_current": extend_from_current,
+            "note": note,
+        },
+    )
+
+    flash(
+        f"Subscription extended until {new_until.strftime('%Y-%m-%d %H:%M')} UTC.",
+        "success",
+    )
+    return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
+
+
+@admin_panel_bp.post("/admin/tenants/<tenant_id>/clear-subscription")
+@admin_required
+def tenant_clear_subscription(tenant_id: str):
+    admin = get_current_admin()
+    master = get_master_db()
+    tid = _oid(tenant_id)
+    tenant = master.tenants.find_one({"_id": tid})
+    if not tenant:
+        abort(404)
+
+    before = tenant.get("subscription_until")
+    master.tenants.update_one(
+        {"_id": tid},
+        {
+            "$set": {
+                "subscription_status": "expired",
+                "updated_at": datetime.utcnow(),
+            },
+            "$unset": {"subscription_until": ""},
+        },
+    )
+    log_admin_action(
+        admin,
+        action="tenant.clear_subscription",
+        target_type="tenant",
+        target_id=tid,
+        before={"subscription_until": before},
+        after={"subscription_until": None},
+        extra={"tenant_name": tenant.get("name")},
+    )
+    flash("Subscription cleared.", "success")
     return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
 
 
