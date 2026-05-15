@@ -21,7 +21,6 @@
     <tr>
       <th>Name</th>
       <th>Slug</th>
-      <th>Plan</th>
       <th>Locations</th>
       <th>Users</th>
       <th>Status</th>
@@ -39,13 +38,6 @@
         <div style="font-size:.75rem; color:#64748b;">{{ t.email or '' }}</div>
       </td>
       <td><code style="color:#94a3b8;">{{ t.slug }}</code></td>
-      <td>
-        {% if t.plan and t.plan != '—' %}
-          <span class="badge muted">{{ t.plan }}</span>
-        {% else %}
-          <span style="color:#64748b;">—</span>
-        {% endif %}
-      </td>
       <td>{{ t.shops_count }}</td>
       <td>{{ t.users_count }}</td>
       <td>

@@ -16,9 +16,11 @@ from app.utils.admin_audit import log_admin_action
 from . import admin_panel_bp
 
 
-# Subscription plans available in the admin UI. Free-form is allowed in DB,
-# but the dropdown limits to these for consistency.
-PLAN_CHOICES = ("trial", "basic", "pro", "enterprise")
+# Per-unit pricing (USD/month). Total monthly cost is computed from the
+# tenant's active counts (locations, full users, mechanics) — no plans.
+PRICE_PER_LOCATION = 100
+PRICE_PER_FULL_USER = 50
+PRICE_PER_MECHANIC = 25
 
 
 def _oid(value: str) -> ObjectId:
@@ -119,7 +121,6 @@ def tenants_list():
         tid = t["_id"]
         t["shops_count"] = master.shops.count_documents({"tenant_id": tid})
         t["users_count"] = master.users.count_documents({"tenant_id": tid})
-        t["plan"] = t.get("plan") or "—"
 
     return render_template(
         "admin_panel/tenants_list.html",
@@ -170,6 +171,11 @@ def tenant_detail(tenant_id: str):
             else:
                 full_inactive += 1
 
+    locations_cost = locations_active * PRICE_PER_LOCATION
+    full_cost = full_active * PRICE_PER_FULL_USER
+    mech_cost = mech_active * PRICE_PER_MECHANIC
+    monthly_total = locations_cost + full_cost + mech_cost
+
     billing = {
         "locations_total": len(shops),
         "locations_active": locations_active,
@@ -181,6 +187,13 @@ def tenant_detail(tenant_id: str):
         "mech_active": mech_active,
         "mech_inactive": mech_inactive,
         "mech_total": mech_active + mech_inactive,
+        "price_per_location": PRICE_PER_LOCATION,
+        "price_per_full_user": PRICE_PER_FULL_USER,
+        "price_per_mechanic": PRICE_PER_MECHANIC,
+        "locations_cost": locations_cost,
+        "full_cost": full_cost,
+        "mech_cost": mech_cost,
+        "monthly_total": monthly_total,
     }
 
     # Subscription period (manual for now; Stripe will populate this later).
@@ -213,7 +226,6 @@ def tenant_detail(tenant_id: str):
         tenant=tenant,
         shops=shops,
         users=users,
-        plan_choices=PLAN_CHOICES,
         billing=billing,
         subscription=subscription,
     )
@@ -244,43 +256,6 @@ def tenant_toggle_active(tenant_id: str):
         extra={"tenant_name": tenant.get("name")},
     )
     flash(f"Tenant '{tenant.get('name')}' is now {new_status}.", "success")
-    return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
-
-
-@admin_panel_bp.post("/admin/tenants/<tenant_id>/plan")
-@admin_required
-def tenant_update_plan(tenant_id: str):
-    admin = get_current_admin()
-    master = get_master_db()
-    tid = _oid(tenant_id)
-    tenant = master.tenants.find_one({"_id": tid})
-    if not tenant:
-        abort(404)
-
-    plan = (request.form.get("plan") or "").strip().lower()
-    if plan not in PLAN_CHOICES:
-        flash("Invalid plan.", "error")
-        return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
-
-    old_plan = tenant.get("plan")
-    if plan == old_plan:
-        flash("Plan unchanged.", "info")
-        return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
-
-    master.tenants.update_one(
-        {"_id": tid},
-        {"$set": {"plan": plan, "updated_at": datetime.utcnow()}},
-    )
-    log_admin_action(
-        admin,
-        action="tenant.update_plan",
-        target_type="tenant",
-        target_id=tid,
-        before={"plan": old_plan},
-        after={"plan": plan},
-        extra={"tenant_name": tenant.get("name")},
-    )
-    flash(f"Plan changed: {old_plan or '—'} → {plan}.", "success")
     return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
 
 

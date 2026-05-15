@@ -35,21 +35,6 @@
   <div><span class="lbl">Timezone</span><span class="val">{{ tenant.timezone or '—' }}</span></div>
   <div><span class="lbl">Created</span><span class="val">{{ tenant.created_at.strftime('%Y-%m-%d %H:%M') if tenant.created_at else '—' }}</span></div>
   <div><span class="lbl">Updated</span><span class="val">{{ tenant.updated_at.strftime('%Y-%m-%d %H:%M') if tenant.updated_at else '—' }}</span></div>
-  <div>
-    <span class="lbl">Subscription plan</span>
-    <span class="val">
-      <form method="post"
-            action="{{ url_for('admin_panel.tenant_update_plan', tenant_id=tenant._id|string) }}"
-            class="plan-form">
-        <select name="plan">
-          {% for choice in plan_choices %}
-            <option value="{{ choice }}" {% if tenant.plan == choice %}selected{% endif %}>{{ choice }}</option>
-          {% endfor %}
-        </select>
-        <button type="submit" class="btn">Save</button>
-      </form>
-    </span>
-  </div>
 </div>
 
 <!-- BILLING SUMMARY -->
@@ -60,34 +45,36 @@
       <div class="billing-label">Locations</div>
       <div class="billing-value">{{ billing.locations_active }}</div>
       <div class="billing-sub">
-        active
+        active × ${{ billing.price_per_location }}/mo = <strong>${{ '{:,}'.format(billing.locations_cost) }}</strong>
         {% if billing.locations_inactive %}
           · <span style="color:#94a3b8;">{{ billing.locations_inactive }} inactive</span>
         {% endif %}
-        · total {{ billing.locations_total }}
       </div>
     </div>
     <div class="billing-card">
       <div class="billing-label">Full users</div>
       <div class="billing-value">{{ billing.full_active }}</div>
       <div class="billing-sub">
-        active
+        active × ${{ billing.price_per_full_user }}/mo = <strong>${{ '{:,}'.format(billing.full_cost) }}</strong>
         {% if billing.full_inactive %}
           · <span style="color:#94a3b8;">{{ billing.full_inactive }} inactive</span>
         {% endif %}
-        · total {{ billing.full_total }}
       </div>
     </div>
     <div class="billing-card">
       <div class="billing-label">Mechanics</div>
       <div class="billing-value">{{ billing.mech_active }}</div>
       <div class="billing-sub">
-        active (mechanic + senior_mechanic)
+        active × ${{ billing.price_per_mechanic }}/mo = <strong>${{ '{:,}'.format(billing.mech_cost) }}</strong>
         {% if billing.mech_inactive %}
           · <span style="color:#94a3b8;">{{ billing.mech_inactive }} inactive</span>
         {% endif %}
-        · total {{ billing.mech_total }}
       </div>
+    </div>
+    <div class="billing-card" style="background:#0b3b27; border-color:#166534;">
+      <div class="billing-label" style="color:#86efac;">Monthly total</div>
+      <div class="billing-value" style="color:#bbf7d0;">${{ '{:,}'.format(billing.monthly_total) }}</div>
+      <div class="billing-sub" style="color:#86efac;">based on currently active counts</div>
     </div>
   </div>
 </div>
