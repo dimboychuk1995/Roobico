@@ -88,8 +88,9 @@ def admin_send_invoice(tenant_id: str):
         },
     )
     flash(
-        f"Invoice sent: ${result['amount_cents']/100:,.2f} "
-        f"(Stripe id {result['invoice_id']}).",
+        f"Invoice created: ${result['amount_cents']/100:,.2f} "
+        f"(Stripe id {result['invoice_id']}). "
+        + (f"Hosted page: {result['hosted_url']}" if result.get('hosted_url') else ""),
         "success",
     )
     return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
