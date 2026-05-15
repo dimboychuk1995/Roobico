@@ -149,6 +149,40 @@ def tenant_detail(tenant_id: str):
     for u in users:
         u["shop_names"] = [shop_name_by_id.get(sid, "?") for sid in (u.get("shop_ids") or [])]
 
+    # Billing breakdown. Mechanics (mechanic + senior_mechanic) are billed
+    # separately from "full" users (everyone else with a non-mechanic role).
+    MECHANIC_ROLES = {"mechanic", "senior_mechanic"}
+    locations_active = sum(1 for s in shops if s.get("is_active"))
+    locations_inactive = len(shops) - locations_active
+
+    full_active = full_inactive = mech_active = mech_inactive = 0
+    for u in users:
+        role = (u.get("role") or "").strip().lower()
+        is_active = bool(u.get("is_active"))
+        if role in MECHANIC_ROLES:
+            if is_active:
+                mech_active += 1
+            else:
+                mech_inactive += 1
+        else:
+            if is_active:
+                full_active += 1
+            else:
+                full_inactive += 1
+
+    billing = {
+        "locations_total": len(shops),
+        "locations_active": locations_active,
+        "locations_inactive": locations_inactive,
+        "users_total": len(users),
+        "full_active": full_active,
+        "full_inactive": full_inactive,
+        "full_total": full_active + full_inactive,
+        "mech_active": mech_active,
+        "mech_inactive": mech_inactive,
+        "mech_total": mech_active + mech_inactive,
+    }
+
     return render_template(
         "admin_panel/tenant_detail.html",
         admin=admin,
@@ -156,6 +190,7 @@ def tenant_detail(tenant_id: str):
         shops=shops,
         users=users,
         plan_choices=PLAN_CHOICES,
+        billing=billing,
     )
 
 

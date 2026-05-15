@@ -52,6 +52,79 @@
   </div>
 </div>
 
+<!-- BILLING SUMMARY -->
+<div class="section">
+  <h3>Billing summary</h3>
+  <div class="billing-grid">
+    <div class="billing-card">
+      <div class="billing-label">Locations</div>
+      <div class="billing-value">{{ billing.locations_active }}</div>
+      <div class="billing-sub">
+        active
+        {% if billing.locations_inactive %}
+          · <span style="color:#94a3b8;">{{ billing.locations_inactive }} inactive</span>
+        {% endif %}
+        · total {{ billing.locations_total }}
+      </div>
+    </div>
+    <div class="billing-card">
+      <div class="billing-label">Full users</div>
+      <div class="billing-value">{{ billing.full_active }}</div>
+      <div class="billing-sub">
+        active
+        {% if billing.full_inactive %}
+          · <span style="color:#94a3b8;">{{ billing.full_inactive }} inactive</span>
+        {% endif %}
+        · total {{ billing.full_total }}
+      </div>
+    </div>
+    <div class="billing-card">
+      <div class="billing-label">Mechanics</div>
+      <div class="billing-value">{{ billing.mech_active }}</div>
+      <div class="billing-sub">
+        active (mechanic + senior_mechanic)
+        {% if billing.mech_inactive %}
+          · <span style="color:#94a3b8;">{{ billing.mech_inactive }} inactive</span>
+        {% endif %}
+        · total {{ billing.mech_total }}
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .billing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 1rem;
+    margin-top: .25rem;
+  }
+  .billing-card {
+    background: #0f172a;
+    border: 1px solid #1e293b;
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .billing-label {
+    font-size: .75rem;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: #94a3b8;
+  }
+  .billing-value {
+    font-size: 2rem;
+    font-weight: 700;
+    line-height: 1.1;
+    margin-top: 4px;
+    color: #f1f5f9;
+  }
+  .billing-sub {
+    font-size: .8rem;
+    color: #cbd5e1;
+    margin-top: 4px;
+  }
+</style>
+
 <!-- LOCATIONS -->
 <div class="section">
   <h3>Locations ({{ shops|length }})</h3>
