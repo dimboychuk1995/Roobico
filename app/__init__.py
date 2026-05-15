@@ -173,6 +173,44 @@ def create_app():
             session.clear()
             return
 
+        # защита: если активный shop стал inactive — переключаем на первый
+        # активный из allowed; если активных нет — обнуляем shop_id, чтобы
+        # никакой раздел не работал с отключённой локацией.
+        active_shop_raw = session.get("shop_id")
+        if active_shop_raw:
+            try:
+                active_shop_oid = ObjectId(str(active_shop_raw))
+            except Exception:
+                active_shop_oid = None
+
+            allowed_oids_guard = []
+            for sid in (session.get("shop_ids") or []):
+                try:
+                    allowed_oids_guard.append(ObjectId(str(sid)))
+                except Exception:
+                    pass
+
+            current_active = None
+            if active_shop_oid is not None:
+                current_active = master.shops.find_one(
+                    {"_id": active_shop_oid, "tenant_id": tenant["_id"], "is_active": True},
+                    {"_id": 1},
+                )
+
+            if current_active is None:
+                fallback = None
+                if allowed_oids_guard:
+                    fallback = master.shops.find_one(
+                        {"_id": {"$in": allowed_oids_guard}, "tenant_id": tenant["_id"], "is_active": True},
+                        {"_id": 1},
+                        sort=[("created_at", 1)],
+                    )
+                if fallback is not None:
+                    session["shop_id"] = str(fallback["_id"])
+                else:
+                    session.pop("shop_id", None)
+                session.modified = True
+
         g.user = user
         g.tenant = tenant
 

@@ -110,7 +110,11 @@ def _render_app_page(template_name: str, active_page: str, **ctx):
 
     shop_options = []
     if allowed_oids:
-        for s in master.shops.find({"tenant_id": tenant["_id"], "_id": {"$in": allowed_oids}}).sort("created_at", 1):
+        for s in master.shops.find({
+            "tenant_id": tenant["_id"],
+            "_id": {"$in": allowed_oids},
+            "is_active": True,
+        }).sort("created_at", 1):
             shop_options.append({"id": str(s["_id"]), "name": s.get("name") or "—"})
 
     # ✅ ensure active shop in session
@@ -227,6 +231,10 @@ def set_active_shop():
     shop = master.shops.find_one({"_id": shop_oid, "tenant_id": tenant["_id"]})
     if not shop:
         flash("Shop not found.", "error")
+        return redirect(request.referrer or url_for("dashboard.dashboard"))
+
+    if not shop.get("is_active", True):
+        flash("This location is inactive.", "error")
         return redirect(request.referrer or url_for("dashboard.dashboard"))
 
     session["shop_id"] = shop_id_raw
