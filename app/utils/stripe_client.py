@@ -216,6 +216,9 @@ def create_billing_invoice(
         customer=customer_id,
         auto_advance=True,                 # finalize automatically
         automatic_tax={"enabled": automatic_tax_enabled},
+        # Pull the pending InvoiceItem we just created. Stripe API >= 2022-08-01
+        # defaults to "exclude", which silently produced $0 invoices.
+        pending_invoice_items_behavior="include",
         metadata={
             "tenant_id": str(tenant["_id"]),
             "tenant_slug": tenant.get("slug") or "",
