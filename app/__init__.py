@@ -1,9 +1,30 @@
 import os
 import time
+from datetime import datetime
 
-from flask import Flask, g, session, request, redirect
+from flask import Flask, g, session, request, redirect, flash, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 from bson import ObjectId
+
+
+def _is_tenant_subscription_blocked(tenant: dict) -> bool:
+    """
+    True → tenant must NOT be allowed into the app.
+    Rule:
+      - subscription_status == "expired" → blocked.
+      - subscription_until is datetime and is in the past → blocked.
+      - otherwise → allowed (tenants without any subscription field set
+        are treated as not yet billed and pass through).
+    """
+    if not tenant:
+        return False
+    status = (tenant.get("subscription_status") or "").lower()
+    if status == "expired":
+        return True
+    until = tenant.get("subscription_until")
+    if isinstance(until, datetime) and until <= datetime.utcnow():
+        return True
+    return False
 
 from app.config import Config
 from app.extensions import init_mongo, get_master_db
@@ -172,6 +193,22 @@ def create_app():
         if user.get("tenant_id") != tenant["_id"]:
             session.clear()
             return
+
+        # защита: подписка истекла → выкидываем из сессии и редиректим на
+        # public login с сообщением. Платёжных endpoints для самообслуживания
+        # пока нет — оплата идёт через админку, после чего тенант сможет
+        # зайти снова.
+        if _is_tenant_subscription_blocked(tenant):
+            session.clear()
+            flash(
+                "Your subscription has expired. Please contact Roobico support to renew.",
+                "error",
+            )
+            from app.utils.hosts import public_url
+            target = public_url("main.index")
+            if not target.startswith("http"):
+                target = url_for("main.index")
+            return redirect(target)
 
         # защита: если активный shop стал inactive — переключаем на первый
         # активный из allowed; если активных нет — обнуляем shop_id, чтобы

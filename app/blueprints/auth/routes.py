@@ -71,6 +71,15 @@ def login():
         flash("Tenant not found or inactive.", "error")
         return redirect(url_for("main.index"))
 
+    # Subscription gate: expired tenants cannot log in.
+    from app import _is_tenant_subscription_blocked
+    if _is_tenant_subscription_blocked(tenant):
+        flash(
+            "Your subscription has expired. Please contact Roobico support to renew.",
+            "error",
+        )
+        return redirect(url_for("main.index"))
+
     # ✅ only shop_ids from DB
     shop_ids = user.get("shop_ids") if isinstance(user.get("shop_ids"), list) else []
     shop_ids_str = [str(x) for x in shop_ids]
