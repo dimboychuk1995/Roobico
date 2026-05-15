@@ -220,6 +220,24 @@ def tenant_detail(tenant_id: str):
         "status_raw": sub_status,
     }
 
+    # Stripe-side billing info (lightweight: read what the webhooks have
+    # cached on the tenant doc; no live Stripe API call here so the page
+    # stays fast even if Stripe is down).
+    stripe_info = {
+        "configured": bool(__import__("flask").current_app.config.get("STRIPE_SECRET_KEY")),
+        "customer_id": tenant.get("stripe_customer_id"),
+        "default_card": tenant.get("stripe_default_card"),
+        "last_invoice_id": tenant.get("last_invoice_id"),
+        "last_invoice_amount_cents": tenant.get("last_invoice_amount_cents"),
+        "last_paid_at": tenant.get("last_paid_at"),
+        "test_mode": bool(__import__("flask").current_app.config.get("STRIPE_TEST_MODE")),
+    }
+    if stripe_info["customer_id"]:
+        base = "https://dashboard.stripe.com" + ("/test" if stripe_info["test_mode"] else "")
+        stripe_info["customer_url"] = f"{base}/customers/{stripe_info['customer_id']}"
+        if stripe_info["last_invoice_id"]:
+            stripe_info["invoice_url"] = f"{base}/invoices/{stripe_info['last_invoice_id']}"
+
     return render_template(
         "admin_panel/tenant_detail.html",
         admin=admin,
@@ -228,6 +246,7 @@ def tenant_detail(tenant_id: str):
         users=users,
         billing=billing,
         subscription=subscription,
+        stripe_info=stripe_info,
     )
 
 

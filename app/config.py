@@ -74,3 +74,13 @@ class Config:
     # ── Mapbox (Address autocomplete) ───────────────────────────────────────────
     # Public token (pk.*) — exposed to the browser for the Search Box API.
     MAPBOX_ACCESS_TOKEN = os.environ.get("MAPBOX_ACCESS_TOKEN", "")
+
+    # ── Stripe (subscription billing) ────────────────────────────────────────
+    # Test/live keys. STRIPE_WEBHOOK_SECRET is required to verify webhook
+    # signatures — without it the /billing/stripe/webhook endpoint rejects
+    # everything.
+    STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+    STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
+    STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+    # When true the dashboard URLs we build link to test-mode Stripe.
+    STRIPE_TEST_MODE = os.environ.get("STRIPE_SECRET_KEY", "").startswith("sk_test_")

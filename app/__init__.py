@@ -124,7 +124,10 @@ def create_app():
             return None
 
         is_public_endpoint = endpoint in PUBLIC_HOST_ENDPOINTS
-        is_admin_endpoint = endpoint.startswith(f"{ADMIN_BLUEPRINT_NAME}.")
+        is_admin_endpoint = (
+            endpoint.startswith(f"{ADMIN_BLUEPRINT_NAME}.")
+            or endpoint.startswith("billing.admin_")
+        )
         # `main.index` is the literal `/` route — it dispatches by Host
         # itself (renders admin placeholder on the admin host), so we must
         # let it through on every known host instead of redirecting it.
@@ -300,6 +303,7 @@ def create_app():
     from app.blueprints.import_export import import_export_bp
     from app.blueprints.customer_portal import customer_portal_bp
     from app.blueprints.admin_panel import admin_panel_bp
+    from app.blueprints.billing import billing_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(reports_bp)
@@ -316,5 +320,6 @@ def create_app():
     app.register_blueprint(import_export_bp)
     app.register_blueprint(customer_portal_bp)
     app.register_blueprint(admin_panel_bp)
+    app.register_blueprint(billing_bp)
 
     return app

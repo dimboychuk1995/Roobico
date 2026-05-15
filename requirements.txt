@@ -10,3 +10,4 @@ PyMuPDF
 rapidfuzz>=3.9
 azure-ai-documentintelligence>=1.0.0
 gunicorn>=21.0.0
+stripe>=11.0.0

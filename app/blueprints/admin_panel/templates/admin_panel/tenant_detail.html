@@ -230,6 +230,99 @@
   </div>
 </div>
 
+<!-- STRIPE -->
+<div class="section">
+  <h3>Stripe</h3>
+  {% if not stripe_info.configured %}
+    <div class="billing-sub" style="color:#fca5a5;">
+      Stripe is not configured (STRIPE_SECRET_KEY missing). Add it to the
+      server <code>.env</code> and restart the service.
+    </div>
+  {% else %}
+  <div class="sub-row">
+    <div class="sub-card">
+      <div class="billing-label">Customer</div>
+      {% if stripe_info.customer_id %}
+        <div class="billing-sub" style="font-size:.9rem;">
+          <code>{{ stripe_info.customer_id }}</code>
+          {% if stripe_info.test_mode %}
+            <span class="badge muted" style="margin-left:.5rem;">test mode</span>
+          {% endif %}
+        </div>
+        <div class="billing-sub" style="margin-top:.4rem;">
+          <a href="{{ stripe_info.customer_url }}" target="_blank" rel="noopener">Open in Stripe Dashboard ↗</a>
+        </div>
+      {% else %}
+        <div class="billing-sub">
+          Not yet created. Will be created automatically on first invoice.
+        </div>
+      {% endif %}
+
+      <div class="billing-label" style="margin-top:.8rem;">Default card</div>
+      {% if stripe_info.default_card and stripe_info.default_card.last4 %}
+        <div class="billing-sub" style="font-size:.9rem; color:#e2e8f0;">
+          {{ stripe_info.default_card.brand|capitalize }} •••• {{ stripe_info.default_card.last4 }}
+          · exp {{ stripe_info.default_card.exp_month }}/{{ stripe_info.default_card.exp_year }}
+        </div>
+      {% else %}
+        <div class="billing-sub">No saved card. Send invoice → tenant adds card on hosted page.</div>
+      {% endif %}
+
+      {% if stripe_info.last_invoice_id %}
+        <div class="billing-label" style="margin-top:.8rem;">Last invoice</div>
+        <div class="billing-sub" style="font-size:.9rem;">
+          <code>{{ stripe_info.last_invoice_id }}</code>
+          {% if stripe_info.last_invoice_amount_cents %}
+            · ${{ '%.2f'|format(stripe_info.last_invoice_amount_cents / 100) }}
+          {% endif %}
+          {% if stripe_info.last_paid_at %}
+            · paid {{ stripe_info.last_paid_at.strftime('%Y-%m-%d %H:%M') }} UTC
+          {% endif %}
+        </div>
+        <div class="billing-sub" style="margin-top:.3rem;">
+          <a href="{{ stripe_info.invoice_url }}" target="_blank" rel="noopener">View invoice in Stripe ↗</a>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="sub-card" style="flex:2 1 480px;">
+      <div class="billing-label" style="margin-bottom:.5rem;">Charge / invoice this tenant now</div>
+      <div class="billing-sub" style="margin-bottom:.6rem;">
+        Computed amount based on current active counts:
+        <strong style="color:#bbf7d0;">${{ '{:,}'.format(billing.monthly_total) }}/mo</strong>
+        ({{ billing.locations_active }} loc + {{ billing.full_active }} full + {{ billing.mech_active }} mech).
+      </div>
+
+      <div class="sub-quick">
+        <form method="post"
+              action="{{ url_for('billing.admin_send_invoice', tenant_id=tenant._id|string) }}"
+              onsubmit="return confirm('Send a Stripe invoice for ${{ '{:,}'.format(billing.monthly_total) }} to {{ tenant.name }}? They will receive an email with a hosted payment page.');"
+              style="margin:0;">
+          <button type="submit" class="btn success" {% if billing.monthly_total <= 0 %}disabled{% endif %}>
+            Send invoice (hosted page)
+          </button>
+        </form>
+
+        <form method="post"
+              action="{{ url_for('billing.admin_charge_now', tenant_id=tenant._id|string) }}"
+              onsubmit="return confirm('Charge the saved card on file for ${{ '{:,}'.format(billing.monthly_total) }}? This bills immediately.');"
+              style="margin:0;">
+          <button type="submit" class="btn"
+                  {% if billing.monthly_total <= 0 or not (stripe_info.default_card and stripe_info.default_card.last4) %}disabled{% endif %}>
+            Charge saved card
+          </button>
+        </form>
+      </div>
+
+      <div class="billing-sub" style="margin-top:.6rem; font-size:.75rem;">
+        On payment success the webhook automatically extends
+        <code>subscription_until</code> by 30 days and flips status to active.
+      </div>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
 <!-- LOCATIONS -->
 <div class="section">
   <h3>Locations ({{ shops|length }})</h3>
