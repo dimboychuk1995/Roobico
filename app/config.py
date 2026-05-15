@@ -82,5 +82,9 @@ class Config:
     STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
     STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
     STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+    # Toggle Stripe Tax on invoices. Off by default (sandbox can't enable
+    # it without a verified head office address). Set STRIPE_AUTOMATIC_TAX=true
+    # in env once the live account is ready.
+    STRIPE_AUTOMATIC_TAX = os.environ.get("STRIPE_AUTOMATIC_TAX", "false")
     # When true the dashboard URLs we build link to test-mode Stripe.
     STRIPE_TEST_MODE = os.environ.get("STRIPE_SECRET_KEY", "").startswith("sk_test_")

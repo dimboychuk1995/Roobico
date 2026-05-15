@@ -205,10 +205,17 @@ def create_billing_invoice(
     )
 
     # Step 2: invoice that consumes pending items.
+    # NOTE: automatic_tax is intentionally OFF for now — Stripe Tax requires
+    # a verified business head office address which sandbox/test accounts
+    # often lack. Re-enable by setting STRIPE_AUTOMATIC_TAX=true once the
+    # live account is fully onboarded.
+    automatic_tax_enabled = (
+        (current_app.config.get("STRIPE_AUTOMATIC_TAX") or "").lower() == "true"
+    )
     invoice_kwargs = dict(
         customer=customer_id,
         auto_advance=True,                 # finalize automatically
-        automatic_tax={"enabled": True},   # Stripe Tax computes sales tax
+        automatic_tax={"enabled": automatic_tax_enabled},
         metadata={
             "tenant_id": str(tenant["_id"]),
             "tenant_slug": tenant.get("slug") or "",
