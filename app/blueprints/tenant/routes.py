@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 import hashlib
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from bson import ObjectId
 from flask import request, jsonify
@@ -523,6 +523,9 @@ def register_tenant():
     shop_db_name = make_shop_db_name(tenant_slug, first_shop_slug)
 
     created_at = utcnow()
+    # Free 30-day trial on signup. After this date, billing kicks in (the
+    # subscription gate in app/__init__.py blocks login when expired).
+    trial_until = created_at + timedelta(days=30)
     tenant_id = None
     created_tenant_db = False
     created_shop_db = False
@@ -544,6 +547,9 @@ def register_tenant():
             "billing_address": company_address,
             "timezone": "America/Chicago",
             "status": "active",
+            "subscription_status": "trial",
+            "subscription_until": trial_until,
+            "trial_started_at": created_at,
             "created_at": created_at,
             "updated_at": created_at,
         }
