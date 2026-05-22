@@ -15,13 +15,13 @@ function Invoke-Ssh($cmd) {
 }
 
 Write-Host ">>> Pulling $Branch on server..." -ForegroundColor Cyan
-Invoke-Ssh "cd $AppDir && git fetch --all --prune && git checkout $Branch && git reset --hard origin/$Branch"
+Invoke-Ssh "cd $AppDir && sudo -u deploy git fetch --all --prune && sudo -u deploy git checkout $Branch && sudo -u deploy git reset --hard origin/$Branch"
 
 Write-Host ">>> Installing requirements..." -ForegroundColor Cyan
-Invoke-Ssh "cd $AppDir && ./venv/bin/pip install --upgrade pip >/dev/null && ./venv/bin/pip install -r requirements.txt"
+Invoke-Ssh "cd $AppDir && sudo -u deploy ./venv/bin/pip install --upgrade pip >/dev/null && sudo -u deploy ./venv/bin/pip install -r requirements.txt"
 
 Write-Host ">>> Clearing Python bytecode cache..." -ForegroundColor Cyan
-Invoke-Ssh "cd $AppDir && find . -path ./venv -prune -o -type d -name __pycache__ -print -exec rm -rf {} + 2>/dev/null; find . -path ./venv -prune -o -type f -name '*.pyc' -print -delete 2>/dev/null; true"
+Invoke-Ssh "cd $AppDir && sudo -u deploy bash -lc 'find . -path ./venv -prune -o -type d -name __pycache__ -print -exec rm -rf {} + 2>/dev/null; find . -path ./venv -prune -o -type f -name \"*.pyc\" -print -delete 2>/dev/null; true'"
 
 Write-Host ">>> Restarting $Service..." -ForegroundColor Cyan
 Invoke-Ssh "systemctl restart $Service && sleep 1 && systemctl is-active $Service"
