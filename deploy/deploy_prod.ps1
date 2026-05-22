@@ -21,7 +21,7 @@ Write-Host ">>> Installing requirements..." -ForegroundColor Cyan
 Invoke-Ssh "cd $AppDir && sudo -u deploy ./venv/bin/pip install --upgrade pip >/dev/null && sudo -u deploy ./venv/bin/pip install -r requirements.txt"
 
 Write-Host ">>> Clearing Python bytecode cache..." -ForegroundColor Cyan
-Invoke-Ssh "cd $AppDir && sudo -u deploy bash -lc 'find . -path ./venv -prune -o -type d -name __pycache__ -print -exec rm -rf {} + 2>/dev/null; find . -path ./venv -prune -o -type f -name \"*.pyc\" -print -delete 2>/dev/null; true'"
+Invoke-Ssh "cd $AppDir && sudo -u deploy find . -path ./venv -prune -o -type d -name __pycache__ -exec rm -rf {} + ; true"
 
 Write-Host ">>> Restarting $Service..." -ForegroundColor Cyan
 Invoke-Ssh "systemctl restart $Service && sleep 1 && systemctl is-active $Service"
