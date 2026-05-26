@@ -30,6 +30,7 @@ CUSTOMER_FILTER_TABS = {
     "sales_summary",
     "payments_summary",
     "customer_balances",
+    "general_revenue",
 }
 
 VENDOR_FILTER_TABS = {
@@ -805,13 +806,20 @@ def _wo_parts_cost(wo: dict) -> float:
     return _round2(cost_total)
 
 
-def _report_general_revenue(shop_db, shop_id, date_ctx, chart_bucket="month"):
+def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=None, exclude_customer_ids=None, chart_bucket="month"):
     # --- Sales (Work Orders) ---
     wo_query = {
         "shop_id": shop_id,
         "is_active": True,
     }
     wo_query = _append_and(wo_query, _build_date_filter(date_ctx, field="work_order_date", fallback_field="created_at"))
+
+    if include_customer_ids:
+        wo_query = _append_and(wo_query, {"customer_id": {"$in": include_customer_ids}})
+    if exclude_customer_ids:
+        wo_query = _append_and(wo_query, {"customer_id": {"$nin": exclude_customer_ids}})
+
+    customer_filter_active = bool(include_customer_ids or exclude_customer_ids)
 
     wo_count = 0
     sales_labor = 0.0
@@ -914,7 +922,9 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, chart_bucket="month"):
     }
     po_query = _append_and(po_query, _build_date_filter(date_ctx, field="order_date", fallback_field="created_at"))
 
-    po_orders = list(shop_db.parts_orders.find(po_query, {
+    # When a customer filter is active, Parts Orders cannot be attributed to
+    # specific customers, so we skip them to keep the report consistent.
+    po_orders = [] if customer_filter_active else list(shop_db.parts_orders.find(po_query, {
         "_id": 1,
         "items": 1,
         "non_inventory_amounts": 1,
@@ -1302,6 +1312,8 @@ def _build_standard_reports_context(selected_tab: str, args, *, skip_report_data
             shop_db,
             shop["_id"],
             date_ctx,
+            include_customer_ids,
+            exclude_customer_ids,
             chart_bucket=chart_bucket,
         )
 

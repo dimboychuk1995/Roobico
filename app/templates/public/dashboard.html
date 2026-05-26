@@ -117,6 +117,53 @@
   </div>
 
   <div class="col-12 col-lg-8">
+    <div class="card mb-3 dashboard-quick-actions-card">
+      <div class="card-body">
+        <div class="row g-3 dashboard-quick-actions">
+          <div class="col-6 col-md-3">
+            <a class="btn dashboard-quick-action-btn dashboard-quick-action-wo"
+               href="{{ url_for('work_orders.work_order_details_page') }}"
+               target="_blank" rel="noopener">
+              <span class="dashboard-quick-action-icon-wrap">
+                <i class="bi bi-clipboard-plus-fill dashboard-quick-action-icon"></i>
+              </span>
+              <span class="dashboard-quick-action-label">Create WO</span>
+            </a>
+          </div>
+          <div class="col-6 col-md-3">
+            <a class="btn dashboard-quick-action-btn dashboard-quick-action-po"
+               href="{{ url_for('parts.parts_page', tab='orders', new=1) }}"
+               target="_blank" rel="noopener">
+              <span class="dashboard-quick-action-icon-wrap">
+                <i class="bi bi-box-seam-fill dashboard-quick-action-icon"></i>
+              </span>
+              <span class="dashboard-quick-action-label">Create PO</span>
+            </a>
+          </div>
+          <div class="col-6 col-md-3">
+            <a class="btn dashboard-quick-action-btn dashboard-quick-action-customer"
+               href="{{ url_for('customers.customers_page', new=1) }}"
+               target="_blank" rel="noopener">
+              <span class="dashboard-quick-action-icon-wrap">
+                <i class="bi bi-person-badge-fill dashboard-quick-action-icon"></i>
+              </span>
+              <span class="dashboard-quick-action-label">New Customer</span>
+            </a>
+          </div>
+          <div class="col-6 col-md-3">
+            <a class="btn dashboard-quick-action-btn dashboard-quick-action-vendor"
+               href="{{ url_for('vendors.vendors_page', new=1) }}"
+               target="_blank" rel="noopener">
+              <span class="dashboard-quick-action-icon-wrap">
+                <i class="bi bi-shop-window dashboard-quick-action-icon"></i>
+              </span>
+              <span class="dashboard-quick-action-label">New Vendor</span>
+            </a>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="card mb-3">
       <div class="card-body dashboard-async-card" data-block="goal-progress">
         <div class="dashboard-card-loader"><span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span></div>

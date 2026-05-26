@@ -82,7 +82,7 @@
               <thead>
                 <tr>
                   <th data-sort-field="wo_number">WO #</th>
-                  <th>Customer</th>
+                  <th data-sort-field="customer">Customer</th>
                   <th data-sort-field="work_order_date">Date</th>
                   <th>Unit</th>
                   <th class="text-end">Mileage</th>
@@ -114,17 +114,18 @@
                       {% elif w.is_in_progress %}
                         <span class="badge bg-info text-dark">In Progress</span>
                       {% else %}
-                        <button
-                          type="button"
-                          class="badge bg-warning text-dark border-0 js-mark-paid"
-                          data-work-order-id="{{ w.id }}"
-                          title="Click to mark as paid"
-                        >
-                          Unpaid
-                        </button>
+                        <span class="badge bg-warning text-dark">Unpaid</span>
                       {% endif %}
                     </td>
                     <td class="text-end text-nowrap">
+                      {% if not w.is_paid %}
+                        <button type="button"
+                                class="btn btn-outline-success btn-sm me-1 js-mark-paid"
+                                data-work-order-id="{{ w.id }}"
+                                title="Record payment">
+                          <i class="bi bi-cash-coin me-1"></i>Pay
+                        </button>
+                      {% endif %}
                       <a class="btn btn-outline-secondary btn-sm me-1" href="{{ url_for('work_orders.api_download_work_order_pdf', work_order_id=w.id) }}" target="_blank" rel="noopener noreferrer" title="Download PDF">
                         &#128196;
                       </a>
@@ -277,7 +278,7 @@
               <thead>
                 <tr>
                   <th data-sort-field="wo_number">Estimate #</th>
-                  <th>Customer</th>
+                  <th data-sort-field="customer">Customer</th>
                   <th data-sort-field="work_order_date">Date</th>
                   <th>Unit</th>
                   <th data-sort-field="status">Status</th>
@@ -306,7 +307,7 @@
               <thead>
                 <tr>
                   <th data-sort-field="wo_number">Estimate #</th>
-                  <th>Customer</th>
+                  <th data-sort-field="customer">Customer</th>
                   <th data-sort-field="work_order_date">Date</th>
                   <th>Unit</th>
                   <th data-sort-field="status">Status</th>

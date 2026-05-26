@@ -1086,13 +1086,29 @@ def get_work_orders_list(
 
     totals_summary = get_work_orders_totals(shop_db, query)
 
-    rows, pagination = paginate_find(
-        shop_db.work_orders,
-        query,
-        get_sort_params(request.args, [("work_order_date", -1), ("created_at", -1)], ["wo_number", "status", "work_order_date", "grand_total", "created_at"]),
-        page,
-        per_page,
+    sort_params = get_sort_params(
+        request.args,
+        [("work_order_date", -1), ("created_at", -1)],
+        ["wo_number", "status", "work_order_date", "grand_total", "created_at", "customer"],
     )
+
+    if sort_params and sort_params[0][0] == "customer":
+        rows, pagination = _paginate_by_customer(
+            shop_db,
+            shop_db.work_orders,
+            query,
+            page,
+            per_page,
+            sort_params[0][1],
+        )
+    else:
+        rows, pagination = paginate_find(
+            shop_db.work_orders,
+            query,
+            sort_params,
+            page,
+            per_page,
+        )
 
     customer_ids = [x.get("customer_id") for x in rows if x.get("customer_id")]
     unit_ids = [x.get("unit_id") for x in rows if x.get("unit_id")]
@@ -1233,13 +1249,29 @@ def get_estimates_list(
     if created_at_filter:
         query = append_and_filter(query, created_at_filter)
 
-    rows, pagination = paginate_find(
-        shop_db.work_orders,
-        query,
-        get_sort_params(request.args, [("work_order_date", -1), ("created_at", -1)], ["wo_number", "status", "work_order_date", "grand_total", "created_at"]),
-        page,
-        per_page,
+    sort_params = get_sort_params(
+        request.args,
+        [("work_order_date", -1), ("created_at", -1)],
+        ["wo_number", "status", "work_order_date", "grand_total", "created_at", "customer"],
     )
+
+    if sort_params and sort_params[0][0] == "customer":
+        rows, pagination = _paginate_by_customer(
+            shop_db,
+            shop_db.work_orders,
+            query,
+            page,
+            per_page,
+            sort_params[0][1],
+        )
+    else:
+        rows, pagination = paginate_find(
+            shop_db.work_orders,
+            query,
+            sort_params,
+            page,
+            per_page,
+        )
 
     customer_ids = [x.get("customer_id") for x in rows if x.get("customer_id")]
     unit_ids = [x.get("unit_id") for x in rows if x.get("unit_id")]
@@ -1332,6 +1364,90 @@ def customer_label(c: dict) -> str:
         return company
     name = get_main_contact_name(c, entity_type="customer")
     return name or "(no name)"
+
+
+def _paginate_by_customer(
+    shop_db,
+    collection,
+    base_query: dict,
+    page: int,
+    per_page: int,
+    direction: int,
+    *,
+    customer_id_resolver=None,
+    indirect_lookup=None,
+):
+    """Paginate a collection by customer label (case-insensitive).
+
+    - customer_id_resolver(doc) -> ObjectId|None. If None, defaults to doc["customer_id"].
+    - indirect_lookup: optional tuple (target_collection, link_field_on_doc, customer_field_on_target).
+      When provided, the lite docs include only _id and link_field_on_doc; we look up the
+      target_collection to obtain customer_id (e.g. payments -> work_orders.customer_id).
+    """
+    import math as _math
+
+    if indirect_lookup is not None:
+        target_collection, link_field, target_customer_field = indirect_lookup
+        projection = {"_id": 1, link_field: 1}
+    else:
+        projection = {"_id": 1, "customer_id": 1}
+
+    lite_docs = list(collection.find(base_query, projection))
+
+    if indirect_lookup is not None:
+        link_ids = list({d.get(link_field) for d in lite_docs if d.get(link_field)})
+        link_map = {}
+        if link_ids:
+            for t in target_collection.find(
+                {"_id": {"$in": link_ids}}, {"_id": 1, target_customer_field: 1}
+            ):
+                link_map[t.get("_id")] = t.get(target_customer_field)
+        get_customer_id = lambda d: link_map.get(d.get(link_field))
+    elif customer_id_resolver is not None:
+        get_customer_id = customer_id_resolver
+    else:
+        get_customer_id = lambda d: d.get("customer_id")
+
+    cust_ids = list({get_customer_id(d) for d in lite_docs if get_customer_id(d)})
+    label_map: dict = {}
+    if cust_ids:
+        for c in shop_db.customers.find(
+            {"_id": {"$in": cust_ids}},
+            {"company_name": 1, "first_name": 1, "last_name": 1, "contacts": 1},
+        ):
+            label_map[c.get("_id")] = (customer_label(c) or "").strip().lower()
+
+    reverse = direction == -1
+    lite_docs.sort(
+        key=lambda d: (label_map.get(get_customer_id(d), ""), str(d.get("_id"))),
+        reverse=reverse,
+    )
+
+    total = len(lite_docs)
+    pages = max(1, _math.ceil(total / per_page)) if total else 1
+    if page > pages:
+        page = pages
+    start = (page - 1) * per_page
+    page_lite = lite_docs[start:start + per_page]
+    page_ids = [d["_id"] for d in page_lite]
+
+    docs_map: dict = {}
+    if page_ids:
+        for d in collection.find({"_id": {"$in": page_ids}}):
+            docs_map[d.get("_id")] = d
+    rows = [docs_map[_id] for _id in page_ids if _id in docs_map]
+
+    meta = {
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "pages": pages,
+        "has_prev": page > 1,
+        "has_next": page < pages,
+        "prev_page": page - 1 if page > 1 else 1,
+        "next_page": page + 1 if page < pages else pages,
+    }
+    return rows, meta
 
 
 def unit_label(u: dict) -> str:
@@ -3455,13 +3571,30 @@ def api_get_all_payments():
         page_key="payments_page", per_page_key="payments_per_page",
     )
 
-    payments, payments_pagination = paginate_find(
-        shop_db.work_order_payments,
-        payments_query,
-        sort=[("payment_date", -1), ("created_at", -1)],
-        page=page,
-        per_page=per_page,
+    sort_params = get_sort_params(
+        request.args,
+        [("payment_date", -1), ("created_at", -1)],
+        ["payment_date", "amount", "payment_method", "created_at", "customer"],
     )
+
+    if sort_params and sort_params[0][0] == "customer":
+        payments, payments_pagination = _paginate_by_customer(
+            shop_db,
+            shop_db.work_order_payments,
+            payments_query,
+            page,
+            per_page,
+            sort_params[0][1],
+            indirect_lookup=(shop_db.work_orders, "work_order_id", "customer_id"),
+        )
+    else:
+        payments, payments_pagination = paginate_find(
+            shop_db.work_order_payments,
+            payments_query,
+            sort=sort_params,
+            page=page,
+            per_page=per_page,
+        )
 
     work_order_ids = [p.get("work_order_id") for p in payments if p.get("work_order_id")]
     work_orders_map = {}

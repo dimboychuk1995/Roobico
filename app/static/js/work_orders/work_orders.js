@@ -227,6 +227,10 @@
       if (datePreset) apiParams.set("date_preset", datePreset);
       if (dateFrom) apiParams.set("date_from", dateFrom);
       if (dateTo) apiParams.set("date_to", dateTo);
+      const sortBy = String(params.get("sort_by") || "").trim();
+      const sortDir = String(params.get("sort_dir") || "").trim();
+      if (sortBy) apiParams.set("sort_by", sortBy);
+      if (sortDir) apiParams.set("sort_dir", sortDir);
       apiParams.set("payments_page", String(_paymentsCurrentPage));
       const endpoint = `/work_orders/api/work_orders/all-payments?${apiParams.toString()}`;
 
@@ -263,10 +267,10 @@
             <thead>
               <tr>
                 <th>WO #</th>
-                <th>Customer</th>
-                <th>Amount</th>
-                <th>Method</th>
-                <th>Date</th>
+                <th data-sort-field="customer">Customer</th>
+                <th data-sort-field="amount">Amount</th>
+                <th data-sort-field="payment_method">Method</th>
+                <th data-sort-field="payment_date">Date</th>
                 <th>Notes</th>
                 <th class="text-end no-sort">Actions</th>
               </tr>

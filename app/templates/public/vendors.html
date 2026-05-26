@@ -325,6 +325,18 @@
 
 <script src="{{ url_for('static', filename='js/vendors/vendors.js') }}"></script>
 
+<script>
+  document.addEventListener('DOMContentLoaded', function () {
+    try {
+      var params = new URLSearchParams(window.location.search);
+      if (params.get('new') !== '1') return;
+      var modalEl = document.getElementById('createVendorModal');
+      if (!modalEl || !window.bootstrap) return;
+      window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+    } catch (e) { /* noop */ }
+  });
+</script>
+
 {{ attachments_modal() }}
 
 {% endblock %}
