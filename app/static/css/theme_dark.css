@@ -1,0 +1,623 @@
+/* ─────────────────────────────────────────────────────────────────────
+   Dark theme — OpenAI-style.
+   Activated by setting data-theme="dark" on <html> (or <body>).
+   Overrides CSS variables and a curated set of hard-coded surface
+   colors used across public.css / dashboard.css.
+   ───────────────────────────────────────────────────────────────────── */
+
+html[data-theme="dark"],
+html[data-theme="dark"] body.public-shell {
+  color-scheme: dark;
+
+  --bg: #212121;
+  --bg-accent: #1a1a1a;
+  --surface: #2a2a2a;
+  --surface-soft: #232323;
+  --border: #3a3a3a;
+  --text: #ececec;
+  --muted: #9b9b9b;
+  --primary: #22c55e;
+  --primary-deep: #16a34a;
+  --success: #22c55e;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --shadow-card: 0 12px 28px rgba(0, 0, 0, 0.55);
+  --sidebar-bg: #171717;
+  --sidebar-text: #c9c9c9;
+  --sidebar-active: rgba(34, 197, 94, 0.18);
+
+  background: var(--bg);
+  color: var(--text);
+}
+
+html[data-theme="dark"] body.public-shell {
+  background: var(--bg) !important;
+  color: var(--text) !important;
+}
+
+/* ── Topbar ──────────────────────────────────────────────────────── */
+html[data-theme="dark"] .app-topbar {
+  background: #181818 !important;
+  border-bottom: 1px solid var(--border) !important;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.4);
+}
+
+html[data-theme="dark"] .app-topbar .navbar-brand {
+  color: #22c55e !important;
+  -webkit-text-stroke: 1px #22c55e !important;
+}
+
+html[data-theme="dark"] .app-topbar .text-muted,
+html[data-theme="dark"] .text-muted,
+html[data-theme="dark"] small,
+html[data-theme="dark"] .small {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] .fw-semibold,
+html[data-theme="dark"] .fw-bold {
+  color: var(--text);
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────── */
+html[data-theme="dark"] .app-sidebar-card,
+html[data-theme="dark"] .app-sidebar-col,
+html[data-theme="dark"] .app-sidebar-card .card-header,
+html[data-theme="dark"] .app-sidebar-card .app-sidebar-nav {
+  background-color: var(--sidebar-bg) !important;
+}
+
+html[data-theme="dark"] .app-sidebar-link,
+html[data-theme="dark"] .app-sidebar-nav .list-group-item {
+  color: #e5e5e5 !important;
+}
+
+html[data-theme="dark"] .app-sidebar-link:hover,
+html[data-theme="dark"] .app-sidebar-link:focus {
+  background: rgba(255, 255, 255, 0.06) !important;
+  color: #ffffff !important;
+}
+
+html[data-theme="dark"] .app-sidebar-link.active,
+html[data-theme="dark"] .app-sidebar-link.active:hover {
+  background: var(--sidebar-active) !important;
+  color: #ffffff !important;
+  border-left-color: #22c55e !important;
+}
+
+/* ── Cards & containers ──────────────────────────────────────────── */
+html[data-theme="dark"] .card {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: var(--shadow-soft);
+}
+
+html[data-theme="dark"] .card-header,
+html[data-theme="dark"] .card-footer {
+  background: var(--surface-soft);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+html[data-theme="dark"] .list-group-item {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+html[data-theme="dark"] .list-group-item.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #0b1220;
+}
+
+html[data-theme="dark"] hr {
+  border-color: var(--border);
+  opacity: 1;
+}
+
+/* ── Headings & links ────────────────────────────────────────────── */
+html[data-theme="dark"] h1,
+html[data-theme="dark"] h2,
+html[data-theme="dark"] h3,
+html[data-theme="dark"] h4,
+html[data-theme="dark"] h5,
+html[data-theme="dark"] h6 {
+  color: var(--text);
+}
+
+html[data-theme="dark"] a {
+  color: #4ade80;
+}
+
+html[data-theme="dark"] a:hover {
+  color: #86efac;
+}
+
+/* ── Forms ───────────────────────────────────────────────────────── */
+html[data-theme="dark"] .form-label {
+  color: #cbd5e1;
+}
+
+html[data-theme="dark"] .form-control,
+html[data-theme="dark"] .form-select,
+html[data-theme="dark"] textarea.form-control,
+html[data-theme="dark"] input[type="date"],
+html[data-theme="dark"] input[type="date"].form-control,
+html[data-theme="dark"] input[type="date"].form-select {
+  background-color: #1f1f1f;
+  border-color: #3a3a3a;
+  color: var(--text);
+}
+
+html[data-theme="dark"] .form-control::placeholder,
+html[data-theme="dark"] textarea.form-control::placeholder {
+  color: #6b7280;
+}
+
+html[data-theme="dark"] .form-control:focus,
+html[data-theme="dark"] .form-select:focus,
+html[data-theme="dark"] textarea.form-control:focus,
+html[data-theme="dark"] input[type="date"]:focus {
+  background-color: #1f1f1f;
+  border-color: var(--primary);
+  color: var(--text);
+  box-shadow: 0 0 0 0.2rem rgba(34, 197, 94, 0.18);
+}
+
+html[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator {
+  filter: invert(1) hue-rotate(180deg) brightness(0.95);
+  background-color: rgba(34, 197, 94, 0.18);
+}
+
+html[data-theme="dark"] input[type="date"]::-webkit-datetime-edit {
+  color: var(--text);
+}
+
+html[data-theme="dark"] .ss-date-input {
+  background-color: #1f1f1f !important;
+  border-color: #3a3a3a !important;
+  color: var(--text) !important;
+}
+
+/* ── Sidebar search ──────────────────────────────────────────────── */
+html[data-theme="dark"] .app-global-search-wrap .form-control {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  color: #e5e5e5;
+}
+
+html[data-theme="dark"] .app-global-search-wrap .form-control::placeholder {
+  color: #8b8b8b;
+}
+
+html[data-theme="dark"] .app-global-search-results {
+  background: #2a2a2a;
+  border-color: var(--border);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+
+html[data-theme="dark"] .gs-group {
+  border-bottom-color: var(--border);
+}
+
+html[data-theme="dark"] .gs-category {
+  color: var(--muted);
+}
+
+html[data-theme="dark"] .gs-item {
+  color: var(--text);
+}
+
+html[data-theme="dark"] .gs-item:hover {
+  background: #353535;
+  color: #86efac;
+}
+
+html[data-theme="dark"] .gs-empty {
+  color: var(--muted);
+}
+
+/* ── Tables ──────────────────────────────────────────────────────── */
+html[data-theme="dark"] .table {
+  --bs-table-color: var(--text);
+  --bs-table-bg: transparent;
+  color: var(--text);
+}
+
+html[data-theme="dark"] .table > :not(caption) > * > * {
+  border-bottom-color: var(--border);
+  color: var(--text);
+}
+
+html[data-theme="dark"] .table > thead > tr > th {
+  background: #1f1f1f;
+  color: #cbd5e1;
+  border-bottom-color: var(--border);
+}
+
+html[data-theme="dark"] .table > tbody > tr:nth-child(odd) {
+  background-color: #262626;
+}
+
+html[data-theme="dark"] .table > tbody > tr:nth-child(even) {
+  background-color: #2a2a2a;
+}
+
+html[data-theme="dark"] .table > tbody > tr:hover > td {
+  background-color: #333333 !important;
+}
+
+html[data-theme="dark"] .table > tbody > tr:focus-within > td {
+  background-color: #3a3a3a !important;
+}
+
+html[data-theme="dark"] .sortable-th:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+html[data-theme="dark"] tr[role="button"]:hover > td {
+  background-color: rgba(34, 197, 94, 0.08);
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────── */
+html[data-theme="dark"] .btn {
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .btn-primary {
+  --bs-btn-bg: #2a2a2a;
+  --bs-btn-border-color: #3a3a3a;
+  --bs-btn-color: #ececec;
+  --bs-btn-hover-bg: #353535;
+  --bs-btn-hover-border-color: #4a4a4a;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-active-bg: #1f1f1f;
+  --bs-btn-active-border-color: #2a2a2a;
+}
+
+html[data-theme="dark"] .btn-secondary {
+  --bs-btn-bg: #2a2a2a;
+  --bs-btn-border-color: #3a3a3a;
+  --bs-btn-color: #d4d4d4;
+  --bs-btn-hover-bg: #353535;
+  --bs-btn-hover-border-color: #4a4a4a;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-active-bg: #1f1f1f;
+}
+
+html[data-theme="dark"] .btn-light {
+  --bs-btn-bg: #2a2a2a;
+  --bs-btn-border-color: #3a3a3a;
+  --bs-btn-color: #ececec;
+  --bs-btn-hover-bg: #353535;
+  --bs-btn-hover-border-color: #4a4a4a;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-active-bg: #1f1f1f;
+}
+
+html[data-theme="dark"] .btn-outline-primary,
+html[data-theme="dark"] .btn-outline-secondary,
+html[data-theme="dark"] .btn-outline-dark,
+html[data-theme="dark"] .btn-outline-light {
+  --bs-btn-bg: transparent;
+  --bs-btn-border-color: #4a4a4a;
+  --bs-btn-color: #ececec;
+  --bs-btn-hover-bg: #353535;
+  --bs-btn-hover-border-color: #5a5a5a;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-active-bg: #1f1f1f;
+}
+
+html[data-theme="dark"] .btn-success {
+  --bs-btn-bg: #16a34a;
+  --bs-btn-border-color: #16a34a;
+  --bs-btn-hover-bg: #15803d;
+  --bs-btn-hover-border-color: #15803d;
+}
+
+html[data-theme="dark"] .btn-outline-success {
+  --bs-btn-bg: transparent;
+  --bs-btn-color: #4ade80;
+  --bs-btn-border-color: #166534;
+  --bs-btn-hover-bg: #16a34a;
+  --bs-btn-hover-color: #fff;
+}
+
+html[data-theme="dark"] .btn-outline-danger {
+  --bs-btn-bg: transparent;
+  --bs-btn-color: #f87171;
+  --bs-btn-border-color: #7f1d1d;
+  --bs-btn-hover-bg: #b91c1c;
+  --bs-btn-hover-color: #fff;
+}
+
+/* ── Filter / utility surfaces ───────────────────────────────────── */
+html[data-theme="dark"] .wo-filter-form {
+  background: #232323;
+  border-color: var(--border);
+}
+
+html[data-theme="dark"] .wo-filter-form .date-preset-select,
+html[data-theme="dark"] .wo-filter-form .date-range-group,
+html[data-theme="dark"] .wo-filter-form .date-range-group .date-filter-input {
+  background: #1f1f1f !important;
+  border-color: #3a3a3a !important;
+  color: var(--text) !important;
+}
+
+html[data-theme="dark"] .wo-filter-form .date-range-group .input-group-text {
+  background: #2a2a2a;
+  color: #cbd5e1;
+}
+
+html[data-theme="dark"] .wo-totals-box {
+  background: linear-gradient(135deg, #232323 0%, #1c1c1c 100%) !important;
+  border: 1px solid var(--border) !important;
+  color: var(--text);
+}
+
+html[data-theme="dark"] .wo-totals-box > span {
+  background: #2f2f2f !important;
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45) !important;
+}
+
+html[data-theme="dark"] .wo-totals-box strong {
+  color: #4ade80;
+}
+
+html[data-theme="dark"] .dashboard-legend-row {
+  color: #cbd5e1 !important;
+}
+
+/* Soften decorative blurred blobs inside dashboard cards. */
+html[data-theme="dark"] .dashboard-async-card .card-body::before {
+  background: radial-gradient(circle, rgba(34, 197, 94, 0.18) 0%, transparent 70%);
+  opacity: 0.35;
+}
+
+html[data-theme="dark"] .dashboard-async-card .card-body::after {
+  background: radial-gradient(circle, rgba(56, 189, 248, 0.16) 0%, transparent 70%);
+  opacity: 0.30;
+}
+
+html[data-theme="dark"] #dashOutstandingBalance {
+  background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+html[data-theme="dark"] .dashboard-goal-progress {
+  background: #2a2a2a;
+}
+
+html[data-theme="dark"] .dashboard-donut-center .small,
+html[data-theme="dark"] .dashboard-donut-center .text-muted {
+  color: var(--muted) !important;
+}
+
+html[data-theme="dark"] .dashboard-donut-center .fw-semibold {
+  color: var(--text);
+}
+
+/* ── Flatpickr ──────────────────────────────────────────────────── */
+html[data-theme="dark"] .flatpickr-calendar {
+  background: #2a2a2a;
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.55);
+}
+
+html[data-theme="dark"] .flatpickr-months {
+  background: #1f1f1f;
+}
+
+html[data-theme="dark"] .flatpickr-weekdays {
+  background: #232323;
+}
+
+html[data-theme="dark"] span.flatpickr-weekday {
+  color: #cbd5e1;
+}
+
+html[data-theme="dark"] .flatpickr-day {
+  color: var(--text);
+  background: transparent;
+}
+
+html[data-theme="dark"] .flatpickr-day:hover {
+  background: #353535;
+  border-color: #353535;
+}
+
+html[data-theme="dark"] .flatpickr-day.selected,
+html[data-theme="dark"] .flatpickr-day.startRange,
+html[data-theme="dark"] .flatpickr-day.endRange {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #0b1220;
+}
+
+html[data-theme="dark"] .flatpickr-day.today {
+  border-color: var(--primary);
+  color: #4ade80;
+}
+
+html[data-theme="dark"] .flatpickr-day.flatpickr-disabled,
+html[data-theme="dark"] .flatpickr-day.prevMonthDay,
+html[data-theme="dark"] .flatpickr-day.nextMonthDay {
+  color: #555;
+}
+
+/* ── Modals / dropdowns / popovers ──────────────────────────────── */
+html[data-theme="dark"] .modal-content {
+  background: #232323;
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+
+html[data-theme="dark"] .modal-header,
+html[data-theme="dark"] .modal-footer {
+  border-color: var(--border);
+}
+
+html[data-theme="dark"] .btn-close {
+  filter: invert(1) grayscale(100%) brightness(1.6);
+}
+
+html[data-theme="dark"] .dropdown-menu {
+  background: #2a2a2a;
+  border-color: var(--border);
+  color: var(--text);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+}
+
+html[data-theme="dark"] .dropdown-item {
+  color: var(--text);
+}
+
+html[data-theme="dark"] .dropdown-item:hover,
+html[data-theme="dark"] .dropdown-item:focus {
+  background: #353535;
+  color: #fff;
+}
+
+html[data-theme="dark"] .dropdown-divider {
+  border-color: var(--border);
+}
+
+/* ── Alerts / badges ─────────────────────────────────────────────── */
+html[data-theme="dark"] .alert {
+  background: #232323;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+html[data-theme="dark"] .alert-success {
+  background: rgba(34, 197, 94, 0.10);
+  border-color: rgba(34, 197, 94, 0.30);
+  color: #86efac;
+}
+
+html[data-theme="dark"] .alert-danger {
+  background: rgba(239, 68, 68, 0.10);
+  border-color: rgba(239, 68, 68, 0.30);
+  color: #fca5a5;
+}
+
+html[data-theme="dark"] .alert-warning {
+  background: rgba(245, 158, 11, 0.10);
+  border-color: rgba(245, 158, 11, 0.30);
+  color: #fcd34d;
+}
+
+html[data-theme="dark"] .alert-info {
+  background: rgba(56, 189, 248, 0.10);
+  border-color: rgba(56, 189, 248, 0.30);
+  color: #7dd3fc;
+}
+
+html[data-theme="dark"] .badge.bg-light {
+  background: #2a2a2a !important;
+  color: var(--text) !important;
+}
+
+/* ── Nav tabs / pagination ──────────────────────────────────────── */
+html[data-theme="dark"] .nav-tabs {
+  border-bottom-color: var(--border);
+}
+
+html[data-theme="dark"] .nav-tabs .nav-link {
+  color: var(--muted);
+  background: transparent;
+  border-color: transparent;
+}
+
+html[data-theme="dark"] .nav-tabs .nav-link:hover {
+  color: var(--text);
+  border-color: var(--border);
+}
+
+html[data-theme="dark"] .nav-tabs .nav-link.active {
+  color: var(--text);
+  background: var(--surface);
+  border-color: var(--border) var(--border) var(--surface);
+}
+
+html[data-theme="dark"] .page-link {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+html[data-theme="dark"] .page-link:hover {
+  background: #353535;
+  color: #fff;
+}
+
+html[data-theme="dark"] .page-item.active .page-link {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #0b1220;
+}
+
+html[data-theme="dark"] .page-item.disabled .page-link {
+  background: var(--surface-soft);
+  color: #555;
+}
+
+/* ── Theme toggle button ────────────────────────────────────────── */
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.theme-toggle-btn:hover {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: #94a3b8;
+}
+
+.theme-toggle-btn svg {
+  width: 18px;
+  height: 18px;
+}
+
+.theme-toggle-btn .theme-toggle-icon-sun {
+  display: none;
+}
+
+.theme-toggle-btn .theme-toggle-icon-moon {
+  display: block;
+}
+
+html[data-theme="dark"] .theme-toggle-btn {
+  border-color: #3a3a3a;
+  color: #ececec;
+}
+
+html[data-theme="dark"] .theme-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: #555;
+}
+
+html[data-theme="dark"] .theme-toggle-btn .theme-toggle-icon-sun {
+  display: block;
+}
+
+html[data-theme="dark"] .theme-toggle-btn .theme-toggle-icon-moon {
+  display: none;
+}

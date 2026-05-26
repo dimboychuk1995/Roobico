@@ -141,6 +141,22 @@
           </div>
 
           <a class="btn btn-outline-danger btn-sm" href="{{ url_for('auth.logout') }}">Logout</a>
+
+          <button
+            type="button"
+            id="themeToggleBtn"
+            class="theme-toggle-btn"
+            aria-label="Toggle dark theme"
+            title="Toggle theme"
+          >
+            <svg class="theme-toggle-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8Z"></path>
+            </svg>
+            <svg class="theme-toggle-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="4"></circle>
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"></path>
+            </svg>
+          </button>
         </div>
       </div>
     </nav>
@@ -187,6 +203,44 @@
       applyState(next);
       try {
         window.localStorage.setItem(storageKey, next ? "1" : "0");
+      } catch (e) {
+        // Ignore storage write failures.
+      }
+    });
+  })();
+</script>
+
+<script>
+  /* Theme (light/dark) toggle. */
+  (function () {
+    var btn = document.getElementById("themeToggleBtn");
+    if (!btn) return;
+    var storageKey = "roobico.theme";
+
+    function currentTheme() {
+      return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+    }
+
+    function applyTheme(theme) {
+      if (theme === "dark") {
+        document.documentElement.setAttribute("data-theme", "dark");
+      } else {
+        document.documentElement.removeAttribute("data-theme");
+      }
+      btn.setAttribute(
+        "aria-label",
+        theme === "dark" ? "Switch to light theme" : "Switch to dark theme"
+      );
+      btn.title = theme === "dark" ? "Switch to light theme" : "Switch to dark theme";
+    }
+
+    applyTheme(currentTheme());
+
+    btn.addEventListener("click", function () {
+      var next = currentTheme() === "dark" ? "light" : "dark";
+      applyTheme(next);
+      try {
+        window.localStorage.setItem(storageKey, next);
       } catch (e) {
         // Ignore storage write failures.
       }

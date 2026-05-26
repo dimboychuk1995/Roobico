@@ -13,7 +13,19 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/public.css', v='20260508-hard') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/theme_dark.css', v='20260526-dark2') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/address_autocomplete.css', v='20260508-hard') }}">
+  <script>
+    /* Apply persisted theme as early as possible to avoid flash of light theme. */
+    (function () {
+      try {
+        var t = window.localStorage.getItem("roobico.theme");
+        if (t === "dark" || t === "light") {
+          document.documentElement.setAttribute("data-theme", t);
+        }
+      } catch (e) { /* ignore */ }
+    })();
+  </script>
   <style>
     *, *::before, *::after {
       animation: none !important;
