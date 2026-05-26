@@ -746,3 +746,97 @@ html[data-theme="dark"] .cal-event:hover {
 html[data-theme="dark"] .cal-event.cal-dragging {
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.8);
 }
+
+/* -- WO header / Customer info / Timeline / Attachments -- */
+html[data-theme="dark"] .wo-header { background: #1e1e1e !important; border-color: var(--border) !important; color: var(--text); }
+html[data-theme="dark"] .wo-header .text-muted { color: var(--muted) !important; }
+html[data-theme="dark"] #customerInfoBlock,
+html[data-theme="dark"] .bg-light-subtle { background-color: #1e1e1e !important; border-color: var(--border) !important; color: var(--text); }
+html[data-theme="dark"] #customerInfoBlock .text-muted { color: var(--muted) !important; }
+html[data-theme="dark"] #workOrderDatesBlock .bg-white,
+html[data-theme="dark"] .bg-white { background-color: #1e1e1e !important; color: var(--text); }
+html[data-theme="dark"] #workOrderDatesBlock .border { border-color: var(--border) !important; }
+html[data-theme="dark"] .attachments-block { background: #1e1e1e !important; border-color: var(--border) !important; color: var(--text); }
+html[data-theme="dark"] .att-item { background: #2a2a2a !important; border-color: var(--border) !important; }
+html[data-theme="dark"] .att-item .att-name { background: #232323 !important; color: var(--muted) !important; border-top-color: var(--border) !important; }
+html[data-theme="dark"] .att-item .att-pdf-thumb { background: #2a2a2a !important; }
+
+/* -- WO totals chips -- */
+html[data-theme="dark"] .wo-totals-chip {
+  background: #2a2a2a !important;
+  border-color: var(--border) !important;
+  color: var(--text) !important;
+}
+html[data-theme="dark"] .wo-totals-chip strong {
+  color: #4ade80 !important;
+}
+html[data-theme="dark"] .wo-totals-chip.wo-grand-total {
+  background: linear-gradient(135deg, #14532d, #166534) !important;
+  border-color: #22c55e !important;
+  color: #ffffff !important;
+}
+html[data-theme="dark"] .wo-totals-chip.wo-grand-total strong {
+  color: #ffffff !important;
+}
+
+/* -- WO labor cards -- */
+html[data-theme="dark"] .wo-labor.card {
+  background: #1e1e1e !important;
+  border-color: var(--border) !important;
+  color: var(--text);
+}
+html[data-theme="dark"] .wo-labor .wo-labor-header {
+  border-bottom-color: var(--border) !important;
+}
+
+/* -- Select2 (work-order enhanced + generic) -- */
+html[data-theme="dark"] .work-order-enhanced-select + .select2-container .select2-selection--single,
+html[data-theme="dark"] .select2-container--default .select2-selection--single,
+html[data-theme="dark"] .select2-container--default .select2-selection--multiple {
+  background: #1f1f1f !important;
+  border-color: #3a3a3a !important;
+  color: var(--text) !important;
+}
+html[data-theme="dark"] .work-order-enhanced-select + .select2-container .select2-selection__rendered,
+html[data-theme="dark"] .select2-container--default .select2-selection__rendered,
+html[data-theme="dark"] .select2-container--default .select2-selection--single .select2-selection__rendered {
+  color: var(--text) !important;
+}
+html[data-theme="dark"] .work-order-enhanced-select + .select2-container--open .select2-selection--single,
+html[data-theme="dark"] .work-order-enhanced-select + .select2-container--focus .select2-selection--single {
+  background: #1f1f1f !important;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 0.2rem rgba(34,197,94,0.18) !important;
+}
+html[data-theme="dark"] .work-order-enhanced-select + .select2-container--disabled .select2-selection--single {
+  background: #2a2a2a !important;
+  color: var(--muted) !important;
+}
+html[data-theme="dark"] .work-order-enhanced-select + .select2-container .select2-selection__arrow b {
+  border-color: #cbd5e1 transparent transparent transparent !important;
+}
+html[data-theme="dark"] .select2-dropdown,
+html[data-theme="dark"] .select2-dropdown.ss-work-order-select2-dropdown {
+  background: #1f1f1f !important;
+  border-color: #3a3a3a !important;
+  color: var(--text) !important;
+}
+html[data-theme="dark"] .select2-container--default .select2-results__option {
+  color: var(--text) !important;
+  background: transparent !important;
+}
+html[data-theme="dark"] .select2-container--default .select2-results__option--highlighted[aria-selected],
+html[data-theme="dark"] .select2-container--default .select2-results__option--highlighted {
+  background: rgba(34,197,94,0.18) !important;
+  color: #ffffff !important;
+}
+html[data-theme="dark"] .select2-container--default .select2-results__option[aria-selected=true],
+html[data-theme="dark"] .select2-container--default .select2-results__option--selected {
+  background: #2a2a2a !important;
+  color: var(--text) !important;
+}
+html[data-theme="dark"] .select2-search--dropdown .select2-search__field {
+  background: #161616 !important;
+  border-color: #3a3a3a !important;
+  color: var(--text) !important;
+}
