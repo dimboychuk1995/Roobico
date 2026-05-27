@@ -85,7 +85,7 @@ def _process_shop_db(shop_db, *, apply: bool) -> dict:
             except (ValueError, TypeError):
                 snap_rate = 0.0
 
-            # 1) snapshot the current rate if missing
+            # 1) snapshot the current rate if we know it from the rate_code
             if snap_rate <= 0 and rate_code:
                 current = float(rates_map.get(rate_code) or 0.0)
                 if current > 0:
@@ -94,22 +94,32 @@ def _process_shop_db(shop_db, *, apply: bool) -> dict:
                     stats["blocks_rate_filled"] += 1
                     changed = True
 
-            # 2) recompute hours if missing and we have rate + amount
+            # Block amount from totals (if any)
+            amt = 0.0
+            if i < len(totals_blocks) and isinstance(totals_blocks[i], dict):
+                try:
+                    amt = float(totals_blocks[i].get("labor") or 0)
+                except (ValueError, TypeError):
+                    amt = 0.0
+
             try:
                 hours = float(labor.get("hours") or 0)
             except (ValueError, TypeError):
                 hours = 0.0
-            if hours <= 0 and snap_rate > 0:
-                amt = 0.0
-                if i < len(totals_blocks) and isinstance(totals_blocks[i], dict):
-                    try:
-                        amt = float(totals_blocks[i].get("labor") or 0)
-                    except (ValueError, TypeError):
-                        amt = 0.0
-                if amt > 0:
-                    labor["hours"] = _round2(amt / snap_rate)
-                    stats["blocks_hours_filled"] += 1
-                    changed = True
+
+            # 2) recompute hours if missing and we have rate + amount
+            if hours <= 0 and snap_rate > 0 and amt > 0:
+                hours = _round2(amt / snap_rate)
+                labor["hours"] = hours
+                stats["blocks_hours_filled"] += 1
+                changed = True
+
+            # 3) derive snapshot from amount/hours when rate_code is missing
+            # or has been deleted from labor_rates (current = 0).
+            if snap_rate <= 0 and hours > 0 and amt > 0:
+                labor["hourly_rate"] = _round2(amt / hours)
+                stats["blocks_rate_filled"] += 1
+                changed = True
 
         if changed:
             stats["wo_updated"] += 1
