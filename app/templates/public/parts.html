@@ -1247,6 +1247,10 @@
       var modalEl = document.getElementById('orderModal');
       if (!modalEl || !window.bootstrap) return;
       window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
+      params.delete('new');
+      var qs = params.toString();
+      var newUrl = window.location.pathname + (qs ? ('?' + qs) : '') + window.location.hash;
+      window.history.replaceState({}, '', newUrl);
     } catch (e) { /* noop */ }
   });
 </script>

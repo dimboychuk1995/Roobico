@@ -835,8 +835,16 @@ html[data-theme="dark"] .select2-container--default .select2-results__option--se
   background: #2a2a2a !important;
   color: var(--text) !important;
 }
+html[data-theme="dark"] .select2-search--dropdown {
+  background: #1f1f1f !important;
+  padding: 6px !important;
+}
 html[data-theme="dark"] .select2-search--dropdown .select2-search__field {
   background: #161616 !important;
   border-color: #3a3a3a !important;
   color: var(--text) !important;
+}
+html[data-theme="dark"] .select2-dropdown .select2-results,
+html[data-theme="dark"] .select2-dropdown .select2-results__options {
+  background: #1f1f1f !important;
 }

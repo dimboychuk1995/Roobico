@@ -660,6 +660,22 @@ def normalize_saved_labors(raw, shop_db=None):
     if not isinstance(raw, list):
         return []
 
+    # Snapshot current labor rate values per rate_code so the WO keeps the rate
+    # that was in effect at save time (rates may later be edited or deleted).
+    labor_rate_map: dict[str, float] = {}
+    if shop_db is not None:
+        try:
+            for r in shop_db.labor_rates.find({}, {"code": 1, "hourly_rate": 1}):
+                code = str(r.get("code") or "").strip()
+                if not code:
+                    continue
+                try:
+                    labor_rate_map[code] = float(r.get("hourly_rate") or 0)
+                except (ValueError, TypeError):
+                    labor_rate_map[code] = 0.0
+        except Exception:
+            labor_rate_map = {}
+
     part_id_values = []
     part_numbers = []
     for block in raw:
@@ -728,6 +744,17 @@ def normalize_saved_labors(raw, shop_db=None):
             or ""
         ).strip()
 
+        # Resolve hourly rate snapshot: prefer value explicitly carried on the
+        # incoming payload, otherwise look up the current value for this code.
+        try:
+            incoming_rate = labor_src.get("hourly_rate")
+            labor_hourly_rate = float(incoming_rate) if incoming_rate not in (None, "") else 0.0
+        except (ValueError, TypeError):
+            labor_hourly_rate = 0.0
+        if labor_hourly_rate <= 0 and labor_rate_code:
+            labor_hourly_rate = float(labor_rate_map.get(labor_rate_code) or 0.0)
+        labor_hourly_rate = round2(labor_hourly_rate)
+
         issue_description = str(
             labor_src.get("issue_description")
             if labor_src.get("issue_description") is not None
@@ -792,6 +819,7 @@ def normalize_saved_labors(raw, shop_db=None):
                     "description": labor_description,
                     "hours": labor_hours,
                     "rate_code": labor_rate_code,
+                    "hourly_rate": labor_hourly_rate,
                     "assigned_mechanics": assigned_mechanics,
                     "issue_description": issue_description,
                 },
@@ -1641,6 +1669,30 @@ def apply_assignments_to_labors(labors, mechanics_by_id: dict[str, dict]):
 
         block_copy = dict(block)
         labor_src = block_copy.get("labor") if isinstance(block_copy.get("labor"), dict) else None
+
+        # The frontend (work_order_details.js serializeBlocks) sends a FLAT
+        # shape: {labor_description, labor_hours, labor_rate_code, ...}.
+        # Lift those into a nested `labor` dict so the stored document always
+        # has the canonical shape `{labor: {description, hours, rate_code, ...}}`.
+        if labor_src is None and any(
+            k in block_copy for k in (
+                "labor_description", "labor_hours", "labor_rate_code", "labor_full_total", "issue_description"
+            )
+        ):
+            labor_src = {
+                "description": block_copy.get("labor_description"),
+                "hours": block_copy.get("labor_hours"),
+                "rate_code": block_copy.get("labor_rate_code"),
+                "labor_full_total": block_copy.get("labor_full_total"),
+                "assigned_mechanics": block_copy.get("assigned_mechanics"),
+                "issue_description": block_copy.get("issue_description"),
+            }
+            # strip the flat fields so we don't store both shapes
+            for k in (
+                "labor_description", "labor_hours", "labor_rate_code", "labor_full_total"
+            ):
+                block_copy.pop(k, None)
+
         if labor_src is not None:
             labor_copy = dict(labor_src)
             labor_copy["description"] = str(labor_copy.get("description") or "").strip()
@@ -1650,6 +1702,7 @@ def apply_assignments_to_labors(labors, mechanics_by_id: dict[str, dict]):
             normalized = normalize_assigned_mechanics(labor_copy.get("assigned_mechanics"), mechanics_by_id)
             labor_copy["assigned_mechanics"] = normalized
             block_copy["labor"] = labor_copy
+            block_copy["assigned_mechanics"] = normalized
         else:
             normalized = normalize_assigned_mechanics(block_copy.get("assigned_mechanics"), mechanics_by_id)
             block_copy["assigned_mechanics"] = normalized

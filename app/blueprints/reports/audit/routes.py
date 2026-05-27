@@ -251,6 +251,80 @@ def _get_customer_options(shop_db, shop_id: ObjectId):
     return options, customer_map
 
 
+def _build_labor_rates_map(shop_db, shop_id) -> dict:
+    """Return {rate_code -> hourly_rate} for a shop."""
+    rates: dict[str, float] = {}
+    try:
+        cursor = shop_db.labor_rates.find({"shop_id": shop_id}, {"code": 1, "hourly_rate": 1})
+    except Exception:
+        return rates
+    for r in cursor:
+        code = str(r.get("code") or "").strip()
+        if not code:
+            continue
+        try:
+            rate = float(r.get("hourly_rate") or 0)
+        except (ValueError, TypeError):
+            rate = 0.0
+        rates[code] = rate
+    return rates
+
+
+def _wo_invoiced_hours(wo: dict, rates_map: dict | None = None) -> float:
+    """Sum of labor hours per WO.
+
+    Tolerates two block shapes in the wild:
+      - canonical nested: {"labor": {"hours", "rate_code", "hourly_rate"}, ...}
+      - legacy flat:      {"labor_hours", "labor_rate_code", ...}
+
+    Uses stored hours when present. When hours are missing but a rate is known
+    (per-block snapshot, or current value by rate_code), falls back to
+    `totals.labors[i].labor / rate` so flat-rate entries still contribute.
+    """
+    rates_map = rates_map or {}
+    totals = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
+    totals_blocks = totals.get("labors") if isinstance(totals.get("labors"), list) else []
+    hours_total = 0.0
+    for i, block in enumerate(wo.get("labors") or []):
+        if not isinstance(block, dict):
+            continue
+        nested = block.get("labor") if isinstance(block.get("labor"), dict) else {}
+        # Field lookup: prefer nested, fall back to flat fields on the block.
+        raw_hours = nested.get("hours") if "hours" in nested else block.get("labor_hours")
+        raw_rate_code = nested.get("rate_code") if "rate_code" in nested else block.get("labor_rate_code")
+        raw_hourly_rate = nested.get("hourly_rate") if "hourly_rate" in nested else block.get("labor_hourly_rate")
+
+        try:
+            h = float(raw_hours or 0)
+        except (ValueError, TypeError):
+            h = 0.0
+        if h > 0:
+            hours_total += h
+            continue
+        # Fallback via labor amount / rate. Prefer the per-block snapshot so
+        # changes/removal of labor rates later don't affect historical data.
+        try:
+            snap_rate = float(raw_hourly_rate or 0)
+        except (ValueError, TypeError):
+            snap_rate = 0.0
+        rate = snap_rate
+        if rate <= 0:
+            rate_code = str(raw_rate_code or "").strip()
+            if rate_code:
+                rate = float(rates_map.get(rate_code) or 0.0)
+        if rate <= 0:
+            continue
+        amt = 0.0
+        if i < len(totals_blocks) and isinstance(totals_blocks[i], dict):
+            try:
+                amt = float(totals_blocks[i].get("labor") or 0)
+            except (ValueError, TypeError):
+                amt = 0.0
+        if amt > 0:
+            hours_total += amt / rate
+    return _round2(hours_total)
+
+
 def _wo_totals(wo: dict):
     """Match Work Orders table column semantics:
       - labor_total = labor + shop_supply
@@ -292,8 +366,9 @@ def _report_sales_summary(shop_db, shop_id, date_ctx, include_customer_ids, excl
 
     rows_by_customer = {}
     time_buckets: dict[str, dict] = {}
+    rates_map = _build_labor_rates_map(shop_db, shop_id)
 
-    for wo in shop_db.work_orders.find(query, {"customer_id": 1, "created_at": 1, "work_order_date": 1, "totals": 1, "labor_total": 1, "parts_total": 1, "sales_tax_total": 1, "grand_total": 1}):
+    for wo in shop_db.work_orders.find(query, {"customer_id": 1, "created_at": 1, "work_order_date": 1, "totals": 1, "labor_total": 1, "parts_total": 1, "sales_tax_total": 1, "grand_total": 1, "labors": 1}):
         customer_id = wo.get("customer_id")
         if not customer_id:
             continue
@@ -306,16 +381,22 @@ def _report_sales_summary(shop_db, shop_id, date_ctx, include_customer_ids, excl
                 "orders_count": 0,
                 "labor_total": 0.0,
                 "parts_total": 0.0,
+                "parts_cost_total": 0.0,
                 "sales_tax_total": 0.0,
                 "grand_total": 0.0,
+                "invoiced_hours": 0.0,
             },
         )
         totals = _wo_totals(wo)
+        wo_parts_cost = _wo_parts_cost(wo)
+        wo_invoiced_hours = _wo_invoiced_hours(wo, rates_map)
         bucket["orders_count"] += 1
         bucket["labor_total"] = _round2(bucket["labor_total"] + totals["labor_total"])
         bucket["parts_total"] = _round2(bucket["parts_total"] + totals["parts_total"])
+        bucket["parts_cost_total"] = _round2(bucket["parts_cost_total"] + wo_parts_cost)
         bucket["sales_tax_total"] = _round2(bucket["sales_tax_total"] + totals["sales_tax_total"])
         bucket["grand_total"] = _round2(bucket["grand_total"] + totals["grand_total"])
+        bucket["invoiced_hours"] = _round2(bucket["invoiced_hours"] + wo_invoiced_hours)
 
         # Chart time bucket — use same date semantics as WO table
         tk = _time_bucket_key(_preferred_dt(wo, "work_order_date", "created_at"), chart_bucket)
@@ -331,7 +412,9 @@ def _report_sales_summary(shop_db, shop_id, date_ctx, include_customer_ids, excl
     total_revenue = _round2(sum(float(r.get("grand_total") or 0) for r in rows))
     total_labor = _round2(sum(float(r.get("labor_total") or 0) for r in rows))
     total_parts = _round2(sum(float(r.get("parts_total") or 0) for r in rows))
+    total_parts_cost = _round2(sum(float(r.get("parts_cost_total") or 0) for r in rows))
     total_tax = _round2(sum(float(r.get("sales_tax_total") or 0) for r in rows))
+    total_invoiced_hours = _round2(sum(float(r.get("invoiced_hours") or 0) for r in rows))
 
     labels = _fill_bucket_gaps(time_buckets, chart_bucket)
     chart_data = {
@@ -351,7 +434,9 @@ def _report_sales_summary(shop_db, shop_id, date_ctx, include_customer_ids, excl
             "avg_ticket": _round2(total_revenue / total_orders) if total_orders else 0.0,
             "labor_total": total_labor,
             "parts_total": total_parts,
+            "parts_cost_total": total_parts_cost,
             "sales_tax_total": total_tax,
+            "invoiced_hours": total_invoiced_hours,
         },
         "rows": rows,
         "chart_data": chart_data,
@@ -829,8 +914,10 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=Non
     sales_misc = 0.0
     sales_tax = 0.0
     sales_revenue = 0.0
+    invoiced_hours = 0.0
     mechanics: dict[str, dict] = {}
     time_buckets: dict[str, dict[str, float]] = {}
+    rates_map = _build_labor_rates_map(shop_db, shop_id)
 
     for wo in shop_db.work_orders.find(wo_query, {
         "totals": 1, "labor_total": 1, "parts_total": 1,
@@ -859,6 +946,8 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=Non
             tb["labor"] += t["labor_total"]
             tb["parts_sale"] += parts_base
             tb["parts_cost"] += wo_parts_cost
+
+        invoiced_hours += _wo_invoiced_hours(wo, rates_map)
 
         # --- Mechanic hours from this WO ---
         wo_mech_hours = 0.0
@@ -910,6 +999,7 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=Non
     sales_misc = _round2(sales_misc)
     sales_tax = _round2(sales_tax)
     sales_revenue = _round2(sales_revenue)
+    invoiced_hours = _round2(invoiced_hours)
 
     # Sort mechanics by hours desc
     mech_sorted = sorted(mechanics.values(), key=lambda m: m["hours"], reverse=True)
@@ -1066,6 +1156,7 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=Non
         "title": "General Revenue Report",
         "summary": {
             "sales_revenue": sales_revenue,
+            "sales_labor": sales_labor,
             "parts_sale": sales_parts_sale,
             "parts_cost": sales_parts_cost,
             "parts_profit": parts_profit,
@@ -1074,6 +1165,7 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=Non
             "net_revenue": net_revenue,
             "wo_count": wo_count,
             "po_count": po_count,
+            "invoiced_hours": invoiced_hours,
             "total_mech_hours": total_mech_hours,
         },
         "rows": rows,

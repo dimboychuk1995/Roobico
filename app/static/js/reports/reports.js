@@ -138,8 +138,8 @@
   function buildSummaryHtml(summary, tab) {
     var layouts = {
       "sales_summary": [
-        ["revenue_total", "labor_total", "parts_total", "sales_tax_total"],
-        ["orders_count", "avg_ticket"]
+        ["revenue_total", "labor_total", "parts_total", "parts_cost_total", "sales_tax_total"],
+        ["orders_count", "avg_ticket", "invoiced_hours"]
       ],
       "payments_summary": [
         ["payments_total", "payments_count", "avg_payment"]
@@ -158,9 +158,9 @@
         ["vendors_count", "orders_count"]
       ],
       "general_revenue": [
-        ["sales_revenue", "parts_sale", "parts_cost", "parts_profit", "core_charges"],
+        ["sales_revenue", "sales_labor", "parts_sale", "parts_cost", "parts_profit", "core_charges"],
         ["po_total_spent", "net_revenue"],
-        ["wo_count", "po_count", "total_mech_hours"]
+        ["wo_count", "po_count", "invoiced_hours", "total_mech_hours"]
       ],
       "mechanic_hours": [
         ["total_hours", "mechanics_count"],
@@ -214,7 +214,7 @@
 
   function buildTheadHtml(tab) {
     if (tab === "sales_summary") {
-      return '<tr class="text-muted"><th>Customer</th><th class="text-end">Orders</th><th class="text-end">Labor</th><th class="text-end">Parts</th><th class="text-end">Tax</th><th class="text-end">Revenue</th></tr>';
+      return '<tr class="text-muted"><th>Customer</th><th class="text-end">Orders</th><th class="text-end">Labor</th><th class="text-end">Parts</th><th class="text-end">Parts Cost</th><th class="text-end">Tax</th><th class="text-end">Hours</th><th class="text-end">Revenue</th></tr>';
     }
     if (tab === "payments_summary") {
       return '<tr class="text-muted"><th>Customer</th><th class="text-end">Payments</th><th class="text-end">Amount</th></tr>';
@@ -240,7 +240,9 @@
         '<td class="text-end">' + (row.orders_count || 0) + '</td>' +
         '<td class="text-end">$' + fmtMoney(row.labor_total) + '</td>' +
         '<td class="text-end">$' + fmtMoney(row.parts_total) + '</td>' +
+        '<td class="text-end">$' + fmtMoney(row.parts_cost_total) + '</td>' +
         '<td class="text-end">$' + fmtMoney(row.sales_tax_total) + '</td>' +
+        '<td class="text-end">' + fmtHours(row.invoiced_hours) + ' hrs</td>' +
         '<td class="text-end fw-semibold">$' + fmtMoney(row.grand_total) + '</td></tr>';
     }
     if (tab === "payments_summary") {
