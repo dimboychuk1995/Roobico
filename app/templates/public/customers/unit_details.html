@@ -170,7 +170,13 @@
           </div>
           <div class="mt-3 d-flex gap-2">
             <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
-            <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#deactivateUnitModal">Deactivate Unit</button>
+            {% if unit.is_active %}
+              <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#deactivateUnitModal">Deactivate Unit</button>
+            {% else %}
+              <form method="post" action="{{ url_for('customers.customer_unit_activate', customer_id=customer_id, unit_id=unit.id) }}" class="d-inline">
+                <button type="submit" class="btn btn-outline-success btn-sm">Activate Unit</button>
+              </form>
+            {% endif %}
           </div>
         </form>
 

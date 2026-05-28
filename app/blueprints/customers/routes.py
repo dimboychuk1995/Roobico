@@ -1185,6 +1185,7 @@ def customer_unit_details_page(customer_id, unit_id):
         "raw_model": unit.get("model") or "",
         "raw_type": unit.get("type") or "",
         "raw_mileage": unit.get("mileage") if unit.get("mileage") is not None else "",
+        "is_active": bool(unit.get("is_active", True)),
     }
 
     return _render_app_page(
@@ -1228,7 +1229,7 @@ def customer_unit_update(customer_id, unit_id):
 
     shop_db = coll.database
     unit = shop_db.units.find_one(
-        {"_id": uid, "customer_id": cid, "shop_id": shop["_id"], "is_active": True}
+        {"_id": uid, "customer_id": cid, "shop_id": shop["_id"]}
     )
     if not unit:
         flash("Unit not found for this customer.", "error")
@@ -1302,6 +1303,56 @@ def customer_unit_deactivate(customer_id, unit_id):
 
     flash("Unit deactivated.", "success")
     return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="units"))
+
+
+@customers_bp.post("/customers/<customer_id>/units/<unit_id>/activate")
+@login_required
+@permission_required("customers.edit")
+def customer_unit_activate(customer_id, unit_id):
+    coll, shop, master = _customers_collection()
+    if coll is None or shop is None:
+        flash("Shop database not configured for this shop.", "error")
+        return redirect(url_for("customers.customers_page"))
+
+    cid = _oid(customer_id)
+    uid = _oid(unit_id)
+    if not cid or not uid:
+        flash("Invalid customer or unit id.", "error")
+        return redirect(url_for("customers.customers_page"))
+
+    customer = coll.find_one({"_id": cid, "shop_id": shop["_id"]})
+    if not customer:
+        flash("Customer not found.", "error")
+        return redirect(url_for("customers.customers_page"))
+
+    shop_db = coll.database
+    unit = shop_db.units.find_one(
+        {"_id": uid, "customer_id": cid, "shop_id": shop["_id"]}
+    )
+    if not unit:
+        flash("Unit not found.", "error")
+        return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="units"))
+
+    now = utcnow()
+    user_oid = _oid(session.get(SESSION_USER_ID))
+
+    shop_db.units.update_one(
+        {"_id": uid},
+        {
+            "$set": {
+                "is_active": True,
+                "updated_at": now,
+                "updated_by": user_oid,
+            },
+            "$unset": {
+                "deactivated_at": "",
+                "deactivated_by": "",
+            },
+        },
+    )
+
+    flash("Unit activated.", "success")
+    return redirect(url_for("customers.customer_unit_details_page", customer_id=str(cid), unit_id=str(uid), tab="details"))
 
 
 @customers_bp.post("/customers/create")
