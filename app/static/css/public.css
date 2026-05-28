@@ -1140,3 +1140,50 @@ a:hover {
     padding: 0.34rem 0.5rem !important;
   }
 }
+
+/* -- Parts search dropdown (work order details) ------------------- */
+
+.parts-dd {
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, rgba(0,0,0,.15));
+  border-radius: 8px;
+  box-shadow: 0 6px 18px rgba(0,0,0,.10);
+  color: var(--text, #1a2e22);
+}
+
+.parts-dd-item {
+  padding: 10px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border, rgba(0,0,0,.06));
+}
+
+.parts-dd-item:last-child {
+  border-bottom: 0;
+}
+
+.parts-dd-item:hover,
+.parts-dd-item:focus,
+.parts-dd-item.is-active {
+  background: var(--surface-soft, #f1f3f5);
+}
+
+.parts-dd-item-onetime {
+  background: var(--surface-soft, #f8f9fa);
+}
+
+.parts-dd-title {
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--text, #1a2e22);
+}
+
+.parts-dd-meta {
+  font-size: 12px;
+  color: var(--muted, #6c757d);
+  margin-top: 2px;
+}
+
+.parts-dd-empty {
+  padding: 10px;
+  color: var(--muted, #6c757d);
+}

@@ -1179,12 +1179,9 @@
 
     dd = document.createElement("div");
     dd.id = "partsSearchDropdown";
+    dd.className = "parts-dd";
     dd.style.position = "absolute";
     dd.style.zIndex = "2000";
-    dd.style.background = "#fff";
-    dd.style.border = "1px solid rgba(0,0,0,.15)";
-    dd.style.borderRadius = "8px";
-    dd.style.boxShadow = "0 6px 18px rgba(0,0,0,.1)";
     dd.style.maxHeight = "280px";
     dd.style.overflow = "auto";
     dd.style.display = "none";
@@ -1227,10 +1224,9 @@
     dd.innerHTML = displayItems.map((it, idx) => {
       if (it.__one_time_part) {
         return `
-          <div class="parts-dd-item" data-idx="${idx}"
-               style="padding:10px 12px; cursor:pointer; border-bottom:1px solid rgba(0,0,0,.06); background:#f8f9fa;">
-            <div style="font-weight:600; line-height:1.2;">+ One-time part</div>
-            <div style="font-size:12px; color:#6c757d; margin-top:2px;">Manual line (no inventory link, no part_id)</div>
+          <div class="parts-dd-item parts-dd-item-onetime" data-idx="${idx}">
+            <div class="parts-dd-title">+ One-time part</div>
+            <div class="parts-dd-meta">Manual line (no inventory link, no part_id)</div>
           </div>
         `;
       }
@@ -1246,16 +1242,15 @@
       const trackingText = it.do_not_track_inventory ? " • Not tracked" : "";
       const meta = `Stock: ${it.in_stock ?? 0} • Avg cost: $${money(toNum(it.average_cost) ?? 0)}${trackingText}${chargesText}`;
       return `
-        <div class="parts-dd-item" data-idx="${idx}"
-             style="padding:10px 12px; cursor:pointer; border-bottom:1px solid rgba(0,0,0,.06);">
-          <div style="font-weight:600; line-height:1.2;">${escapeHtml(title)}</div>
-          <div style="font-size:12px; color:#6c757d; margin-top:2px;">${escapeHtml(meta)}</div>
+        <div class="parts-dd-item" data-idx="${idx}">
+          <div class="parts-dd-title">${escapeHtml(title)}</div>
+          <div class="parts-dd-meta">${escapeHtml(meta)}</div>
         </div>
       `;
     }).join("");
 
     if (list.length === 0) {
-      dd.innerHTML += `<div style="padding:10px; color:#6c757d;">No inventory matches</div>`;
+      dd.innerHTML += `<div class="parts-dd-empty">No inventory matches</div>`;
     }
   }
 
