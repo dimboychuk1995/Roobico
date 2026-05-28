@@ -173,9 +173,11 @@
             {% if unit.is_active %}
               <button type="button" class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#deactivateUnitModal">Deactivate Unit</button>
             {% else %}
-              <form method="post" action="{{ url_for('customers.customer_unit_activate', customer_id=customer_id, unit_id=unit.id) }}" class="d-inline">
-                <button type="submit" class="btn btn-outline-success btn-sm">Activate Unit</button>
-              </form>
+              <button type="submit"
+                      class="btn btn-outline-success btn-sm"
+                      formaction="{{ url_for('customers.customer_unit_activate', customer_id=customer_id, unit_id=unit.id) }}"
+                      formmethod="post"
+                      formnovalidate>Activate Unit</button>
             {% endif %}
           </div>
         </form>
