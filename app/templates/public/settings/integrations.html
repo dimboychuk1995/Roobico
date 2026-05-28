@@ -1,0 +1,382 @@
+{% extends "layouts/app_base.html" %}
+{% block page_title %}Integrations{% endblock %}
+
+{% block app_content %}
+<div class="page-header d-flex align-items-center justify-content-between">
+  <div>
+    <h1 class="page-header__title">Integrations</h1>
+    <p class="text-muted mb-0 small">Connect Roobico to 3rd-party services for the active shop.</p>
+  </div>
+  <a href="{{ url_for('main.settings') }}" class="btn btn-link text-decoration-none">← Back to Settings</a>
+</div>
+
+{% if no_active_shop %}
+<div class="alert alert-warning mt-3">
+  No active shop in session. Select a shop in the header to manage its integrations.
+</div>
+{% endif %}
+
+<div class="row g-3 mt-1">
+  {% for p in providers %}
+  <div class="col-12 col-md-6 col-xl-4">
+    <div class="card h-100">
+      <div class="card-body d-flex flex-column gap-2">
+        <div class="d-flex align-items-start gap-3">
+          <div class="flex-shrink-0"
+               style="width:36px;height:36px;border-radius:8px;background:#edf7f0;display:flex;align-items:center;justify-content:center;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1a7a42"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>
+            </svg>
+          </div>
+          <div class="flex-grow-1">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+              <h2 class="h6 mb-0">{{ p.label }}</h2>
+              {% if p.state.configured %}
+                {% if p.state.enabled %}
+                  <span class="badge bg-success-subtle text-success-emphasis">Connected</span>
+                {% else %}
+                  <span class="badge bg-secondary-subtle text-secondary-emphasis">Disabled</span>
+                {% endif %}
+                {% if p.state.last_test_status == 'error' %}
+                  <span class="badge bg-danger-subtle text-danger-emphasis" title="{{ p.state.last_test_error }}">Test failed</span>
+                {% endif %}
+              {% else %}
+                <span class="badge bg-light text-muted border">Not configured</span>
+              {% endif %}
+            </div>
+            <p class="text-muted mb-0 small">{{ p.tagline }}</p>
+          </div>
+        </div>
+
+        {% if p.state.configured %}
+        <dl class="row small text-muted mb-0 mt-1">
+          {% if p.state.label %}
+          <dt class="col-4">Label</dt><dd class="col-8 text-body">{{ p.state.label }}</dd>
+          {% endif %}
+          <dt class="col-4">API key</dt><dd class="col-8 text-body">{{ p.state.api_key_masked }}</dd>
+        </dl>
+        {% endif %}
+
+        <div class="mt-auto pt-2">
+          <button type="button"
+                  class="btn btn-sm btn-primary"
+                  data-bs-toggle="modal"
+                  data-bs-target="#integration-modal-{{ p.key }}"
+                  {% if no_active_shop %}disabled{% endif %}>
+            {{ 'Configure' if p.state.configured else 'Connect' }}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="col-12 col-md-6 col-xl-4">
+    <div class="card h-100 border-dashed" style="border-style:dashed!important;">
+      <div class="card-body d-flex align-items-center justify-content-center text-muted small">
+        More integrations coming soon
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Modal: uAttend ────────────────────────────────────────────── #}
+{% set u = providers | selectattr('key', 'equalto', 'uattend') | first %}
+{% if u %}
+<div class="modal fade integration-modal" id="integration-modal-uattend" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <form id="uattend-form" autocomplete="off">
+        <div class="modal-header">
+          <h5 class="modal-title">uAttend integration</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small mb-3">
+            Provide the uAttend API key for this shop. Keys are encrypted at rest.
+            <br>
+            <a href="https://uattend.zendesk.com/hc/en-us/articles/11426123379611" target="_blank" rel="noopener">
+              How to get an API key →
+            </a>
+          </p>
+
+          <div class="mb-3">
+            <label class="form-label">Label <span class="text-muted small">(optional)</span></label>
+            <input type="text" class="form-control" name="label"
+                   value="{{ u.state.label or '' }}"
+                   placeholder="e.g. Main shop uAttend">
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label">API key</label>
+            <div class="input-group">
+              <input type="password" class="form-control" name="api_key"
+                     id="uattend-api-key"
+                     placeholder="{% if u.state.configured %}Leave blank to keep current key ({{ u.state.api_key_masked }}){% else %}Paste API key{% endif %}">
+              <button class="btn btn-outline-secondary" type="button" id="uattend-toggle-key" tabindex="-1">Show</button>
+            </div>
+          </div>
+
+          <div class="form-check form-switch mb-2">
+            <input class="form-check-input" type="checkbox" id="uattend-enabled" name="enabled"
+                   {% if not u.state.configured or u.state.enabled %}checked{% endif %}>
+            <label class="form-check-label" for="uattend-enabled">Enabled</label>
+          </div>
+
+          {% if u.state.configured %}
+          <hr>
+          <div class="d-flex align-items-center justify-content-between mb-2 gap-2 flex-wrap">
+            <strong class="small">Employees in uAttend</strong>
+            <div class="d-flex align-items-center gap-2">
+              <button type="button" class="btn btn-link btn-sm p-0" id="uattend-select-all">Select all</button>
+              <span class="text-muted small">·</span>
+              <button type="button" class="btn btn-link btn-sm p-0" id="uattend-select-none">Clear</button>
+              <span class="text-muted small">·</span>
+              <button type="button" class="btn btn-link btn-sm p-0" id="uattend-refresh-emps">Refresh</button>
+            </div>
+          </div>
+          <div class="text-muted small mb-2">
+            Tick employees whose time should be pulled into Roobico and set their hourly rate.
+          </div>
+          <div id="uattend-emps" class="small">
+            <div class="text-muted">Loading…</div>
+          </div>
+          {% endif %}
+
+          <div id="uattend-feedback" class="mt-3"></div>
+        </div>
+        <div class="modal-footer d-flex justify-content-between">
+          <div>
+            {% if u.state.configured %}
+            <button type="button" class="btn btn-outline-danger btn-sm" id="uattend-remove">Remove</button>
+            {% endif %}
+          </div>
+          <div class="d-flex gap-2">
+            <button type="button" class="btn btn-outline-secondary" id="uattend-test">Test connection</button>
+            <button type="submit" class="btn btn-primary">Save</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const provider = 'uattend';
+  const form = document.getElementById('uattend-form');
+  if (!form) return;
+
+  const feedback = document.getElementById('uattend-feedback');
+  const apiKeyInput = document.getElementById('uattend-api-key');
+  const toggleBtn = document.getElementById('uattend-toggle-key');
+  const testBtn = document.getElementById('uattend-test');
+  const removeBtn = document.getElementById('uattend-remove');
+  const enabledCb = document.getElementById('uattend-enabled');
+  const empsBox = document.getElementById('uattend-emps');
+  const empsRefreshBtn = document.getElementById('uattend-refresh-emps');
+  const selectAllBtn = document.getElementById('uattend-select-all');
+  const selectNoneBtn = document.getElementById('uattend-select-none');
+  const modalEl = document.getElementById('integration-modal-uattend');
+
+  function escapeHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[c]));
+  }
+
+  function formatRate(r) {
+    if (r == null || isNaN(r)) return '';
+    return '$' + Number(r).toFixed(2) + '/hr';
+  }
+
+  async function loadEmployees() {
+    if (!empsBox) return;
+    empsBox.innerHTML = '<div class="text-muted">Loading…</div>';
+    try {
+      const res = await fetch('{{ url_for("settings.integrations_uattend_employees") }}', {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        empsBox.innerHTML = '<div class="text-danger">Failed: ' + escapeHtml(data.error || 'Unknown error') + '</div>';
+        return;
+      }
+      if (!data.employees || !data.employees.length) {
+        empsBox.innerHTML = '<div class="text-muted">No active employees in uAttend.</div>';
+        return;
+      }
+      const rows = data.employees.map(e => {
+        const name = (e.last_name || '') + (e.first_name ? ', ' + e.first_name : '');
+        const meta = [];
+        if (e.role) meta.push(escapeHtml(e.role));
+        if (e.payroll_number) meta.push('#' + escapeHtml(e.payroll_number));
+        const rateVal = (e.hourly_rate != null && !isNaN(e.hourly_rate))
+          ? Number(e.hourly_rate).toFixed(2) : '';
+        const rateCell =
+          '<div class="input-group input-group-sm" style="width:120px;">'
+          + '<span class="input-group-text">$</span>'
+          + '<input type="number" step="0.01" min="0" class="form-control form-control-sm uattend-emp-rate" '
+          + 'data-uid="' + e.user_id + '" value="' + rateVal + '" placeholder="0.00">'
+          + '<span class="input-group-text">/hr</span>'
+          + '</div>';
+        return '<tr>'
+          + '<td style="width:32px;vertical-align:middle;"><input type="checkbox" class="form-check-input uattend-emp-cb" '
+          + 'data-uid="' + e.user_id + '"' + (e.selected ? ' checked' : '') + '></td>'
+          + '<td class="text-muted" style="width:70px;vertical-align:middle;">' + e.user_id + '</td>'
+          + '<td style="vertical-align:middle;">' + escapeHtml(name || '—') + '</td>'
+          + '<td class="text-muted" style="vertical-align:middle;">' + escapeHtml(e.email || '') + '</td>'
+          + '<td class="text-muted" style="vertical-align:middle;">' + meta.join(' · ') + '</td>'
+          + '<td style="vertical-align:middle;">' + rateCell + '</td>'
+          + '</tr>';
+      }).join('');
+      empsBox.innerHTML =
+        '<div class="text-muted mb-1">' + data.count + ' employee(s) · '
+          + '<span id="uattend-selected-count">' + (data.selected_count || 0) + '</span> selected</div>'
+        + '<div class="table-responsive" style="max-height:320px;overflow:auto;">'
+        + '<table class="table table-sm table-borderless mb-0"><tbody>'
+        + rows
+        + '</tbody></table></div>';
+
+      empsBox.querySelectorAll('.uattend-emp-cb').forEach(cb => {
+        cb.addEventListener('change', updateSelectedCount);
+      });
+    } catch (e) {
+      empsBox.innerHTML = '<div class="text-danger">Network error: ' + escapeHtml(e.message) + '</div>';
+    }
+  }
+
+  function updateSelectedCount() {
+    const counter = document.getElementById('uattend-selected-count');
+    if (!counter) return;
+    counter.textContent = empsBox.querySelectorAll('.uattend-emp-cb:checked').length;
+  }
+
+  function setAll(value) {
+    empsBox?.querySelectorAll('.uattend-emp-cb').forEach(cb => { cb.checked = value; });
+    updateSelectedCount();
+  }
+
+  async function saveSelection() {
+    if (!empsBox) return { ok: true, skipped: true };
+    const ids = [...empsBox.querySelectorAll('.uattend-emp-cb:checked')]
+      .map(cb => parseInt(cb.dataset.uid, 10))
+      .filter(n => !isNaN(n));
+    const rates = {};
+    empsBox.querySelectorAll('.uattend-emp-rate').forEach(inp => {
+      const uid = parseInt(inp.dataset.uid, 10);
+      if (isNaN(uid)) return;
+      const v = inp.value.trim();
+      rates[uid] = v === '' ? null : parseFloat(v);
+    });
+    try {
+      const res = await fetch('{{ url_for("settings.integrations_uattend_employees_selection") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_ids: ids, hourly_rates: rates }),
+      });
+      return await res.json();
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
+
+  if (modalEl && empsBox) {
+    modalEl.addEventListener('shown.bs.modal', loadEmployees);
+  }
+  empsRefreshBtn?.addEventListener('click', loadEmployees);
+  selectAllBtn?.addEventListener('click', () => setAll(true));
+  selectNoneBtn?.addEventListener('click', () => setAll(false));
+
+  function setFeedback(kind, msg) {
+    if (!feedback) return;
+    if (!msg) { feedback.innerHTML = ''; return; }
+    const map = { ok: 'alert-success', err: 'alert-danger', info: 'alert-info' };
+    feedback.innerHTML = '<div class="alert ' + (map[kind] || 'alert-info') + ' small mb-0">' + msg + '</div>';
+  }
+
+  toggleBtn?.addEventListener('click', () => {
+    const isPwd = apiKeyInput.type === 'password';
+    apiKeyInput.type = isPwd ? 'text' : 'password';
+    toggleBtn.textContent = isPwd ? 'Hide' : 'Show';
+  });
+
+  function buildBody(includeKey) {
+    const body = {
+      label: form.elements['label'].value,
+      enabled: enabledCb.checked,
+    };
+    if (includeKey) body.api_key = apiKeyInput.value;
+    return body;
+  }
+
+  testBtn?.addEventListener('click', async () => {
+    setFeedback('info', 'Testing…');
+    testBtn.disabled = true;
+    try {
+      const res = await fetch('{{ url_for("settings.integrations_test", provider="uattend") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ api_key: apiKeyInput.value }),
+      });
+      const data = await res.json();
+      if (data.ok) setFeedback('ok', 'Connection successful.');
+      else setFeedback('err', 'Test failed: ' + (data.error || 'Unknown error'));
+    } catch (e) {
+      setFeedback('err', 'Network error: ' + e.message);
+    } finally {
+      testBtn.disabled = false;
+    }
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    setFeedback('info', 'Saving…');
+    try {
+      const res = await fetch('{{ url_for("settings.integrations_save", provider="uattend") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildBody(true)),
+      });
+      const data = await res.json();
+      if (!data.ok) {
+        setFeedback('err', data.error || 'Save failed.');
+        return;
+      }
+      // Also persist the per-employee selection (if the list is rendered).
+      const sel = await saveSelection();
+      if (sel && sel.ok === false) {
+        setFeedback('err', 'Saved config, but selection failed: ' + (sel.error || ''));
+        return;
+      }
+      setFeedback('ok', 'Saved. Reloading…');
+      setTimeout(() => window.location.reload(), 600);
+    } catch (err) {
+      setFeedback('err', 'Network error: ' + err.message);
+    }
+  });
+
+  removeBtn?.addEventListener('click', async () => {
+    if (!confirm('Remove uAttend integration for this shop?')) return;
+    setFeedback('info', 'Removing…');
+    try {
+      const res = await fetch('{{ url_for("settings.integrations_delete", provider="uattend") }}', {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setFeedback('ok', 'Removed. Reloading…');
+        setTimeout(() => window.location.reload(), 600);
+      } else {
+        setFeedback('err', data.error || 'Delete failed.');
+      }
+    } catch (err) {
+      setFeedback('err', 'Network error: ' + err.message);
+    }
+  });
+})();
+</script>
+{% endif %}
+{% endblock %}

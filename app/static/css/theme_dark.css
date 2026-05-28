@@ -254,6 +254,19 @@ html[data-theme="dark"] .table > tbody > tr:focus-within > td {
   background-color: #3a3a3a !important;
 }
 
+/* tfoot — totals rows */
+html[data-theme="dark"] .table > tfoot > tr > th,
+html[data-theme="dark"] .table > tfoot > tr > td {
+  background-color: #1f1f1f;
+  color: var(--text);
+  border-top-color: var(--border);
+}
+
+html[data-theme="dark"] .table > tfoot > tr > td.text-muted,
+html[data-theme="dark"] .table > tfoot .text-muted {
+  color: var(--muted) !important;
+}
+
 html[data-theme="dark"] .sortable-th:hover {
   background: rgba(255, 255, 255, 0.05);
 }
@@ -848,3 +861,33 @@ html[data-theme="dark"] .select2-dropdown .select2-results,
 html[data-theme="dark"] .select2-dropdown .select2-results__options {
   background: #1f1f1f !important;
 }
+
+/* -- Integrations modal (uAttend etc.) --------------------------- */
+html[data-theme="dark"] .integration-modal .input-group-text {
+  background: #2a2a2a;
+  border-color: #3a3a3a;
+  color: #cbd5e1;
+}
+html[data-theme="dark"] .integration-modal .form-control,
+html[data-theme="dark"] .integration-modal .form-control:focus {
+  background: #1f1f1f;
+  border-color: #3a3a3a;
+  color: var(--text);
+}
+html[data-theme="dark"] .integration-modal .form-control::placeholder {
+  color: #6b7280;
+}
+html[data-theme="dark"] .integration-modal hr {
+  border-color: var(--border);
+  opacity: 0.6;
+}
+html[data-theme="dark"] .integration-modal .table tbody tr,
+html[data-theme="dark"] .integration-modal .table tbody td {
+  background: transparent;
+  color: var(--text);
+  border-color: transparent;
+}
+html[data-theme="dark"] .integration-modal .table tbody tr:hover td {
+  background: #2a2a2a;
+}
+

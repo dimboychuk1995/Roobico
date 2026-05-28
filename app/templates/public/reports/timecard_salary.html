@@ -1,0 +1,164 @@
+{% extends "layouts/app_base.html" %}
+{% block page_title %}Timecard / Salary Report{% endblock %}
+
+{% block app_content %}
+<div class="page-header d-flex align-items-center justify-content-between flex-wrap gap-2">
+  <div>
+    <h1 class="page-header__title mb-1">Timecard / Salary Report</h1>
+    <div class="text-muted small">
+      <a href="{{ url_for('reports.reports_index') }}" class="text-decoration-none">← Back to reports</a>
+    </div>
+  </div>
+</div>
+
+{# ── Filters ─────────────────────────────────────────────────────── #}
+<form method="get" class="card mt-3">
+  <div class="card-body">
+    <div class="row g-3 align-items-end">
+      <div class="col-12 col-md-3">
+        <label class="form-label small text-muted mb-1">Period</label>
+        <select name="date_preset" class="form-select form-select-sm">
+          {% set preset = date_preset or 'this_month' %}
+          <option value="this_week"   {% if preset == 'this_week' %}selected{% endif %}>This week</option>
+          <option value="last_week"   {% if preset == 'last_week' %}selected{% endif %}>Last week</option>
+          <option value="this_month"  {% if preset == 'this_month' %}selected{% endif %}>This month</option>
+          <option value="last_month"  {% if preset == 'last_month' %}selected{% endif %}>Last month</option>
+          <option value="this_year"   {% if preset == 'this_year' %}selected{% endif %}>This year</option>
+          <option value="custom"      {% if preset == 'custom' %}selected{% endif %}>Custom</option>
+        </select>
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small text-muted mb-1">From</label>
+        <input type="date" name="date_from" value="{{ date_from or '' }}" class="form-control form-control-sm">
+      </div>
+      <div class="col-6 col-md-3">
+        <label class="form-label small text-muted mb-1">To</label>
+        <input type="date" name="date_to" value="{{ date_to or '' }}" class="form-control form-control-sm">
+      </div>
+      <div class="col-12 col-md-3 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm">Apply</button>
+        <a href="{{ url_for('reports.timecard_salary_page') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
+      </div>
+    </div>
+  </div>
+</form>
+
+{# ── Integration status ─────────────────────────────────────────── #}
+<div class="mt-3">
+  {% if integration_status == 'none' %}
+    <div class="alert alert-warning small mb-0">
+      No uAttend integration configured for the active shop. Hourly users will show no hours.
+      <a href="{{ url_for('settings.integrations_index') }}">Configure in Settings → Integrations</a>.
+    </div>
+  {% elif integration_status == 'disabled' %}
+    <div class="alert alert-warning small mb-0">
+      uAttend integration is configured but disabled for this shop.
+      <a href="{{ url_for('settings.integrations_index') }}">Enable it</a>.
+    </div>
+  {% elif integration_error %}
+    <div class="alert alert-danger small mb-0">
+      uAttend error: {{ integration_error }}
+    </div>
+  {% else %}
+    <div class="alert alert-success small mb-0">
+      uAttend integration active — hours pulled from punches in the selected period.
+    </div>
+  {% endif %}
+</div>
+
+{% if debug_mode %}
+<div class="card mt-3">
+  <div class="card-body">
+    <h6 class="mb-2">uAttend debug</h6>
+    <div class="small text-muted mb-1">Request</div>
+    <pre class="bg-dark text-light p-2 rounded small" style="max-height: 240px; overflow: auto;">{{ debug_payload.request | tojson(indent=2) }}</pre>
+    <div class="small text-muted mb-1">Raw response</div>
+    <pre class="bg-dark text-light p-2 rounded small" style="max-height: 480px; overflow: auto;">{{ debug_payload.response | tojson(indent=2) }}</pre>
+  </div>
+</div>
+{% endif %}
+
+{# ── Table ──────────────────────────────────────────────────────── #}
+<div class="card mt-3">
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Employee</th>
+          <th>Email</th>
+          <th>Role</th>
+          <th>Pay type</th>
+          <th class="text-end">Rate / Salary</th>
+          <th class="text-end">Hours</th>
+          <th class="text-end">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in rows %}
+        <tr>
+          <td>
+            {{ r.name }}
+            {% if r.matched_uattend_name %}
+              <span class="badge bg-warning-subtle text-warning-emphasis ms-1" title="Also appears in uAttend as: {{ r.matched_uattend_name }}">↔ uAttend: {{ r.matched_uattend_name }}</span>
+            {% endif %}
+            {% if r.matched_internal_name %}
+              <span class="badge bg-warning-subtle text-warning-emphasis ms-1" title="Linked to internal user: {{ r.matched_internal_name }} ({{ '%.0f'|format((r.matched_confidence or 0)*100) }}%)">↔ Internal: {{ r.matched_internal_name }}</span>
+            {% endif %}
+          </td>
+          <td class="text-muted">{{ r.email }}</td>
+          <td class="text-muted">{{ r.role }}</td>
+          <td>
+            {% if r.pay_type == 'hourly' %}
+              <span class="badge bg-info-subtle text-info-emphasis">Hourly</span>
+            {% else %}
+              <span class="badge bg-secondary-subtle text-secondary-emphasis">Salary</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if r.pay_type == 'hourly' %}
+              {% if r.hourly_rate is not none %}${{ '%.2f'|format(r.hourly_rate) }}/hr{% else %}<span class="text-muted">—</span>{% endif %}
+            {% else %}
+              {% if r.salary_amount is not none %}${{ '%.2f'|format(r.salary_amount) }}/wk{% else %}<span class="text-muted">—</span>{% endif %}
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if r.hours is not none %}
+              {{ '%.2f'|format(r.hours) }}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end fw-semibold">
+            {% if r.total is not none %}
+              ${{ '%.2f'|format(r.total) }}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+            {% if r.note %}
+              <div class="text-muted small fw-normal">{{ r.note }}</div>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center text-muted py-4">No users found.</td></tr>
+        {% endfor %}
+      </tbody>
+      {% if rows %}
+      <tfoot class="table-light">
+        <tr>
+          <th colspan="5" class="text-end">Totals</th>
+          <th class="text-end">{{ '%.2f'|format(totals.hours or 0) }}</th>
+          <th class="text-end">${{ '%.2f'|format(totals.grand or 0) }}</th>
+        </tr>
+        <tr>
+          <td colspan="7" class="text-muted small">
+            Salary subtotal: ${{ '%.2f'|format(totals.salary or 0) }}
+            · Hourly subtotal: ${{ '%.2f'|format(totals.hourly or 0) }}
+          </td>
+        </tr>
+      </tfoot>
+      {% endif %}
+    </table>
+  </div>
+</div>
+{% endblock %}

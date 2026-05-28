@@ -5,6 +5,29 @@
   }
   root.dataset.settingsUsersClickBound = "1";
 
+  // ── Pay-type toggle (works for any modal containing the data-pay-type-select) ──
+  function applyPayType(scope) {
+    var sel = scope.querySelector("[data-pay-type-select]");
+    if (!sel) return;
+    var salaryField = scope.querySelector("[data-salary-field]");
+    var hourlyInfo = scope.querySelector("[data-hourly-info]");
+    var isHourly = sel.value === "hourly";
+    if (salaryField) salaryField.classList.toggle("d-none", isHourly);
+    if (hourlyInfo) hourlyInfo.classList.toggle("d-none", !isHourly);
+    var salaryInput = scope.querySelector("[data-salary-field] input[name='salary_amount']");
+    if (salaryInput) {
+      if (isHourly) {
+        salaryInput.value = "";
+        salaryInput.removeAttribute("required");
+      }
+    }
+  }
+  document.querySelectorAll("[data-pay-type-select]").forEach(function (sel) {
+    var modal = sel.closest(".modal") || document;
+    sel.addEventListener("change", function () { applyPayType(modal); });
+    applyPayType(modal);
+  });
+
   document.addEventListener("click", function (event) {
     var btn = event.target && event.target.closest ? event.target.closest(".edit-user-btn") : null;
     if (!btn) return;
@@ -19,6 +42,8 @@
     var roleInput = editForm.querySelector("#edit_user_role");
     var isActiveInput = editForm.querySelector("#edit_user_is_active");
     var passwordInput = editForm.querySelector("#edit_user_password");
+    var payTypeInput = editForm.querySelector("#edit_pay_type");
+    var salaryInput = editForm.querySelector("#edit_salary_amount");
 
     if (!firstNameInput || !lastNameInput || !emailInput || !phoneInput || !roleInput || !isActiveInput) {
       return;
@@ -35,6 +60,14 @@
     phoneInput.value = btn.getAttribute("data-phone") || "";
     roleInput.value = btn.getAttribute("data-role") || "viewer";
     isActiveInput.checked = (btn.getAttribute("data-is-active") || "1") === "1";
+
+    if (payTypeInput) {
+      payTypeInput.value = btn.getAttribute("data-pay-type") || "salary";
+    }
+    if (salaryInput) {
+      salaryInput.value = btn.getAttribute("data-salary-amount") || "";
+    }
+    applyPayType(editForm);
 
     var rawShopIds = (btn.getAttribute("data-shop-ids") || "").split(",");
     var selectedShopIds = {};

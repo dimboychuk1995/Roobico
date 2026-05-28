@@ -103,6 +103,28 @@ def _safe_str_list(v):
     return [str(x) for x in v if x is not None]
 
 
+PAY_TYPES = {"salary", "hourly"}
+
+
+def _parse_pay_fields(form) -> tuple[str, float | None]:
+    """Extract pay_type ∈ {salary, hourly} and salary_amount (None for hourly)."""
+    pt = (form.get("pay_type") or "salary").strip().lower()
+    if pt not in PAY_TYPES:
+        pt = "salary"
+    if pt == "hourly":
+        return "hourly", None
+    raw = (form.get("salary_amount") or "").strip()
+    if not raw:
+        return "salary", None
+    try:
+        val = float(raw.replace(",", ""))
+    except (TypeError, ValueError):
+        return "salary", None
+    if val < 0:
+        return "salary", None
+    return "salary", round(val, 2)
+
+
 def _load_shops_for_tenant(master, tenant_id):
     """
     Отдаём список шап (для чекбоксов) в формате:
@@ -242,6 +264,8 @@ def users_edit(user_id):
     role = (request.form.get("role") or "viewer").strip().lower()
     is_active = bool(request.form.get("is_active"))
 
+    pay_type, salary_amount = _parse_pay_fields(request.form)
+
     if not first_name or not last_name or not email:
         flash("Please fill first name, last name and email.", "error")
         return _redirect_users_index()
@@ -288,6 +312,8 @@ def users_edit(user_id):
         "role": role,
         "shop_ids": selected_shop_oids,
         "is_active": is_active,
+        "pay_type": pay_type,
+        "salary_amount": salary_amount,
         "updated_at": utcnow(),
     }
 
@@ -350,6 +376,8 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
     phone = (request.form.get("phone") or "").strip()
     role = (request.form.get("role") or "viewer").strip().lower()
     is_active = bool(request.form.get("is_active"))
+
+    pay_type, salary_amount = _parse_pay_fields(request.form)
 
     password = request.form.get("password") or ""
     password_confirm = request.form.get("password_confirm") or ""
@@ -425,6 +453,8 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
         "phone": phone or None,
         "role": role,
         "is_active": is_active,
+        "pay_type": pay_type,
+        "salary_amount": salary_amount,
         "must_reset_password": False,
         "allow_permissions": [],
         "deny_permissions": [],

@@ -89,6 +89,7 @@ PERMISSIONS: dict[str, str] = {
     "settings.manage_workflows": "Manage workflows",
     "settings.manage_notifications": "Manage notification settings",
     "settings.manage_pdf_design": "Manage PDF design",
+    "settings.manage_integrations": "Manage 3rd-party integrations (uAttend, etc.)",
 }
 
 ALL_PERMISSIONS: list[str] = sorted(PERMISSIONS.keys())
@@ -215,6 +216,7 @@ PERMISSION_GROUPS: list[dict] = [
             "settings.manage_workflows",
             "settings.manage_notifications",
             "settings.manage_pdf_design",
+            "settings.manage_integrations",
         ],
     },
 ]

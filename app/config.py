@@ -69,6 +69,13 @@ class Config:
     #   SMTP_FROM_EMAIL  explicit From address  (defaults to SMTP_USER)
     #   SMTP_FROM_NAME   display name           (default: Roobico)
 
+    # ── Integrations (encryption of 3rd-party API keys) ──────────────────────
+    # Fernet key (base64-urlsafe, 32 raw bytes). Generate with:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # If not set, integration keys cannot be saved / read (the UI will show
+    # a clear error so the operator knows to add it to .env).
+    INTEGRATIONS_SECRET_KEY = os.environ.get("INTEGRATIONS_SECRET_KEY", "")
+
     # ── OpenAI (Invoice AI parsing) ───────────────────────────────────────────
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
     # ── Mapbox (Address autocomplete) ───────────────────────────────────────────
