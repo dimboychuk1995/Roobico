@@ -29,7 +29,11 @@ def index():
     # dashboard on the application host (app.roobico.com in prod). Without
     # this the login form would re-appear after returning to roobico.com.
     if session.get(SESSION_USER_ID) and session.get(SESSION_TENANT_ID):
-        return redirect(app_url("dashboard.dashboard"))
+        # Если нет доступа к dashboard — на первую доступную страницу, иначе
+        # dashboard зациклит редирект (ERR_TOO_MANY_REDIRECTS).
+        from app.utils.permissions import first_allowed_landing
+        landing = first_allowed_landing() or "dashboard.dashboard"
+        return redirect(app_url(landing))
     return render_template("public/auth.html")
 
 

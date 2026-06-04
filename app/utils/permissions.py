@@ -160,10 +160,40 @@ def has_permission(permission_key: str) -> bool:
     return permission_key in get_effective_permissions()
 
 
+# Порядок «безопасной посадки»: куда отправлять пользователя, если у него
+# нет доступа к запрошенной странице. Берём первую страницу, на которую у
+# него ЕСТЬ право. Важно: нельзя редиректить на страницу, к которой доступа
+# тоже нет, — иначе получаем бесконечный цикл редиректов
+# (ERR_TOO_MANY_REDIRECTS), как было с dashboard.view.
+_SAFE_LANDING_ORDER = [
+    ("dashboard.view", "dashboard.dashboard"),
+    ("calendar.view", "calendar.calendar_page"),
+    ("work_orders.view", "work_orders.work_orders_page"),
+    ("parts.view", "parts.parts_page"),
+    ("vendors.view", "vendors.vendors_page"),
+    ("customers.view", "customers.customers_page"),
+    ("reports.view", "reports.reports_index"),
+    ("import_export.view", "import_export.import_export_index"),
+    ("settings.view", "main.settings"),
+]
+
+
+def first_allowed_landing() -> str | None:
+    """
+    Вернёт endpoint первой страницы, к которой у текущего пользователя есть
+    доступ, либо None если доступа нет ни к одной.
+    """
+    perms = get_effective_permissions()
+    for perm, endpoint in _SAFE_LANDING_ORDER:
+        if perm in perms:
+            return endpoint
+    return None
+
+
 def permission_required(permission_key: str):
     """
     Декоратор:
-      - HTML: flash + redirect на dashboard
+      - HTML: flash + redirect на первую доступную страницу
       - API:  403 JSON
     """
     def decorator(view_func):
@@ -176,7 +206,19 @@ def permission_required(permission_key: str):
                 return jsonify({"ok": False, "error": "forbidden", "required": permission_key}), 403
 
             flash("Access denied.", "error")
-            return redirect(url_for("dashboard.dashboard"))
+            # НЕ редиректим на dashboard вслепую: если у пользователя нет
+            # dashboard.view, dashboard сам же снова откажет → бесконечный
+            # цикл. Отправляем на первую доступную страницу, а если доступа
+            # нет нигде — разлогиниваем (мягко прерываем цикл).
+            target = first_allowed_landing()
+            if target is None:
+                flash(
+                    "You don't have access to any sections. "
+                    "Please contact your administrator.",
+                    "error",
+                )
+                return redirect(url_for("auth.logout"))
+            return redirect(url_for(target))
         return wrapper
     return decorator
 

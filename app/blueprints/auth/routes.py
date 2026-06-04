@@ -100,7 +100,11 @@ def login():
 
     # In production this points at https://app.roobico.com/dashboard so the
     # browser leaves the public login host and lands on the application host.
-    return redirect(app_url("dashboard.dashboard"))
+    # Если у пользователя нет доступа к dashboard — отправляем на первую
+    # доступную ему страницу, иначе dashboard сам же отдаст редирект по кругу.
+    from app.utils.permissions import first_allowed_landing
+    landing = first_allowed_landing() or "dashboard.dashboard"
+    return redirect(app_url(landing))
 
 
 @auth_bp.get("/logout")
