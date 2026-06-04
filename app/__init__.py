@@ -280,6 +280,31 @@ def create_app():
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
 
+        # ── Чистим «протухшую» cookie от прежнего host-split ──────────────
+        # Во время старого разделения хостов (roobico.com / app.roobico.com)
+        # session-cookie выдавалась с Domain=.roobico.com (+ Secure). Сейчас
+        # приложение использует host-only cookie, поэтому ту старую
+        # доменную cookie session.clear() удалить НЕ может — она остаётся в
+        # браузерах вернувшихся пользователей и загоняет их в цикл
+        # редиректов (ERR_TOO_MANY_REDIRECTS), который «лечится» только
+        # ручной очисткой кэша/cookie. Если запрос пришёл с session-cookie,
+        # но валидной сессии не получилось (g.user пуст), принудительно
+        # гасим именно эту доменную cookie. delete_cookie с domain=.roobico.com
+        # удаляет ДРУГУЮ cookie, не текущую host-only, поэтому рабочие
+        # сессии не затрагиваются.
+        legacy_cookie_name = app.config.get("SESSION_COOKIE_NAME", "session")
+        if (
+            getattr(g, "user", None) is None
+            and _req.cookies.get(legacy_cookie_name) is not None
+        ):
+            response.delete_cookie(
+                legacy_cookie_name,
+                domain=".roobico.com",
+                path="/",
+                secure=True,
+                samesite="Lax",
+            )
+
         return response
 
     @app.teardown_request
