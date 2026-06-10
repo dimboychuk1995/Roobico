@@ -763,6 +763,7 @@
               </button>
               <ul class="dropdown-menu dropdown-menu-end">
                 <li><button type="button" class="dropdown-item" id="saveInProgressWorkOrderBtn">Save In Progress</button></li>
+                <li><button type="button" class="dropdown-item" id="saveAnnualInspectionMenuBtn">Create Annual Inspection</button></li>
               </ul>
             </div>
             <div class="btn-group" id="createWorkOrderGroup">
@@ -772,6 +773,7 @@
               </button>
               <ul class="dropdown-menu dropdown-menu-end">
                 <li><button type="button" class="dropdown-item" id="createInProgressWorkOrderBtn">Save In Progress</button></li>
+                <li><button type="button" class="dropdown-item" id="createAnnualInspectionBtn">Create Annual Inspection</button></li>
               </ul>
             </div>
           </div>
@@ -811,6 +813,88 @@
           <div class="modal-footer">
             <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
             <button type="button" id="recognizeWoApplyBtn" class="btn btn-primary">Apply to Work Order</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Annual Vehicle Inspection Modal -->
+    <div class="modal fade" id="annualInspectionModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">Annual Vehicle Inspection</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-3">
+              <div class="col-12 col-lg-5">
+                <div class="row g-3">
+                  <div class="col-12 col-md-5">
+                    <label class="form-label small text-muted mb-1" for="aviDateInput">Date</label>
+                    <input type="date" id="aviDateInput" class="form-control" value="{{ today_date_input_value }}"/>
+                  </div>
+                  <div class="col-12 col-md-7">
+                    <label class="form-label small text-muted mb-1" for="aviCarrierInput">Motor Carrier Operator</label>
+                    <input type="text" id="aviCarrierInput" class="form-control" placeholder="Company name"/>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label small text-muted mb-1" for="aviAddressInput">Address</label>
+                    <input type="text" id="aviAddressInput" class="form-control" placeholder="Street address"/>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label small text-muted mb-1" for="aviCityStateZipInput">City, State, Zip Code</label>
+                    <input type="text" id="aviCityStateZipInput" class="form-control" placeholder="City, State, Zip"/>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label small text-muted mb-1" for="aviInspectorInput">Inspector's Name</label>
+                    <input type="text" id="aviInspectorInput" class="form-control" value="{{ app_user_display }}"/>
+                  </div>
+                  <div class="col-12">
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="aviQualifiedCheck" checked/>
+                      <label class="form-check-label small" for="aviQualifiedCheck">
+                        <strong>Yes</strong> — this inspector meets the qualification requirements in Section 396.19
+                      </label>
+                    </div>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label small text-muted mb-1" for="aviVinInput">Vehicle Identification</label>
+                    <div class="d-flex align-items-center gap-2">
+                      <div class="form-check mb-0 flex-shrink-0">
+                        <input class="form-check-input" type="checkbox" id="aviVinCheck" checked/>
+                        <label class="form-check-label small" for="aviVinCheck">VIN</label>
+                      </div>
+                      <input type="text" id="aviVinInput" class="form-control" maxlength="32" placeholder="VIN"/>
+                    </div>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label small text-muted mb-1" for="aviAgencyInput">Inspection Agency/Location (optional)</label>
+                    <input type="text" id="aviAgencyInput" class="form-control" value="{{ app_shop_display }}"/>
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label small text-muted mb-1" for="aviVehicleTypeSelect">Vehicle Type</label>
+                    <select id="aviVehicleTypeSelect" class="form-select">
+                      <option value="">-- Select type --</option>
+                      <option value="semi_trailer">Semi Trailer</option>
+                      <option value="semi_truck">Semi Truck</option>
+                      <option value="hot_shot_electric">Hot Shot Trailer with Electric Brakes</option>
+                      <option value="hot_shot_hydraulic">Hot Shot Trailer with Hydraulic Brakes</option>
+                      <option value="pickup_truck">Pick Up Truck</option>
+                    </select>
+                  </div>
+                </div>
+                <div id="aviError" class="text-danger small mt-2" style="display:none;"></div>
+              </div>
+              <div class="col-12 col-lg-7">
+                <label class="form-label small text-muted mb-1">Preview</label>
+                <iframe id="aviPreviewFrame" title="Inspection preview" class="border rounded w-100 bg-light" style="height:65vh;"></iframe>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" id="aviSaveBtn" class="btn btn-primary">Create Inspection</button>
           </div>
         </div>
       </div>

@@ -3036,6 +3036,141 @@
     createBtn?.addEventListener("click", () => submitCreate());
     document.getElementById("createInProgressWorkOrderBtn")?.addEventListener("click", () => submitCreate("in_progress"));
 
+    // ---------- Annual Vehicle Inspection ----------
+    const annualInspectionModalEl = $("annualInspectionModal");
+
+    function collectAviFields() {
+      const val = (id) => String(document.getElementById(id)?.value || "").trim();
+      return {
+        customer_id: String(customerSel?.value || "").trim(),
+        unit_id: String(unitSel?.value || "").trim(),
+        work_order_id: isCreated && workOrderId ? String(workOrderId) : "",
+        date: val("aviDateInput"),
+        motor_carrier_operator: val("aviCarrierInput"),
+        address: val("aviAddressInput"),
+        city_state_zip: val("aviCityStateZipInput"),
+        inspector_name: val("aviInspectorInput"),
+        inspector_qualified: !!document.getElementById("aviQualifiedCheck")?.checked,
+        vin: val("aviVinInput").toUpperCase(),
+        inspection_agency: val("aviAgencyInput"),
+        vehicle_type: val("aviVehicleTypeSelect"),
+      };
+    }
+
+    function refreshAviPreview() {
+      const frame = document.getElementById("aviPreviewFrame");
+      if (!frame) return;
+      const f = collectAviFields();
+      const params = new URLSearchParams({
+        unit_id: f.unit_id,
+        date: f.date,
+        motor_carrier_operator: f.motor_carrier_operator,
+        address: f.address,
+        city_state_zip: f.city_state_zip,
+        inspector_name: f.inspector_name,
+        inspector_qualified: f.inspector_qualified ? "1" : "0",
+        vin: f.vin,
+        inspection_agency: f.inspection_agency,
+        vehicle_type: f.vehicle_type,
+      });
+      frame.src = `/work_orders/api/annual_inspections/preview-pdf?${params.toString()}#toolbar=0&navpanes=0`;
+    }
+
+    const debouncedAviPreview = debounce(refreshAviPreview, 600);
+
+    ["aviDateInput", "aviCarrierInput", "aviAddressInput", "aviCityStateZipInput",
+     "aviInspectorInput", "aviQualifiedCheck", "aviVinInput", "aviAgencyInput",
+     "aviVehicleTypeSelect"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.addEventListener("input", debouncedAviPreview);
+      el.addEventListener("change", debouncedAviPreview);
+    });
+
+    async function openAnnualInspectionModal() {
+      const customerId = String(customerSel?.value || "").trim();
+      const unitId = String(unitSel?.value || "").trim();
+      if (!customerId || !unitId) {
+        toast("Select a customer and unit first.");
+        return;
+      }
+
+      const setVal = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.value = String(value || "").trim();
+      };
+
+      const customer = findCustomerById(customersData, customerId);
+      setVal("aviCarrierInput", (customer && (customer.company_name || customer.label)) || "");
+      setVal("aviAddressInput", (customer && customer.address) || "");
+      setVal("aviCityStateZipInput", "");
+
+      const unitDetails = await fetchUnitDetails(unitId);
+      setVal("aviVinInput", String((unitDetails && unitDetails.vin) || "").toUpperCase());
+
+      const errEl = document.getElementById("aviError");
+      if (errEl) errEl.style.display = "none";
+
+      if (annualInspectionModalEl && window.bootstrap && window.bootstrap.Modal) {
+        window.bootstrap.Modal.getOrCreateInstance(annualInspectionModalEl).show();
+      }
+      refreshAviPreview();
+    }
+
+    document.getElementById("createAnnualInspectionBtn")?.addEventListener("click", openAnnualInspectionModal);
+    document.getElementById("saveAnnualInspectionMenuBtn")?.addEventListener("click", openAnnualInspectionModal);
+
+    document.getElementById("aviSaveBtn")?.addEventListener("click", async function () {
+      const btn = this;
+      const errEl = document.getElementById("aviError");
+      const showError = (msg) => {
+        if (errEl) {
+          errEl.textContent = msg;
+          errEl.style.display = "";
+        }
+      };
+      const val = (id) => String(document.getElementById(id)?.value || "").trim();
+
+      const payload = collectAviFields();
+
+      if (!payload.unit_id) {
+        showError("Select a unit first.");
+        return;
+      }
+      if (!payload.vin) {
+        showError("VIN is required.");
+        return;
+      }
+      if (!payload.vehicle_type) {
+        showError("Select a vehicle type.");
+        return;
+      }
+
+      btn.disabled = true;
+      try {
+        const res = await fetch("/work_orders/api/annual_inspections/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!data || !data.ok) {
+          throw new Error((data && data.error) || "Failed to create inspection");
+        }
+        if (annualInspectionModalEl && window.bootstrap && window.bootstrap.Modal) {
+          window.bootstrap.Modal.getInstance(annualInspectionModalEl)?.hide();
+        }
+        toast("Annual inspection created", "success");
+        if (data.id) {
+          window.location.href = `/work_orders/api/annual_inspections/${encodeURIComponent(data.id)}/download-pdf`;
+        }
+      } catch (err) {
+        showError(err.message || "Failed to create inspection");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
     unitVinInput?.addEventListener("input", debouncedVinLookup);
     unitVinInput?.addEventListener("blur", debouncedVinLookup);
 

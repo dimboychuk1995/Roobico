@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    @page {
+      size: letter portrait;
+      margin: 0.35in 0.4in 0.35in 0.4in;
+    }
+    body {
+      font-family: Helvetica, Arial, sans-serif;
+      font-size: 8pt;
+      color: #1a1a1a;
+      margin: 0;
+    }
+    .title { font-size: 11pt; font-weight: bold; text-align: center; letter-spacing: 1px; }
+    .hist-tbl { border-collapse: collapse; margin-left: auto; width: 230px; }
+    .hist-tbl td, .hist-tbl th { border: 0.7pt solid #1a1a1a; font-size: 5.8pt; padding: 1px 3px; }
+    .hist-hdr { background-color: #444444; color: #ffffff; font-weight: bold; text-align: center; font-size: 5.8pt; }
+    .info-tbl { width: 100%; border-collapse: collapse; margin-top: 4px; }
+    .info-tbl td { border: 0.7pt solid #1a1a1a; padding: 1px 4px; vertical-align: top; }
+    .fld-lbl { font-size: 5.2pt; color: #444444; text-transform: uppercase; }
+    .fld-val { font-size: 7.2pt; font-weight: bold; }
+    .comp-hdr {
+      background-color: #444444; color: #ffffff; font-weight: bold;
+      text-align: center; font-size: 7.5pt; padding: 3px;
+      border: 0.7pt solid #1a1a1a;
+    }
+    .cols-tbl { width: 100%; border-collapse: collapse; }
+    .cols-tbl > tr > td, .cols-tbl td.col { vertical-align: top; }
+    .items-tbl { width: 100%; border-collapse: collapse; }
+    .items-tbl th {
+      font-size: 4.4pt; color: #333333; padding: 1px 0;
+      border: 0.5pt solid #555555; text-align: center;
+      font-weight: bold;
+    }
+    .items-tbl td {
+      font-size: 6.5pt; padding: 2px 3px; vertical-align: top;
+      border: 0.5pt solid #999999;
+    }
+    .items-tbl td.chk { width: 15px; }
+    .items-tbl td.rdate { width: 28px; }
+    .items-tbl td.item { border-left: 0.5pt solid #555555; }
+    .sec-title { font-weight: bold; font-size: 7.4pt; padding-top: 3px; }
+    .cert { font-size: 6.5pt; font-weight: bold; margin-top: 4px; }
+    .legend { font-size: 5.8pt; margin-top: 3px; }
+    .other-lines { font-size: 6.3pt; line-height: 1.7; }
+  </style>
+</head>
+<body>
+
+  <table class="hdr-out" style="width:100%; border-collapse:collapse;">
+    <tr>
+      <td style="vertical-align:bottom;">
+        <div class="title">ANNUAL VEHICLE INSPECTION REPORT</div>
+      </td>
+      <td style="width:240px;">
+        <table class="hist-tbl">
+          <tr><td colspan="2" class="hist-hdr">VEHICLE HISTORY RECORD</td></tr>
+          <tr>
+            <td style="width:90px;"><span class="fld-lbl">Report Number</span><div class="fld-val">{{ report_number }}</div></td>
+            <td><span class="fld-lbl">Fleet Unit Number</span><div class="fld-val">{{ fleet_unit_number }}</div></td>
+          </tr>
+          <tr>
+            <td colspan="2"><span class="fld-lbl">Date</span><div class="fld-val">{{ inspection_date_label }}</div></td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <table class="info-tbl">
+    <tr>
+      <td style="width:55%;">
+        <span class="fld-lbl">Motor Carrier Operator</span>
+        <div class="fld-val">{% if motor_carrier_operator %}{{ motor_carrier_operator }}{% else %}&nbsp;{% endif %}</div>
+      </td>
+      <td>
+        <span class="fld-lbl">Inspector's Name (print or type)</span>
+        <div class="fld-val">{% if inspector_name %}{{ inspector_name }}{% else %}&nbsp;{% endif %}</div>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <span class="fld-lbl">Address</span>
+        <div class="fld-val">{% if address %}{{ address }}{% else %}&nbsp;{% endif %}</div>
+      </td>
+      <td>
+        <span class="fld-lbl">This inspector meets the qualification requirements in Section 396.19</span>
+        <div class="fld-val">[{% if inspector_qualified %}X{% else %}&nbsp;&nbsp;{% endif %}] YES</div>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <span class="fld-lbl">City, State, Zip Code</span>
+        <div class="fld-val">{% if city_state_zip %}{{ city_state_zip }}{% else %}&nbsp;{% endif %}</div>
+      </td>
+      <td>
+        <span class="fld-lbl">Vehicle Identification (&#10004;) and complete</span>
+        <div class="fld-val">[&nbsp;&nbsp;] LIC. PLATE NO. &nbsp; [X] VIN &nbsp; [&nbsp;&nbsp;] OTHER &nbsp;&nbsp; {{ vin }}</div>
+      </td>
+    </tr>
+    <tr>
+      <td>
+        <span class="fld-lbl">Vehicle Type</span>
+        <div class="fld-val">
+          [{% if vehicle_type == 'tractor' %}X{% else %}&nbsp;&nbsp;{% endif %}] TRACTOR &nbsp;
+          [{% if vehicle_type == 'trailer' %}X{% else %}&nbsp;&nbsp;{% endif %}] TRAILER &nbsp;
+          [{% if vehicle_type == 'truck' %}X{% else %}&nbsp;&nbsp;{% endif %}] TRUCK &nbsp;
+          [{% if vehicle_type_other %}X{% else %}&nbsp;&nbsp;{% endif %}] (OTHER)
+        </div>
+        {% if vehicle_type_label %}<div style="font-size:6.2pt;">{{ vehicle_type_label }}</div>{% endif %}
+      </td>
+      <td>
+        <span class="fld-lbl">Inspection Agency/Location (optional)</span>
+        <div class="fld-val">{% if inspection_agency %}{{ inspection_agency }}{% else %}&nbsp;{% endif %}</div>
+      </td>
+    </tr>
+  </table>
+
+  <div style="margin-top:4px;">
+    <div class="comp-hdr">VEHICLE COMPONENTS INSPECTED</div>
+    <table class="cols-tbl">
+      <tr>
+        {% for column in component_columns %}
+        <td class="col" style="width:33.33%; padding: 0 {% if not loop.last %}3px{% else %}0{% endif %} 0 {% if not loop.first %}3px{% else %}0{% endif %};">
+          <table class="items-tbl">
+            <tr>
+              <th style="width:16px;">OK</th>
+              <th style="width:16px;">NEEDS<br/>REPAIR</th>
+              <th style="width:30px;">REPAIRED<br/>DATE</th>
+              <th>ITEM</th>
+            </tr>
+            {% for section in column %}
+            <tr>
+              <td class="chk" style="border:none;"></td>
+              <td class="chk" style="border:none;"></td>
+              <td class="rdate" style="border:none;"></td>
+              <td class="item sec-title" style="border:none;">{{ section.title }}</td>
+            </tr>
+            {% for item in section['items'] %}
+            <tr>
+              <td class="chk">&nbsp;</td>
+              <td class="chk">&nbsp;</td>
+              <td class="rdate">&nbsp;</td>
+              <td class="item">{{ item }}</td>
+            </tr>
+            {% endfor %}
+            {% endfor %}
+            {% if loop.last %}
+            <tr>
+              <td colspan="4" style="border:none; padding-top:4px;">
+                <div class="sec-title">List any other condition which may prevent safe operation of this vehicle.</div>
+                <div class="other-lines">
+                  ______________________________<br/>
+                  ______________________________<br/>
+                  ______________________________<br/>
+                  ______________________________
+                </div>
+              </td>
+            </tr>
+            {% endif %}
+          </table>
+        </td>
+        {% endfor %}
+      </tr>
+    </table>
+  </div>
+
+  <div class="legend">
+    INSTRUCTIONS: MARK COLUMN ENTRIES TO VERIFY INSPECTION: &nbsp;<b>X</b>&nbsp; OK, &nbsp;<b>X</b>&nbsp; NEEDS REPAIR, &nbsp;<b>NA</b>&nbsp; IF ITEMS DO NOT APPLY, ________ REPAIRED DATE
+  </div>
+
+  <div class="cert">
+    CERTIFICATION: THIS VEHICLE HAS PASSED ALL THE INSPECTION ITEMS FOR THE ANNUAL VEHICLE INSPECTION REPORT IN ACCORDANCE WITH 49 CFR 396.
+  </div>
+
+</body>
+</html>

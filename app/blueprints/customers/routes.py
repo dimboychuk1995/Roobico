@@ -1188,12 +1188,30 @@ def customer_unit_details_page(customer_id, unit_id):
         "is_active": bool(unit.get("is_active", True)),
     }
 
+    # Latest annual vehicle inspection for this unit (only one is kept).
+    annual_inspection = None
+    inspection = shop_db.annual_inspections.find_one(
+        {"unit_id": uid, "shop_id": shop["_id"]},
+        sort=[("created_at", -1)],
+    )
+    if inspection:
+        annual_inspection = {
+            "id": str(inspection.get("_id")),
+            "date": _fmt_preferred_dt_label(inspection.get("inspection_date"), inspection.get("created_at")),
+            "created_at": _fmt_dt_label(inspection.get("created_at")),
+            "inspector_name": inspection.get("inspector_name") or "-",
+            "motor_carrier_operator": inspection.get("motor_carrier_operator") or "-",
+            "inspection_agency": inspection.get("inspection_agency") or "-",
+            "vin": inspection.get("vin") or "-",
+        }
+
     return _render_app_page(
         "public/customers/unit_details.html",
         active_page="customers",
         customer_id=str(cid),
         customer_label=_customer_label(customer),
         unit=unit_view,
+        annual_inspection=annual_inspection,
         active_tab=tab,
         q=q,
         date_preset=date_preset,
