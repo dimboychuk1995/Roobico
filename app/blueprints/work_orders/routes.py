@@ -5013,39 +5013,76 @@ def api_preset_detail(preset_id):
     if not doc:
         return jsonify({"error": "not_found"}), 404
 
-    # Enrich parts with current core/misc data from the parts collection
+    # Enrich parts with current data from the parts collection.
+    # Resolve by part_id first (stable); fall back to part_number if the id is
+    # stale (part re-imported). Self-heal the stored snapshot so a preset never
+    # keeps a non-existent part_number, and always serve dynamic cost/price.
     raw_parts = doc.get("parts") or []
     part_ids = []
+    fallback_numbers = []
     for p in raw_parts:
         pid_str = p.get("part_id")
         if pid_str:
             o = oid(pid_str)
             if o:
                 part_ids.append(o)
+        pn = str(p.get("part_number") or "").strip()
+        if pn:
+            fallback_numbers.append(pn)
 
-    parts_lookup = {}
+    proj = {
+        "_id": 1,
+        "part_number": 1,
+        "average_cost": 1,
+        "core_has_charge": 1,
+        "core_cost": 1,
+        "misc_has_charge": 1,
+        "misc_charges": 1,
+        "has_selling_price": 1,
+        "selling_price": 1,
+    }
+
+    by_id = {}
     if part_ids:
         for pdoc in shop_db.parts.find(
-            {"_id": {"$in": part_ids}, "is_active": True},
-            {
-                "_id": 1,
-                "average_cost": 1,
-                "core_has_charge": 1,
-                "core_cost": 1,
-                "misc_has_charge": 1,
-                "misc_charges": 1,
-                "has_selling_price": 1,
-                "selling_price": 1,
-            },
+            {"_id": {"$in": part_ids}, "is_active": True}, proj
         ):
-            parts_lookup[str(pdoc["_id"])] = pdoc
+            by_id[str(pdoc["_id"])] = pdoc
 
+    by_number = {}
+    if fallback_numbers:
+        for pdoc in shop_db.parts.find(
+            {"part_number": {"$in": fallback_numbers}, "is_active": True}, proj
+        ):
+            key = str(pdoc.get("part_number") or "").strip()
+            if key and key not in by_number:
+                by_number[key] = pdoc
+
+    patches = {}  # "parts.<i>.<field>" -> value; persisted back to heal the doc
     enriched_parts = []
-    for p in raw_parts:
+    for idx, p in enumerate(raw_parts):
         ep = dict(p)
         pid_str = p.get("part_id")
-        if pid_str and pid_str in parts_lookup:
-            live = parts_lookup[pid_str]
+        live = by_id.get(pid_str) if pid_str else None
+
+        # Stale/missing part_id but a matching part_number is still in catalog.
+        if live is None:
+            pn_key = str(p.get("part_number") or "").strip()
+            if pn_key and pn_key in by_number:
+                live = by_number[pn_key]
+                fresh_id = str(live.get("_id"))
+                ep["part_id"] = fresh_id
+                if pid_str != fresh_id:
+                    patches[f"parts.{idx}.part_id"] = fresh_id
+
+        if live is not None:
+            # Self-heal the stored part_number if the part was renumbered.
+            live_pn = str(live.get("part_number") or "").strip()
+            stored_pn = str(p.get("part_number") or "").strip()
+            if live_pn and live_pn != stored_pn:
+                ep["part_number"] = live_pn
+                patches[f"parts.{idx}.part_number"] = live_pn
+
             ep["core_has_charge"] = bool(live.get("core_has_charge"))
             ep["core_cost"] = float(live.get("core_cost") or 0)
             misc_items = []
@@ -5058,10 +5095,24 @@ def api_preset_detail(preset_id):
                     })
             ep["misc_has_charge"] = bool(live.get("misc_has_charge"))
             ep["misc_charges"] = misc_items
-            # Update cost to current average
+
+            # Dynamic pricing: always reflect the part's current cost/price.
             if live.get("average_cost") is not None:
                 ep["cost"] = float(live["average_cost"])
+            if bool(live.get("has_selling_price")):
+                ep["price"] = float(live.get("selling_price") or 0)
+            else:
+                # No fixed selling price -> let the WO markup recompute from cost.
+                ep["price"] = None
         enriched_parts.append(ep)
+
+    # Persist healed identity snapshots (fresh part_id / current part_number) so
+    # the stored preset never drifts to a non-existent part_number.
+    if patches:
+        try:
+            shop_db.wo_presets.update_one({"_id": doc["_id"]}, {"$set": patches})
+        except Exception:
+            pass
 
     return jsonify({
         "id": str(doc["_id"]),

@@ -62,6 +62,7 @@ def _process_shop_db(shop_db, *, apply: bool) -> dict:
         "parts_with_id": 0,
         "parts_ok": 0,
         "parts_fixed": 0,
+        "parts_renumbered": 0,
         "parts_ambiguous": 0,
         "parts_missing": 0,
         "parts_bad_id": 0,
@@ -90,10 +91,20 @@ def _process_shop_db(shop_db, *, apply: bool) -> dict:
             oid = _to_oid(raw_id)
             if oid is not None:
                 live = shop_db.parts.find_one(
-                    {"_id": oid, "is_active": True}, {"_id": 1}
+                    {"_id": oid, "is_active": True}, {"_id": 1, "part_number": 1}
                 )
                 if live:
                     stats["parts_ok"] += 1
+                    # part_id is valid; refresh the stored part_number snapshot
+                    # if the part was renumbered since the preset was saved.
+                    live_pn = str(live.get("part_number") or "").strip()
+                    if live_pn and live_pn != part_number:
+                        print(
+                            f"     # [{name}] renumber: '{part_number}' -> '{live_pn}'"
+                        )
+                        part["part_number"] = live_pn
+                        stats["parts_renumbered"] += 1
+                        changed = True
                     continue
 
             # part_id is stale (or malformed) -> try to heal via part_number
@@ -183,6 +194,7 @@ def main() -> int:
             "parts_with_id": 0,
             "parts_ok": 0,
             "parts_fixed": 0,
+            "parts_renumbered": 0,
             "parts_ambiguous": 0,
             "parts_missing": 0,
             "parts_bad_id": 0,
@@ -195,8 +207,8 @@ def main() -> int:
             print(
                 f"     presets: {s['presets_seen']}, presets to update: {s['presets_updated']}, "
                 f"parts w/ id: {s['parts_with_id']}, ok: {s['parts_ok']}, "
-                f"fixed: {s['parts_fixed']}, ambiguous: {s['parts_ambiguous']}, "
-                f"missing: {s['parts_missing']}"
+                f"fixed: {s['parts_fixed']}, renumbered: {s['parts_renumbered']}, "
+                f"ambiguous: {s['parts_ambiguous']}, missing: {s['parts_missing']}"
             )
             for k, v in s.items():
                 grand[k] += v
@@ -205,6 +217,7 @@ def main() -> int:
             f"\n[{mode}] DONE. presets: {grand['presets_seen']}, "
             f"presets updated: {grand['presets_updated']}, "
             f"parts fixed: {grand['parts_fixed']}, "
+            f"renumbered: {grand['parts_renumbered']}, "
             f"ambiguous: {grand['parts_ambiguous']}, "
             f"missing: {grand['parts_missing']}, "
             f"malformed ids: {grand['parts_bad_id']}"

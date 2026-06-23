@@ -372,8 +372,9 @@ def wo_presets_detail(preset_id: str):
             if pn_key and pn_key not in parts_by_number:
                 parts_by_number[pn_key] = pdoc
 
-    # Cache pending preset patches (stale part_id -> fresh _id) to apply once.
-    preset_patches = []  # list of (row_index, fresh_id_str)
+    # Cache pending preset patches (stale part_id -> fresh _id, renumbered
+    # part_number -> current) to apply once.
+    preset_patches = {}  # "parts.<i>.<field>" -> value
 
     enriched_parts = []
     for idx, p in enumerate(raw_parts):
@@ -388,9 +389,16 @@ def wo_presets_detail(preset_id: str):
                 fresh_id = str(live.get("_id"))
                 ep["part_id"] = fresh_id
                 if pid_str != fresh_id:
-                    preset_patches.append((idx, fresh_id))
+                    preset_patches[f"parts.{idx}.part_id"] = fresh_id
 
         if live is not None:
+            # Self-heal the stored part_number if the part was renumbered.
+            live_pn = str(live.get("part_number") or "").strip()
+            stored_pn = str(p.get("part_number") or "").strip()
+            if live_pn and live_pn != stored_pn:
+                ep["part_number"] = live_pn
+                preset_patches[f"parts.{idx}.part_number"] = live_pn
+
             ep["core_has_charge"] = bool(live.get("core_has_charge"))
             ep["core_cost"] = float(live.get("core_cost") or 0)
             misc_items = []
@@ -406,12 +414,11 @@ def wo_presets_detail(preset_id: str):
                 ep["cost"] = float(live["average_cost"])
         enriched_parts.append(ep)
 
-    # Persist any healed part_id references back into the preset doc so the
-    # next load is fast and consistent.
+    # Persist any healed part_id / part_number references back into the preset
+    # doc so the next load is fast and consistent.
     if preset_patches:
-        update_set = {f"parts.{i}.part_id": pid for i, pid in preset_patches}
         try:
-            sdb.wo_presets.update_one({"_id": doc["_id"]}, {"$set": update_set})
+            sdb.wo_presets.update_one({"_id": doc["_id"]}, {"$set": preset_patches})
         except Exception:
             pass
 
