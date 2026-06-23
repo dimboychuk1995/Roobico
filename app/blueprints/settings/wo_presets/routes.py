@@ -477,11 +477,15 @@ def wo_presets_detail(preset_id: str):
         "_id": 1,
         "part_number": 1,
         "average_cost": 1,
+        "has_selling_price": 1,
+        "selling_price": 1,
         "core_has_charge": 1,
         "core_cost": 1,
         "misc_has_charge": 1,
         "misc_charges": 1,
     }
+
+    pricing_rules = _load_pricing_rules(sdb, shop_oid)
 
     parts_lookup = {}
     if part_ids:
@@ -541,6 +545,13 @@ def wo_presets_detail(preset_id: str):
             ep["misc_charges"] = misc_items
             if live.get("average_cost") is not None:
                 ep["cost"] = float(live["average_cost"])
+            # Dynamic sales price: use the part's own selling_price when set,
+            # otherwise compute from the pricing rule (markup/margin). This keeps
+            # the editor in sync with the list view and the WO logic instead of
+            # showing the snapshot stored when the preset was created.
+            live_price = _live_part_price(live, pricing_rules)
+            if live_price is not None:
+                ep["price"] = round(live_price, 2)
         enriched_parts.append(ep)
 
     # Persist any healed part_id / part_number references back into the preset
