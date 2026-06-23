@@ -29,6 +29,46 @@ def _utcnow():
     return datetime.now(timezone.utc)
 
 
+def _heal_preset_part_numbers(sdb, presets):
+    """Refresh stored part_number snapshots from the live part (by part_id).
+
+    Resolution is by part_id (stable). When a part was renumbered, the preset's
+    stored part_number is updated in memory and persisted, so presets never keep
+    a renumbered/non-existent part_number anywhere they are displayed.
+    """
+    id_set = set()
+    for pr in presets:
+        for pt in (pr.get("parts") or []):
+            o = _maybe_oid(pt.get("part_id"))
+            if o:
+                id_set.add(o)
+    if not id_set:
+        return
+
+    live_pn = {}
+    for pdoc in sdb.parts.find(
+        {"_id": {"$in": list(id_set)}, "is_active": True},
+        {"_id": 1, "part_number": 1},
+    ):
+        live_pn[str(pdoc["_id"])] = str(pdoc.get("part_number") or "").strip()
+
+    for pr in presets:
+        patches = {}
+        for idx, pt in enumerate(pr.get("parts") or []):
+            pid_str = pt.get("part_id")
+            if not pid_str:
+                continue
+            current = live_pn.get(str(pid_str))
+            if current and current != str(pt.get("part_number") or "").strip():
+                pt["part_number"] = current
+                patches[f"parts.{idx}.part_number"] = current
+        if patches:
+            try:
+                sdb.wo_presets.update_one({"_id": pr["_id"]}, {"$set": patches})
+            except Exception:
+                pass
+
+
 def _load_current_user(master):
     uid = _maybe_oid(session.get(SESSION_USER_ID))
     if not uid:
@@ -224,6 +264,10 @@ def wo_presets_index():
             {"shop_id": shop_oid, "is_active": True},
         ).sort([("name", 1)])
     )
+
+    # Keep displayed part numbers in sync with the live catalog (renumbered
+    # parts) so the list never shows a stale/non-existent part_number.
+    _heal_preset_part_numbers(sdb, presets)
 
     labor_rates = _load_labor_rates(sdb, shop_oid)
     pricing_rules = _load_pricing_rules(sdb, shop_oid)
