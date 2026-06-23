@@ -161,6 +161,54 @@ def _load_pricing_rules(sdb, shop_oid):
     return {"mode": mode, "rules": rules}
 
 
+def _match_pricing_rule(cost, rules):
+    """Mirror of the front-end matchRule(): pick the tier whose range covers cost."""
+    if cost is None or not rules:
+        return None
+    for r in rules:
+        frm = r.get("from")
+        to = r.get("to")
+        vp = r.get("value_percent")
+        if frm is None or vp is None:
+            continue
+        if cost < frm:
+            continue
+        if to is None or cost <= to:
+            return vp
+    return None
+
+
+def _calc_price_from_rule(cost, mode, value_percent):
+    """Mirror of the front-end calcPriceFromRule(): apply markup/margin to cost."""
+    if cost is None or cost <= 0 or value_percent is None:
+        return None
+    vp = value_percent / 100.0
+    if mode == "markup":
+        return round(cost * (1 + vp), 2)
+    denom = 1 - vp  # margin
+    if denom <= 0:
+        return round(cost, 2)
+    return round(cost / denom, 2)
+
+
+def _live_part_price(part_doc, pricing):
+    """Compute a part's current selling price the same way a WO does.
+
+    Uses the part's fixed selling_price when set, otherwise applies the default
+    pricing rule (markup/margin) to the live average_cost.
+    """
+    cost = float(part_doc.get("average_cost") or 0)
+    if part_doc.get("has_selling_price") and part_doc.get("selling_price") is not None:
+        return float(part_doc.get("selling_price") or 0)
+    if pricing:
+        vp = _match_pricing_rule(cost, pricing.get("rules"))
+        price = _calc_price_from_rule(cost, pricing.get("mode"), vp)
+        if price is not None:
+            return price
+    return None
+
+
+
 def _f64(v):
     try:
         return float(v)
@@ -272,6 +320,29 @@ def wo_presets_index():
     labor_rates = _load_labor_rates(sdb, shop_oid)
     pricing_rules = _load_pricing_rules(sdb, shop_oid)
 
+    # Live part lookup (by part_id) so the cards show current cost/price/misc
+    # instead of the snapshot stored when the preset was created.
+    live_part_ids = set()
+    for pr in presets:
+        for pt in (pr.get("parts") or []):
+            o = _maybe_oid(pt.get("part_id"))
+            if o:
+                live_part_ids.add(o)
+    live_parts = {}
+    if live_part_ids:
+        for pdoc in sdb.parts.find(
+            {"_id": {"$in": list(live_part_ids)}, "is_active": True},
+            {
+                "_id": 1,
+                "average_cost": 1,
+                "has_selling_price": 1,
+                "selling_price": 1,
+                "misc_has_charge": 1,
+                "misc_charges": 1,
+            },
+        ):
+            live_parts[str(pdoc["_id"])] = pdoc
+
     # Build a code→hourly_rate lookup
     rate_map = {}
     standard_rate = 0.0
@@ -296,9 +367,23 @@ def wo_presets_index():
         misc_sum = 0.0
         for pt in (p.get("parts") or []):
             qty = float(pt.get("qty") or 0)
-            price = float(pt.get("price") or 0)
+            live = live_parts.get(str(pt.get("part_id"))) if pt.get("part_id") else None
+
+            # Dynamic price/cost/misc from the live part; fall back to the stored
+            # snapshot only when the part can't be resolved.
+            if live is not None:
+                price = _live_part_price(live, pricing_rules)
+                if price is None:
+                    price = float(pt.get("price") or 0)
+                misc_items = live.get("misc_charges") or [] if live.get("misc_has_charge") else []
+            else:
+                price = float(pt.get("price") or 0)
+                misc_items = pt.get("misc_charges") or []
+
+            # Reflect the dynamic price in the per-part list shown on the card.
+            pt["price"] = round(price, 2)
             parts_sum += qty * price
-            for mc in (pt.get("misc_charges") or []):
+            for mc in misc_items:
                 misc_sum += qty * float(mc.get("price") or 0)
         p["est_parts"] = round(parts_sum, 2)
         p["est_misc"] = round(misc_sum, 2)
