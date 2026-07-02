@@ -2,7 +2,8 @@ import os
 import time
 from datetime import datetime
 
-from flask import Flask, g, session, request, redirect, flash, url_for
+from flask import Flask, g, session, request, redirect, flash, url_for, jsonify, render_template
+from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from bson import ObjectId
 
@@ -27,7 +28,7 @@ def _is_tenant_subscription_blocked(tenant: dict) -> bool:
     return False
 
 from app.config import Config
-from app.extensions import init_mongo, get_master_db
+from app.extensions import init_mongo, get_master_db, csrf
 from app.utils.auth import SESSION_USER_ID, SESSION_TENANT_ID
 from app.blueprints.reports.audit.journal import build_request_id, write_audit_journal
 
@@ -59,6 +60,18 @@ def create_app():
     app = Flask(__name__)
     app.config.from_object(Config)
 
+    # Sentry включается только при заданном SENTRY_DSN (прод). Инициализация
+    # до всего остального, чтобы ловить в том числе ошибки старта.
+    if app.config.get("SENTRY_DSN"):
+        import sentry_sdk
+        sentry_sdk.init(
+            dsn=app.config["SENTRY_DSN"],
+            environment=app.config.get("SENTRY_ENVIRONMENT", "production"),
+            traces_sample_rate=app.config.get("SENTRY_TRACES_SAMPLE_RATE", 0),
+            # Не отправляем PII (email/IP пользователей) в третью сторону.
+            send_default_pii=False,
+        )
+
     # We sit behind Cloudflare → nginx → gunicorn (unix socket). Trust the
     # X-Forwarded-Proto / X-Forwarded-For headers from one proxy hop so that
     # request.is_secure and url_for(_external=True) report HTTPS correctly
@@ -72,6 +85,7 @@ def create_app():
     app.session_interface = HostAwareSessionInterface()
 
     init_mongo(app)
+    csrf.init_app(app)
 
     # Автоматически добавляем ?v=<ASSET_VERSION> ко всем url_for('static', ...)
     # — единый cache-buster, чтобы не плодить ручные ?v=... в шаблонах.
@@ -104,8 +118,9 @@ def create_app():
 
         endpoint = request.endpoint or ""
         # Static / no-endpoint requests pass through; nginx serves /static
-        # directly anyway.
-        if endpoint == "static" or endpoint.endswith(".static") or not endpoint:
+        # directly anyway. Healthcheck дергается локально без "правильного"
+        # Host-заголовка — редиректить его нельзя.
+        if endpoint == "static" or endpoint.endswith(".static") or not endpoint or endpoint == "main.healthz":
             return None
 
         # Pull just the hostname (strip port, lowercase).
@@ -307,10 +322,72 @@ def create_app():
 
         return response
 
+    @app.after_request
+    def set_security_headers(response):
+        # Заголовки ставим на уровне приложения, а не nginx: так они едины
+        # для всех хостов (public/app/admin) и не теряются при изменении
+        # прокси-конфига. Уже выставленные значения не перетираем.
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        # HSTS только по HTTPS (за ProxyFix is_secure отражает исходную схему),
+        # иначе локальная разработка по http сломает себе браузерный кеш политики.
+        if request.is_secure:
+            response.headers.setdefault(
+                "Strict-Transport-Security", "max-age=31536000; includeSubDomains"
+            )
+        return response
+
     @app.teardown_request
     def journal_teardown_request(exc):
         if exc is not None:
             write_audit_journal(error=exc)
+
+    # ── Глобальные обработчики ошибок ─────────────────────────────────────
+    def _wants_json() -> bool:
+        if "/api/" in (request.path or ""):
+            return True
+        accept = request.accept_mimetypes
+        return accept["application/json"] >= accept["text/html"] and accept["application/json"] > 0
+
+    from flask_wtf.csrf import CSRFError
+
+    @app.errorhandler(CSRFError)
+    def handle_csrf_error(e):
+        app.logger.warning("CSRF failure on %s %s: %s", request.method, request.path, e.description)
+        if _wants_json():
+            return jsonify(ok=False, error="csrf_failed", message="Session expired — refresh the page and try again."), 400
+        flash("Your session has expired. Please try again.", "error")
+        return redirect(request.referrer or url_for("main.index"))
+
+    @app.errorhandler(404)
+    def handle_not_found(e):
+        if _wants_json():
+            return jsonify(ok=False, error="not_found"), 404
+        return render_template("errors/404.html"), 404
+
+    @app.errorhandler(Exception)
+    def handle_unexpected_error(e):
+        # Известные HTTP-ошибки (403, 405, 413 и т.п.) отдаём как есть —
+        # ловим только необработанные исключения приложения.
+        if isinstance(e, HTTPException):
+            return e
+        # Наш errorhandler «гасит» исключение раньше, чем его увидит
+        # интеграция Sentry, поэтому отправляем явно (no-op без SENTRY_DSN).
+        try:
+            import sentry_sdk
+            sentry_sdk.capture_exception(e)
+        except Exception:
+            pass
+        app.logger.exception(
+            "Unhandled exception on %s %s (request_id=%s)",
+            request.method,
+            request.path,
+            getattr(g, "request_id", "-"),
+        )
+        if _wants_json():
+            return jsonify(ok=False, error="internal_error"), 500
+        return render_template("errors/500.html"), 500
 
     # Blueprints
     from app.blueprints.main import main_bp

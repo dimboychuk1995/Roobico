@@ -20,6 +20,7 @@
         action="{{ url_for('admin_panel.tenant_toggle_active', tenant_id=tenant._id|string) }}"
         class="inline-form"
         onsubmit="return confirm('{{ 'Deactivate' if tenant.status == 'active' else 'Reactivate' }} tenant {{ tenant.name }}?');">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit" class="btn {{ 'danger' if tenant.status == 'active' else 'success' }}">
       {{ 'Deactivate tenant' if tenant.status == 'active' else 'Reactivate tenant' }}
     </button>
@@ -174,6 +175,7 @@
         <form method="post"
               action="{{ url_for('admin_panel.tenant_extend_subscription', tenant_id=tenant._id|string) }}"
               style="margin:0;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="mode" value="months">
           <input type="hidden" name="months" value="{{ m }}">
           <input type="hidden" name="extend_from_current" value="on">
@@ -185,6 +187,7 @@
               action="{{ url_for('admin_panel.tenant_clear_subscription', tenant_id=tenant._id|string) }}"
               onsubmit="return confirm('Clear subscription period for {{ tenant.name }}?');"
               style="margin:0;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn danger">Clear period</button>
         </form>
         {% endif %}
@@ -194,6 +197,7 @@
       <form method="post"
             action="{{ url_for('admin_panel.tenant_extend_subscription', tenant_id=tenant._id|string) }}"
             class="sub-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <label>
           <span>Mode</span>
           <select name="mode">
@@ -298,6 +302,7 @@
               action="{{ url_for('billing.admin_send_invoice', tenant_id=tenant._id|string) }}"
               onsubmit="return confirm('Send a Stripe invoice for ${{ '{:,}'.format(billing.monthly_total) }} to {{ tenant.name }}? They will receive an email with a hosted payment page.');"
               style="margin:0;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn success" {% if billing.monthly_total <= 0 %}disabled{% endif %}>
             Send invoice (hosted page)
           </button>
@@ -307,6 +312,7 @@
               action="{{ url_for('billing.admin_charge_now', tenant_id=tenant._id|string) }}"
               onsubmit="return confirm('Charge the saved card on file for ${{ '{:,}'.format(billing.monthly_total) }}? This bills immediately.');"
               style="margin:0;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn"
                   {% if billing.monthly_total <= 0 or not (stripe_info.default_card and stripe_info.default_card.last4) %}disabled{% endif %}>
             Charge saved card
@@ -359,6 +365,7 @@
                 action="{{ url_for('admin_panel.shop_toggle_active', shop_id=s._id|string) }}"
                 class="inline-form"
                 onsubmit="return confirm('{{ 'Deactivate' if s.is_active else 'Reactivate' }} location {{ s.name }}?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn {{ 'danger' if s.is_active else 'success' }}">
               {{ 'Deactivate' if s.is_active else 'Reactivate' }}
             </button>
@@ -419,6 +426,7 @@
                 action="{{ url_for('admin_panel.user_toggle_active', user_id=u._id|string) }}"
                 class="inline-form"
                 onsubmit="return confirm('{{ 'Deactivate' if u.is_active else 'Reactivate' }} user {{ u.email }}?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <button type="submit" class="btn {{ 'danger' if u.is_active else 'success' }}">
               {{ 'Deactivate' if u.is_active else 'Reactivate' }}
             </button>

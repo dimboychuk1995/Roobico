@@ -250,7 +250,14 @@
       <h1>ROOBICO</h1>
     </div>
 
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+        <div class="alert alert-{{ 'success' if cat in ('success', 'info') else 'danger' }} py-2 small">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+
     <form method="post" action="/login" autocomplete="on">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <div class="mb-4">
         <div class="auth-form-label">Email</div>
         <input id="login_email" name="email" type="email" class="form-control auth-input" placeholder="you@company.com" required />
@@ -274,6 +281,7 @@
 
     <div class="auth-register-panel" id="registerPanel">
       <form method="post" action="/tenant/register" autocomplete="on">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="auth-section-label">Company</div>
         <div class="mb-3">
           <div class="auth-form-label">Company name</div>

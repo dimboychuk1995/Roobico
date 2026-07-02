@@ -324,6 +324,7 @@
       <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content">
           <form method="post" action="{{ url_for('work_orders.create_unit') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="hidden" id="createUnitCustomerHidden" name="customer_id" value="{{ selected_customer_id or '' }}"/>
 
             <div class="modal-header">
@@ -404,6 +405,7 @@
 
     <!-- Work Order editor -->
     <form id="workOrderForm" method="post" action="{{ url_for('work_orders.create_work_order') }}" class="mt-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 
 
       <!-- hidden ids that JS updates (important) -->

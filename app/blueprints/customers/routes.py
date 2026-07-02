@@ -15,6 +15,7 @@ from app.utils.auth import (
 )
 from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
 from app.utils.mongo_search import build_regex_search_filter
+from app.utils.entity_search import build_customer_search_terms, build_unit_search_terms
 from app.utils.permissions import permission_required
 from app.utils.display_datetime import format_date_mmddyyyy, format_preferred_shop_date
 from app.utils.date_filters import build_date_range_filters
@@ -499,58 +500,12 @@ def _empty_pagination(page: int, per_page: int):
     }
 
 
-def _oid(value):
-    if not value:
-        return None
-    try:
-        return ObjectId(str(value))
-    except Exception:
-        return None
-
-
-def _tenant_id_variants():
-    raw = session.get(SESSION_TENANT_ID)
-    out = set()
-    if raw is None:
-        return []
-    out.add(raw)
-    out.add(str(raw))
-    oid = _oid(raw)
-    if oid:
-        out.add(oid)
-    return list(out)
-
-
-def _get_active_shop(master):
-    shop_id_raw = session.get("shop_id")
-    shop_oid = _oid(shop_id_raw)
-    if not shop_oid:
-        return None
-
-    tenant_variants = _tenant_id_variants()
-    if not tenant_variants:
-        return None
-
-    return master.shops.find_one({"_id": shop_oid, "tenant_id": {"$in": tenant_variants}})
-
-
-def _get_shop_db(master):
-    shop = _get_active_shop(master)
-    if not shop:
-        return None, None
-
-    db_name = (
-        shop.get("db_name")
-        or shop.get("database")
-        or shop.get("db")
-        or shop.get("mongo_db")
-        or shop.get("shop_db")
-    )
-    if not db_name:
-        return None, shop
-
-    client = get_mongo_client()
-    return client[str(db_name)], shop
+from app.utils.tenant import (
+    oid as _oid,
+    tenant_id_variants as _tenant_id_variants,
+    get_active_shop as _get_active_shop,
+    get_shop_db as _get_shop_db,
+)
 
 
 def _customers_collection():
@@ -1276,6 +1231,7 @@ def customer_unit_update(customer_id, unit_id):
         "updated_at": utcnow(),
         "updated_by": _oid(session.get(SESSION_USER_ID)),
     }
+    update_fields["search_terms"] = build_unit_search_terms(update_fields)
 
     shop_db.units.update_one({"_id": uid}, {"$set": update_fields})
     flash("Unit updated.", "success")
@@ -1443,6 +1399,7 @@ def customers_create():
         "tenant_id": tenant_oid,
     }
     doc.update(build_customer_legacy_contact_fields(contacts))
+    doc["search_terms"] = build_customer_search_terms(doc)
 
     coll.insert_one(doc)
 
@@ -1570,6 +1527,7 @@ def customer_details_update(customer_id):
         "updated_by": user_oid,
     }
     update_data.update(build_customer_legacy_contact_fields(contacts))
+    update_data["search_terms"] = build_customer_search_terms(update_data)
 
     coll.update_one({"_id": cid}, {"$set": update_data})
 
@@ -1653,6 +1611,7 @@ def customers_api_update(customer_id):
         "updated_by": user_oid,
     }
     update_data.update(build_customer_legacy_contact_fields(contacts))
+    update_data["search_terms"] = build_customer_search_terms(update_data)
 
     coll.update_one({"_id": cid}, {"$set": update_data})
 

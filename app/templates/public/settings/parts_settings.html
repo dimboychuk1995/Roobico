@@ -25,6 +25,7 @@
 
         <!-- Create -->
         <form method="post" action="{{ url_for('settings.parts_locations_create') }}" class="row g-2 mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="col-12 col-md-8">
             <input type="text" name="name" class="form-control" placeholder="New location name" required>
           </div>
@@ -49,6 +50,7 @@
                     <td>
                       {% if edit_location_id == loc_id %}
                         <form method="post" action="{{ url_for('settings.parts_locations_update', location_id=loc_id) }}" class="d-flex gap-2">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                           <input type="text" name="name" class="form-control form-control-sm" value="{{ loc.name }}" required>
                           <button class="btn btn-sm btn-success" type="submit">Save</button>
                           <a class="btn btn-sm btn-outline-secondary"
@@ -67,6 +69,7 @@
                               action="{{ url_for('settings.parts_locations_delete', location_id=loc_id) }}"
                               class="d-inline"
                               onsubmit="return confirm('Delete this location?');">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                           <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
                         </form>
                       {% endif %}
@@ -107,6 +110,7 @@
 
         <!-- Create -->
         <form method="post" action="{{ url_for('settings.parts_categories_create') }}" class="row g-2 mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="col-12 col-md-8">
             <input type="text" name="name" class="form-control" placeholder="New category name" required>
           </div>
@@ -131,6 +135,7 @@
                     <td>
                       {% if edit_category_id == cat_id %}
                         <form method="post" action="{{ url_for('settings.parts_categories_update', category_id=cat_id) }}" class="d-flex gap-2">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                           <input type="text" name="name" class="form-control form-control-sm" value="{{ cat.name }}" required>
                           <button class="btn btn-sm btn-success" type="submit">Save</button>
                           <a class="btn btn-sm btn-outline-secondary"
@@ -149,6 +154,7 @@
                               action="{{ url_for('settings.parts_categories_delete', category_id=cat_id) }}"
                               class="d-inline"
                               onsubmit="return confirm('Delete this category?');">
+                          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                           <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
                         </form>
                       {% endif %}
@@ -359,6 +365,7 @@
           </div>
 
           <form id="taxRateForm" method="POST" action="{{ url_for('settings.parts_settings_save_tax') }}" class="row g-2 align-items-end">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="col-12 col-md-6">
               <label class="form-label">Custom Combined Tax Rate (%)</label>
               <input

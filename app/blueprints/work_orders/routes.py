@@ -9,11 +9,13 @@ from flask import g, request, session, redirect, url_for, flash, jsonify, render
 
 from app.blueprints.work_orders import work_orders_bp
 from app.blueprints.main.routes import _render_app_page
-from app.extensions import get_master_db, get_mongo_client
+from app.extensions import get_master_db, get_mongo_client, csrf
 from app.utils.auth import login_required, SESSION_TENANT_ID, SESSION_USER_ID
 from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
 from app.utils.mongo_search import build_regex_search_filter
 from app.utils.parts_search import build_query_tokens, part_matches_query
+from app.utils.entity_search import build_unit_search_terms, search_customer_ids, search_unit_ids
+from app.utils.mongo_tx import run_atomically
 from app.utils.permissions import permission_required
 from app.utils.display_datetime import (
     format_date_mmddyyyy,
@@ -155,11 +157,13 @@ def _apply_sales_tax_to_totals(totals: dict, tax_rate: float, is_taxable: bool) 
     return src
 
 
-def _sum_active_work_order_payments(shop_db, wo_id) -> float:
+def _sum_active_work_order_payments(shop_db, wo_id, session=None) -> float:
     if shop_db is None or not wo_id:
         return 0.0
 
-    payments = shop_db.work_order_payments.find({"work_order_id": wo_id, "is_active": True})
+    payments = shop_db.work_order_payments.find(
+        {"work_order_id": wo_id, "is_active": True}, session=session
+    )
     return round2(sum(round2(payment.get("amount") or 0) for payment in payments))
 
 
@@ -177,7 +181,7 @@ def _build_work_order_payment_summary(wo: dict, paid_amount: float) -> dict:
     }
 
 
-def _sync_work_order_payment_state(shop_db, wo: dict, user_id, now):
+def _sync_work_order_payment_state(shop_db, wo: dict, user_id, now, session=None):
     if shop_db is None or not isinstance(wo, dict):
         return None
 
@@ -185,7 +189,9 @@ def _sync_work_order_payment_state(shop_db, wo: dict, user_id, now):
     if not wo_id:
         return None
 
-    summary = _build_work_order_payment_summary(wo, _sum_active_work_order_payments(shop_db, wo_id))
+    summary = _build_work_order_payment_summary(
+        wo, _sum_active_work_order_payments(shop_db, wo_id, session=session)
+    )
     # Preserve "in_progress" status when there's no payment yet (computed status would be "open")
     new_status = summary["status"]
     current_status = (wo.get("status") or "open").strip().lower()
@@ -200,6 +206,7 @@ def _sync_work_order_payment_state(shop_db, wo: dict, user_id, now):
                 "updated_by": user_id,
             }
         },
+        session=session,
     )
     summary["status"] = new_status
     summary["is_in_progress"] = new_status == "in_progress"
@@ -1054,44 +1061,8 @@ def get_work_orders_list(
     )
 
     if q:
-        customer_ids = [
-            c.get("_id")
-            for c in shop_db.customers.find(
-                {
-                    "$or": [
-                        {"company_name": {"$regex": q, "$options": "i"}},
-                        {"first_name": {"$regex": q, "$options": "i"}},
-                        {"last_name": {"$regex": q, "$options": "i"}},
-                        {"phone": {"$regex": q, "$options": "i"}},
-                        {"email": {"$regex": q, "$options": "i"}},
-                        {"contacts.first_name": {"$regex": q, "$options": "i"}},
-                        {"contacts.last_name": {"$regex": q, "$options": "i"}},
-                        {"contacts.phone": {"$regex": q, "$options": "i"}},
-                        {"contacts.email": {"$regex": q, "$options": "i"}},
-                        {"address": {"$regex": q, "$options": "i"}},
-                    ]
-                },
-                {"_id": 1},
-            )
-            if c.get("_id")
-        ]
-
-        unit_ids = [
-            u.get("_id")
-            for u in shop_db.units.find(
-                {
-                    "$or": [
-                        {"unit_number": {"$regex": q, "$options": "i"}},
-                        {"vin": {"$regex": q, "$options": "i"}},
-                        {"make": {"$regex": q, "$options": "i"}},
-                        {"model": {"$regex": q, "$options": "i"}},
-                        {"type": {"$regex": q, "$options": "i"}},
-                    ]
-                },
-                {"_id": 1},
-            )
-            if u.get("_id")
-        ]
+        customer_ids = search_customer_ids(shop_db.customers, q)
+        unit_ids = search_unit_ids(shop_db.units, q)
 
         extra = []
         if customer_ids:
@@ -1219,44 +1190,8 @@ def get_estimates_list(
     )
 
     if q:
-        customer_ids = [
-            c.get("_id")
-            for c in shop_db.customers.find(
-                {
-                    "$or": [
-                        {"company_name": {"$regex": q, "$options": "i"}},
-                        {"first_name": {"$regex": q, "$options": "i"}},
-                        {"last_name": {"$regex": q, "$options": "i"}},
-                        {"phone": {"$regex": q, "$options": "i"}},
-                        {"email": {"$regex": q, "$options": "i"}},
-                        {"contacts.first_name": {"$regex": q, "$options": "i"}},
-                        {"contacts.last_name": {"$regex": q, "$options": "i"}},
-                        {"contacts.phone": {"$regex": q, "$options": "i"}},
-                        {"contacts.email": {"$regex": q, "$options": "i"}},
-                        {"address": {"$regex": q, "$options": "i"}},
-                    ]
-                },
-                {"_id": 1},
-            )
-            if c.get("_id")
-        ]
-
-        unit_ids = [
-            u.get("_id")
-            for u in shop_db.units.find(
-                {
-                    "$or": [
-                        {"unit_number": {"$regex": q, "$options": "i"}},
-                        {"vin": {"$regex": q, "$options": "i"}},
-                        {"make": {"$regex": q, "$options": "i"}},
-                        {"model": {"$regex": q, "$options": "i"}},
-                        {"type": {"$regex": q, "$options": "i"}},
-                    ]
-                },
-                {"_id": 1},
-            )
-            if u.get("_id")
-        ]
+        customer_ids = search_customer_ids(shop_db.customers, q)
+        unit_ids = search_unit_ids(shop_db.units, q)
 
         extra = []
         if customer_ids:
@@ -1350,40 +1285,11 @@ def current_user_id():
     return oid(session.get(SESSION_USER_ID))
 
 
-def tenant_id_variants():
-    raw = session.get(SESSION_TENANT_ID)
-    out = set()
-    if raw is None:
-        return []
-    out.add(raw)
-    out.add(str(raw))
-    o = oid(raw)
-    if o:
-        out.add(o)
-    return list(out)
+from app.utils.tenant import tenant_id_variants, get_shop_db as _tenant_get_shop_db
 
 
 def get_shop_db():
-    master = get_master_db()
-
-    shop_id = oid(session.get("shop_id"))
-    if not shop_id:
-        return None, None
-
-    tenant_variants = tenant_id_variants()
-    if not tenant_variants:
-        return None, None
-
-    shop = master.shops.find_one({"_id": shop_id, "tenant_id": {"$in": tenant_variants}})
-    if not shop:
-        return None, None
-
-    db_name = shop.get("db_name")
-    if not db_name:
-        return None, shop
-
-    client = get_mongo_client()
-    return client[str(db_name)], shop
+    return _tenant_get_shop_db(get_master_db())
 
 
 def customer_label(c: dict) -> str:
@@ -1494,10 +1400,22 @@ def unit_label(u: dict) -> str:
 
 
 def get_customers(shop_db):
+    # Проекция обязательна: документ клиента тяжёлый (notes, история,
+    # адресные поля), а дропдауну нужно лишь несколько полей. Без неё
+    # каждая форма создания WO тянула всю коллекцию целиком.
     rows = list(
-        shop_db.customers.find({"is_active": True}).sort(
-            [("company_name", 1), ("last_name", 1), ("first_name", 1)]
-        )
+        shop_db.customers.find(
+            {"is_active": True},
+            {
+                "company_name": 1,
+                "first_name": 1,
+                "last_name": 1,
+                "contacts": 1,
+                "default_labor_rate": 1,
+                "taxable": 1,
+                "address": 1,
+            },
+        ).sort([("company_name", 1), ("last_name", 1), ("first_name", 1)])
     )
 
     rate_rows = list(
@@ -1531,14 +1449,20 @@ def get_customers(shop_db):
 
 def get_units(shop_db, customer_id: ObjectId):
     rows = list(
-        shop_db.units.find({"customer_id": customer_id, "is_active": True}).sort([("created_at", -1)])
+        shop_db.units.find(
+            {"customer_id": customer_id, "is_active": True},
+            {"unit_number": 1, "year": 1, "make": 1, "model": 1, "vin": 1},
+        ).sort([("created_at", -1)])
     )
     return [{"id": str(x["_id"]), "label": unit_label(x)} for x in rows]
 
 
 def get_labor_rates(shop_db, shop_id: ObjectId):
     rows = list(
-        shop_db.labor_rates.find({"shop_id": shop_id, "is_active": True}).sort([("name", 1)])
+        shop_db.labor_rates.find(
+            {"shop_id": shop_id, "is_active": True},
+            {"code": 1, "name": 1, "hourly_rate": 1},
+        ).sort([("name", 1)])
     )
     return [
         {
@@ -2530,6 +2454,7 @@ def create_unit():
         "created_by": user_id,
         "updated_by": user_id,
     }
+    doc["search_terms"] = build_unit_search_terms(doc)
 
     res = shop_db.units.insert_one(doc)
     unit_id = res.inserted_id
@@ -3417,7 +3342,7 @@ def api_download_annual_inspection_pdf(inspection_id):
     filename = f"AnnualInspection-{ctx['fleet_unit_number'] or ctx['report_number']}-{date_label}.pdf"
     resp = make_response(pdf_bytes)
     resp.headers["Content-Type"] = "application/pdf"
-    resp.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    resp.headers.set("Content-Disposition", "attachment", filename=filename)
     return resp
 
 
@@ -3638,22 +3563,32 @@ def api_work_order_payment(work_order_id):
         "created_by": user_id,
     }
 
-    payment_result = shop_db.work_order_payments.insert_one(payment_doc)
-    payment_id = payment_result.inserted_id
-
-    # Reassign pending attachments to the real payment ID
     pending_att_id = oid(data.get("pending_attachment_id"))
-    if pending_att_id:
-        shop_db.attachments.update_many(
-            {"entity_id": pending_att_id},
-            {"$set": {"entity_id": payment_id}},
-        )
 
-    refreshed_wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True}) or wo
-    payment_summary = _sync_work_order_payment_state(shop_db, refreshed_wo, user_id, now) or {
-        "status": "open",
-        "is_fully_paid": False,
-    }
+    # Платёж + перенос вложений + статус WO — одна логическая операция.
+    # На replica set выполняется транзакцией; на standalone — последовательно
+    # (session=None), как раньше. См. app/utils/mongo_tx.py.
+    def _apply_payment(session):
+        result = shop_db.work_order_payments.insert_one(payment_doc, session=session)
+        new_payment_id = result.inserted_id
+
+        # Reassign pending attachments to the real payment ID
+        if pending_att_id:
+            shop_db.attachments.update_many(
+                {"entity_id": pending_att_id},
+                {"$set": {"entity_id": new_payment_id}},
+                session=session,
+            )
+
+        refreshed_wo = shop_db.work_orders.find_one(
+            {"_id": wo_id, "shop_id": shop["_id"], "is_active": True}, session=session
+        ) or wo
+        summary = _sync_work_order_payment_state(
+            shop_db, refreshed_wo, user_id, now, session=session
+        ) or {"status": "open", "is_fully_paid": False}
+        return new_payment_id, summary
+
+    payment_id, payment_summary = run_atomically(get_mongo_client(), _apply_payment)
 
     return jsonify({
         "ok": True,
@@ -3748,26 +3683,35 @@ def api_delete_work_order_payment(payment_id):
     now = utcnow()
     user_id = current_user_id()
 
-    shop_db.work_order_payments.update_one(
-        {"_id": pay_id},
-        {
-            "$set": {
-                "is_active": False,
-                "deleted_at": now,
-                "deleted_by": user_id,
-                "updated_at": now,
-                "updated_by": user_id,
-            }
-        },
-    )
+    # Деактивация платежа + пересчёт статуса WO — атомарно (см. mongo_tx).
+    def _apply_delete(session):
+        shop_db.work_order_payments.update_one(
+            {"_id": pay_id},
+            {
+                "$set": {
+                    "is_active": False,
+                    "deleted_at": now,
+                    "deleted_by": user_id,
+                    "updated_at": now,
+                    "updated_by": user_id,
+                }
+            },
+            session=session,
+        )
 
-    refreshed_wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True}) or wo
-    summary = _sync_work_order_payment_state(shop_db, refreshed_wo, user_id, now) or {
-        "status": "open",
-        "paid_amount": 0.0,
-        "remaining_balance": _work_order_grand_total(wo),
-        "is_fully_paid": False,
-    }
+        refreshed_wo = shop_db.work_orders.find_one(
+            {"_id": wo_id, "shop_id": shop["_id"], "is_active": True}, session=session
+        ) or wo
+        return _sync_work_order_payment_state(
+            shop_db, refreshed_wo, user_id, now, session=session
+        ) or {
+            "status": "open",
+            "paid_amount": 0.0,
+            "remaining_balance": _work_order_grand_total(wo),
+            "is_fully_paid": False,
+        }
+
+    summary = run_atomically(get_mongo_client(), _apply_delete)
 
     return jsonify(
         {
@@ -3810,26 +3754,7 @@ def api_get_all_payments():
     )
 
     if q:
-        customer_ids = [
-            c.get("_id")
-            for c in shop_db.customers.find(
-                {
-                    "$or": [
-                        {"company_name": {"$regex": q, "$options": "i"}},
-                        {"first_name": {"$regex": q, "$options": "i"}},
-                        {"last_name": {"$regex": q, "$options": "i"}},
-                        {"phone": {"$regex": q, "$options": "i"}},
-                        {"email": {"$regex": q, "$options": "i"}},
-                        {"contacts.first_name": {"$regex": q, "$options": "i"}},
-                        {"contacts.last_name": {"$regex": q, "$options": "i"}},
-                        {"contacts.phone": {"$regex": q, "$options": "i"}},
-                        {"contacts.email": {"$regex": q, "$options": "i"}},
-                    ]
-                },
-                {"_id": 1},
-            )
-            if c.get("_id")
-        ]
+        customer_ids = search_customer_ids(shop_db.customers, q)
 
         wo_base = {"shop_id": shop_id}
         wo_search = build_regex_search_filter(
@@ -4890,6 +4815,7 @@ def public_authorization_page(token):
 
 
 @work_orders_bp.post("/authorize/<token>")
+@csrf.exempt
 def public_authorization_submit(token):
     auth_doc, shop_db, shop, wo, err = _resolve_token(token)
     if err and not (auth_doc and shop_db and shop and wo):

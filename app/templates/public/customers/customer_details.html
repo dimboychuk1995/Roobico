@@ -449,6 +449,7 @@
 
       {% else %}
         <form method="post" action="{{ url_for('customers.customer_details_update', customer_id=customer_id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="alert alert-info py-2">
             <div class="small mb-0">
               You must enter either <strong>Company Name</strong> or at least one contact with a name.

@@ -3,6 +3,7 @@
 {% block body %}
 <div class="card-centered">
   <form method="post" action="{{ url_for('admin_panel.login') }}" class="auth-card">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <h1>Roobico Admin</h1>
     <div class="sub">Internal control panel</div>
 

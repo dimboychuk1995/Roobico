@@ -3,6 +3,11 @@ from __future__ import annotations
 from pymongo import MongoClient, ASCENDING, DESCENDING
 from pymongo.errors import OperationFailure
 from flask import current_app
+from flask_wtf import CSRFProtect
+
+# Глобальная CSRF-защита. Живёт здесь (а не в app/__init__.py), чтобы
+# blueprint'ы могли импортировать её для @csrf.exempt без циклических импортов.
+csrf = CSRFProtect()
 
 def get_mongo_client() -> MongoClient:
     client = current_app.extensions.get("mongo_client")
@@ -137,6 +142,9 @@ def ensure_master_collections_indexes(master_db):
     _safe_create_index(master_db.admin_audit, [("admin_id", ASCENDING), ("created_at", DESCENDING)], name="idx_admin_audit_admin_created")
     _safe_create_index(master_db.admin_audit, [("target_type", ASCENDING), ("target_id", ASCENDING), ("created_at", DESCENDING)], name="idx_admin_audit_target")
 
+    # Rate limiting (login / forgot-password). TTL подчищает неактивные ключи.
+    _safe_create_index(master_db.rate_limits, [("updated_at", ASCENDING)], expireAfterSeconds=3600, name="ttl_rate_limits_updated")
+
 
 def ensure_shop_collections_indexes(shop_db):
     """
@@ -168,7 +176,9 @@ def ensure_shop_collections_indexes(shop_db):
     # Customers and units
     _safe_create_index(shop_db.customers, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_customers_shop_active_created_desc")
     _safe_create_index(shop_db.customers, [("shop_id", ASCENDING), ("name", ASCENDING)], name="idx_customers_shop_name")
+    _safe_create_index(shop_db.customers, [("search_terms", ASCENDING)], name="idx_customers_search_terms")
     _safe_create_index(shop_db.units, [("shop_id", ASCENDING), ("customer_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_units_shop_customer_active_created_desc")
+    _safe_create_index(shop_db.units, [("search_terms", ASCENDING)], name="idx_units_search_terms")
 
     # Work orders and payments
     _safe_create_index(shop_db.work_orders, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_work_orders_shop_active_created_desc")
@@ -259,11 +269,27 @@ def ensure_all_shop_databases_indexes(client, master_db):
         ensure_shop_collections_indexes(client[db_name])
 
 def init_mongo(app):
-    client = MongoClient(app.config["MONGO_URI"], serverSelectionTimeoutMS=5000)
+    client = MongoClient(
+        app.config["MONGO_URI"],
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+        # Без socketTimeout запрос может висеть бесконечно, удерживая
+        # gunicorn-воркер. 60s с запасом покрывает тяжёлые отчёты.
+        socketTimeoutMS=60000,
+        waitQueueTimeoutMS=10000,
+        maxPoolSize=50,
+        retryWrites=True,
+    )
     app.extensions["mongo_client"] = client
 
     # fail fast if mongo not reachable
     client.admin.command("ping")
+
+    from app.utils.mongo_tx import transactions_supported
+    app.logger.info(
+        "Mongo transactions: %s",
+        "enabled (replica set)" if transactions_supported(client) else "disabled (standalone) — money flows run sequentially",
+    )
 
     master_db = client[app.config["MASTER_DB_NAME"]]
     ensure_master_collections_indexes(master_db)

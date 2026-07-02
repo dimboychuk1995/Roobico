@@ -352,10 +352,115 @@ def _wo_totals(wo: dict):
     }
 
 
+def _num_expr(expr):
+    """Терпимое приведение к double: null/мусор → 0 (как float(x or 0) с try/except)."""
+    return {"$convert": {"input": expr, "to": "double", "onError": 0.0, "onNull": 0.0}}
+
+
+def _round2_expr(expr):
+    """Зеркало _round2(): +1e-12 перед округлением, иначе банковское округление
+    Mongo расходится с Python на граничных .xx5 и суммы уезжают на центы."""
+    return {"$round": [{"$add": [expr, 1e-12]}, 2]}
+
+
+def _totals_fallback_expr(field: str):
+    """totals.<field>, при отсутствии — топ-левел <field>: семантика _wo_totals()."""
+    return _round2_expr(_num_expr({"$ifNull": [f"$totals.{field}", {"$ifNull": [f"${field}", 0]}]}))
+
+
+def _parts_cost_expr():
+    """Сумма qty*cost по labors[].parts[] — зеркало _wo_parts_cost()."""
+    return _round2_expr({"$reduce": {
+        "input": {"$cond": [{"$isArray": "$labors"}, "$labors", []]},
+        "initialValue": 0.0,
+        "in": {"$add": ["$$value", {"$reduce": {
+            "input": {"$cond": [{"$isArray": "$$this.parts"}, "$$this.parts", []]},
+            "initialValue": 0.0,
+            "in": {"$add": ["$$value", {"$multiply": [
+                {"$max": [0, {"$convert": {"input": "$$this.qty", "to": "int", "onError": 0, "onNull": 0}}]},
+                {"$max": [0.0, _num_expr("$$this.cost")]},
+            ]}]},
+        }}]},
+    }})
+
+
+def _invoiced_hours_expr(rates_map: dict):
+    """Зеркало _wo_invoiced_hours(): stored hours, иначе totals.labors[i].labor / rate
+    (ставка — снапшот блока, иначе текущая по rate_code)."""
+    rates_list = {"$literal": [{"k": k, "v": v} for k, v in rates_map.items()]}
+    return _round2_expr({"$let": {
+        "vars": {
+            "blocks": {"$cond": [{"$isArray": "$labors"}, "$labors", []]},
+            "tblocks": {"$cond": [{"$isArray": "$totals.labors"}, "$totals.labors", []]},
+        },
+        "in": {"$reduce": {
+            "input": {"$range": [0, {"$size": "$$blocks"}]},
+            "initialValue": 0.0,
+            "in": {"$add": ["$$value", {"$let": {
+                "vars": {
+                    "b": {"$arrayElemAt": ["$$blocks", "$$this"]},
+                    "tb": {"$arrayElemAt": ["$$tblocks", "$$this"]},
+                },
+                "in": {"$let": {
+                    "vars": {
+                        "h": _num_expr({"$ifNull": ["$$b.labor.hours", "$$b.labor_hours"]}),
+                        "snap": _num_expr({"$ifNull": ["$$b.labor.hourly_rate", "$$b.labor_hourly_rate"]}),
+                        "code": {"$trim": {"input": {"$convert": {
+                            "input": {"$ifNull": ["$$b.labor.rate_code", "$$b.labor_rate_code"]},
+                            "to": "string", "onError": "", "onNull": "",
+                        }}}},
+                        "amt": _num_expr("$$tb.labor"),
+                    },
+                    "in": {"$cond": [
+                        {"$gt": ["$$h", 0]},
+                        "$$h",
+                        {"$let": {
+                            "vars": {"rate": {"$cond": [
+                                {"$gt": ["$$snap", 0]},
+                                "$$snap",
+                                _num_expr({"$arrayElemAt": [{"$map": {
+                                    "input": {"$filter": {"input": rates_list, "as": "r", "cond": {"$eq": ["$$r.k", "$$code"]}}},
+                                    "as": "r", "in": "$$r.v",
+                                }}, 0]}),
+                            ]}},
+                            "in": {"$cond": [
+                                {"$and": [{"$gt": ["$$rate", 0]}, {"$gt": ["$$amt", 0]}]},
+                                {"$divide": ["$$amt", "$$rate"]},
+                                0.0,
+                            ]},
+                        }},
+                    ]},
+                }},
+            }}]},
+        }},
+    }})
+
+
+def _time_bucket_key_expr(chart_bucket: str):
+    """Зеркало _time_bucket_key(_preferred_dt(...)): month → YYYY-MM,
+    week → дата понедельника YYYY-MM-DD. Не-даты → null (отбрасываются)."""
+    preferred = {"$cond": [
+        {"$eq": [{"$type": "$work_order_date"}, "date"]},
+        "$work_order_date",
+        {"$cond": [{"$eq": [{"$type": "$created_at"}, "date"]}, "$created_at", None]},
+    ]}
+    if chart_bucket == "week":
+        monday = {"$subtract": [
+            "$$dt",
+            {"$multiply": [86400000, {"$subtract": [{"$isoDayOfWeek": "$$dt"}, 1]}]},
+        ]}
+        fmt = {"$dateToString": {"format": "%Y-%m-%d", "date": monday}}
+    else:
+        fmt = {"$dateToString": {"format": "%Y-%m", "date": "$$dt"}}
+    return {"$let": {"vars": {"dt": preferred}, "in": {"$cond": [{"$eq": ["$$dt", None]}, None, fmt]}}}
+
+
 def _report_sales_summary(shop_db, shop_id, date_ctx, include_customer_ids, exclude_customer_ids, customer_map, chart_bucket="month"):
     query = {
         "shop_id": shop_id,
         "is_active": True,
+        # Старый цикл пропускал WO без customer_id (включая график) — сохраняем.
+        "customer_id": {"$ne": None},
     }
     query = _append_and(query, _build_date_filter(date_ctx, field="work_order_date", fallback_field="created_at"))
 
@@ -364,49 +469,76 @@ def _report_sales_summary(shop_db, shop_id, date_ctx, include_customer_ids, excl
     if exclude_customer_ids:
         query = _append_and(query, {"customer_id": {"$nin": exclude_customer_ids}})
 
-    rows_by_customer = {}
-    time_buckets: dict[str, dict] = {}
     rates_map = _build_labor_rates_map(shop_db, shop_id)
 
-    for wo in shop_db.work_orders.find(query, {"customer_id": 1, "created_at": 1, "work_order_date": 1, "totals": 1, "labor_total": 1, "parts_total": 1, "sales_tax_total": 1, "grand_total": 1, "labors": 1}):
-        customer_id = wo.get("customer_id")
-        if not customer_id:
-            continue
-        sid = str(customer_id)
-        bucket = rows_by_customer.setdefault(
-            sid,
-            {
-                "customer_id": sid,
-                "customer_label": customer_map.get(sid) or "-",
-                "orders_count": 0,
-                "labor_total": 0.0,
-                "parts_total": 0.0,
-                "parts_cost_total": 0.0,
-                "sales_tax_total": 0.0,
-                "grand_total": 0.0,
-                "invoiced_hours": 0.0,
-            },
-        )
-        totals = _wo_totals(wo)
-        wo_parts_cost = _wo_parts_cost(wo)
-        wo_invoiced_hours = _wo_invoiced_hours(wo, rates_map)
-        bucket["orders_count"] += 1
-        bucket["labor_total"] = _round2(bucket["labor_total"] + totals["labor_total"])
-        bucket["parts_total"] = _round2(bucket["parts_total"] + totals["parts_total"])
-        bucket["parts_cost_total"] = _round2(bucket["parts_cost_total"] + wo_parts_cost)
-        bucket["sales_tax_total"] = _round2(bucket["sales_tax_total"] + totals["sales_tax_total"])
-        bucket["grand_total"] = _round2(bucket["grand_total"] + totals["grand_total"])
-        bucket["invoiced_hours"] = _round2(bucket["invoiced_hours"] + wo_invoiced_hours)
+    # Вся арифметика в Mongo: раньше сюда выгружались все WO периода вместе с
+    # тяжёлыми labors[] и суммировались в Python — на больших периодах это
+    # держало воркер и память. Pipeline считает то же самое на сервере БД.
+    pipeline = [
+        {"$match": query},
+        {"$project": {
+            "customer_id": 1,
+            "labor_total": _totals_fallback_expr("labor_total"),
+            "parts_total": _totals_fallback_expr("parts_total"),
+            "sales_tax_total": _totals_fallback_expr("sales_tax_total"),
+            "grand_total": _totals_fallback_expr("grand_total"),
+            "parts_cost": _parts_cost_expr(),
+            "invoiced_hours": _invoiced_hours_expr(rates_map),
+            "bucket_key": _time_bucket_key_expr(chart_bucket),
+        }},
+        {"$facet": {
+            "by_customer": [
+                {"$group": {
+                    "_id": "$customer_id",
+                    "orders_count": {"$sum": 1},
+                    "labor_total": {"$sum": "$labor_total"},
+                    "parts_total": {"$sum": "$parts_total"},
+                    "parts_cost_total": {"$sum": "$parts_cost"},
+                    "sales_tax_total": {"$sum": "$sales_tax_total"},
+                    "grand_total": {"$sum": "$grand_total"},
+                    "invoiced_hours": {"$sum": "$invoiced_hours"},
+                }},
+            ],
+            "by_time": [
+                {"$match": {"bucket_key": {"$ne": None}}},
+                {"$group": {
+                    "_id": "$bucket_key",
+                    "revenue": {"$sum": "$grand_total"},
+                    "labor": {"$sum": "$labor_total"},
+                    "parts": {"$sum": "$parts_total"},
+                }},
+            ],
+        }},
+    ]
 
-        # Chart time bucket — use same date semantics as WO table
-        tk = _time_bucket_key(_preferred_dt(wo, "work_order_date", "created_at"), chart_bucket)
-        if tk:
-            tb = time_buckets.setdefault(tk, {"revenue": 0.0, "labor": 0.0, "parts": 0.0})
-            tb["revenue"] = _round2(tb["revenue"] + totals["grand_total"])
-            tb["labor"] = _round2(tb["labor"] + totals["labor_total"])
-            tb["parts"] = _round2(tb["parts"] + totals["parts_total"])
+    facets = next(iter(shop_db.work_orders.aggregate(pipeline, allowDiskUse=True)), {})
 
-    rows = sorted(rows_by_customer.values(), key=lambda x: x.get("grand_total", 0), reverse=True)
+    rows = []
+    for g in facets.get("by_customer") or []:
+        sid = str(g.get("_id"))
+        rows.append({
+            "customer_id": sid,
+            "customer_label": customer_map.get(sid) or "-",
+            "orders_count": int(g.get("orders_count") or 0),
+            "labor_total": _round2(g.get("labor_total")),
+            "parts_total": _round2(g.get("parts_total")),
+            "parts_cost_total": _round2(g.get("parts_cost_total")),
+            "sales_tax_total": _round2(g.get("sales_tax_total")),
+            "grand_total": _round2(g.get("grand_total")),
+            "invoiced_hours": _round2(g.get("invoiced_hours")),
+        })
+
+    time_buckets: dict[str, dict] = {
+        str(g["_id"]): {
+            "revenue": _round2(g.get("revenue")),
+            "labor": _round2(g.get("labor")),
+            "parts": _round2(g.get("parts")),
+        }
+        for g in (facets.get("by_time") or [])
+        if g.get("_id")
+    }
+
+    rows = sorted(rows, key=lambda x: x.get("grand_total", 0), reverse=True)
 
     total_orders = sum(int(r.get("orders_count") or 0) for r in rows)
     total_revenue = _round2(sum(float(r.get("grand_total") or 0) for r in rows))
@@ -1850,7 +1982,7 @@ def standard_report_pdf(report_key: str):
 
     response = make_response(pdf_bytes)
     response.headers["Content-Type"] = "application/pdf"
-    response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.headers.set("Content-Disposition", "attachment", filename=filename)
     response.headers["Content-Length"] = str(len(pdf_bytes))
     return response
 

@@ -19,42 +19,15 @@ def _utcnow():
     return datetime.now(timezone.utc)
 
 
-def _oid(v):
-    if not v:
-        return None
-    try:
-        return ObjectId(str(v))
-    except Exception:
-        return None
-
-
-def _tenant_variants():
-    raw = session.get(SESSION_TENANT_ID)
-    if raw is None:
-        return []
-    out = {raw, str(raw)}
-    o = _oid(raw)
-    if o:
-        out.add(o)
-    return list(out)
+from app.utils.tenant import (
+    oid as _oid,
+    tenant_id_variants as _tenant_variants,
+    get_shop_db as _tenant_get_shop_db,
+)
 
 
 def _get_shop_db():
-    master = get_master_db()
-    shop_id = _oid(session.get("shop_id"))
-    if not shop_id:
-        return None, None
-    tv = _tenant_variants()
-    if not tv:
-        return None, None
-    shop = master.shops.find_one({"_id": shop_id, "tenant_id": {"$in": tv}})
-    if not shop:
-        return None, None
-    db_name = shop.get("db_name")
-    if not db_name:
-        return None, shop
-    client = get_mongo_client()
-    return client[str(db_name)], shop
+    return _tenant_get_shop_db(get_master_db())
 
 
 def _get_assignable_mechanics(shop):

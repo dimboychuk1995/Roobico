@@ -504,8 +504,8 @@ def register_tenant():
         errors.append("Last name is required.")
     if "@" not in email:
         errors.append("Valid email is required.")
-    if len(password) < 6:
-        errors.append("Password must be at least 6 characters.")
+    if len(password) < 8:
+        errors.append("Password must be at least 8 characters.")
 
     if errors:
         return jsonify({"ok": False, "errors": errors}), 400

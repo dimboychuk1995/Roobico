@@ -149,6 +149,7 @@
   <div class="card-body">
     {% if active_shop_id %}
       <form method="POST" action="{{ url_for('settings.locations_index') }}" class="row g-2 align-items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="col-12 col-md-8 col-lg-6">
           <label class="form-label">Timezone</label>
           <select name="timezone" class="form-select form-select-sm" required>

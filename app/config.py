@@ -1,4 +1,15 @@
 import os
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+# .env грузится здесь, а не только в run.py: любой скрипт, запущенный через
+# `python -m app.scripts...`, импортирует этот модуль раньше собственного
+# load_dotenv — и без этой строки молча подключался к дефолтному локальному
+# Mongo вместо сервера из .env. Уже выставленные переменные окружения
+# load_dotenv не перетирает (override=False), так что прод-окружение в
+# приоритете.
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 
 def _parse_bool(val: str | None, default: bool = False) -> bool:
@@ -59,6 +70,20 @@ class Config:
 
     # Max upload size (16 MB — matches MongoDB BSON document limit)
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024
+
+    # ── CSRF (Flask-WTF) ─────────────────────────────────────────────────────
+    # Токен живёт столько же, сколько сессия: иначе долго открытая вкладка
+    # (work order на весь день) начнёт получать 400 на сохранениях.
+    WTF_CSRF_TIME_LIMIT = None
+
+    # ── Sentry (error tracking) ──────────────────────────────────────────────
+    # Пусто → Sentry выключен (локальная разработка). Задайте SENTRY_DSN в
+    # .env на сервере, чтобы получать алерты о необработанных исключениях.
+    SENTRY_DSN = os.environ.get("SENTRY_DSN", "")
+    SENTRY_ENVIRONMENT = os.environ.get("SENTRY_ENVIRONMENT", "production")
+    # 0 → перфоманс-трейсинг выключен (только ошибки). Поднимите до 0.1,
+    # если захотите видеть медленные транзакции в Sentry Performance.
+    SENTRY_TRACES_SAMPLE_RATE = float(os.environ.get("SENTRY_TRACES_SAMPLE_RATE", "0"))
 
     # ── Email (SMTP) ──────────────────────────────────────────────────────────
     # Set these in .env to enable "Email Work Order" and "Email Receipt" features.

@@ -134,6 +134,7 @@
 
       {% else %}
         <form method="post" action="{{ url_for('customers.customer_unit_update', customer_id=customer_id, unit_id=unit.id) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <div class="row g-3">
             <div class="col-12 col-md-6">
               <label class="form-label small text-muted mb-1" for="unit_number">Unit Number</label>
@@ -247,6 +248,7 @@
       <div class="modal-footer">
         <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <form method="post" action="{{ url_for('customers.customer_unit_deactivate', customer_id=customer_id, unit_id=unit.id) }}" class="d-inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-sm btn-danger">Deactivate</button>
         </form>
       </div>

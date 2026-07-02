@@ -13,6 +13,9 @@ from app.utils.date_filters import build_date_range_filters
 from app.utils.permissions import permission_required
 
 
+from app.utils.tenant import tenant_id_variants as _tenant_id_variants, get_shop_db as _get_shop_db
+
+
 def _maybe_object_id(value):
     if not value:
         return None
@@ -22,37 +25,8 @@ def _maybe_object_id(value):
         return str(value)
 
 
-def _tenant_id_variants():
-    raw = session.get(SESSION_TENANT_ID)
-    out = set()
-    if raw is None:
-        return []
-    out.add(raw)
-    out.add(str(raw))
-    try:
-        out.add(ObjectId(str(raw)))
-    except Exception:
-        pass
-    return list(out)
-
-
 def _get_active_shop_db():
-    master = get_master_db()
-    shop_oid = _maybe_object_id(session.get("shop_id"))
-    tenant_variants = _tenant_id_variants()
-    if not shop_oid or not tenant_variants:
-        return None, None
-
-    shop = master.shops.find_one({"_id": shop_oid, "tenant_id": {"$in": tenant_variants}})
-    if not shop:
-        return None, None
-
-    db_name = shop.get("db_name")
-    if not db_name:
-        return None, shop
-
-    client = get_mongo_client()
-    return client[str(db_name)], shop
+    return _get_shop_db(get_master_db())
 
 
 def _parse_iso_date_utc(value: str):

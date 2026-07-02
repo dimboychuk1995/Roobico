@@ -21,7 +21,7 @@ from flask import (
     abort, current_app, flash, redirect, request, url_for, jsonify
 )
 
-from app.extensions import get_master_db
+from app.extensions import get_master_db, csrf
 from app.utils.admin_audit import log_admin_action
 from app.utils.admin_auth import admin_required, get_current_admin
 from app.utils.stripe_client import (
@@ -142,6 +142,7 @@ def admin_charge_now(tenant_id: str):
 # ---------------------------------------------------------------------------
 
 @billing_bp.post("/billing/stripe/webhook")
+@csrf.exempt
 def stripe_webhook():
     """
     Receives Stripe webhook events. Verifies signature with the configured

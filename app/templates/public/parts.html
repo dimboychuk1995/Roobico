@@ -122,6 +122,7 @@
                 <td class="text-end">
                   {% if p.is_active is defined and p.is_active == false %}
                     <form method="post" action="{{ url_for('parts.parts_restore', part_id=p._id) }}" class="d-inline">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <button class="btn btn-sm btn-outline-success">Restore</button>
                     </form>
                   {% else %}
@@ -138,6 +139,7 @@
                       Edit
                     </button>
                     <form method="post" action="{{ url_for('parts.parts_deactivate', part_id=p._id) }}" class="d-inline">
+                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <button class="btn btn-sm btn-outline-danger"
                               onclick="return confirm('Deactivate this part?');">
                         Deactivate
@@ -627,6 +629,7 @@
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
       <form method="post" action="{{ url_for('parts.parts_create') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-header">
           <h5 class="modal-title" id="createPartModalLabel">Create new part</h5>
           <input type="hidden" id="editingPartId" value="">

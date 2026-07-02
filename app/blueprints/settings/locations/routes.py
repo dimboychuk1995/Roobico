@@ -1033,7 +1033,7 @@ def api_locations_logo(shop_id: str):
 
     resp = make_response(bytes(shop["logo_data"]))
     resp.headers["Content-Type"] = shop.get("logo_content_type", "image/png")
-    resp.headers["Content-Disposition"] = f'inline; filename="{shop.get("logo_filename", "logo.png")}"'
+    resp.headers.set("Content-Disposition", "inline", filename=shop.get("logo_filename", "logo.png"))
     resp.headers["Cache-Control"] = "private, max-age=3600"
     return resp
 

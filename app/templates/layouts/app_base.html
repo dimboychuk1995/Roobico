@@ -146,6 +146,7 @@
 
             {% if shop_options and shop_options|length > 0 %}
               <form method="POST" action="{{ url_for('main.set_active_shop') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <select class="form-select form-select-sm"
                         name="shop_id"
                         onchange="this.form.submit()"

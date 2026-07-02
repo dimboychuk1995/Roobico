@@ -1,15 +1,32 @@
 from __future__ import annotations
 
-from flask import request, redirect, url_for, flash, session, render_template
+from flask import request, redirect, url_for, flash, session, render_template, current_app
 from werkzeug.security import check_password_hash, generate_password_hash
 from bson import ObjectId
+import hashlib
 import secrets, time
 
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import login_user, logout_user, SESSION_USER_ID, SESSION_TENANT_ID, SESSION_TENANT_DB
 from app.utils.email_sender import send_email
 from app.utils.hosts import app_url, public_url
+from app.utils.rate_limit import hit_rate_limit
 from . import auth_bp
+
+MIN_PASSWORD_LENGTH = 8
+
+
+def _hash_reset_token(token: str) -> str:
+    # В базе храним только хэш: утечка дампа не даёт готовых ссылок сброса.
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _find_user_by_reset_token(master, token: str):
+    user = master.users.find_one({"reset_token": _hash_reset_token(token)})
+    if user is None:
+        # Токены, выданные до перехода на хэширование, лежат открытым текстом.
+        user = master.users.find_one({"reset_token": token})
+    return user
 
 
 def _maybe_object_id(value):
@@ -49,6 +66,10 @@ def _compute_effective_permissions(user_doc: dict, tenant_doc: dict) -> list[str
 @auth_bp.post("/login")
 def login():
     master = get_master_db()
+
+    if hit_rate_limit("login", request.remote_addr, max_attempts=10, window_seconds=300):
+        flash("Too many login attempts. Please try again in a few minutes.", "error")
+        return redirect(url_for("main.index"))
 
     email = (request.form.get("email") or "").strip().lower()
     password = request.form.get("password") or ""
@@ -127,6 +148,11 @@ def forgot_password_page():
 @auth_bp.post("/forgot-password")
 def forgot_password():
     master = get_master_db()
+
+    if hit_rate_limit("forgot_password", request.remote_addr, max_attempts=5, window_seconds=900):
+        flash("Too many reset requests. Please try again later.", "error")
+        return redirect(url_for("auth.forgot_password_page"))
+
     email = (request.form.get("email") or "").strip().lower()
 
     if not email:
@@ -139,7 +165,7 @@ def forgot_password():
         master.users.update_one(
             {"_id": user["_id"]},
             {"$set": {
-                "reset_token": token,
+                "reset_token": _hash_reset_token(token),
                 "reset_token_created": time.time(),
             }},
         )
@@ -171,9 +197,8 @@ def forgot_password():
                 from_email="password_recovery@roobico.com",
                 from_name="Roobico",
             )
-        except Exception as exc:
-            import traceback
-            traceback.print_exc()  # log the error to console
+        except Exception:
+            current_app.logger.exception("Failed to send password reset email")
 
     flash("If that email is registered, a reset link has been sent.", "info")
     return redirect(url_for("auth.forgot_password_page"))
@@ -182,7 +207,7 @@ def forgot_password():
 @auth_bp.get("/reset-password/<token>")
 def reset_password_page(token):
     master = get_master_db()
-    user = master.users.find_one({"reset_token": token})
+    user = _find_user_by_reset_token(master, token)
     if not user:
         flash("Invalid or expired reset link.", "error")
         return redirect(url_for("main.index"))
@@ -198,7 +223,7 @@ def reset_password_page(token):
 @auth_bp.post("/reset-password/<token>")
 def reset_password(token):
     master = get_master_db()
-    user = master.users.find_one({"reset_token": token})
+    user = _find_user_by_reset_token(master, token)
     if not user:
         flash("Invalid or expired reset link.", "error")
         return redirect(url_for("main.index"))
@@ -211,8 +236,8 @@ def reset_password(token):
     password = request.form.get("password", "")
     confirm = request.form.get("confirm_password", "")
 
-    if len(password) < 6:
-        flash("Password must be at least 6 characters.", "error")
+    if len(password) < MIN_PASSWORD_LENGTH:
+        flash(f"Password must be at least {MIN_PASSWORD_LENGTH} characters.", "error")
         return redirect(url_for("auth.reset_password_page", token=token))
 
     if password != confirm:

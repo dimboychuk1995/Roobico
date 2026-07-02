@@ -106,12 +106,14 @@
                   {% if "vendors.deactivate" in user_permissions %}
                     {% if v.get('is_active', True) %}
                       <form method="POST" action="{{ url_for('vendors.vendors_deactivate', vendor_id=v['_id']) }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-sm btn-outline-danger">
                           Delete
                         </button>
                       </form>
                     {% else %}
                       <form method="POST" action="{{ url_for('vendors.vendors_restore', vendor_id=v['_id']) }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <button type="submit" class="btn btn-sm btn-outline-success">
                           Restore
                         </button>
@@ -154,6 +156,7 @@
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
       <form method="POST" action="{{ url_for('vendors.vendors_create') }}" id="vendorForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" id="editingVendorId" value="">
         <div class="modal-header">
           <h5 class="modal-title" id="createVendorModalLabel">Create new vendor</h5>

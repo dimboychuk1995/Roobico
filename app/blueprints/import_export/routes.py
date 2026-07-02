@@ -12,6 +12,7 @@ from app.blueprints.import_export import import_export_bp
 from app.blueprints.main.routes import _render_app_page, NAV_ITEMS
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.parts_search import build_parts_search_terms
+from app.utils.entity_search import build_customer_search_terms, build_unit_search_terms
 from app.utils.auth import (
     login_required,
     SESSION_TENANT_ID,
@@ -264,6 +265,7 @@ def _build_customer_doc(mapped_row, shop, now, user_id, default_labor_rate_id=No
         "created_by": user_id,
         "updated_by": user_id,
     }
+    doc["search_terms"] = build_customer_search_terms(doc)
     return doc
 
 
@@ -285,6 +287,7 @@ def _build_unit_doc(mapped_row, customer_id, shop, now, user_id):
         "created_by": user_id,
         "updated_by": user_id,
     }
+    doc["search_terms"] = build_unit_search_terms(doc)
     return doc
 
 

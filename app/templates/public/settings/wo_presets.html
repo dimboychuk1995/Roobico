@@ -27,6 +27,7 @@
             <form method="post"
                   action="{{ url_for('settings.wo_presets_delete', preset_id=p.id) }}"
                   onsubmit="return confirm('Delete this preset?');">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
             </form>
           </div>
@@ -78,6 +79,7 @@
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <form method="post" id="presetForm" action="{{ url_for('settings.wo_presets_create') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <div class="modal-header">
           <h5 class="modal-title" id="presetModalTitle">New Preset</h5>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>

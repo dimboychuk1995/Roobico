@@ -11,26 +11,7 @@ from app.extensions import get_master_db, get_mongo_client
 DEFAULT_TIMEZONE = "America/Chicago"
 
 
-def _oid(value):
-    if not value:
-        return None
-    try:
-        return ObjectId(str(value))
-    except Exception:
-        return None
-
-
-def _tenant_id_variants():
-    raw = session.get("tenant_id")
-    out = set()
-    if raw is None:
-        return []
-    out.add(raw)
-    out.add(str(raw))
-    oid = _oid(raw)
-    if oid:
-        out.add(oid)
-    return list(out)
+from app.utils.tenant import oid as _oid, get_active_shop as _get_active_shop
 
 
 def _extract_tz(doc):
@@ -56,19 +37,6 @@ def _safe_tzinfo(tz_name: str):
             return timezone.utc
         # Unknown zone without tzdata: use Chicago default fallback.
         return timezone(timedelta(hours=-6))
-
-
-def _get_active_shop(master):
-    shop_id_raw = session.get("shop_id")
-    shop_oid = _oid(shop_id_raw)
-    if not shop_oid:
-        return None
-
-    tenant_variants = _tenant_id_variants()
-    if not tenant_variants:
-        return None
-
-    return master.shops.find_one({"_id": shop_oid, "tenant_id": {"$in": tenant_variants}})
 
 
 def get_active_shop_timezone_name(default: str = DEFAULT_TIMEZONE) -> str:

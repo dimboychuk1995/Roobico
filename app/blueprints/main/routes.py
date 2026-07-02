@@ -12,6 +12,20 @@ from flask import current_app
 from . import main_bp
 
 
+@main_bp.get("/healthz")
+def healthz():
+    """
+    Liveness/readiness для деплой-скрипта и мониторинга: 200 когда процесс
+    жив и Mongo отвечает, 503 иначе. Без аутентификации — дергается локально
+    через unix-сокет gunicorn (curl --unix-socket .../roobico.sock).
+    """
+    try:
+        get_master_db().command("ping")
+        return jsonify(ok=True), 200
+    except Exception:
+        return jsonify(ok=False), 503
+
+
 @main_bp.get("/")
 def index():
     # Admin host gets its own dispatch — straight to the admin login or

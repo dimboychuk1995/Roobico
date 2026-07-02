@@ -21,56 +21,7 @@ from app.utils.attachments import (
     get_attachment,
     delete_attachment,
 )
-
-
-def _oid(value):
-    if not value:
-        return None
-    try:
-        return ObjectId(str(value))
-    except Exception:
-        return None
-
-
-def _tenant_id_variants():
-    raw = session.get(SESSION_TENANT_ID)
-    out = set()
-    if raw is None:
-        return []
-    out.add(raw)
-    out.add(str(raw))
-    oid = _oid(raw)
-    if oid:
-        out.add(oid)
-    return list(out)
-
-
-def _get_shop_db(master):
-    shop_id_raw = session.get("shop_id")
-    shop_oid = _oid(shop_id_raw)
-    if not shop_oid:
-        return None, None
-
-    tenant_variants = _tenant_id_variants()
-    if not tenant_variants:
-        return None, None
-
-    shop = master.shops.find_one({"_id": shop_oid, "tenant_id": {"$in": tenant_variants}})
-    if not shop:
-        return None, None
-
-    db_name = (
-        shop.get("db_name")
-        or shop.get("database")
-        or shop.get("db")
-        or shop.get("mongo_db")
-        or shop.get("shop_db")
-    )
-    if not db_name:
-        return None, shop
-
-    client = get_mongo_client()
-    return client[str(db_name)], shop
+from app.utils.tenant import oid as _oid, get_shop_db as _get_shop_db
 
 
 # ── Upload (one or many) ─────────────────────────────────────────────
@@ -183,7 +134,7 @@ def api_download(attachment_id):
     else:
         disposition = "attachment"
     filename = doc.get("filename", "file")
-    response.headers["Content-Disposition"] = f'{disposition}; filename="{filename}"'
+    response.headers.set("Content-Disposition", disposition, filename=filename)
     response.headers["Cache-Control"] = "private, max-age=3600"
 
     return response
