@@ -20,23 +20,31 @@ def _resolve_part_for_inventory(shop_db, raw_part: dict):
     part_id = oid(raw_part.get("part_id"))
     part_number = str(raw_part.get("part_number") or "").strip()
 
-    query = {"is_active": True}
-    if part_id:
-        query["_id"] = part_id
-    elif part_number:
-        query["part_number"] = part_number
-    else:
-        return None
+    projection = {
+        "_id": 1,
+        "part_number": 1,
+        "in_stock": 1,
+        "do_not_track_inventory": 1,
+    }
 
-    return shop_db.parts.find_one(
-        query,
-        {
-            "_id": 1,
-            "part_number": 1,
-            "in_stock": 1,
-            "do_not_track_inventory": 1,
-        },
-    )
+    # Try to resolve by part_id first.
+    if part_id:
+        doc = shop_db.parts.find_one(
+            {"_id": part_id, "is_active": True},
+            projection,
+        )
+        if doc:
+            return doc
+        # Stale part_id (e.g. part re-imported with a new _id): fall back to
+        # part_number so inventory still gets deducted.
+
+    if part_number:
+        return shop_db.parts.find_one(
+            {"part_number": part_number, "is_active": True},
+            projection,
+        )
+
+    return None
 
 
 def _collect_inventory_qty_by_part(shop_db, labors: list):
@@ -292,24 +300,28 @@ def _resolve_part_for_core_tracking(shop_db, shop_id: ObjectId, part: dict, cach
     if cache_key and cache_key in cache:
         return cache[cache_key]
 
-    query = {"shop_id": shop_id, "is_active": True}
-    if part_id:
-        query["_id"] = part_id
-    elif part_number:
-        query["part_number"] = part_number
-    else:
-        return None
+    projection = {
+        "_id": 1,
+        "part_number": 1,
+        "description": 1,
+        "core_has_charge": 1,
+        "core_cost": 1,
+    }
 
-    doc = shop_db.parts.find_one(
-        query,
-        {
-            "_id": 1,
-            "part_number": 1,
-            "description": 1,
-            "core_has_charge": 1,
-            "core_cost": 1,
-        },
-    )
+    doc = None
+    if part_id:
+        doc = shop_db.parts.find_one(
+            {"shop_id": shop_id, "_id": part_id, "is_active": True},
+            projection,
+        )
+    # Stale part_id (e.g. part re-imported with a new _id): fall back to
+    # part_number so core tracking still resolves the part.
+    if doc is None and part_number:
+        doc = shop_db.parts.find_one(
+            {"shop_id": shop_id, "part_number": part_number, "is_active": True},
+            projection,
+        )
+
     if cache_key:
         cache[cache_key] = doc
     return doc

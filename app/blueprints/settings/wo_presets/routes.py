@@ -29,6 +29,46 @@ def _utcnow():
     return datetime.now(timezone.utc)
 
 
+def _heal_preset_part_numbers(sdb, presets):
+    """Refresh stored part_number snapshots from the live part (by part_id).
+
+    Resolution is by part_id (stable). When a part was renumbered, the preset's
+    stored part_number is updated in memory and persisted, so presets never keep
+    a renumbered/non-existent part_number anywhere they are displayed.
+    """
+    id_set = set()
+    for pr in presets:
+        for pt in (pr.get("parts") or []):
+            o = _maybe_oid(pt.get("part_id"))
+            if o:
+                id_set.add(o)
+    if not id_set:
+        return
+
+    live_pn = {}
+    for pdoc in sdb.parts.find(
+        {"_id": {"$in": list(id_set)}, "is_active": True},
+        {"_id": 1, "part_number": 1},
+    ):
+        live_pn[str(pdoc["_id"])] = str(pdoc.get("part_number") or "").strip()
+
+    for pr in presets:
+        patches = {}
+        for idx, pt in enumerate(pr.get("parts") or []):
+            pid_str = pt.get("part_id")
+            if not pid_str:
+                continue
+            current = live_pn.get(str(pid_str))
+            if current and current != str(pt.get("part_number") or "").strip():
+                pt["part_number"] = current
+                patches[f"parts.{idx}.part_number"] = current
+        if patches:
+            try:
+                sdb.wo_presets.update_one({"_id": pr["_id"]}, {"$set": patches})
+            except Exception:
+                pass
+
+
 def _load_current_user(master):
     uid = _maybe_oid(session.get(SESSION_USER_ID))
     if not uid:
@@ -119,6 +159,54 @@ def _load_pricing_rules(sdb, shop_oid):
             continue
         rules.append({"from": frm_f, "to": to_f, "value_percent": vp_f})
     return {"mode": mode, "rules": rules}
+
+
+def _match_pricing_rule(cost, rules):
+    """Mirror of the front-end matchRule(): pick the tier whose range covers cost."""
+    if cost is None or not rules:
+        return None
+    for r in rules:
+        frm = r.get("from")
+        to = r.get("to")
+        vp = r.get("value_percent")
+        if frm is None or vp is None:
+            continue
+        if cost < frm:
+            continue
+        if to is None or cost <= to:
+            return vp
+    return None
+
+
+def _calc_price_from_rule(cost, mode, value_percent):
+    """Mirror of the front-end calcPriceFromRule(): apply markup/margin to cost."""
+    if cost is None or cost <= 0 or value_percent is None:
+        return None
+    vp = value_percent / 100.0
+    if mode == "markup":
+        return round(cost * (1 + vp), 2)
+    denom = 1 - vp  # margin
+    if denom <= 0:
+        return round(cost, 2)
+    return round(cost / denom, 2)
+
+
+def _live_part_price(part_doc, pricing):
+    """Compute a part's current selling price the same way a WO does.
+
+    Uses the part's fixed selling_price when set, otherwise applies the default
+    pricing rule (markup/margin) to the live average_cost.
+    """
+    cost = float(part_doc.get("average_cost") or 0)
+    if part_doc.get("has_selling_price") and part_doc.get("selling_price") is not None:
+        return float(part_doc.get("selling_price") or 0)
+    if pricing:
+        vp = _match_pricing_rule(cost, pricing.get("rules"))
+        price = _calc_price_from_rule(cost, pricing.get("mode"), vp)
+        if price is not None:
+            return price
+    return None
+
 
 
 def _f64(v):
@@ -225,8 +313,35 @@ def wo_presets_index():
         ).sort([("name", 1)])
     )
 
+    # Keep displayed part numbers in sync with the live catalog (renumbered
+    # parts) so the list never shows a stale/non-existent part_number.
+    _heal_preset_part_numbers(sdb, presets)
+
     labor_rates = _load_labor_rates(sdb, shop_oid)
     pricing_rules = _load_pricing_rules(sdb, shop_oid)
+
+    # Live part lookup (by part_id) so the cards show current cost/price/misc
+    # instead of the snapshot stored when the preset was created.
+    live_part_ids = set()
+    for pr in presets:
+        for pt in (pr.get("parts") or []):
+            o = _maybe_oid(pt.get("part_id"))
+            if o:
+                live_part_ids.add(o)
+    live_parts = {}
+    if live_part_ids:
+        for pdoc in sdb.parts.find(
+            {"_id": {"$in": list(live_part_ids)}, "is_active": True},
+            {
+                "_id": 1,
+                "average_cost": 1,
+                "has_selling_price": 1,
+                "selling_price": 1,
+                "misc_has_charge": 1,
+                "misc_charges": 1,
+            },
+        ):
+            live_parts[str(pdoc["_id"])] = pdoc
 
     # Build a code→hourly_rate lookup
     rate_map = {}
@@ -252,9 +367,23 @@ def wo_presets_index():
         misc_sum = 0.0
         for pt in (p.get("parts") or []):
             qty = float(pt.get("qty") or 0)
-            price = float(pt.get("price") or 0)
+            live = live_parts.get(str(pt.get("part_id"))) if pt.get("part_id") else None
+
+            # Dynamic price/cost/misc from the live part; fall back to the stored
+            # snapshot only when the part can't be resolved.
+            if live is not None:
+                price = _live_part_price(live, pricing_rules)
+                if price is None:
+                    price = float(pt.get("price") or 0)
+                misc_items = live.get("misc_charges") or [] if live.get("misc_has_charge") else []
+            else:
+                price = float(pt.get("price") or 0)
+                misc_items = pt.get("misc_charges") or []
+
+            # Reflect the dynamic price in the per-part list shown on the card.
+            pt["price"] = round(price, 2)
             parts_sum += qty * price
-            for mc in (pt.get("misc_charges") or []):
+            for mc in misc_items:
                 misc_sum += qty * float(mc.get("price") or 0)
         p["est_parts"] = round(parts_sum, 2)
         p["est_misc"] = round(misc_sum, 2)
@@ -348,11 +477,15 @@ def wo_presets_detail(preset_id: str):
         "_id": 1,
         "part_number": 1,
         "average_cost": 1,
+        "has_selling_price": 1,
+        "selling_price": 1,
         "core_has_charge": 1,
         "core_cost": 1,
         "misc_has_charge": 1,
         "misc_charges": 1,
     }
+
+    pricing_rules = _load_pricing_rules(sdb, shop_oid)
 
     parts_lookup = {}
     if part_ids:
@@ -372,8 +505,9 @@ def wo_presets_detail(preset_id: str):
             if pn_key and pn_key not in parts_by_number:
                 parts_by_number[pn_key] = pdoc
 
-    # Cache pending preset patches (stale part_id -> fresh _id) to apply once.
-    preset_patches = []  # list of (row_index, fresh_id_str)
+    # Cache pending preset patches (stale part_id -> fresh _id, renumbered
+    # part_number -> current) to apply once.
+    preset_patches = {}  # "parts.<i>.<field>" -> value
 
     enriched_parts = []
     for idx, p in enumerate(raw_parts):
@@ -388,9 +522,16 @@ def wo_presets_detail(preset_id: str):
                 fresh_id = str(live.get("_id"))
                 ep["part_id"] = fresh_id
                 if pid_str != fresh_id:
-                    preset_patches.append((idx, fresh_id))
+                    preset_patches[f"parts.{idx}.part_id"] = fresh_id
 
         if live is not None:
+            # Self-heal the stored part_number if the part was renumbered.
+            live_pn = str(live.get("part_number") or "").strip()
+            stored_pn = str(p.get("part_number") or "").strip()
+            if live_pn and live_pn != stored_pn:
+                ep["part_number"] = live_pn
+                preset_patches[f"parts.{idx}.part_number"] = live_pn
+
             ep["core_has_charge"] = bool(live.get("core_has_charge"))
             ep["core_cost"] = float(live.get("core_cost") or 0)
             misc_items = []
@@ -404,14 +545,20 @@ def wo_presets_detail(preset_id: str):
             ep["misc_charges"] = misc_items
             if live.get("average_cost") is not None:
                 ep["cost"] = float(live["average_cost"])
+            # Dynamic sales price: use the part's own selling_price when set,
+            # otherwise compute from the pricing rule (markup/margin). This keeps
+            # the editor in sync with the list view and the WO logic instead of
+            # showing the snapshot stored when the preset was created.
+            live_price = _live_part_price(live, pricing_rules)
+            if live_price is not None:
+                ep["price"] = round(live_price, 2)
         enriched_parts.append(ep)
 
-    # Persist any healed part_id references back into the preset doc so the
-    # next load is fast and consistent.
+    # Persist any healed part_id / part_number references back into the preset
+    # doc so the next load is fast and consistent.
     if preset_patches:
-        update_set = {f"parts.{i}.part_id": pid for i, pid in preset_patches}
         try:
-            sdb.wo_presets.update_one({"_id": doc["_id"]}, {"$set": update_set})
+            sdb.wo_presets.update_one({"_id": doc["_id"]}, {"$set": preset_patches})
         except Exception:
             pass
 
