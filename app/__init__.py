@@ -39,15 +39,28 @@ from app.blueprints.reports.audit.journal import build_request_id, write_audit_j
 # скачать свежие CSS/JS. ВАЖНО: не прописывать v='...' в шаблонах руками —
 # ручное значение перекрывает автоматическое и замораживает кеш навсегда.
 def _compute_asset_version() -> str:
+    # SHA читаем из файлов .git напрямую, без вызова git: под systemd бинарь
+    # git может отсутствовать в PATH или падать на "dubious ownership", и
+    # тогда все воркеры уезжали бы на разные timestamp-версии.
     try:
-        import subprocess
-        sha = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, timeout=5,
-            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        ).stdout.strip()
-        if sha:
-            return sha
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        with open(os.path.join(root, ".git", "HEAD"), encoding="utf-8") as fh:
+            head = fh.read().strip()
+        if head.startswith("ref: "):
+            ref = head[5:].strip()
+            ref_path = os.path.join(root, ".git", *ref.split("/"))
+            if os.path.exists(ref_path):
+                with open(ref_path, encoding="utf-8") as fh:
+                    return fh.read().strip()[:7]
+            packed = os.path.join(root, ".git", "packed-refs")
+            if os.path.exists(packed):
+                with open(packed, encoding="utf-8") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if line.endswith(" " + ref):
+                            return line.split()[0][:7]
+        elif len(head) >= 7:
+            return head[:7]
     except Exception:
         pass
     return str(int(time.time()))
