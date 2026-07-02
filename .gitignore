@@ -20,5 +20,7 @@ build/
 
 __pycache__/
 *.pyc
-# Claude Code local settings
-.claude/settings.local.json
+
+# Трекаем настройки Claude Code в этом репозитории
+# (переопределяет глобальное правило из ~/.config/git/ignore)
+!.claude/settings.local.json
