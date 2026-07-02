@@ -1,0 +1,63 @@
+/*
+ * Клиентский портал (customer_portal): dashboard + work_order.
+ * Вынесено из <style>-блоков шаблонов — правки дизайна портала здесь.
+ * Тёмные варианты — в theme_dark.css.
+ */
+.portal-wrap { max-width: 1080px; margin: 1.5rem auto; }
+
+.portal-header {
+  background: #145e33;
+  color: #fff;
+  border-radius: 8px;
+  padding: 18px 22px;
+  margin-bottom: 1.25rem;
+}
+.portal-header .shop-name { font-size: 1.15rem; font-weight: 700; }
+.portal-header .shop-meta { font-size: .85rem; opacity: .85; }
+
+.portal-section-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  color: #145e33;
+  border-bottom: 2px solid #145e33;
+  padding-bottom: 4px;
+  margin: 0 0 .75rem;
+}
+
+.portal-card { border: 1px solid #e5e7eb; border-radius: 6px; }
+
+.badge-status-open     { background: #fef3c7; color: #92400e; }
+.badge-status-paid     { background: #dcfce7; color: #166534; }
+.badge-status-pending  { background: #e5e7eb; color: #374151; }
+.badge-status-approved { background: #dcfce7; color: #166534; }
+.badge-status-declined { background: #fee2e2; color: #991b1b; }
+
+.portal-tabs .nav-link {
+  color: #145e33;
+  font-weight: 600;
+  border: none;
+  border-bottom: 3px solid transparent;
+  border-radius: 0;
+  padding: .65rem 1.1rem;
+}
+.portal-tabs .nav-link.active {
+  color: #145e33;
+  background: transparent;
+  border-bottom-color: #145e33;
+}
+
+.portal-tab-loader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  color: #6c757d;
+  font-size: .9rem;
+}
+.portal-tab-loader .spinner-border {
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-right: .5rem;
+}

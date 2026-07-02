@@ -1,0 +1,56 @@
+{# ── Общие UI-макросы ────────────────────────────────────────────────
+   Единая разметка типовых элементов списковых страниц. Менять дизайн
+   поиска/пагинации/бэджей — здесь, а не по страницам.
+
+   Использование:
+     {% from "components/ui.html" import search_bar, pagination_controls, status_badge %}
+#}
+
+{# Строка поиска списковой страницы (GET ?q=...). #}
+{% macro search_bar(q, placeholder="Search...") %}
+<form method="get" class="row g-2 align-items-center mb-3">
+  <div class="col-12 col-md-8 col-lg-6">
+    <input
+      type="text"
+      name="q"
+      class="form-control form-control-sm"
+      placeholder="{{ placeholder }}"
+      value="{{ q or '' }}"
+    />
+  </div>
+  {% if q %}
+    <div class="col-auto">
+      <a class="btn btn-sm btn-outline-secondary"
+         href="{{ url_for(request.endpoint, **request.view_args) }}">Reset</a>
+    </div>
+  {% endif %}
+</form>
+{% endmacro %}
+
+{# Пагинация Prev/Next. Сохраняет ВСЕ текущие query-параметры страницы
+   (поиск, сортировку, фильтры), меняя только page. #}
+{% macro pagination_controls(pagination, label="Pagination") %}
+{% if pagination and pagination.pages > 1 %}
+  {% set base = dict(request.view_args, **request.args.to_dict()) %}
+  <div class="d-flex align-items-center justify-content-between mt-3">
+    <div class="small text-muted">
+      Page {{ pagination.page }} of {{ pagination.pages }} · {{ pagination.total }} total
+    </div>
+    <div class="btn-group btn-group-sm" role="group" aria-label="{{ label }}">
+      <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
+         href="{{ url_for(request.endpoint, **dict(base, page=pagination.prev_page, per_page=pagination.per_page)) }}">Prev</a>
+      <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
+         href="{{ url_for(request.endpoint, **dict(base, page=pagination.next_page, per_page=pagination.per_page)) }}">Next</a>
+    </div>
+  </div>
+{% endif %}
+{% endmacro %}
+
+{# Бэдж статуса активности. #}
+{% macro status_badge(is_active, active_label="Active", inactive_label="Inactive") -%}
+  {%- if is_active -%}
+    <span class="badge text-bg-success">{{ active_label }}</span>
+  {%- else -%}
+    <span class="badge text-bg-secondary">{{ inactive_label }}</span>
+  {%- endif -%}
+{%- endmacro %}

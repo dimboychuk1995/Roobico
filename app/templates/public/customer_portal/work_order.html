@@ -2,24 +2,7 @@
 {% block title %}WO #{{ ctx.wo_number }} — Customer Portal{% endblock %}
 
 {% block extra_styles %}
-<style>
-  .portal-wrap { max-width: 1080px; margin: 1.5rem auto; }
-  .portal-header {
-    background: #145e33; color: #fff; border-radius: 8px;
-    padding: 18px 22px; margin-bottom: 1.25rem;
-  }
-  .portal-section-title {
-    font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
-    color: #145e33; border-bottom: 2px solid #145e33; padding-bottom: 4px;
-    margin: 1.25rem 0 .75rem;
-  }
-  .portal-card { border: 1px solid #e5e7eb; border-radius: 6px; }
-  .badge-status-open    { background: #fef3c7; color: #92400e; }
-  .badge-status-paid    { background: #dcfce7; color: #166534; }
-  .badge-status-pending { background: #e5e7eb; color: #374151; }
-  .badge-status-approved{ background: #dcfce7; color: #166534; }
-  .badge-status-declined{ background: #fee2e2; color: #991b1b; }
-</style>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/portal.css') }}">
 {% endblock %}
 
 {% block content %}

@@ -2896,30 +2896,24 @@
       // Show loading spinner
       if (vinLoadingSpinner) vinLoadingSpinner.style.display = "block";
 
-      // Add visual feedback
-      if (unitVinInput) {
-        unitVinInput.style.borderColor = "#0d6efd";
-        unitVinInput.style.backgroundColor = "#e7f1ff";
-      }
+      // Visual feedback через CSS-классы (цвета в work_order_details.css,
+      // тёмные варианты в theme_dark.css)
+      if (unitVinInput) unitVinInput.classList.add("vin-checking");
 
       const data = await fetchVinDetails(vin);
-      
+
       // Hide loading spinner
       if (vinLoadingSpinner) vinLoadingSpinner.style.display = "none";
-      
-      // Remove visual feedback
-      if (unitVinInput) {
-        unitVinInput.style.borderColor = "";
-        unitVinInput.style.backgroundColor = "";
-      }
-      
+
+      if (unitVinInput) unitVinInput.classList.remove("vin-checking");
+
       if (!data) {
         console.warn("[VIN] No data received for:", vin);
         // Show error state
         if (unitVinInput) {
-          unitVinInput.style.borderColor = "#dc3545";
+          unitVinInput.classList.add("vin-invalid");
           setTimeout(() => {
-            if (unitVinInput) unitVinInput.style.borderColor = "";
+            if (unitVinInput) unitVinInput.classList.remove("vin-invalid");
           }, 2000);
         }
         return;
@@ -2946,9 +2940,9 @@
       
       // Flash success
       if (unitVinInput) {
-        unitVinInput.style.borderColor = "#198754";
+        unitVinInput.classList.add("vin-valid");
         setTimeout(() => {
-          if (unitVinInput) unitVinInput.style.borderColor = "";
+          if (unitVinInput) unitVinInput.classList.remove("vin-valid");
         }, 1500);
       }
     }, 500);

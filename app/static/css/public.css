@@ -1187,3 +1187,34 @@ a:hover {
   padding: 10px;
   color: var(--muted, #6c757d);
 }
+
+/* ── Icon tiles (карточки Settings / Reports и т.п.) ─────────────────
+   Единый класс вместо инлайн-стилей: фон и цвет иконки задаются
+   вариантом, SVG внутри должен использовать stroke="currentColor".
+   Тёмные варианты — в theme_dark.css. */
+.icon-tile {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+.icon-tile-lg {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  flex: 0 0 40px;
+}
+.icon-tile-green { background: #edf7f0; color: #1a7a42; }
+.icon-tile-amber { background: #fdf6ec; color: #c48a1a; }
+.icon-tile-sage  { background: #f0f5f2; color: #2d8b58; }
+.icon-tile-blue  { background: #eef3fb; color: #3a6fbf; }
+.icon-tile-red   { background: #fdf0ec; color: #c43b3b; }
+
+/* Скруглённые модалки (вместо инлайн border-radius) */
+.modal-content-rounded {
+  border-radius: 16px;
+  overflow: hidden;
+}

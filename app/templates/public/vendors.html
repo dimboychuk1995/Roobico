@@ -1,5 +1,6 @@
 {% extends "layouts/app_base.html" %}
 {% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
+{% from "components/ui.html" import search_bar, pagination_controls %}
 
 {% block page_title %}Vendors{% endblock %}
 
@@ -17,22 +18,7 @@
 
 <div class="card">
   <div class="card-body">
-    <form method="get" class="row g-2 align-items-center mb-3">
-      <div class="col-12 col-md-8 col-lg-6">
-        <input
-          type="text"
-          name="q"
-          class="form-control form-control-sm"
-          placeholder="Search vendors by any field..."
-          value="{{ q or '' }}"
-        />
-      </div>
-      {% if q %}
-        <div class="col-auto">
-          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('vendors.vendors_page') }}">Reset</a>
-        </div>
-      {% endif %}
-    </form>
+    {{ search_bar(q, placeholder="Search vendors by any field...") }}
 
     {% if vendors and vendors|length > 0 %}
       <div class="table-responsive">
@@ -132,19 +118,7 @@
         Showing {{ vendors|length }} vendor{{ 's' if vendors|length != 1 else '' }}.
       </p>
 
-      {% if pagination and pagination.pages > 1 %}
-        <div class="d-flex align-items-center justify-content-between mt-3">
-          <div class="small text-muted">
-            Page {{ pagination.page }} of {{ pagination.pages }} · {{ pagination.total }} total
-          </div>
-          <div class="btn-group btn-group-sm" role="group" aria-label="Vendors pagination">
-            <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-              href="{{ url_for('vendors.vendors_page', page=pagination.prev_page, per_page=pagination.per_page, q=q, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
-            <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-              href="{{ url_for('vendors.vendors_page', page=pagination.next_page, per_page=pagination.per_page, q=q, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
-          </div>
-        </div>
-      {% endif %}
+      {{ pagination_controls(pagination, label="Vendors pagination") }}
     {% else %}
       <p class="text-muted mb-0">No vendors yet.</p>
     {% endif %}

@@ -2,6 +2,18 @@
   "use strict";
 
   var _chartInstance = null;
+  var _lastChartData = null;
+
+  // Цвета осей/сетки/легенды Chart.js зависят от темы: дефолтные тёмно-серые
+  // подписи нечитаемы на тёмном фоне. При переключении темы график
+  // перерисовывается (MutationObserver в конце файла).
+  function chartThemeColors() {
+    var dark = document.documentElement.getAttribute("data-theme") === "dark";
+    return {
+      text: dark ? "#c9c9c9" : "#666",
+      grid: dark ? "rgba(255,255,255,0.09)" : "rgba(0,0,0,0.1)"
+    };
+  }
 
   var CHART_COLORS = [
     "rgba(54,162,235,0.7)",
@@ -33,6 +45,8 @@
     var wrap = document.getElementById("reportChartWrap");
     var canvas = document.getElementById("reportChart");
     if (!wrap || !canvas) return;
+    _lastChartData = chartData;
+    var themeColors = chartThemeColors();
 
     if (_chartInstance) {
       _chartInstance.destroy();
@@ -71,13 +85,19 @@
     var isHours = chartData.is_hours === true;
 
     var scales = {
+      x: {
+        ticks: { color: themeColors.text },
+        grid: { color: themeColors.grid }
+      },
       y: {
         beginAtZero: true,
         ticks: {
+          color: themeColors.text,
           callback: function (v) {
             return isHours ? v + " hrs" : "$" + v.toLocaleString();
           }
-        }
+        },
+        grid: { color: themeColors.grid }
       }
     };
     if (hasSecondAxis) {
@@ -86,6 +106,7 @@
         position: "right",
         grid: { drawOnChartArea: false },
         ticks: {
+          color: themeColors.text,
           callback: function (v) { return v + " hrs"; }
         }
       };
@@ -99,6 +120,9 @@
         maintainAspectRatio: false,
         scales: scales,
         plugins: {
+          legend: {
+            labels: { color: themeColors.text }
+          },
           tooltip: {
             callbacks: {
               label: function (ctx) {
@@ -831,4 +855,12 @@
   }
 
   window.addEventListener("roobico:content-replaced", init);
+
+  // Перерисовка графика при переключении темы: цвета осей/сетки/легенды
+  // задаются при создании Chart и сами не обновятся.
+  new MutationObserver(function () {
+    if (_chartInstance && _lastChartData) {
+      renderChart(_lastChartData);
+    }
+  }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
 })();

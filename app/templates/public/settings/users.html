@@ -1,4 +1,5 @@
 {% extends "layouts/app_base.html" %}
+{% from "components/ui.html" import search_bar, pagination_controls %}
 {% block page_title %}Settings — Users & Roles{% endblock %}
 
 {% block app_content %}
@@ -26,22 +27,7 @@
 
 <div class="card">
   <div class="card-body">
-    <form method="get" class="row g-2 align-items-center mb-3">
-      <div class="col-12 col-md-8 col-lg-6">
-        <input
-          type="text"
-          name="q"
-          class="form-control form-control-sm"
-          placeholder="Search users by name, email, role, phone or ID..."
-          value="{{ q or '' }}"
-        />
-      </div>
-      {% if q %}
-        <div class="col-auto">
-          <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('settings.users_index') }}">Reset</a>
-        </div>
-      {% endif %}
-    </form>
+    {{ search_bar(q, placeholder="Search users by name, email, role, phone or ID...") }}
 
     {% if users %}
       <div class="table-responsive">
@@ -134,23 +120,7 @@
       </div>
     {% endif %}
 
-    {% if pagination and pagination.pages > 1 %}
-      <div class="d-flex align-items-center justify-content-between mt-3 pt-3 border-top">
-        <div class="small text-muted">
-          Page {{ pagination.page }} of {{ pagination.pages }} · {{ pagination.total }} total
-        </div>
-        <div class="btn-group btn-group-sm" role="group" aria-label="Users pagination">
-          <a
-            class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-            href="{{ url_for('settings.users_index', q=q, page=pagination.prev_page, per_page=pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}"
-          >Prev</a>
-          <a
-            class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-            href="{{ url_for('settings.users_index', q=q, page=pagination.next_page, per_page=pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}"
-          >Next</a>
-        </div>
-      </div>
-    {% endif %}
+    {{ pagination_controls(pagination, label="Users pagination") }}
   </div>
 </div>
 
@@ -444,14 +414,14 @@
 <!-- ── Per-user permissions modal ── -->
 <div class="modal fade" id="userPermsModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered">
-    <div class="modal-content" style="border-radius:16px; overflow:hidden;">
-      <div class="modal-header" style="background:linear-gradient(180deg,#fcfdfd 0%,#f6f8f7 100%);">
+    <div class="modal-content modal-content-rounded">
+      <div class="modal-header">
         <div class="d-flex align-items-center gap-3 flex-grow-1">
-          <div style="width:40px;height:40px;border-radius:12px;background:#edf7f0;color:#1a7a42;display:flex;align-items:center;justify-content:center;flex:0 0 40px;">
+          <div class="icon-tile icon-tile-lg icon-tile-green">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/></svg>
           </div>
           <div class="min-width-0">
-            <div class="fw-semibold" style="font-size:1.05rem; color:#0f172a;">
+            <div class="fw-semibold" style="font-size:1.05rem;">
               <span id="userPermsName">user</span>
             </div>
             <div class="text-muted small">
@@ -462,7 +432,7 @@
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
 
-      <div class="modal-body" style="background:#f8fafc;">
+      <div class="modal-body">
         <div id="userPermsAlert" class="alert alert-warning d-none mb-3"></div>
         <div class="alert alert-light border mb-3" style="border-radius:12px;">
           <div class="small text-muted">
