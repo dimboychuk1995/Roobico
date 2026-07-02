@@ -32,11 +32,28 @@ from app.extensions import init_mongo, get_master_db, csrf
 from app.utils.auth import SESSION_USER_ID, SESSION_TENANT_ID
 from app.blueprints.reports.audit.journal import build_request_id, write_audit_journal
 
-# Версия статики, общая для всего процесса. Пересчитывается при рестарте
-# приложения (на сервере gunicorn перезапускается каждым деплоем) — это
-# гарантирует, что после деплоя браузеры подтянут свежие CSS/JS вместо
-# старых из локального кеша.
-ASSET_VERSION = str(int(time.time()))
+# Версия статики, общая для всего процесса: короткий SHA задеплоенного
+# коммита (fallback — время старта, если git недоступен). Автоматически
+# добавляется ко всем url_for('static', ...) как ?v=..., поэтому после
+# каждого деплоя URL файлов меняются и браузеры/Cloudflare обязаны
+# скачать свежие CSS/JS. ВАЖНО: не прописывать v='...' в шаблонах руками —
+# ручное значение перекрывает автоматическое и замораживает кеш навсегда.
+def _compute_asset_version() -> str:
+    try:
+        import subprocess
+        sha = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        ).stdout.strip()
+        if sha:
+            return sha
+    except Exception:
+        pass
+    return str(int(time.time()))
+
+
+ASSET_VERSION = _compute_asset_version()
 
 
 # Endpoints that MUST live on the public host (roobico.com).
