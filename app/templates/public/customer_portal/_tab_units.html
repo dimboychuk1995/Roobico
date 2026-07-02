@@ -17,7 +17,7 @@
     </thead>
     <tbody>
       {% for u in units %}
-      <tr class="portal-unit-row" style="cursor:pointer;"
+      <tr class="portal-unit-row" role="button" tabindex="0"
           data-unit-id="{{ u.id }}" data-unit-label="{{ u.label }}">
         <td>{{ u.unit_number or '—' }}</td>
         <td>{{ u.year or '—' }}</td>

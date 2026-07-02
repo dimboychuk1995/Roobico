@@ -1,5 +1,5 @@
 {% extends "layouts/app_base.html" %}
-{% from "components/ui.html" import search_bar, pagination_controls %}
+{% from "components/ui.html" import search_bar, pagination_controls, empty_state %}
 
 {% block page_title %}Customers{% endblock %}
 
@@ -60,14 +60,14 @@
                 <td>
                   {{ c.main_contact_name if c.main_contact_name else "-" }}
                   {% if c.is_active is defined and c.is_active == False %}
-                    <span class="badge bg-secondary ms-2">Inactive</span>
+                    <span class="badge text-bg-secondary ms-2">Inactive</span>
                   {% endif %}
                 </td>
 
                 <td>{{ c.main_contact_phone if c.main_contact_phone else "-" }}</td>
                 <td>{{ c.main_contact_email if c.main_contact_email else "-" }}</td>
                 <td class="text-end fw-semibold js-customer-balance" data-customer-id="{{ cid }}">
-                  <span class="spinner-border spinner-border-sm text-muted" style="width:.75rem;height:.75rem;" role="status"></span>
+                  <span class="spinner-border spinner-border-xs text-muted" role="status"></span>
                 </td>
 
                 <td class="text-end">
@@ -81,7 +81,7 @@
 
       {{ pagination_controls(pagination, label="Customers pagination") }}
     {% else %}
-      <div class="text-muted">No customers yet.</div>
+      {{ empty_state("No customers yet", "Add your first customer to start creating work orders.") }}
     {% endif %}
 
   </div>

@@ -1,5 +1,6 @@
 {% extends "layouts/app_base.html" %}
 {% from "components/attachments.html" import attachments_block, attachments_modal %}
+{% from "components/ui.html" import empty_state %}
 
 {% block page_title %}Work Orders{% endblock %}
 
@@ -98,7 +99,7 @@
               <tbody>
                 {% for w in work_orders %}
                   <tr>
-                    <td><span class="badge bg-secondary">{{ w.wo_number or '-' }}</span></td>
+                    <td><span class="badge text-bg-secondary">{{ w.wo_number or '-' }}</span></td>
                     <td>{{ w.customer }}</td>
                     <td>{{ w.date }}</td>
                     <td>{{ w.unit }}</td>
@@ -110,11 +111,11 @@
                     <td class="text-end">${{ "%.2f"|format(w.balance or 0) }}</td>
                     <td class="text-center">
                       {% if w.is_paid %}
-                        <span class="badge bg-success">Paid</span>
+                        <span class="badge text-bg-success">Paid</span>
                       {% elif w.is_in_progress %}
-                        <span class="badge bg-info text-dark">In Progress</span>
+                        <span class="badge text-bg-info">In Progress</span>
                       {% else %}
-                        <span class="badge bg-warning text-dark">Unpaid</span>
+                        <span class="badge text-bg-warning">Unpaid</span>
                       {% endif %}
                     </td>
                     <td class="text-end text-nowrap">
@@ -126,8 +127,8 @@
                           <i class="bi bi-cash-coin me-1"></i>Pay
                         </button>
                       {% endif %}
-                      <a class="btn btn-outline-secondary btn-sm me-1" href="{{ url_for('work_orders.api_download_work_order_pdf', work_order_id=w.id) }}" target="_blank" rel="noopener noreferrer" title="Download PDF">
-                        &#128196;
+                      <a class="btn btn-outline-secondary btn-sm me-1" href="{{ url_for('work_orders.api_download_work_order_pdf', work_order_id=w.id) }}" target="_blank" rel="noopener noreferrer" title="Download PDF" aria-label="Download PDF">
+                        <i class="bi bi-file-earmark-pdf"></i>
                       </a>
                       <a class="btn btn-outline-primary btn-sm me-1" href="{{ url_for('work_orders.work_order_details_page', work_order_id=w.id) }}" target="_blank" rel="noopener noreferrer">
                         Edit
@@ -169,7 +170,7 @@
             </div>
           {% endif %}
         {% else %}
-          <div class="text-muted">No work orders yet.</div>
+          {{ empty_state("No work orders yet", "Create a work order to see it listed here.") }}
         {% endif %}
       </div>
     </div>
@@ -219,11 +220,11 @@
         </form>
 
         <div id="payments-loading" class="text-muted d-none">
-          <div class="spinner-border spinner-border-sm me-2" role="status" style="width: 1rem; height: 1rem;"></div>
+          <div class="spinner-border spinner-border-sm me-2" role="status"></div>
           Loading payments...
         </div>
         <div id="payments-content" class="d-none"></div>
-        <div id="payments-empty" class="text-muted">No payments recorded yet.</div>
+        <div id="payments-empty">{{ empty_state("No payments recorded yet", "Payments will appear here once a work order is paid.") }}</div>
       </div>
     </div>
   </div>
@@ -296,10 +297,10 @@
           <div id="estimates-pagination" class="d-flex align-items-center justify-content-between mt-3"></div>
           </div>
           <div id="estimates-loading" class="text-muted">
-            <span class="spinner-border spinner-border-sm me-2" style="width:1rem;height:1rem;" role="status"></span>
+            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
             Loading estimates...
           </div>
-          <div id="estimates-empty" class="text-muted d-none">No estimates found.</div>
+          <div id="estimates-empty" class="d-none">{{ empty_state("No estimates found", "Estimates you create will show up here.") }}</div>
         {% else %}
           <div id="estimates-content" class="d-none">
           <div class="table-responsive">
@@ -325,10 +326,10 @@
           <div id="estimates-pagination" class="d-flex align-items-center justify-content-between mt-3"></div>
           </div>
           <div id="estimates-loading" class="text-muted">
-            <span class="spinner-border spinner-border-sm me-2" style="width:1rem;height:1rem;" role="status"></span>
+            <span class="spinner-border spinner-border-sm me-2" role="status"></span>
             Loading estimates...
           </div>
-          <div id="estimates-empty" class="text-muted d-none">No estimates found.</div>
+          <div id="estimates-empty" class="d-none">{{ empty_state("No estimates found", "Estimates you create will show up here.") }}</div>
         {% endif %}
       </div>
     </div>

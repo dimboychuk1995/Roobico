@@ -32,7 +32,7 @@
         </select>
         {% if not customers or customers|length == 0 %}
         <div class="small text-muted mt-1" id="customerSelectLoading">
-          <span class="spinner-border spinner-border-sm" style="width:.6rem;height:.6rem;" role="status"></span>
+          <span class="spinner-border spinner-border-xs" role="status"></span>
           Loading customers...
         </div>
         {% endif %}
@@ -537,9 +537,9 @@
           <div class="d-flex align-items-center gap-2 flex-wrap">
             <button id="paidWorkOrderBtn" class="btn btn-success" type="button" style="display:none;">Paid</button>
             <button id="unpaidWorkOrderBtn" class="btn btn-warning" type="button" style="display:none;">Unpaid</button>
-            <button id="emailWorkOrderBtn" class="btn btn-outline-secondary" type="button" style="display:none;">&#9993; Email Work Order</button>
-            <button id="downloadPdfBtn" class="btn btn-outline-secondary" type="button" style="display:none;">&#128196; Download PDF</button>
-            <button id="woCostBtn" class="btn btn-outline-secondary" type="button">&#128176; WO Cost</button>
+            <button id="emailWorkOrderBtn" class="btn btn-outline-secondary" type="button" style="display:none;"><i class="bi bi-envelope me-1"></i>Email Work Order</button>
+            <button id="downloadPdfBtn" class="btn btn-outline-secondary" type="button" style="display:none;"><i class="bi bi-file-earmark-pdf me-1"></i>Download PDF</button>
+            <button id="woCostBtn" class="btn btn-outline-secondary" type="button"><i class="bi bi-cash-coin me-1"></i>WO Cost</button>
             <button id="deleteWorkOrderBtn" class="btn btn-outline-danger" type="button" style="display:none;">Delete</button>
           </div>
 

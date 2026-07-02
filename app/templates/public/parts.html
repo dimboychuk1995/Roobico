@@ -1,5 +1,6 @@
 {% extends "layouts/app_base.html" %}
 {% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
+{% from "components/ui.html" import empty_state %}
 
 {% block page_title %}Parts{% endblock %}
 
@@ -175,7 +176,7 @@
         </div>
       </div>
     {% else %}
-      <div class="text-muted">No parts in stock.</div>
+      {{ empty_state("No parts in stock", "Add a part or receive a parts order to build up inventory.") }}
     {% endif %}
 
       </div>
@@ -252,7 +253,7 @@
               <tbody>
                 {% for o in orders %}
                   <tr>
-                    <td><span class="badge bg-secondary">{{ o.order_number or '-' }}</span></td>
+                    <td><span class="badge text-bg-secondary">{{ o.order_number or '-' }}</span></td>
                     <td>{{ o.vendor_bill or '-' }}</td>
                     <td>{{ o.vendor }}</td>
                     <td class="text-end">{{ o.items_count }}</td>
@@ -261,22 +262,22 @@
                     <td class="text-end">${{ "%.2f"|format(o.remaining_balance or 0) }}</td>
                     <td>
                       {% if o.payment_status == 'paid' %}
-                        <span class="badge bg-success">Paid</span>
+                        <span class="badge text-bg-success">Paid</span>
                       {% elif o.payment_status == 'partially_paid' %}
-                        <span class="badge bg-warning text-dark">Partially Paid</span>
+                        <span class="badge text-bg-warning">Partially Paid</span>
                       {% else %}
-                        <span class="badge bg-secondary">Unpaid</span>
+                        <span class="badge text-bg-secondary">Unpaid</span>
                       {% endif %}
                     </td>
                     <td>
                       {% if o.status == 'received' %}
-                        <span class="badge bg-success">{{ o.status or 'ordered' }}</span>
+                        <span class="badge text-bg-success">{{ o.status or 'ordered' }}</span>
                       {% else %}
-                        <button type="button" class="btn btn-sm btn-warning text-dark receiveStatusBtn" 
-                                data-order-id="{{ o.id }}" 
+                        <button type="button" class="btn btn-sm btn-warning receiveStatusBtn"
+                                data-order-id="{{ o.id }}"
                           data-vendor-bill="{{ o.vendor_bill or '' }}"
                                 title="Click to receive this order">
-                          <span class="badge bg-warning text-dark">{{ o.status or 'ordered' }}</span>
+                          {{ o.status or 'ordered' }}
                         </button>
                       {% endif %}
                     </td>
@@ -334,7 +335,7 @@
             </div>
           {% endif %}
         {% else %}
-          <div class="text-muted">No parts orders found.</div>
+          {{ empty_state("No parts orders found", "Create a parts order to track vendor purchases.") }}
         {% endif %}
       </div>
     </div>
@@ -447,7 +448,7 @@
             </div>
           {% endif %}
         {% else %}
-          <div class="text-muted">No payments recorded yet.</div>
+          {{ empty_state("No payments recorded yet", "Payments for parts orders will appear here.") }}
         {% endif %}
       </div>
     </div>
@@ -511,7 +512,7 @@
             </div>
           {% endif %}
         {% else %}
-          <div class="text-muted">No cores found.</div>
+          {{ empty_state("No cores found", "Core charges from received parts orders will appear here.") }}
         {% endif %}
       </div>
     </div>
@@ -558,7 +559,7 @@
             </div>
           </div>
         </form>
-        <div class="text-muted">Cores Returns tab is empty for now.</div>
+        {{ empty_state("No core returns yet", "Returned cores will be listed here.") }}
       </div>
     </div>
   </div>
@@ -811,8 +812,8 @@
             >
             <div
               id="orderVendorDropdown"
-              class="list-group position-absolute shadow-sm"
-              style="z-index:1060; display:none; max-height:260px; overflow:auto; width:calc(100% - 24px);"
+              class="list-group position-absolute shadow-sm dd-scroll"
+              style="display:none; width:calc(100% - 24px);"
             ></div>
 
             <select class="form-select d-none" id="order_vendor" required>
@@ -843,8 +844,8 @@
             <div class="form-text">Choose vendor first, then type (min 2 chars). Click result to add.</div>
 
             <div id="partSearchDropdown"
-                 class="list-group position-absolute shadow-sm"
-                 style="z-index:1060; display:none; max-height:260px; overflow:auto; width:calc(100% - 24px);">
+                 class="list-group position-absolute shadow-sm dd-scroll"
+                 style="display:none; width:calc(100% - 24px);">
             </div>
           </div>
         </div>
@@ -998,7 +999,7 @@
 
 <!-- Part History Modal -->
 <div class="modal fade" id="partHistoryModal" tabindex="-1" aria-labelledby="partHistoryModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" style="max-width: 95%;">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable modal-dialog-wide">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="partHistoryModalLabel">Part history</h5>

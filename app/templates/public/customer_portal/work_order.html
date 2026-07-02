@@ -10,13 +10,13 @@
 
   <div class="portal-header d-flex justify-content-between align-items-center flex-wrap gap-2">
     <div>
-      <div style="font-size:1.1rem;font-weight:700;">{{ brand.shop_name }}</div>
-      {% if brand.shop_address %}<div style="font-size:.85rem;opacity:.85;">{{ brand.shop_address }}</div>{% endif %}
+      <div class="shop-name">{{ brand.shop_name }}</div>
+      {% if brand.shop_address %}<div class="shop-meta">{{ brand.shop_address }}</div>{% endif %}
     </div>
     <div class="text-end">
-      <div style="font-size:.8rem;opacity:.85;">Work Order</div>
-      <div style="font-size:1.4rem;font-weight:700;">#{{ ctx.wo_number }}</div>
-      <div style="font-size:.85rem;opacity:.85;">{{ ctx.wo_date_label }}</div>
+      <div class="shop-meta">Work Order</div>
+      <div class="shop-number">#{{ ctx.wo_number }}</div>
+      <div class="shop-meta">{{ ctx.wo_date_label }}</div>
     </div>
   </div>
 
@@ -204,7 +204,7 @@
           <a href="{{ url_for('customer_portal.attachment_download', token=token, attachment_id=a.id) }}"
              class="d-flex align-items-center gap-2 text-decoration-none border rounded p-2"
              target="_blank">
-            <span style="font-size:1.5rem;">{% if a.is_image %}🖼{% else %}📄{% endif %}</span>
+            <span class="fs-4">{% if a.is_image %}<i class="bi bi-file-image"></i>{% else %}<i class="bi bi-file-earmark-text"></i>{% endif %}</span>
             <span class="flex-grow-1">
               <span class="fw-semibold text-dark d-block">{{ a.filename }}</span>
               <span class="text-muted small">{{ a.size_kb }} KB</span>

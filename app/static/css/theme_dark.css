@@ -536,9 +536,61 @@ html[data-theme="dark"] .alert-info {
   color: #7dd3fc;
 }
 
-html[data-theme="dark"] .badge.bg-light {
+html[data-theme="dark"] .badge.bg-light,
+html[data-theme="dark"] .badge.text-bg-light {
   background: #2a2a2a !important;
   color: var(--text) !important;
+}
+
+/* Бэджи в тёмной теме — приглушённый фон + светлый текст вместо
+   сплошных ярких заливок Bootstrap (единый вид со статусами портала).
+   Покрывает text-bg-*, bg-* и bg-*-subtle варианты. */
+html[data-theme="dark"] .badge.text-bg-success,
+html[data-theme="dark"] .badge.bg-success,
+html[data-theme="dark"] .badge.bg-success-subtle {
+  background: rgba(34, 197, 94, 0.16) !important;
+  color: #4ade80 !important;
+}
+
+html[data-theme="dark"] .badge.text-bg-secondary,
+html[data-theme="dark"] .badge.bg-secondary,
+html[data-theme="dark"] .badge.bg-secondary-subtle {
+  background: rgba(148, 163, 184, 0.16) !important;
+  color: #cbd5e1 !important;
+}
+
+html[data-theme="dark"] .badge.text-bg-primary,
+html[data-theme="dark"] .badge.bg-primary,
+html[data-theme="dark"] .badge.bg-primary-subtle {
+  background: rgba(59, 130, 246, 0.18) !important;
+  color: #93c5fd !important;
+}
+
+html[data-theme="dark"] .badge.text-bg-warning,
+html[data-theme="dark"] .badge.bg-warning,
+html[data-theme="dark"] .badge.bg-warning-subtle {
+  background: rgba(245, 158, 11, 0.16) !important;
+  color: #fbbf24 !important;
+}
+
+html[data-theme="dark"] .badge.text-bg-danger,
+html[data-theme="dark"] .badge.bg-danger,
+html[data-theme="dark"] .badge.bg-danger-subtle {
+  background: rgba(239, 68, 68, 0.16) !important;
+  color: #f87171 !important;
+}
+
+html[data-theme="dark"] .badge.text-bg-info,
+html[data-theme="dark"] .badge.bg-info,
+html[data-theme="dark"] .badge.bg-info-subtle {
+  background: rgba(56, 189, 248, 0.16) !important;
+  color: #7dd3fc !important;
+}
+
+html[data-theme="dark"] .badge.text-bg-dark,
+html[data-theme="dark"] .badge.bg-dark {
+  background: rgba(255, 255, 255, 0.10) !important;
+  color: #e5e5e5 !important;
 }
 
 /* ── Nav tabs / pagination ──────────────────────────────────────── */
@@ -982,7 +1034,42 @@ html[data-theme="dark"] .vin-checking {
   background-color: rgba(59, 130, 246, 0.15) !important;
 }
 
+/* ── Скроллбары в тёмной теме ──────────────────────────────────────── */
+html[data-theme="dark"] {
+  scrollbar-color: #4a4a4a #1f1f1f;
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-thumb {
+  background: #4a4a4a;
+  border-radius: 8px;
+  border: 2px solid #212121;
+}
+
+html[data-theme="dark"] ::-webkit-scrollbar-thumb:hover {
+  background: #5a5a5a;
+}
+
+/* ── Публичная страница авторизации работ: тёмные варианты ─────────── */
+html[data-theme="dark"] .auth-card .card-header {
+  background: #14532d;
+  color: #ffffff;
+}
+
+html[data-theme="dark"] .auth-status-approved { background: rgba(34, 197, 94, 0.18);  color: #4ade80; }
+html[data-theme="dark"] .auth-status-declined { background: rgba(239, 68, 68, 0.18);  color: #f87171; }
+html[data-theme="dark"] .auth-status-pending  { background: rgba(245, 158, 11, 0.18); color: #fbbf24; }
+
 /* ── Клиентский портал: тёмные варианты ────────────────────────────── */
+html[data-theme="dark"] .portal-header { background: #14532d; }
 html[data-theme="dark"] .portal-card { border-color: var(--border); background: var(--surface); }
 html[data-theme="dark"] .portal-section-title { color: #4ade80; border-bottom-color: #2f6b47; }
 html[data-theme="dark"] .portal-tabs .nav-link { color: #6ee7a8; }

@@ -1218,3 +1218,111 @@ a:hover {
   border-radius: 16px;
   overflow: hidden;
 }
+
+/* Почти полноэкранная модалка (истории, большие таблицы) */
+.modal-dialog-wide {
+  max-width: 95%;
+}
+
+/* ── Бренд в топбаре (вместо инлайн-стиля в app_base) ───────────────── */
+.app-topbar .navbar-brand {
+  color: #16a34a;
+  font-size: 2.2rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  -webkit-text-stroke: 1px #16a34a;
+}
+
+.topbar-shop-select {
+  min-width: 220px;
+}
+
+/* ── Пустые состояния списков/таблиц ─────────────────────────────────
+   Использовать через макрос empty_state() из components/ui.html. */
+.empty-state {
+  text-align: center;
+  padding: 2.25rem 1rem;
+  color: var(--muted);
+}
+
+.empty-state-icon {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 0.65rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+}
+
+.empty-state-icon svg {
+  width: 22px;
+  height: 22px;
+}
+
+.empty-state-title {
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 0.15rem;
+}
+
+.empty-state-hint {
+  font-size: 0.85rem;
+}
+
+/* ── Мелкие утилиты (вместо повторяющихся инлайн-стилей) ────────────── */
+/* Компактный спиннер в ячейках таблиц */
+.spinner-border-xs {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-width: 0.14em;
+}
+
+/* Кастомные поисковые дропдауны (parts, presets, calendar и т.п.) */
+.dd-scroll {
+  z-index: 1060;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+/* Dropdown-меню с чекбокс-фильтром (reports) */
+.dropdown-menu-filter {
+  min-width: 100%;
+  max-height: 350px;
+  overflow-y: auto;
+  border-radius: var(--radius-sm);
+}
+
+/* Обёртка графика Chart.js фиксированной высоты */
+.chart-wrap {
+  position: relative;
+  height: 320px;
+}
+
+/* Прокручиваемый <pre> с логом/JSON */
+.pre-scroll {
+  max-height: 240px;
+  overflow: auto;
+}
+
+.pre-scroll-lg {
+  max-height: 480px;
+}
+
+/* Пунктирная карточка-плейсхолдер («добавить ещё», пустой слот) */
+.card-dashed {
+  border-style: dashed !important;
+}
+
+/* Узкая форма/инпут внутри широкой страницы */
+.form-narrow {
+  max-width: 400px;
+}
+
+/* ── VIN-валидация (общая для WO details и unit details) ───────────── */
+.vin-checking { border-color: #0d6efd !important; background-color: #e7f1ff !important; }
+.vin-valid    { border-color: #198754 !important; }
+.vin-invalid  { border-color: #dc3545 !important; }

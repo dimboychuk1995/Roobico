@@ -125,7 +125,7 @@
   <div class="app-right-area">
     <nav class="navbar navbar-expand-lg px-3 app-topbar">
       <div class="container-fluid px-0">
-        <a class="navbar-brand" href="{{ url_for('dashboard.dashboard') }}" style="color: #16a34a; font-size: 2.2rem; font-weight: 900; letter-spacing: 0.05em; -webkit-text-stroke: 1px #16a34a;">
+        <a class="navbar-brand" href="{{ url_for('dashboard.dashboard') }}">
           ROOBICO
         </a>
 
@@ -147,10 +147,9 @@
             {% if shop_options and shop_options|length > 0 %}
               <form method="POST" action="{{ url_for('main.set_active_shop') }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <select class="form-select form-select-sm"
+                <select class="form-select form-select-sm topbar-shop-select"
                         name="shop_id"
-                        onchange="this.form.submit()"
-                        style="min-width: 220px;">
+                        onchange="this.form.submit()">
                   {% for s in shop_options %}
                     <option value="{{ s.id }}" {% if active_shop_id == s.id %}selected{% endif %}>
                       {{ s.name }}

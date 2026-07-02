@@ -1,5 +1,6 @@
 {% extends "layouts/app_base.html" %}
 {% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
+{% from "components/ui.html" import empty_state %}
 {% block page_title %}Customer Details{% endblock %}
 
 {% block app_content %}
@@ -26,7 +27,7 @@
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('customers.customers_page') }}">Back</a>
     <button type="button" class="btn btn-outline-info btn-sm" id="sendPortalLinkBtn"
             data-customer-id="{{ customer_id }}"
-            data-customer-email="{{ customer.email or '' }}">📧 Portal Link</button>
+            data-customer-email="{{ customer.email or '' }}"><i class="bi bi-envelope me-1"></i>Portal Link</button>
     <a class="btn btn-primary btn-sm" href="{{ url_for('work_orders.work_order_details_page', customer_id=customer_id) }}">Create Work Order</a>
   </div>
 </div>
@@ -36,16 +37,16 @@
     <div>
       <div class="small text-muted">Current Balance</div>
       <div class="h5 mb-0 js-customer-detail-balance" data-customer-id="{{ customer.id }}">
-        <span class="spinner-border spinner-border-sm text-muted" style="width:.75rem;height:.75rem;" role="status"></span>
+        <span class="spinner-border spinner-border-xs text-muted" role="status"></span>
       </div>
     </div>
     <div>
       <div class="small text-muted">Status</div>
       <div>
         {% if customer.is_active %}
-          <span class="badge bg-success">Active</span>
+          <span class="badge text-bg-success">Active</span>
         {% else %}
-          <span class="badge bg-secondary">Inactive</span>
+          <span class="badge text-bg-secondary">Inactive</span>
         {% endif %}
       </div>
     </div>
@@ -58,7 +59,7 @@
       <div class="fw-semibold">
         {{ customer.pricing_rule_name if customer.pricing_rule_name else '-' }}
         {% if customer.override_part_selling_price %}
-          <span class="badge bg-warning text-dark ms-1" title="Selling price on parts is ignored; scale is always applied">Override</span>
+          <span class="badge text-bg-warning ms-1" title="Selling price on parts is ignored; scale is always applied">Override</span>
         {% endif %}
       </div>
     </div>
@@ -66,9 +67,9 @@
       <div class="small text-muted">Taxable</div>
       <div>
         {% if customer.taxable %}
-          <span class="badge bg-primary">Yes</span>
+          <span class="badge text-bg-primary">Yes</span>
         {% else %}
-          <span class="badge bg-light text-dark border">No</span>
+          <span class="badge text-bg-light border">No</span>
         {% endif %}
       </div>
     </div>
@@ -142,12 +143,12 @@
               <tbody>
                 {% for item in tab_items %}
                   <tr>
-                    <td><span class="badge bg-secondary">{{ item.wo_number }}</span></td>
+                    <td><span class="badge text-bg-secondary">{{ item.wo_number }}</span></td>
                     <td>
                       {% if item.status == 'paid' %}
-                        <span class="badge bg-success">paid</span>
+                        <span class="badge text-bg-success">paid</span>
                       {% else %}
-                        <span class="badge bg-warning text-dark">{{ item.status }}</span>
+                        <span class="badge text-bg-warning">{{ item.status }}</span>
                       {% endif %}
                     </td>
                     <td>{{ item.unit }}</td>
@@ -164,7 +165,7 @@
             </table>
           </div>
         {% else %}
-          <div class="text-muted">No work orders found for this customer.</div>
+          {{ empty_state("No work orders found", "Try adjusting the filters, or create a work order for this customer.") }}
         {% endif %}
 
         {% if pagination %}
@@ -243,7 +244,7 @@
             </table>
           </div>
         {% else %}
-          <div class="text-muted">No units found for this customer.</div>
+          {{ empty_state("No units found", "Units added to this customer will appear here.") }}
         {% endif %}
 
       {% elif active_tab == 'payments' %}
@@ -323,7 +324,7 @@
             </table>
           </div>
         {% else %}
-          <div class="text-muted">No payments found for this customer.</div>
+          {{ empty_state("No payments found", "Payments recorded for this customer will appear here.") }}
         {% endif %}
 
         {% if pagination %}
@@ -405,8 +406,8 @@
               <tbody>
                 {% for item in tab_items %}
                   <tr>
-                    <td><span class="badge bg-secondary">{{ item.wo_number }}</span></td>
-                    <td><span class="badge bg-warning text-dark">{{ item.status }}</span></td>
+                    <td><span class="badge text-bg-secondary">{{ item.wo_number }}</span></td>
+                    <td><span class="badge text-bg-warning">{{ item.status }}</span></td>
                     <td>{{ item.unit }}</td>
                     <td class="text-end fw-semibold">${{ "%.2f"|format(item.grand_total or 0) }}</td>
                     <td>{{ item.created_at }}</td>
@@ -419,7 +420,7 @@
             </table>
           </div>
         {% else %}
-          <div class="text-muted">No estimates found for this customer.</div>
+          {{ empty_state("No estimates found", "Estimates created for this customer will appear here.") }}
         {% endif %}
 
         {% if pagination %}

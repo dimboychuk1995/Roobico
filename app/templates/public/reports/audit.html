@@ -1,4 +1,5 @@
 {% extends "layouts/app_base.html" %}
+{% from "components/ui.html" import empty_state %}
 
 {% block page_title %}Reports - Activity Journal{% endblock %}
 
@@ -86,7 +87,7 @@
         </table>
       </div>
     {% else %}
-      <div class="p-3 text-muted">No journal entries found for selected filters.</div>
+      {{ empty_state("No journal entries found", "Try widening the method or endpoint filters.") }}
     {% endif %}
   </div>
 </div>

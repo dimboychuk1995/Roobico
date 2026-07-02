@@ -71,9 +71,9 @@
   <div class="card-body">
     <h6 class="mb-2">uAttend debug</h6>
     <div class="small text-muted mb-1">Request</div>
-    <pre class="bg-dark text-light p-2 rounded small" style="max-height: 240px; overflow: auto;">{{ debug_payload.request | tojson(indent=2) }}</pre>
+    <pre class="bg-dark text-light p-2 rounded small pre-scroll">{{ debug_payload.request | tojson(indent=2) }}</pre>
     <div class="small text-muted mb-1">Raw response</div>
-    <pre class="bg-dark text-light p-2 rounded small" style="max-height: 480px; overflow: auto;">{{ debug_payload.response | tojson(indent=2) }}</pre>
+    <pre class="bg-dark text-light p-2 rounded small pre-scroll pre-scroll-lg">{{ debug_payload.response | tojson(indent=2) }}</pre>
   </div>
 </div>
 {% endif %}

@@ -1,6 +1,6 @@
 {% extends "layouts/app_base.html" %}
 {% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
-{% from "components/ui.html" import search_bar, pagination_controls %}
+{% from "components/ui.html" import search_bar, pagination_controls, empty_state %}
 
 {% block page_title %}Vendors{% endblock %}
 
@@ -69,13 +69,13 @@
 
               <td>{{ v.get('address') or '—' }}</td>
 
-              <td class="text-end js-vendor-balance" data-vendor-id="{{ v['_id'] }}"><span class="spinner-border spinner-border-sm text-muted" style="width:.75rem;height:.75rem;" role="status"></span></td>
+              <td class="text-end js-vendor-balance" data-vendor-id="{{ v['_id'] }}"><span class="spinner-border spinner-border-xs text-muted" role="status"></span></td>
 
               <td class="text-end">
                 {% if v.get('is_active', True) %}
-                  <span class="badge bg-success">Active</span>
+                  <span class="badge text-bg-success">Active</span>
                 {% else %}
-                  <span class="badge bg-secondary">Inactive</span>
+                  <span class="badge text-bg-secondary">Inactive</span>
                 {% endif %}
               </td>
 
@@ -120,7 +120,7 @@
 
       {{ pagination_controls(pagination, label="Vendors pagination") }}
     {% else %}
-      <p class="text-muted mb-0">No vendors yet.</p>
+      {{ empty_state("No vendors yet", "Add a vendor to track parts orders and balances.") }}
     {% endif %}
   </div>
 </div>

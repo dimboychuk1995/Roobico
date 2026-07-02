@@ -1,5 +1,6 @@
 {% extends "layouts/app_base.html" %}
 {% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
+{% from "components/ui.html" import empty_state %}
 {% block page_title %}Unit Details{% endblock %}
 
 {% block app_content %}
@@ -24,13 +25,13 @@
 <div class="mt-3">
   <div class="card border-success-subtle">
     <div class="card-body py-2 d-flex flex-wrap align-items-center gap-3">
-      <span class="badge bg-success">Annual Inspection</span>
+      <span class="badge text-bg-success">Annual Inspection</span>
       <span class="small"><span class="text-muted">Inspection date:</span> <strong>{{ annual_inspection.date }}</strong></span>
       <span class="small"><span class="text-muted">Inspector:</span> {{ annual_inspection.inspector_name }}</span>
       <span class="small"><span class="text-muted">Carrier:</span> {{ annual_inspection.motor_carrier_operator }}</span>
       <span class="small"><span class="text-muted">Agency/Location:</span> {{ annual_inspection.inspection_agency }}</span>
       <span class="small text-muted ms-auto">Recorded {{ annual_inspection.created_at }}</span>
-      <a class="btn btn-sm btn-outline-secondary" href="/work_orders/api/annual_inspections/{{ annual_inspection.id }}/download-pdf">&#128196; Download PDF</a>
+      <a class="btn btn-sm btn-outline-secondary" href="/work_orders/api/annual_inspections/{{ annual_inspection.id }}/download-pdf"><i class="bi bi-file-earmark-pdf me-1"></i>Download PDF</a>
     </div>
   </div>
 </div>
@@ -95,12 +96,12 @@
               <tbody>
                 {% for item in tab_items %}
                   <tr>
-                    <td><span class="badge bg-secondary">{{ item.wo_number }}</span></td>
+                    <td><span class="badge text-bg-secondary">{{ item.wo_number }}</span></td>
                     <td>
                       {% if item.status == 'paid' %}
-                        <span class="badge bg-success">paid</span>
+                        <span class="badge text-bg-success">paid</span>
                       {% else %}
-                        <span class="badge bg-warning text-dark">{{ item.status }}</span>
+                        <span class="badge text-bg-warning">{{ item.status }}</span>
                       {% endif %}
                     </td>
                     <td class="text-end">${{ "%.2f"|format(item.grand_total or 0) }}</td>
@@ -129,7 +130,7 @@
             </table>
           </div>
         {% else %}
-          <div class="text-muted">No work orders found for this unit.</div>
+          {{ empty_state("No work orders for this unit", "Work orders created for this unit will appear here.") }}
         {% endif %}
 
       {% else %}
@@ -305,17 +306,16 @@
     lastLookup = vin;
 
     if (spinner) spinner.style.display = "block";
-    vinInput.style.borderColor = "#0d6efd";
-    vinInput.style.backgroundColor = "#e7f1ff";
+    vinInput.classList.add("vin-checking");
 
     const data = await fetchVin(vin);
 
     if (spinner) spinner.style.display = "none";
-    vinInput.style.backgroundColor = "";
+    vinInput.classList.remove("vin-checking");
 
     if (!data) {
-      vinInput.style.borderColor = "#dc3545";
-      setTimeout(() => { vinInput.style.borderColor = ""; }, 2000);
+      vinInput.classList.add("vin-invalid");
+      setTimeout(() => { vinInput.classList.remove("vin-invalid"); }, 2000);
       return;
     }
 
@@ -324,8 +324,8 @@
     if (modelInput && data.model) modelInput.value = data.model;
     if (typeInput && data.type) typeInput.value = data.type;
 
-    vinInput.style.borderColor = "#198754";
-    setTimeout(() => { vinInput.style.borderColor = ""; }, 1500);
+    vinInput.classList.add("vin-valid");
+    setTimeout(() => { vinInput.classList.remove("vin-valid"); }, 1500);
   }
 
   const debouncedLookup = debounced(lookup, 500);
