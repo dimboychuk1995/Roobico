@@ -112,8 +112,14 @@ def get_work_orders_list(
     paid_status: str = "all",
     created_from=None,
     created_to_exclusive=None,
+    customer_id: ObjectId | None = None,
+    unit_id: ObjectId | None = None,
 ):
     query = {"shop_id": shop_id, "is_active": True}
+    if customer_id:
+        query["customer_id"] = customer_id
+    if unit_id:
+        query["unit_id"] = unit_id
 
     if paid_status == "paid":
         query["status"] = "paid"

@@ -436,6 +436,7 @@ def create_app():
     from app.blueprints.customer_portal import customer_portal_bp
     from app.blueprints.admin_panel import admin_panel_bp
     from app.blueprints.billing import billing_bp
+    from app.blueprints.mobile_api import mobile_api_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(reports_bp)
@@ -453,5 +454,6 @@ def create_app():
     app.register_blueprint(customer_portal_bp)
     app.register_blueprint(admin_panel_bp)
     app.register_blueprint(billing_bp)
+    app.register_blueprint(mobile_api_bp)
 
     return app

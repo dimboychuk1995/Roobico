@@ -23,7 +23,19 @@
     ],
     "defaultMode": "dontAsk",
     "allow": [
-      "Bash(python -c \"import json; d=json.load\\(open\\('.claude/settings.local.json'\\)\\); print\\('JSON OK, mode =', d['permissions']['defaultMode'], ',', len\\(d['permissions']['ask']\\), 'ask rules'\\)\")"
+      "Bash(python -c \"import json; d=json.load\\(open\\('.claude/settings.local.json'\\)\\); print\\('JSON OK, mode =', d['permissions']['defaultMode'], ',', len\\(d['permissions']['ask']\\), 'ask rules'\\)\")",
+      "Bash(npm *)",
+      "Bash(npx *)",
+      "Bash(node *)",
+      "Bash(expo *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "PowerShell(npm *)",
+      "PowerShell(npx *)",
+      "PowerShell(node *)",
+      "PowerShell(expo *)",
+      "PowerShell(python *)",
+      "PowerShell(python3 *)"
     ]
   }
 }
