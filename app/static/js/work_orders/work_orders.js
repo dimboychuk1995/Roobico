@@ -427,6 +427,332 @@
     });
   }
 
+  // ========== BULK PAYMENT LOGIC ==========
+  // Один платёж клиента распределяется по нескольким неоплаченным инвойсам.
+  let _bulkPayInvoices = [];
+  let _bulkPayCustomerId = "";
+
+  function _bulkPayEl(id) {
+    return document.getElementById(id);
+  }
+
+  function _bulkPayResetInvoicesView() {
+    _bulkPayInvoices = [];
+    const tbody = _bulkPayEl("bulkPayInvoicesBody");
+    if (tbody) tbody.innerHTML = "";
+    _bulkPayEl("bulkPayInvoicesWrap")?.classList.add("d-none");
+    _bulkPayEl("bulkPayInvoicesEmpty")?.classList.add("d-none");
+    _bulkPayEl("bulkPayInvoicesLoading")?.classList.add("d-none");
+    _bulkPayEl("bulkPayInvoicesHint")?.classList.remove("d-none");
+    _bulkPayEl("bulkPaySummary")?.classList.add("d-none");
+    const selectAll = _bulkPayEl("bulkPaySelectAll");
+    if (selectAll) selectAll.checked = false;
+    recomputeBulkPay();
+  }
+
+  function _bulkPayResetModal() {
+    _bulkPayCustomerId = "";
+    const select = _bulkPayEl("bulkPayCustomerSelect");
+    if (select) select.innerHTML = '<option value="">Select customer...</option>';
+    const amountInput = _bulkPayEl("bulkPayAmountInput");
+    if (amountInput) amountInput.value = "";
+    const methodInput = _bulkPayEl("bulkPayMethodInput");
+    if (methodInput) methodInput.value = "cash";
+    const notesInput = _bulkPayEl("bulkPayNotesInput");
+    if (notesInput) notesInput.value = "";
+    const dateInput = _bulkPayEl("bulkPayDateInput");
+    if (dateInput) {
+      dateInput.value = dateInput.defaultValue || dateInput.value || "";
+      if (dateInput._flatpickr) { dateInput._flatpickr.setDate(dateInput.value || null, false, "Y-m-d"); }
+    }
+    _bulkPayResetInvoicesView();
+  }
+
+  async function _bulkPayLoadCustomers() {
+    const select = _bulkPayEl("bulkPayCustomerSelect");
+    if (!select) return;
+    const data = await getJson("/work_orders/api/bulk-payments/customers");
+    (data.customers || []).forEach(function (c) {
+      const opt = document.createElement("option");
+      opt.value = String(c.id || "");
+      const invoices = Number(c.invoices_count || 0);
+      opt.textContent = `${c.label} — $${_money(c.balance_due)} due (${invoices} invoice${invoices === 1 ? "" : "s"})`;
+      select.appendChild(opt);
+    });
+  }
+
+  function _bulkPayRenderInvoices() {
+    const tbody = _bulkPayEl("bulkPayInvoicesBody");
+    if (!tbody) return;
+
+    tbody.innerHTML = _bulkPayInvoices.map(function (inv) {
+      return `
+        <tr>
+          <td class="text-center">
+            <input type="checkbox" class="form-check-input bulk-pay-row-check" data-wo-id="${_esc(inv.id)}" aria-label="Select invoice ${_esc(inv.wo_number || "")}">
+          </td>
+          <td><span class="badge text-bg-secondary">${_esc(inv.wo_number || "-")}</span></td>
+          <td>${_esc(inv.date || "-")}</td>
+          <td>${_esc(inv.unit || "-")}</td>
+          <td class="text-end">$${_money(inv.grand_total)}</td>
+          <td class="text-end">$${_money(inv.paid_amount)}</td>
+          <td class="text-end fw-semibold">$${_money(inv.balance)}</td>
+          <td class="text-end">
+            <input type="number" class="form-control form-control-sm text-end ms-auto bulk-pay-alloc-input" style="width: 8rem;"
+                   data-wo-id="${_esc(inv.id)}" inputmode="decimal" placeholder="0.00" step="0.01" min="0" max="${_money(inv.balance)}" disabled>
+          </td>
+        </tr>
+      `;
+    }).join("");
+
+    const selectAll = _bulkPayEl("bulkPaySelectAll");
+    if (selectAll) selectAll.checked = false;
+    _bulkPayEl("bulkPayInvoicesWrap")?.classList.remove("d-none");
+    recomputeBulkPay();
+  }
+
+  async function _bulkPayLoadInvoices(customerId) {
+    _bulkPayInvoices = [];
+    const tbody = _bulkPayEl("bulkPayInvoicesBody");
+    if (tbody) tbody.innerHTML = "";
+    _bulkPayEl("bulkPayInvoicesHint")?.classList.add("d-none");
+    _bulkPayEl("bulkPayInvoicesWrap")?.classList.add("d-none");
+    _bulkPayEl("bulkPayInvoicesEmpty")?.classList.add("d-none");
+    _bulkPayEl("bulkPaySummary")?.classList.add("d-none");
+    _bulkPayEl("bulkPayInvoicesLoading")?.classList.remove("d-none");
+
+    try {
+      const data = await getJson(`/work_orders/api/bulk-payments/customers/${encodeURIComponent(customerId)}/unpaid`);
+      _bulkPayInvoices = data.work_orders || [];
+      _bulkPayEl("bulkPayInvoicesLoading")?.classList.add("d-none");
+      if (!_bulkPayInvoices.length) {
+        _bulkPayEl("bulkPayInvoicesEmpty")?.classList.remove("d-none");
+        recomputeBulkPay();
+        return;
+      }
+      _bulkPayRenderInvoices();
+    } catch (err) {
+      _bulkPayEl("bulkPayInvoicesLoading")?.classList.add("d-none");
+      _bulkPayEl("bulkPayInvoicesHint")?.classList.remove("d-none");
+      appAlert(err.message || "Failed to load unpaid invoices.", 'error');
+    }
+  }
+
+  function recomputeBulkPay() {
+    const checks = Array.from(document.querySelectorAll("#bulkPayInvoicesBody .bulk-pay-row-check"));
+    const balances = {};
+    _bulkPayInvoices.forEach(function (inv) { balances[inv.id] = Number(inv.balance || 0); });
+
+    let selected = 0;
+    let allocated = 0;
+    let invalid = false;
+
+    checks.forEach(function (chk) {
+      const woId = String(chk.dataset.woId || "");
+      const input = document.querySelector(`#bulkPayInvoicesBody .bulk-pay-alloc-input[data-wo-id="${woId}"]`);
+      if (!input) return;
+      if (!chk.checked) {
+        input.disabled = true;
+        input.classList.remove("is-invalid");
+        return;
+      }
+      input.disabled = false;
+      selected++;
+      const val = parseFloat(input.value || "0");
+      const balance = balances[woId] || 0;
+      if (!(val > 0) || val > balance + 0.005) {
+        invalid = true;
+        input.classList.add("is-invalid");
+      } else {
+        input.classList.remove("is-invalid");
+        allocated += val;
+      }
+    });
+
+    allocated = Math.round(allocated * 100) / 100;
+    const received = parseFloat(_bulkPayEl("bulkPayAmountInput")?.value || "0") || 0;
+    const leftover = Math.round((received - allocated) * 100) / 100;
+    const overAllocated = received > 0 && allocated > received + 0.005;
+
+    const selectAll = _bulkPayEl("bulkPaySelectAll");
+    if (selectAll) selectAll.checked = checks.length > 0 && selected === checks.length;
+
+    const summary = _bulkPayEl("bulkPaySummary");
+    if (summary) summary.classList.toggle("d-none", selected === 0);
+    const countEl = _bulkPayEl("bulkPaySelectedCount");
+    if (countEl) countEl.textContent = String(selected);
+    const allocatedEl = _bulkPayEl("bulkPayAllocatedTotal");
+    if (allocatedEl) allocatedEl.textContent = `$${_money(allocated)}`;
+    const leftoverRow = _bulkPayEl("bulkPayLeftoverRow");
+    if (leftoverRow) leftoverRow.classList.toggle("d-none", !(received > 0 && leftover > 0.005 && !overAllocated));
+    const leftoverEl = _bulkPayEl("bulkPayLeftover");
+    if (leftoverEl) leftoverEl.textContent = `$${_money(leftover)}`;
+    const overRow = _bulkPayEl("bulkPayOverAllocatedRow");
+    if (overRow) overRow.classList.toggle("d-none", !overAllocated);
+
+    const distributeBtn = _bulkPayEl("bulkPayDistributeBtn");
+    if (distributeBtn) distributeBtn.disabled = !(_bulkPayInvoices.length > 0 && received > 0);
+    const submitBtn = _bulkPayEl("bulkPaySubmitBtn");
+    if (submitBtn) submitBtn.disabled = !(selected > 0 && allocated > 0 && !invalid && !overAllocated);
+  }
+
+  function _bulkPayAutoDistribute() {
+    const received = parseFloat(_bulkPayEl("bulkPayAmountInput")?.value || "0") || 0;
+    if (!(received > 0)) return;
+
+    // Инвойсы приходят с сервера старыми вперёд — закрываем их по порядку.
+    let remaining = received;
+    _bulkPayInvoices.forEach(function (inv) {
+      const chk = document.querySelector(`#bulkPayInvoicesBody .bulk-pay-row-check[data-wo-id="${inv.id}"]`);
+      const input = document.querySelector(`#bulkPayInvoicesBody .bulk-pay-alloc-input[data-wo-id="${inv.id}"]`);
+      if (!chk || !input) return;
+      const apply = Math.min(Number(inv.balance || 0), remaining);
+      if (apply > 0.004) {
+        chk.checked = true;
+        input.disabled = false;
+        input.value = apply.toFixed(2);
+        remaining = Math.round((remaining - apply) * 100) / 100;
+      } else {
+        chk.checked = false;
+        input.value = "";
+        input.disabled = true;
+      }
+    });
+    recomputeBulkPay();
+  }
+
+  async function _bulkPaySubmit(submitBtn) {
+    const paymentDate = String(_bulkPayEl("bulkPayDateInput")?.value || "").trim();
+    if (!paymentDate) {
+      appAlert("Please select payment date.", 'warning');
+      return;
+    }
+
+    const allocations = [];
+    document.querySelectorAll("#bulkPayInvoicesBody .bulk-pay-row-check").forEach(function (chk) {
+      if (!chk.checked) return;
+      const woId = String(chk.dataset.woId || "");
+      const input = document.querySelector(`#bulkPayInvoicesBody .bulk-pay-alloc-input[data-wo-id="${woId}"]`);
+      const amount = parseFloat(input?.value || "0");
+      if (woId && amount > 0) allocations.push({ work_order_id: woId, amount });
+    });
+
+    if (!allocations.length) {
+      appAlert("Select at least one invoice and enter an amount.", 'warning');
+      return;
+    }
+
+    const originalText = submitBtn.textContent;
+    submitBtn.disabled = true;
+    submitBtn.textContent = "Saving...";
+
+    try {
+      const res = await fetch("/work_orders/api/bulk-payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify({
+          customer_id: _bulkPayCustomerId,
+          payment_method: _bulkPayEl("bulkPayMethodInput")?.value || "cash",
+          notes: _bulkPayEl("bulkPayNotesInput")?.value || "",
+          payment_date: paymentDate,
+          allocations,
+        }),
+      });
+      let data = null;
+      try { data = await res.json(); } catch { data = null; }
+      if (!res.ok || !data || data.ok !== true) {
+        throw new Error((data && (data.message || data.error)) || "Failed to record bulk payment.");
+      }
+
+      const modalEl = _bulkPayEl("bulkPaymentModal");
+      const modal = modalEl ? bootstrap.Modal.getInstance(modalEl) : null;
+      if (modal) modal.hide();
+
+      appAlert(
+        `Recorded ${data.results.length} payment${data.results.length === 1 ? "" : "s"} totaling $${_money(data.applied_total)}. ` +
+        `${data.invoices_paid_in_full} invoice${data.invoices_paid_in_full === 1 ? "" : "s"} paid in full.`,
+        'success'
+      );
+      window.location.reload();
+    } catch (err) {
+      appAlert(err.message || "Failed to record bulk payment.", 'error');
+      submitBtn.disabled = false;
+      submitBtn.textContent = originalText;
+    }
+  }
+
+  if (!body || body.dataset.workOrdersBulkPayBound !== "1") {
+    if (body) body.dataset.workOrdersBulkPayBound = "1";
+
+    document.addEventListener("click", async function (e) {
+      if (e.target.closest("#bulkPaymentBtn")) {
+        const modalEl = _bulkPayEl("bulkPaymentModal");
+        if (!modalEl) return;
+        _bulkPayResetModal();
+        new bootstrap.Modal(modalEl).show();
+        try {
+          await _bulkPayLoadCustomers();
+        } catch (err) {
+          appAlert(err.message || "Failed to load customers.", 'error');
+        }
+        return;
+      }
+
+      if (e.target.closest("#bulkPayDistributeBtn")) {
+        _bulkPayAutoDistribute();
+        return;
+      }
+
+      const submitBtn = e.target.closest("#bulkPaySubmitBtn");
+      if (submitBtn) {
+        await _bulkPaySubmit(submitBtn);
+      }
+    });
+
+    document.addEventListener("change", function (e) {
+      if (e.target.id === "bulkPayCustomerSelect") {
+        _bulkPayCustomerId = String(e.target.value || "");
+        if (_bulkPayCustomerId) {
+          _bulkPayLoadInvoices(_bulkPayCustomerId);
+        } else {
+          _bulkPayResetInvoicesView();
+        }
+        return;
+      }
+
+      if (e.target.id === "bulkPaySelectAll") {
+        const checked = !!e.target.checked;
+        document.querySelectorAll("#bulkPayInvoicesBody .bulk-pay-row-check").forEach(function (chk) {
+          chk.checked = checked;
+          const woId = String(chk.dataset.woId || "");
+          const input = document.querySelector(`#bulkPayInvoicesBody .bulk-pay-alloc-input[data-wo-id="${woId}"]`);
+          const inv = _bulkPayInvoices.find(function (i) { return i.id === woId; });
+          if (input && checked && !input.value && inv) input.value = Number(inv.balance || 0).toFixed(2);
+          if (input && !checked) input.value = "";
+        });
+        recomputeBulkPay();
+        return;
+      }
+
+      if (e.target.classList && e.target.classList.contains("bulk-pay-row-check")) {
+        const woId = String(e.target.dataset.woId || "");
+        const input = document.querySelector(`#bulkPayInvoicesBody .bulk-pay-alloc-input[data-wo-id="${woId}"]`);
+        const inv = _bulkPayInvoices.find(function (i) { return i.id === woId; });
+        if (input) {
+          if (e.target.checked && !input.value && inv) input.value = Number(inv.balance || 0).toFixed(2);
+          if (!e.target.checked) input.value = "";
+        }
+        recomputeBulkPay();
+      }
+    });
+
+    document.addEventListener("input", function (e) {
+      if (e.target.id === "bulkPayAmountInput" || (e.target.classList && e.target.classList.contains("bulk-pay-alloc-input"))) {
+        recomputeBulkPay();
+      }
+    });
+  }
+
   // ========== TAB PERSISTENCE LOGIC ==========
   const workOrdersTabIds = ["tab-work-orders", "tab-payments", "tab-estimates"];
 

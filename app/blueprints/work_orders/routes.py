@@ -63,6 +63,11 @@ from app.blueprints.work_orders.services.payments import (
     _sum_active_work_order_payments,
     _sync_work_order_payment_state,
 )
+from app.blueprints.work_orders.services.bulk_payments import (
+    apply_bulk_payment,
+    get_bulk_payment_customers,
+    get_unpaid_work_orders_for_customer,
+)
 from app.blueprints.work_orders.services.totals import (
     _apply_sales_tax_to_totals,
     _calc_misc_total_from_parts,
@@ -1711,6 +1716,66 @@ def api_delete_work_order_payment(payment_id):
             "is_fully_paid": summary["is_fully_paid"],
         }
     ), 200
+
+
+@work_orders_bp.get("/work_orders/api/bulk-payments/customers")
+@login_required
+@permission_required("work_orders.view")
+def api_bulk_payment_customers():
+    """Customers that have unpaid invoices (for the bulk payment modal)."""
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    return jsonify({"ok": True, "customers": get_bulk_payment_customers(shop_db, shop["_id"])}), 200
+
+
+@work_orders_bp.get("/work_orders/api/bulk-payments/customers/<customer_id>/unpaid")
+@login_required
+@permission_required("work_orders.view")
+def api_bulk_payment_unpaid_work_orders(customer_id):
+    """Unpaid invoices of one customer with balances, oldest first."""
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    cust_id = oid(customer_id)
+    if not cust_id:
+        return jsonify({"ok": False, "error": "invalid_customer_id"}), 200
+
+    return jsonify({
+        "ok": True,
+        "work_orders": get_unpaid_work_orders_for_customer(shop_db, shop["_id"], cust_id),
+    }), 200
+
+
+@work_orders_bp.post("/work_orders/api/bulk-payments")
+@login_required
+@permission_required("work_orders.create")
+def api_bulk_payment():
+    """
+    Record one payment split across several work orders.
+    Request body: {customer_id, payment_method, notes, payment_date,
+                   allocations: [{work_order_id, amount}, ...]}
+    All-or-nothing: any invalid allocation rejects the whole request.
+    """
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    data = request.get_json(silent=True) or {}
+    result = apply_bulk_payment(
+        shop_db,
+        shop,
+        get_mongo_client(),
+        allocations=data.get("allocations"),
+        payment_method=data.get("payment_method"),
+        notes=data.get("notes"),
+        payment_date=shop_local_date_to_utc(data.get("payment_date"), default_today=True),
+        user_id=current_user_id(),
+        customer_id=oid(data.get("customer_id")),
+    )
+    return jsonify(result), 200
 
 
 @work_orders_bp.get("/work_orders/api/work_orders/all-payments")
