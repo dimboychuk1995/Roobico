@@ -10,7 +10,16 @@
 
 $ErrorActionPreference = "Stop"
 
-$SshKey  = "C:\Users\User\Desktop\roobico\id_ed25519"
+# SSH key location differs per machine - use the first existing candidate.
+$SshKeyCandidates = @(
+    "C:\Users\dimbo\.ssh\roobico_prod.key",
+    "C:\Users\User\Desktop\roobico\id_ed25519"
+)
+$SshKey = $null
+foreach ($k in $SshKeyCandidates) {
+    if (Test-Path $k) { $SshKey = $k; break }
+}
+if (-not $SshKey) { throw "No SSH key found. Tried: $($SshKeyCandidates -join '; ')" }
 $SshHost = "root@198.199.122.49"
 $AppDir  = "/home/deploy/Roobico"
 $Branch  = "production"
