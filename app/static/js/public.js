@@ -147,6 +147,13 @@
 		}
 
 		function finishReplace() {
+			// Снимок уже выполненных скриптов строим ДО вставки нового контента:
+			// ленивый getExecutedScriptSet сканирует весь документ, и если первый
+			// вызов случится после подмены, свежевставленный (ещё инертный)
+			// run-once скрипт попадёт в набор «выполненных» и не запустится
+			// никогда — страница останется без обработчиков.
+			getExecutedScriptSet();
+
 			// --- Preserve focused search input across the swap ---------------
 			// If the user is focused in an <input name="q">, we transplant the
 			// exact DOM node into the new tree. To keep native focus + caret,
