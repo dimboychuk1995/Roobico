@@ -348,12 +348,15 @@
   }
 
   // Pagination click handler for payments
-  document.addEventListener("click", function (e) {
-    const btn = e.target.closest(".js-payments-page");
-    if (!btn || btn.classList.contains("disabled")) return;
-    const page = parseInt(btn.dataset.page, 10);
-    if (page >= 1) loadPaymentsData(page);
-  });
+  if (!body || body.dataset.workOrdersPaymentsPagingBound !== "1") {
+    if (body) body.dataset.workOrdersPaymentsPagingBound = "1";
+    document.addEventListener("click", function (e) {
+      const btn = e.target.closest(".js-payments-page");
+      if (!btn || btn.classList.contains("disabled")) return;
+      const page = parseInt(btn.dataset.page, 10);
+      if (page >= 1) loadPaymentsData(page);
+    });
+  }
 
   // Listen for Payments tab activation
   if (!body || body.dataset.workOrdersPaymentsTabBound !== "1") {
@@ -426,9 +429,14 @@
 
   // ========== TAB PERSISTENCE LOGIC ==========
   const workOrdersTabIds = ["tab-work-orders", "tab-payments", "tab-estimates"];
-  const allTabs = workOrdersTabIds
-    .map((id) => document.getElementById(id))
-    .filter((el) => !!el);
+
+  // Табы пересоздаются при мягкой подмене контента (public.js) —
+  // всегда берём свежие узлы.
+  function getAllTabs() {
+    return workOrdersTabIds
+      .map((id) => document.getElementById(id))
+      .filter((el) => !!el);
+  }
 
   const tabIdByPaneId = {
     "content-work-orders": "tab-work-orders",
@@ -446,7 +454,7 @@
     const paneId = paneIdByTabId[tabId];
     if (!paneId) return;
 
-    allTabs.forEach((btn) => {
+    getAllTabs().forEach((btn) => {
       const isActive = btn.id === tabId;
       btn.classList.toggle("active", isActive);
       btn.setAttribute("aria-selected", isActive ? "true" : "false");
@@ -492,25 +500,32 @@
     }
   }
 
-  allTabs.forEach((tabBtn) => {
-    tabBtn.addEventListener("click", function (event) {
-      const clickedTabId = event?.currentTarget?.id;
-      if (clickedTabId) {
-        safeSetLocalStorage(WORK_ORDERS_ACTIVE_TAB_KEY, clickedTabId);
-      }
-    });
+  function bindWorkOrdersTabButtons() {
+    getAllTabs().forEach((tabBtn) => {
+      if (tabBtn.dataset.woTabBound === "1") return;
+      tabBtn.dataset.woTabBound = "1";
 
-    tabBtn.addEventListener("shown.bs.tab", function (event) {
-      const activatedTabId = event?.target?.id;
-      if (activatedTabId) {
-        safeSetLocalStorage(WORK_ORDERS_ACTIVE_TAB_KEY, activatedTabId);
-        const paneId = paneIdByTabId[activatedTabId];
-        if (paneId) {
-          window.location.hash = paneId;
+      tabBtn.addEventListener("click", function (event) {
+        const clickedTabId = event?.currentTarget?.id;
+        if (clickedTabId) {
+          safeSetLocalStorage(WORK_ORDERS_ACTIVE_TAB_KEY, clickedTabId);
         }
-      }
+      });
+
+      tabBtn.addEventListener("shown.bs.tab", function (event) {
+        const activatedTabId = event?.target?.id;
+        if (activatedTabId) {
+          safeSetLocalStorage(WORK_ORDERS_ACTIVE_TAB_KEY, activatedTabId);
+          const paneId = paneIdByTabId[activatedTabId];
+          if (paneId) {
+            window.location.hash = paneId;
+          }
+        }
+      });
     });
-  });
+  }
+
+  bindWorkOrdersTabButtons();
 
   if (!body || body.dataset.workOrdersWindowHooksBound !== "1") {
     if (body) body.dataset.workOrdersWindowHooksBound = "1";
@@ -519,6 +534,9 @@
       paymentsLoaded = false;
       _paymentsCurrentPage = 1;
       _estimatesLoaded = false;
+      // Контент пересоздан — вешаем обработчики на свежие узлы.
+      bindWorkOrdersTabButtons();
+      bindEstimatesTab();
       restoreSavedTab();
     });
   }
@@ -605,12 +623,16 @@
       });
   }
 
-  var estimatesTab = document.getElementById("tab-estimates");
-  if (estimatesTab) {
+  function bindEstimatesTab() {
+    var estimatesTab = document.getElementById("tab-estimates");
+    if (!estimatesTab || estimatesTab.dataset.woEstimatesBound === "1") return;
+    estimatesTab.dataset.woEstimatesBound = "1";
     estimatesTab.addEventListener("shown.bs.tab", loadEstimates);
     estimatesTab.addEventListener("click", function () {
       setTimeout(loadEstimates, 50);
     });
   }
+
+  bindEstimatesTab();
 
 })();

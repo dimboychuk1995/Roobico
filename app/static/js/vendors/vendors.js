@@ -628,11 +628,8 @@
     });
   }
 
-  bindGlobalDelegationOnce();
-  bindPageLocalHandlers();
-
   /* ── lazy-load vendor balances ── */
-  (function () {
+  function loadVendorBalances() {
     var cells = document.querySelectorAll(".js-vendor-balance");
     if (!cells.length) return;
     var ids = [];
@@ -652,6 +649,18 @@
       .catch(function () {
         cells.forEach(function (c) { c.textContent = "$0.00"; });
       });
-  })();
+  }
+
+  function initVendorsPage() {
+    // Повторные вызовы безопасны: bindPageLocalHandlers защищён dataset-гардами
+    // на конкретных узлах, а после мягкой подмены контента узлы свежие.
+    bindPageLocalHandlers();
+    loadVendorBalances();
+  }
+
+  bindGlobalDelegationOnce();
+  initVendorsPage();
+  // Мягкий поиск/навигация (public.js) пересоздаёт .app-main-col.
+  window.addEventListener("roobico:content-replaced", initVendorsPage);
 
 })();

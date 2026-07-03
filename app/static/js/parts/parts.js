@@ -3,7 +3,26 @@
 	"use strict";
 	const APP_TIMEZONE = document.body?.dataset?.appTimezone || "UTC";
 
+	// Мягкий поиск/навигация (public.js) пересоздаёт .app-main-col и заново
+	// вызывает initPartsPage через "roobico:content-replaced". Document-level
+	// обработчики прошлой инициализации отстреливаются через AbortController,
+	// чтобы они не дублировались.
+	let partsInitAbort = null;
+
 	function initPartsPage() {
+		if (partsInitAbort) {
+			partsInitAbort.abort();
+			partsInitAbort = null;
+		}
+		// Маркер страницы Parts: после мягкой навигации на другую страницу
+		// initPartsPage тоже вызывается — тогда просто выходим.
+		if (!document.getElementById("orderModal") && !document.getElementById("createPartModal")) {
+			return;
+		}
+		partsInitAbort = new AbortController();
+		const initSignal = partsInitAbort.signal;
+		const onDocument = (type, handler) => document.addEventListener(type, handler, { signal: initSignal });
+
 		const toggle = document.getElementById("coreChargeToggle");
 		const group = document.getElementById("coreCostGroup");
 			const miscToggle = document.getElementById("miscChargeToggle");
@@ -605,7 +624,7 @@
 			}
 		}
 
-		document.addEventListener("click", async function (e) {
+		onDocument("click", async function (e) {
 			if (!isPartsPageAlive()) return;
 			const inlineDeleteBtn = e.target.closest(".js-delete-order-payment-inline");
 			if (inlineDeleteBtn) {
@@ -717,7 +736,7 @@
 			}
 		});
 
-		document.addEventListener("click", async function (e) {
+		onDocument("click", async function (e) {
 			if (!isPartsPageAlive()) return;
 
 			const btn = e.target.closest(".js-delete-parts-payment");
@@ -1021,7 +1040,7 @@
 			}
 		});
 
-		document.addEventListener("click", function (e) {
+		onDocument("click", function (e) {
 			if (!isPartsPageAlive()) return;
 			if (!dropdown.contains(e.target) && e.target !== partSearch) hideDropdown();
 			if (!vendorDropdown.contains(e.target) && e.target !== vendorSearchInput) hideVendorDropdown();
@@ -1502,7 +1521,7 @@
 		const scanVendorAlert = document.getElementById("scanVendorAlert");
 
 		// Open vendor modal from scan results
-		document.addEventListener("click", function (e) {
+		onDocument("click", function (e) {
 			const btn = e.target.closest("#openScanVendorModalBtn");
 			if (!btn || !scanVendorModal) return;
 
@@ -1632,7 +1651,7 @@
 		});
 
 		// ── Add single matched part from scan ────────────────────────────
-		document.addEventListener("click", function (e) {
+		onDocument("click", function (e) {
 			const btn = e.target.closest(".add-scanned-matched-btn");
 			if (!btn) return;
 
@@ -1671,7 +1690,7 @@
 		});
 
 		// ── Add all matched parts ────────────────────────────────────────
-		document.addEventListener("click", function (e) {
+		onDocument("click", function (e) {
 			const btn = e.target.closest("#addAllMatchedBtn");
 			if (!btn) return;
 
@@ -1729,7 +1748,7 @@
 		});
 
 		// ── Create & Add single unmatched part from scan ─────────────────
-		document.addEventListener("click", function (e) {
+		onDocument("click", function (e) {
 			const btn = e.target.closest(".create-scanned-part-btn");
 			if (!btn || !scanPartModal) return;
 
@@ -1888,7 +1907,7 @@
 			}
 		});
 
-		document.addEventListener("click", function (e) {
+		onDocument("click", function (e) {
 			const btn = e.target.closest("#createAllUnmatchedBtn");
 			if (!btn) return;
 
@@ -2094,7 +2113,7 @@
 			}
 		}
 
-		document.addEventListener("click", function (e) {
+		onDocument("click", function (e) {
 			if (!isPartsPageAlive()) return;
 			const btn = e.target.closest(".partHistoryBtn");
 			if (!btn) return;
@@ -2103,7 +2122,7 @@
 			loadPartHistory(partId);
 		});
 
-		document.addEventListener("click", function (e) {
+		onDocument("click", function (e) {
 			if (!isPartsPageAlive()) return;
 			const woRow = e.target.closest(".workOrderHistoryRow");
 			if (!woRow) return;
@@ -2113,7 +2132,7 @@
 		});
 
 		// Pagination click handlers for history tables
-		document.addEventListener("click", function (e) {
+		onDocument("click", function (e) {
 			if (!isPartsPageAlive()) return;
 			var btn = e.target.closest(".js-history-orders-page");
 			if (btn && !btn.classList.contains("disabled")) {
@@ -2219,7 +2238,7 @@
 		});
 
 		// ---- Order List Management (Receive from Status, Delete from Orders tab) ----
-		document.addEventListener("click", async function (e) {
+		onDocument("click", async function (e) {
 			if (!isPartsPageAlive()) return;
 			// Receive order by clicking on status button
 			const receiveStatusBtn = e.target.closest(".receiveStatusBtn");
@@ -2577,4 +2596,6 @@
 	} else {
 		initPartsPage();
 	}
+	// Ре-инициализация после мягкой подмены контента (поиск / сайдбар).
+	window.addEventListener("roobico:content-replaced", initPartsPage);
 })();

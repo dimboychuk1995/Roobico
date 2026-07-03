@@ -17,6 +17,37 @@
 	var activeSearchController = null;
 	var activeNavigationController = null;
 
+	// Скрипты из этого списка выполняются один раз за сессию страницы.
+	// При подмене контента (.app-main-col) они НЕ перевыполняются — иначе
+	// их document-level обработчики дублировались бы с каждым поиском.
+	// Такие скрипты обязаны ре-инициализироваться по событию
+	// "roobico:content-replaced". Остальные скрипты перевыполняются как
+	// раньше (legacy-поведение, пока их не адаптировали).
+	var RUN_ONCE_SCRIPT_PATHS = {
+		"/static/js/parts/parts.js": true,
+		"/static/js/customers/customers.js": true,
+		"/static/js/vendors/vendors.js": true,
+		"/static/js/work_orders/work_orders.js": true,
+		"/static/js/reports/reports.js": true,
+	};
+	var executedExternalScripts = null;
+
+	function scriptSrcBase(src) {
+		return String(src || "").split("?")[0];
+	}
+
+	function getExecutedScriptSet() {
+		if (executedExternalScripts) {
+			return executedExternalScripts;
+		}
+		executedExternalScripts = {};
+		var existing = document.querySelectorAll("script[src]");
+		for (var i = 0; i < existing.length; i += 1) {
+			executedExternalScripts[scriptSrcBase(existing[i].getAttribute("src"))] = true;
+		}
+		return executedExternalScripts;
+	}
+
 	function getFormActionPath(form) {
 		var action = form.getAttribute("action") || window.location.pathname;
 		return new URL(action, window.location.origin).pathname;
@@ -198,9 +229,23 @@
 			}
 
 			// Re-execute inline scripts so per-page initializers run again.
+			// Run-once external scripts are skipped: their re-init hooks
+			// listen to "roobico:content-replaced" instead.
 			var scripts = currentMainCol.querySelectorAll("script");
+			var executedSet = getExecutedScriptSet();
 			for (var i = 0; i < scripts.length; i += 1) {
 				var oldScript = scripts[i];
+				var srcAttr = oldScript.getAttribute("src");
+				if (srcAttr) {
+					var srcBase = scriptSrcBase(srcAttr);
+					if (RUN_ONCE_SCRIPT_PATHS[srcBase]) {
+						if (executedSet[srcBase]) {
+							// Уже выполнялся — оставляем инертный тег как есть.
+							continue;
+						}
+						executedSet[srcBase] = true;
+					}
+				}
 				var newScript = document.createElement("script");
 				for (var a = 0; a < oldScript.attributes.length; a += 1) {
 					var attr = oldScript.attributes[a];
@@ -315,7 +360,6 @@
 		if (anchor.target && anchor.target !== "_self") return false;
 		if (anchor.hasAttribute("download")) return false;
 		if (url.origin !== window.location.origin) return false;
-		if (/^\/parts(\/|$)/.test(url.pathname)) return false;
 		if (url.pathname === window.location.pathname && url.search === window.location.search) return false;
 		return true;
 	}
@@ -574,9 +618,6 @@
 			return;
 		}
 
-		var actionPath = getFormActionPath(form);
-		var useAjaxSearch = !/^\/parts(\/|$)/.test(actionPath);
-
 		// Track whether the user explicitly touched date controls during
 		// this form session.  If the URL already carries date params the
 		// user (or a prior search) set them deliberately – treat as touched.
@@ -598,22 +639,13 @@
 				return;
 			}
 			input.dataset.lastSearchSignature = nextSignature;
-			if (useAjaxSearch) {
-				runSearch(liveForm, input);
-				return;
-			}
-
-			window.location.assign(buildSearchUrl(liveForm, input).toString());
+			runSearch(liveForm, input);
 		}
 
 		// Form-level listeners (submit/change) are bound only to this form
 		// node. The form gets replaced on every AJAX swap, so re-bind here
 		// each time `setupAutoSearch` is called for a fresh form.
 		form.addEventListener("submit", function (event) {
-			if (!useAjaxSearch) {
-				return;
-			}
-
 			event.preventDefault();
 			if (input._inputDebounceTimer) {
 				clearTimeout(input._inputDebounceTimer);
@@ -657,7 +689,7 @@
 		input.dataset.autoSearchInputBound = "1";
 		input.dataset.lastSearchSignature = buildFormSignature(currentForm(), input);
 
-		var INPUT_DEBOUNCE_MS = useAjaxSearch ? 250 : 450;
+		var INPUT_DEBOUNCE_MS = 250;
 		input.addEventListener("input", function () {
 			if (input._inputDebounceTimer) {
 				clearTimeout(input._inputDebounceTimer);

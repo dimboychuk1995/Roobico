@@ -193,6 +193,11 @@
 (function () {
   "use strict";
 
+  if (document.body && document.body.dataset.customersBalancesBound === "1") return;
+  if (document.body) document.body.dataset.customersBalancesBound = "1";
+
+  function loadCustomerBalances() {
+
   // Customer list page: load balances for all visible customers
   var cells = document.querySelectorAll(".js-customer-balance");
   if (cells.length) {
@@ -250,4 +255,11 @@
         });
     }
   }
+
+  }
+
+  loadCustomerBalances();
+  // Мягкий поиск (public.js) подменяет контент без перезагрузки страницы —
+  // балансы для свежих строк подгружаем заново.
+  window.addEventListener("roobico:content-replaced", loadCustomerBalances);
 })();
