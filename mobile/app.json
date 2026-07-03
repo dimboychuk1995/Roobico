@@ -8,7 +8,14 @@
     "scheme": "roobico",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.roobico.mobile",
+      "supportsTablet": true,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSCameraUsageDescription": "Roobico uses the camera to attach photos to work orders and to scan paper work orders and vendor invoices.",
+        "NSPhotoLibraryUsageDescription": "Roobico uses your photo library to attach existing photos to work orders and units."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -37,6 +44,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "0f040674-c32b-42af-920c-eaf36ae426e4"
+      }
+    },
+    "owner": "holmes_0003"
   }
 }
