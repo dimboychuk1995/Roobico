@@ -56,6 +56,25 @@
     appAlert(msg, type);
   }
 
+  // Неблокирующий тост о предупреждении vPIC (расшифровка получена, но VIN
+  // возможно содержит опечатку — NHTSA может предложить исправленный).
+  function vinWarningToast(warning, suggestedVin) {
+    if (typeof Swal === "undefined") return;
+    var noAnim = { popup: "", backdrop: "" };
+    Swal.fire({
+      toast: true,
+      position: "bottom-end",
+      icon: "warning",
+      title: "VIN decoded with a warning",
+      text: suggestedVin ? "NHTSA suggested VIN: " + suggestedVin : String(warning || ""),
+      showConfirmButton: false,
+      timer: 6000,
+      timerProgressBar: true,
+      showClass: noAnim,
+      hideClass: noAnim,
+    });
+  }
+
   function formatDateLabel(value) {
     if (!value) return "-";
     const raw = String(value).trim();
@@ -2937,7 +2956,12 @@
         unitTypeInput.value = data.type;
         console.log("[VIN] Set Type:", data.type);
       }
-      
+
+      if (data.warning) {
+        console.warn("[VIN] Decoded with warning:", data.warning, "suggested:", data.suggested_vin);
+        vinWarningToast(data.warning, data.suggested_vin);
+      }
+
       // Flash success
       if (unitVinInput) {
         unitVinInput.classList.add("vin-valid");

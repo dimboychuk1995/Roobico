@@ -4,7 +4,7 @@ import json
 import urllib.parse
 import urllib.request
 
-from flask import request, jsonify
+from flask import current_app, request, jsonify
 
 from app.blueprints.work_orders import work_orders_bp
 from app.utils.auth import login_required
@@ -49,8 +49,8 @@ def api_decode_vin():
 
     try:
         payload = _fetch_vpic(vin)
-    except Exception as e:
-        print(f"[VIN API] Error fetching from VPIC: {e}")
+    except Exception:
+        current_app.logger.exception("VIN lookup: failed to reach vPIC for %s", vin)
         return jsonify({"ok": False, "error": "vin_lookup_failed", "message": "Failed to connect to VIN lookup service"}), 200
 
     results = payload.get("Results") if isinstance(payload, dict) else None
@@ -58,21 +58,29 @@ def api_decode_vin():
         return jsonify({"ok": False, "error": "vin_no_results", "message": "No results found for this VIN"}), 200
 
     row = results[0] if results else {}
-    
-    # Check if VIN was actually found (VPIC returns empty values if VIN is invalid)
-    error_code = row.get("ErrorCode")
-    if error_code and str(error_code) != "0":
-        error_text = row.get("ErrorText", "Invalid VIN number")
-        print(f"[VIN API] VPIC error for {vin}: {error_text}")
-        return jsonify({"ok": False, "error": "vin_invalid", "message": error_text}), 200
-    
+
     make = _extract_value(row, ["Make"])
     model = _extract_value(row, ["Model"])
     year = _extract_value(row, ["ModelYear", "Model Year", "Year"])
     vehicle_type = _extract_value(row, ["VehicleType", "Vehicle Type"])
 
-    # Log successful lookup
-    print(f"[VIN API] Successfully decoded {vin}: {year} {make} {model}")
+    error_code = str(row.get("ErrorCode") or "").strip()
+    error_text = _extract_value(row, ["ErrorText"]) or "Invalid VIN number"
+
+    # vPIC ставит ненулевой ErrorCode и для предупреждений (напр. 3 — «VIN
+    # исправлен в одной позиции», 14 — «нет данных по части символов»), при
+    # которых расшифровка всё равно возвращается. Отказ — только когда vPIC
+    # не дал вообще никаких данных.
+    if not (make or model or year or vehicle_type):
+        current_app.logger.info("VIN decode failed for %s: %s", vin, error_text)
+        return jsonify({"ok": False, "error": "vin_invalid", "message": error_text}), 200
+
+    warning = None
+    if error_code and error_code != "0":
+        warning = error_text
+        current_app.logger.info("VIN decoded with warnings for %s: %s", vin, error_text)
+    else:
+        current_app.logger.info("VIN decoded for %s: %s %s %s", vin, year, make, model)
 
     return jsonify(
         {
@@ -82,5 +90,7 @@ def api_decode_vin():
             "model": model,
             "year": year,
             "type": vehicle_type,
+            "warning": warning,
+            "suggested_vin": _extract_value(row, ["SuggestedVIN"]) or None,
         }
     ), 200

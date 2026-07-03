@@ -324,6 +324,22 @@
     if (modelInput && data.model) modelInput.value = data.model;
     if (typeInput && data.type) typeInput.value = data.type;
 
+    if (data.warning && typeof Swal !== "undefined") {
+      const noAnim = { popup: "", backdrop: "" };
+      Swal.fire({
+        toast: true,
+        position: "bottom-end",
+        icon: "warning",
+        title: "VIN decoded with a warning",
+        text: data.suggested_vin ? "NHTSA suggested VIN: " + data.suggested_vin : String(data.warning || ""),
+        showConfirmButton: false,
+        timer: 6000,
+        timerProgressBar: true,
+        showClass: noAnim,
+        hideClass: noAnim,
+      });
+    }
+
     vinInput.classList.add("vin-valid");
     setTimeout(() => { vinInput.classList.remove("vin-valid"); }, 1500);
   }
