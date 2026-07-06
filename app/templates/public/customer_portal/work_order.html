@@ -181,10 +181,10 @@
             Whole work order
           {% endif %}
           {% if a.responded_at %}
-            on {{ a.responded_at.strftime('%m/%d/%Y') if a.responded_at.strftime else a.responded_at }}
+            on {{ a.responded_at }}
           {% endif %}
-          {% if a.response_comment %}
-            <em class="text-muted">— "{{ a.response_comment }}"</em>
+          {% if a.comment %}
+            <em class="text-muted">— "{{ a.comment }}"</em>
           {% endif %}
         </li>
         {% endfor %}
@@ -206,7 +206,7 @@
              target="_blank">
             <span class="fs-4">{% if a.is_image %}<i class="bi bi-file-image"></i>{% else %}<i class="bi bi-file-earmark-text"></i>{% endif %}</span>
             <span class="flex-grow-1">
-              <span class="fw-semibold text-dark d-block">{{ a.filename }}</span>
+              <span class="fw-semibold portal-attachment-name d-block">{{ a.filename }}</span>
               <span class="text-muted small">{{ a.size_kb }} KB</span>
             </span>
             <span class="text-success small">⬇ Download</span>

@@ -1071,6 +1071,7 @@ html[data-theme="dark"] .auth-status-pending  { background: rgba(245, 158, 11, 0
 /* ── Клиентский портал: тёмные варианты ────────────────────────────── */
 html[data-theme="dark"] .portal-header { background: #14532d; }
 html[data-theme="dark"] .portal-card { border-color: var(--border); background: var(--surface); }
+html[data-theme="dark"] .portal-attachment-name { color: var(--text); }
 html[data-theme="dark"] .portal-section-title { color: #4ade80; border-bottom-color: #2f6b47; }
 html[data-theme="dark"] .portal-tabs .nav-link { color: #6ee7a8; }
 html[data-theme="dark"] .portal-tabs .nav-link.active { color: #4ade80; border-bottom-color: #4ade80; }
