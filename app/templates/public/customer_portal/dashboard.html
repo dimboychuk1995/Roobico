@@ -1,4 +1,5 @@
 {% extends "layouts/public_base.html" %}
+{% from "components/unit_recalls.html" import unit_recalls_modal %}
 {% block title %}{{ customer.label }} — Customer Portal{% endblock %}
 
 {% block extra_styles %}
@@ -131,9 +132,12 @@
     This is a read-only customer portal. To make changes, please contact the shop.
   </p>
 </div>
+
+{{ unit_recalls_modal() }}
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/unit_recalls.js') }}"></script>
 <script>
   (function () {
     // Tabs that respect the unit filter.
@@ -234,6 +238,8 @@
     // Unit rows are focusable (role="button") — make Enter/Space work like click.
     document.addEventListener('keydown', function (e) {
       if (e.key !== 'Enter' && e.key !== ' ') return;
+      // Real buttons inside the row (Recalls, View history) activate natively.
+      if (e.target.closest('button, a')) return;
       var row = e.target.closest('.portal-unit-row');
       if (!row) return;
       e.preventDefault();
@@ -242,6 +248,10 @@
 
     // Delegated click handler for unit-row click, view history, show more, clear filter.
     document.addEventListener('click', function (e) {
+      // Recalls button lives inside the unit row — handled by unit_recalls.js,
+      // must not also trigger the unit filter.
+      if (e.target.closest('.js-open-recalls-modal')) return;
+
       var unitBtn = e.target.closest('.portal-unit-history-btn, .portal-unit-row');
       if (unitBtn) {
         // Avoid double-trigger: button click bubbles from inside row.

@@ -20,11 +20,12 @@
 #}
 
 {# ── Button ────────────────────────────────────────────────────────── #}
-{% macro unit_recalls_btn(unit_id="", unit_select="", label="Recalls", css_class="btn btn-sm btn-outline-secondary") %}
+{% macro unit_recalls_btn(unit_id="", unit_select="", url="", label="Recalls", css_class="btn btn-sm btn-outline-secondary") %}
 <button type="button"
         class="{{ css_class }} js-open-recalls-modal"
         {% if unit_id %}data-unit-id="{{ unit_id }}"{% endif %}
         {% if unit_select %}data-unit-select="{{ unit_select }}"{% endif %}
+        {% if url %}data-recalls-url="{{ url }}"{% endif %}
         title="NHTSA safety recalls">
   <i class="bi bi-shield-exclamation me-1"></i>{{ label }}
 </button>

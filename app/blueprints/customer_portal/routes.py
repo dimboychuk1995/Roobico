@@ -396,8 +396,82 @@ def tab_units(token):
     _doc, shop_db, _shop, customer = _portal_fragment_or_404(token)
     units = _list_customer_units(shop_db, customer["_id"])
     return render_template(
-        "public/customer_portal/_tab_units.html", units=units,
+        "public/customer_portal/_tab_units.html", units=units, token=token,
     )
+
+
+@customer_portal_bp.get("/portal/<token>/units/<unit_id>/recalls")
+def unit_recalls(token, unit_id):
+    """Рекаллы NHTSA по юниту для самого клиента.
+
+    Только чтение: снапшоты `recalls_seen` (модалка сотрудников) и
+    `recalls_notified` (ночная рассылка) не трогаем — просмотр клиентом
+    не должен гасить бэйджи в UI магазина и влиять на письма. NEW здесь
+    значит «об этом вас ещё не уведомляли по email».
+    """
+    from app.blueprints.work_orders.recalls_api import (
+        _vehicle_identity,
+        fetch_recalls_for_vehicle,
+    )
+    from app.blueprints.work_orders.services.lookups import unit_label
+    from app.utils.rate_limit import hit_rate_limit
+
+    doc, shop_db, shop, customer, err = _resolve_portal_token(token)
+    if err or not customer:
+        return jsonify({"ok": False, "message": err or "Link unavailable."}), 404
+
+    # Каждый клик — внешние запросы к NHTSA; щадящий лимит на токен.
+    if hit_rate_limit("portal_recalls", token[:32], max_attempts=30, window_seconds=600):
+        return jsonify({
+            "ok": False,
+            "message": "Too many requests. Please try again in a few minutes.",
+        }), 429
+
+    uid = _oid(unit_id)
+    unit = None
+    if uid:
+        unit = shop_db.units.find_one({
+            "_id": uid, "customer_id": customer["_id"],
+            "shop_id": shop["_id"], "is_active": True,
+        })
+    if not unit:
+        return jsonify({"ok": False, "message": "Vehicle not found."}), 404
+
+    _touch_token(doc)
+
+    make, model, year = _vehicle_identity(unit)
+    if not (make and model and year):
+        return jsonify({
+            "ok": False,
+            "message": "Recall lookup needs Year, Make and Model (or a valid VIN) on this vehicle. Please contact the shop to update it.",
+        }), 200
+
+    nhtsa_models, fetched = fetch_recalls_for_vehicle(make, model, year)
+    if fetched is None:
+        return jsonify({
+            "ok": False,
+            "message": "Failed to reach the NHTSA recalls service. Please try again later.",
+        }), 200
+
+    notified = unit.get("recalls_notified") if isinstance(unit.get("recalls_notified"), dict) else None
+    notified_set = set(notified.get("campaigns") or []) if notified else None
+
+    recalls = [{
+        **item,
+        "is_new": bool(notified_set is not None and item["campaign_number"]
+                       and item["campaign_number"] not in notified_set),
+    } for item in fetched]
+
+    return jsonify({
+        "ok": True,
+        "unit_label": unit_label(unit),
+        "vehicle": {"make": make, "model": model, "year": year},
+        "nhtsa_models": nhtsa_models,
+        "count": len(recalls),
+        "new_count": sum(1 for r in recalls if r["is_new"]),
+        "checked_note": "Recall data from NHTSA (nhtsa.gov)",
+        "recalls": recalls,
+    }), 200
 
 
 @customer_portal_bp.get("/portal/<token>/tab/work-orders")
@@ -677,6 +751,11 @@ def work_order_view(token, wo_id):
         "comment": str(rec.get("response_comment") or "").strip(),
     } for rec in (wo.get("authorizations") or [])]
 
+    unit_recalls_url = (
+        url_for("customer_portal.unit_recalls", token=token, unit_id=str(wo["unit_id"]))
+        if wo.get("unit_id") else None
+    )
+
     return render_template(
         "public/customer_portal/work_order.html",
         token=token,
@@ -689,6 +768,7 @@ def work_order_view(token, wo_id):
         payment_summary=summary,
         attachments_list=attachments_list,
         authorizations=authorizations_view,
+        unit_recalls_url=unit_recalls_url,
     )
 
 

@@ -1,4 +1,5 @@
 {% extends "layouts/public_base.html" %}
+{% from "components/unit_recalls.html" import unit_recalls_btn, unit_recalls_modal %}
 {% block title %}WO #{{ ctx.wo_number }} — Customer Portal{% endblock %}
 
 {% block extra_styles %}
@@ -50,7 +51,10 @@
     <div class="col-md-6">
       <div class="card portal-card h-100">
         <div class="card-body">
-          <div class="portal-section-title mt-0">Vehicle / Unit</div>
+          <div class="portal-section-title mt-0 d-flex justify-content-between align-items-center">
+            <span>Vehicle / Unit</span>
+            {% if unit_recalls_url %}{{ unit_recalls_btn(url=unit_recalls_url) }}{% endif %}
+          </div>
           <div class="fw-semibold">{{ ctx.unit_label }}</div>
           {% if ctx.unit_vin %}<div class="small text-muted">VIN: {{ ctx.unit_vin }}</div>{% endif %}
           {% if ctx.unit_mileage %}<div class="small text-muted">Mileage: {{ ctx.unit_mileage }}</div>{% endif %}
@@ -219,4 +223,12 @@
   {% endif %}
 
 </div>
+
+{% if unit_recalls_url %}{{ unit_recalls_modal() }}{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+{% if unit_recalls_url %}
+<script src="{{ url_for('static', filename='js/unit_recalls.js') }}"></script>
+{% endif %}
 {% endblock %}

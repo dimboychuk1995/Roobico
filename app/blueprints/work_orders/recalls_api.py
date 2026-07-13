@@ -111,6 +111,56 @@ def _format_report_date(raw: str) -> str:
         return s
 
 
+def fetch_recalls_for_vehicle(make: str, model: str, year: str):
+    """(nhtsa_models, recalls | None) — None, если NHTSA недоступна.
+
+    Модель сопоставляется с каталогом NHTSA, выдачи по всем подходящим
+    вариантам сливаются с дедупликацией по номеру кампании. Используется
+    штатным эндпоинтом и клиентским порталом.
+    """
+    nhtsa_models = _matching_nhtsa_models(make, model, year)
+
+    rows = []
+    fetched_any = False
+    for nhtsa_model in nhtsa_models:
+        try:
+            payload = _fetch_recalls(make, nhtsa_model, year)
+        except Exception:
+            current_app.logger.exception(
+                "Recalls lookup failed for %s %s %s", year, make, nhtsa_model
+            )
+            continue
+        fetched_any = True
+        chunk = payload.get("results") if isinstance(payload, dict) else None
+        rows.extend(chunk if isinstance(chunk, list) else [])
+
+    if not fetched_any:
+        return nhtsa_models, None
+
+    recalls = []
+    seen = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        campaign = str(row.get("NHTSACampaignNumber") or "").strip()
+        # Одна кампания покрывает несколько вариантов модели — дубли отбрасываем.
+        if campaign and campaign in seen:
+            continue
+        if campaign:
+            seen.add(campaign)
+        recalls.append({
+            "campaign_number": campaign,
+            "report_date": _format_report_date(row.get("ReportReceivedDate")),
+            "component": str(row.get("Component") or "").strip(),
+            "summary": str(row.get("Summary") or "").strip(),
+            "consequence": str(row.get("Consequence") or "").strip(),
+            "remedy": str(row.get("Remedy") or "").strip(),
+            "park_it": bool(row.get("parkIt")),
+            "park_outside": bool(row.get("parkOutSide")),
+        })
+    return nhtsa_models, recalls
+
+
 def _vehicle_identity(unit: dict) -> tuple[str, str, str]:
     """make/model/year юнита; недостающее пробуем добрать vPIC-декодом VIN."""
     make = str(unit.get("make") or "").strip()
@@ -161,23 +211,8 @@ def api_unit_recalls(unit_id):
             "message": "Recalls lookup needs Year, Make and Model (or a valid 17-character VIN) on the unit.",
         }), 200
 
-    nhtsa_models = _matching_nhtsa_models(make, model, year)
-
-    rows = []
-    fetched_any = False
-    for nhtsa_model in nhtsa_models:
-        try:
-            payload = _fetch_recalls(make, nhtsa_model, year)
-        except Exception:
-            current_app.logger.exception(
-                "Recalls lookup failed for unit %s (%s %s %s)", uid, year, make, nhtsa_model
-            )
-            continue
-        fetched_any = True
-        chunk = payload.get("results") if isinstance(payload, dict) else None
-        rows.extend(chunk if isinstance(chunk, list) else [])
-
-    if not fetched_any:
+    nhtsa_models, fetched = fetch_recalls_for_vehicle(make, model, year)
+    if fetched is None:
         return jsonify({
             "ok": False,
             "error": "recalls_lookup_failed",
@@ -189,25 +224,12 @@ def api_unit_recalls(unit_id):
 
     recalls = []
     campaigns = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        campaign = str(row.get("NHTSACampaignNumber") or "").strip()
+    for item in fetched:
+        campaign = item["campaign_number"]
         if campaign:
-            # Одна кампания покрывает несколько вариантов модели —
-            # после объединения выдач дубли отбрасываем.
-            if campaign in campaigns:
-                continue
             campaigns.append(campaign)
         recalls.append({
-            "campaign_number": campaign,
-            "report_date": _format_report_date(row.get("ReportReceivedDate")),
-            "component": str(row.get("Component") or "").strip(),
-            "summary": str(row.get("Summary") or "").strip(),
-            "consequence": str(row.get("Consequence") or "").strip(),
-            "remedy": str(row.get("Remedy") or "").strip(),
-            "park_it": bool(row.get("parkIt")),
-            "park_outside": bool(row.get("parkOutSide")),
+            **item,
             # Новым считаем рекалл, которого не было в снапшоте прошлого
             # просмотра; при самом первом просмотре ничего не подсвечиваем.
             "is_new": bool(prev_campaigns is not None and campaign and campaign not in prev_campaigns),
@@ -221,6 +243,7 @@ def api_unit_recalls(unit_id):
         }}},
     )
 
+    prev_checked = format_date_mmddyyyy(prev.get("checked_at"), default="") if prev else ""
     return jsonify({
         "ok": True,
         "unit_label": unit_label(unit),
@@ -228,6 +251,7 @@ def api_unit_recalls(unit_id):
         "nhtsa_models": nhtsa_models,
         "count": len(recalls),
         "new_count": sum(1 for r in recalls if r["is_new"]),
-        "prev_checked": format_date_mmddyyyy(prev.get("checked_at"), default="") if prev else "",
+        "prev_checked": prev_checked,
+        "checked_note": ("Previously checked " + prev_checked) if prev_checked else "First check for this unit",
         "recalls": recalls,
     }), 200

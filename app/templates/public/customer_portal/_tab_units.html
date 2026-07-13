@@ -1,3 +1,4 @@
+{% from "components/unit_recalls.html" import unit_recalls_btn %}
 {% if units %}
 <div class="text-muted small mb-2">
   Click a vehicle to filter Work Orders, Payments and Authorizations by it.
@@ -26,10 +27,13 @@
         <td>{{ u.vin or '—' }}</td>
         <td>{{ u.mileage or '—' }}</td>
         <td class="text-end">
-          <button type="button" class="btn btn-sm btn-outline-success portal-unit-history-btn"
-                  data-unit-id="{{ u.id }}" data-unit-label="{{ u.label }}">
-            View history
-          </button>
+          <div class="d-flex gap-1 justify-content-end flex-nowrap">
+            {{ unit_recalls_btn(url=url_for('customer_portal.unit_recalls', token=token, unit_id=u.id)) }}
+            <button type="button" class="btn btn-sm btn-outline-success portal-unit-history-btn"
+                    data-unit-id="{{ u.id }}" data-unit-label="{{ u.label }}">
+              View history
+            </button>
+          </div>
         </td>
       </tr>
       {% endfor %}

@@ -37,6 +37,15 @@
     return select ? String(select.value || "").trim() : "";
   }
 
+  function resolveRecallsUrl(btn) {
+    // Явный URL (клиентский портал ходит через свой token-эндпоинт).
+    const direct = String(btn.dataset.recallsUrl || "").trim();
+    if (direct) return direct;
+    const unitId = resolveUnitId(btn);
+    if (!unitId) return "";
+    return "/work_orders/api/units/" + encodeURIComponent(unitId) + "/recalls";
+  }
+
   function renderMeta(meta, data) {
     meta.innerHTML = "";
     const row = el("div", "d-flex flex-wrap align-items-center gap-2");
@@ -54,8 +63,9 @@
     if (differs) {
       row.appendChild(el("span", "small text-muted", "NHTSA: " + models.join(", ")));
     }
-    row.appendChild(el("span", "small text-muted ms-auto",
-      data.prev_checked ? "Previously checked " + data.prev_checked : "First check for this unit"));
+    if (data.checked_note) {
+      row.appendChild(el("span", "small text-muted ms-auto", data.checked_note));
+    }
     meta.appendChild(row);
     meta.style.display = "";
   }
@@ -92,7 +102,7 @@
     return item;
   }
 
-  async function loadRecalls(unitId) {
+  async function loadRecalls(url) {
     const loading = document.getElementById("unitRecallsLoading");
     const error = document.getElementById("unitRecallsError");
     const meta = document.getElementById("unitRecallsMeta");
@@ -106,10 +116,7 @@
 
     let data = null;
     try {
-      const res = await fetch(
-        "/work_orders/api/units/" + encodeURIComponent(unitId) + "/recalls",
-        { headers: { "Accept": "application/json" } }
-      );
+      const res = await fetch(url, { headers: { "Accept": "application/json" } });
       data = await res.json();
     } catch (err) {
       data = null;
@@ -144,8 +151,8 @@
     const btn = e.target.closest(".js-open-recalls-modal");
     if (!btn) return;
 
-    const unitId = resolveUnitId(btn);
-    if (!unitId) {
+    const url = resolveRecallsUrl(btn);
+    if (!url) {
       toast("Select a unit first.", "info");
       return;
     }
@@ -154,6 +161,6 @@
     if (!modalEl || !window.bootstrap || !window.bootstrap.Modal) return;
     window.bootstrap.Modal.getOrCreateInstance(modalEl).show();
 
-    loadRecalls(unitId);
+    loadRecalls(url);
   });
 })();
