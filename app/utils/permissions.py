@@ -223,6 +223,36 @@ def permission_required(permission_key: str):
     return decorator
 
 
+def permission_required_any(*permission_keys: str):
+    """
+    Как permission_required, но пропускает при ЛЮБОМ из перечисленных прав.
+    Для общих read-only API, доступных из разных разделов (например,
+    рекаллы юнита нужны и на странице WO, и в карточке юнита клиента).
+    """
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapper(*args, **kwargs):
+            perms = get_effective_permissions()
+            if any(key in perms for key in permission_keys):
+                return view_func(*args, **kwargs)
+
+            if _is_api_request():
+                return jsonify({"ok": False, "error": "forbidden", "required": list(permission_keys)}), 403
+
+            flash("Access denied.", "error")
+            target = first_allowed_landing()
+            if target is None:
+                flash(
+                    "You don't have access to any sections. "
+                    "Please contact your administrator.",
+                    "error",
+                )
+                return redirect(url_for("auth.logout"))
+            return redirect(url_for(target))
+        return wrapper
+    return decorator
+
+
 # ──────────────────────────────────────────────────────────────
 # Меню
 # ──────────────────────────────────────────────────────────────

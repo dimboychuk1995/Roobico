@@ -1,5 +1,6 @@
 {% extends "layouts/app_base.html" %}
 {% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
+{% from "components/unit_recalls.html" import unit_recalls_btn, unit_recalls_modal %}
 {% from "components/ui.html" import empty_state %}
 {% block page_title %}Unit Details{% endblock %}
 
@@ -17,6 +18,7 @@
   <div class="page-header__actions">
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='units') }}">Back</a>
     {{ attachments_btn(entity_type="unit", entity_id=unit.id, label="Files") }}
+    {{ unit_recalls_btn(unit_id=unit.id, css_class="btn btn-outline-secondary btn-sm") }}
     <a class="btn btn-primary btn-sm" href="{{ url_for('work_orders.work_order_details_page', customer_id=customer_id, unit_id=unit.id) }}">Create Work Order</a>
   </div>
 </div>
@@ -258,8 +260,10 @@
 </div>
 
 {{ attachments_modal() }}
+{{ unit_recalls_modal() }}
 
 <script src="{{ url_for('static', filename='js/customers/customers.js') }}"></script>
+<script src="{{ url_for('static', filename='js/unit_recalls.js') }}"></script>
 
 <script>
 (function () {

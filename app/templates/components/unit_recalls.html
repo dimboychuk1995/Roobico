@@ -1,0 +1,62 @@
+{#
+  Reusable NHTSA recalls components for a unit.
+
+  1) unit_recalls_btn   — button that opens the shared recalls modal
+  2) unit_recalls_modal — standalone modal (include once per page)
+
+  Usage:
+    from "components/unit_recalls.html" import unit_recalls_btn, unit_recalls_modal
+
+    Static unit (unit details page):
+    unit_recalls_btn(unit_id=unit.id)
+
+    Dynamic unit (work order editor — id is read from a <select> at click time):
+    unit_recalls_btn(unit_select="#unitSelect")
+
+    Once per page:
+    unit_recalls_modal()
+
+  Requires static/js/unit_recalls.js on the page.
+#}
+
+{# ── Button ────────────────────────────────────────────────────────── #}
+{% macro unit_recalls_btn(unit_id="", unit_select="", label="Recalls", css_class="btn btn-sm btn-outline-secondary") %}
+<button type="button"
+        class="{{ css_class }} js-open-recalls-modal"
+        {% if unit_id %}data-unit-id="{{ unit_id }}"{% endif %}
+        {% if unit_select %}data-unit-select="{{ unit_select }}"{% endif %}
+        title="NHTSA safety recalls">
+  <i class="bi bi-shield-exclamation me-1"></i>{{ label }}
+</button>
+{% endmacro %}
+
+
+{# ── Modal (include once per page) ─────────────────────────────────── #}
+{% macro unit_recalls_modal() %}
+<div class="modal fade" id="unitRecallsModal" tabindex="-1" aria-labelledby="unitRecallsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="unitRecallsModalLabel">
+          <i class="bi bi-shield-exclamation me-1"></i>NHTSA Recalls
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div id="unitRecallsLoading" class="text-center py-4" style="display:none;">
+          <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Loading...</span>
+          </div>
+          <div class="text-muted small mt-2">Checking NHTSA recalls…</div>
+        </div>
+        <div id="unitRecallsError" class="alert alert-danger mb-0" style="display:none;"></div>
+        <div id="unitRecallsMeta" class="mb-3" style="display:none;"></div>
+        <div id="unitRecallsList" class="list-group"></div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endmacro %}

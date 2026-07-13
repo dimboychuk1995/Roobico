@@ -1,5 +1,6 @@
 {% extends "layouts/app_base.html" %}
 {% from "components/attachments.html" import attachments_block, attachments_modal %}
+{% from "components/unit_recalls.html" import unit_recalls_btn, unit_recalls_modal %}
 {% block page_title %}Work Order Details{% endblock %}
 
 {% block app_content %}
@@ -96,11 +97,12 @@
             <input id="workOrderDateInput" name="work_order_date" form="workOrderForm" type="date" class="form-control" value="{{ work_order_date or today_date_input_value or '' }}">
           </div>
 
-          <div class="col-lg-3">
-            <button id="addUnitBtn" type="button" class="btn btn-success w-100" data-bs-toggle="modal" data-bs-target="#createUnitModal"
+          <div class="col-lg-3 d-flex gap-2">
+            <button id="addUnitBtn" type="button" class="btn btn-success flex-grow-1" data-bs-toggle="modal" data-bs-target="#createUnitModal"
                     {% if not selected_customer_id %}disabled{% endif %}>
               + Add Unit
             </button>
+            {{ unit_recalls_btn(unit_select="#unitSelect", css_class="btn btn-outline-secondary") }}
           </div>
         </div>
       </div>
@@ -1023,6 +1025,7 @@
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="{{ url_for('static', filename='js/work_orders/work_order_details.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/unit_recalls.js') }}"></script>
 
     <script>
     /* Initialize attachment blocks — wire collapse IDs always, set entity IDs */
@@ -1105,5 +1108,6 @@
 </div>
 
 {{ attachments_modal() }}
+{{ unit_recalls_modal() }}
 
 {% endblock %}
