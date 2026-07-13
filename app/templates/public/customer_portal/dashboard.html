@@ -231,6 +231,15 @@
       loadTab(sel);
     }
 
+    // Unit rows are focusable (role="button") — make Enter/Space work like click.
+    document.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      var row = e.target.closest('.portal-unit-row');
+      if (!row) return;
+      e.preventDefault();
+      row.click();
+    });
+
     // Delegated click handler for unit-row click, view history, show more, clear filter.
     document.addEventListener('click', function (e) {
       var unitBtn = e.target.closest('.portal-unit-history-btn, .portal-unit-row');

@@ -29,6 +29,9 @@
 
 .portal-card { border: 1px solid #e5e7eb; border-radius: 6px; }
 
+/* Attachment filename inside a link: body text color, not link green. */
+.portal-attachment-name { color: #212529; }
+
 .badge-status-open     { background: #fef3c7; color: #92400e; }
 .badge-status-paid     { background: #dcfce7; color: #166534; }
 .badge-status-pending  { background: #e5e7eb; color: #374151; }

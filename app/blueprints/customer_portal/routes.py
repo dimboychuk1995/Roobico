@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 from flask import (
     abort,
+    current_app,
     g,
     jsonify,
     render_template,
@@ -14,6 +15,7 @@ from flask import (
     send_file,
     url_for,
 )
+from pymongo.errors import DuplicateKeyError
 
 from app.blueprints.customer_portal import customer_portal_bp
 from app.extensions import get_master_db, get_mongo_client
@@ -107,7 +109,14 @@ def get_or_create_portal_token(shop, customer_id) -> dict:
         "expires_at": expires_at,
         "last_used_at": None,
     }
-    col.insert_one(doc)
+    try:
+        col.insert_one(doc)
+    except DuplicateKeyError:
+        # Two concurrent sends for the same customer: keep the winner's token.
+        existing = col.find_one({"shop_id": shop["_id"], "customer_id": cid})
+        if existing:
+            return existing
+        raise
     return doc
 
 
@@ -144,13 +153,14 @@ def _resolve_portal_token(token: str):
 
 
 def _touch_token(doc):
+    # Best-effort usage stamp: never blocks the portal page itself.
     try:
         _portal_tokens_collection().update_one(
             {"_id": doc["_id"]},
             {"$set": {"last_used_at": _utcnow()}},
         )
     except Exception:
-        pass
+        current_app.logger.exception("portal: failed to stamp last_used_at")
 
 
 def _shop_brand(shop):
@@ -217,14 +227,15 @@ def _list_customer_units(shop_db, customer_id):
 PORTAL_PAGE_SIZE = 30
 
 
-def _unit_wo_ids(shop_db, customer_id, unit_oid):
-    """Return list of WO _ids for a customer's specific unit."""
-    if not unit_oid:
-        return None
-    return [w["_id"] for w in shop_db.work_orders.find(
-        {"customer_id": customer_id, "unit_id": unit_oid, "is_active": True},
-        {"_id": 1},
-    )]
+def _customer_wo_numbers(shop_db, customer_id, unit_oid=None):
+    """Map of WO _id -> wo_number for a customer (optionally one unit)."""
+    q = {"customer_id": customer_id, "is_active": True}
+    if unit_oid:
+        q["unit_id"] = unit_oid
+    return {
+        w["_id"]: str(w.get("wo_number") or "")
+        for w in shop_db.work_orders.find(q, {"wo_number": 1})
+    }
 
 
 def _list_customer_work_orders(shop_db, customer_id, unit_oid=None,
@@ -245,9 +256,13 @@ def _list_customer_work_orders(shop_db, customer_id, unit_oid=None,
     has_more = len(rows) > limit
     rows = rows[:limit]
 
+    unit_ids = [wo.get("unit_id") for wo in rows if wo.get("unit_id")]
+    units_map = ({u["_id"]: u for u in shop_db.units.find({"_id": {"$in": unit_ids}})}
+                 if unit_ids else {})
+
     out = []
     for wo in rows:
-        unit = shop_db.units.find_one({"_id": wo.get("unit_id")}) or {}
+        unit = units_map.get(wo.get("unit_id")) or {}
         grand = _work_order_grand_total(wo)
         paid = _sum_active_work_order_payments(shop_db, wo["_id"])
         out.append({
@@ -266,27 +281,23 @@ def _list_customer_work_orders(shop_db, customer_id, unit_oid=None,
 
 def _list_customer_payments(shop_db, customer_id, unit_oid=None,
                             limit=PORTAL_PAGE_SIZE, offset=0):
-    q = {"customer_id": customer_id, "is_active": True}
-    if unit_oid:
-        wo_ids = _unit_wo_ids(shop_db, customer_id, unit_oid)
-        if not wo_ids:
-            return [], False
-        q["work_order_id"] = {"$in": wo_ids}
+    # Payment docs carry no customer_id (single and bulk alike), so resolve
+    # payments through the customer's work orders.
+    wo_numbers = _customer_wo_numbers(shop_db, customer_id, unit_oid)
+    if not wo_numbers:
+        return [], False
 
+    q = {"work_order_id": {"$in": list(wo_numbers)}, "is_active": True}
     cursor = (shop_db.work_order_payments.find(q)
-              .sort("payment_date", -1)
+              .sort([("payment_date", -1), ("created_at", -1)])
               .skip(int(offset)).limit(int(limit) + 1))
     rows = list(cursor)
     has_more = len(rows) > limit
     rows = rows[:limit]
 
-    wo_numbers = {}
     out = []
     for p in rows:
         wo_id = p.get("work_order_id")
-        if wo_id and wo_id not in wo_numbers:
-            wo = shop_db.work_orders.find_one({"_id": wo_id}, {"wo_number": 1}) or {}
-            wo_numbers[wo_id] = str(wo.get("wo_number") or "")
         out.append({
             "id": str(p["_id"]),
             "wo_id": str(wo_id) if wo_id else "",
@@ -313,16 +324,23 @@ def _list_customer_authorizations(shop_db, customer_id, unit_oid=None,
     out = []
     for wo in rows:
         for rec in wo.get("authorizations") or []:
+            responded_at = rec.get("responded_at")
             out.append({
                 "wo_id": str(wo["_id"]),
                 "wo_number": str(wo.get("wo_number") or ""),
                 "scope": rec.get("scope") or "work_order",
                 "labor_index": rec.get("labor_index"),
                 "status": rec.get("status") or "pending",
-                "responded_at": _format_date(rec.get("responded_at")),
+                "responded_at": _format_date(responded_at),
+                "_sort_dt": (_as_naive_utc(responded_at)
+                             if isinstance(responded_at, datetime)
+                             else datetime.min),
                 "comment": str(rec.get("response_comment") or "").strip(),
             })
-    out.sort(key=lambda x: x["responded_at"] or "", reverse=True)
+    # Newest responses first; pending (no response yet) go last.
+    out.sort(key=lambda x: x["_sort_dt"], reverse=True)
+    for x in out:
+        del x["_sort_dt"]
     total = len(out)
     page = out[int(offset):int(offset) + int(limit)]
     has_more = (int(offset) + len(page)) < total
@@ -341,7 +359,6 @@ def dashboard(token):
         ), 404
 
     _touch_token(doc)
-    cid = customer["_id"]
     # Lightweight initial render: only customer info + tab shell.
     # Each tab loads its own fragment via fetch on first activation.
     return render_template(
@@ -392,7 +409,7 @@ def tab_work_orders(token):
         shop_db, customer["_id"], unit_oid=unit_oid,
         limit=limit, offset=offset,
     )
-    unit_label_filter = _unit_label_for(shop_db, unit_oid) if unit_oid else ""
+    unit_label_filter = _unit_label_for(shop_db, customer["_id"], unit_oid) if unit_oid else ""
     return render_template(
         "public/customer_portal/_tab_work_orders.html",
         work_orders=work_orders, token=token,
@@ -412,7 +429,7 @@ def tab_payments(token):
         shop_db, customer["_id"], unit_oid=unit_oid,
         limit=limit, offset=offset,
     )
-    unit_label_filter = _unit_label_for(shop_db, unit_oid) if unit_oid else ""
+    unit_label_filter = _unit_label_for(shop_db, customer["_id"], unit_oid) if unit_oid else ""
     return render_template(
         "public/customer_portal/_tab_payments.html",
         payments=payments,
@@ -432,7 +449,7 @@ def tab_authorizations(token):
         shop_db, customer["_id"], unit_oid=unit_oid,
         limit=limit, offset=offset,
     )
-    unit_label_filter = _unit_label_for(shop_db, unit_oid) if unit_oid else ""
+    unit_label_filter = _unit_label_for(shop_db, customer["_id"], unit_oid) if unit_oid else ""
     return render_template(
         "public/customer_portal/_tab_authorizations.html",
         authorizations=authorizations,
@@ -443,11 +460,12 @@ def tab_authorizations(token):
     )
 
 
-def _unit_label_for(shop_db, unit_oid):
+def _unit_label_for(shop_db, customer_id, unit_oid):
     from app.blueprints.work_orders.routes import unit_label
     if not unit_oid:
         return ""
-    u = shop_db.units.find_one({"_id": unit_oid})
+    # Scoped to the portal customer so a foreign unit id leaks nothing.
+    u = shop_db.units.find_one({"_id": unit_oid, "customer_id": customer_id})
     return unit_label(u) if u else ""
 
 
@@ -484,17 +502,22 @@ def _maintenance_rows(shop_db, customer_id, unit_oid, year, quarter):
     rows = []
     total = 0.0
     for wo in cursor:
-        # Description = "Work Order #N, labor1, labor2, ..."
+        # Description = list of labor lines; WO number only as a fallback
+        # when the work order has no labor descriptions at all.
         descs = []
         for block in (wo.get("labors") or []):
-            d = str(block.get("description")
-                    or block.get("labor_desc")
-                    or block.get("name") or "").strip()
+            if not isinstance(block, dict):
+                continue
+            labor_src = block.get("labor") if isinstance(block.get("labor"), dict) else {}
+            d = str(labor_src.get("description")
+                    or block.get("labor_description")
+                    or block.get("description") or "").strip()
             if d:
                 descs.append(d)
         wo_num = str(wo.get("wo_number") or "").strip()
-        prefix = f"Work Order #{wo_num}" if wo_num else "Work Order"
-        description = (prefix + ", " + ", ".join(descs)) if descs else prefix
+        description = ", ".join(descs) if descs else (
+            f"Work Order #{wo_num}" if wo_num else "Work Order"
+        )
         cost = float(_work_order_grand_total(wo) or 0)
         total += cost
         rows.append({
@@ -550,7 +573,7 @@ def maintenance_pdf(token, unit_id):
         quarter = int(request.args.get("quarter") or 1)
     except (TypeError, ValueError):
         abort(400)
-    if quarter not in (1, 2, 3, 4):
+    if quarter not in (1, 2, 3, 4) or not (2000 <= year <= 2100):
         abort(400)
 
     _touch_token(doc)
@@ -620,7 +643,7 @@ def work_order_view(token, wo_id):
 
     payments = list(shop_db.work_order_payments.find(
         {"work_order_id": wo["_id"], "is_active": True}
-    ).sort("payment_date", -1))
+    ).sort([("payment_date", -1), ("created_at", -1)]))
     payments_view = [{
         "id": str(p["_id"]),
         "amount": round(float(p.get("amount") or 0), 2),
@@ -646,6 +669,14 @@ def work_order_view(token, wo_id):
         "scope": a.get("entity_type") or "work_order",
     } for a in att_docs]
 
+    authorizations_view = [{
+        "scope": rec.get("scope") or "work_order",
+        "labor_index": rec.get("labor_index"),
+        "status": rec.get("status") or "pending",
+        "responded_at": _format_date(rec.get("responded_at")),
+        "comment": str(rec.get("response_comment") or "").strip(),
+    } for rec in (wo.get("authorizations") or [])]
+
     return render_template(
         "public/customer_portal/work_order.html",
         token=token,
@@ -657,7 +688,7 @@ def work_order_view(token, wo_id):
         payments=payments_view,
         payment_summary=summary,
         attachments_list=attachments_list,
-        authorizations=list(wo.get("authorizations") or []),
+        authorizations=authorizations_view,
     )
 
 
