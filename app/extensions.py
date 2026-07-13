@@ -180,6 +180,10 @@ def ensure_shop_collections_indexes(shop_db):
     _safe_create_index(shop_db.units, [("shop_id", ASCENDING), ("customer_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_units_shop_customer_active_created_desc")
     _safe_create_index(shop_db.units, [("search_terms", ASCENDING)], name="idx_units_search_terms")
 
+    # Recall notifications journal (ночной джоб check_recalls: дедуп отправок)
+    _safe_create_index(shop_db.recall_notifications, [("unit_id", ASCENDING), ("campaign_number", ASCENDING)], name="idx_recall_notifications_unit_campaign")
+    _safe_create_index(shop_db.recall_notifications, [("shop_id", ASCENDING), ("created_at", DESCENDING)], name="idx_recall_notifications_shop_created_desc")
+
     # Work orders and payments
     _safe_create_index(shop_db.work_orders, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_work_orders_shop_active_created_desc")
     _safe_create_index(shop_db.work_orders, [("shop_id", ASCENDING), ("customer_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_work_orders_shop_customer_active_created_desc")
