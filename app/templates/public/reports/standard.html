@@ -145,7 +145,7 @@
 
       <div class="col-auto d-flex gap-1 align-items-end">
         <button type="submit" class="btn btn-primary">Generate</button>
-        <button type="submit" formaction="{{ url_for('reports.standard_report_pdf', report_key=selected_tab or 'sales_summary') }}" formtarget="_blank" class="btn btn-outline-dark">Download PDF</button>
+        <button type="submit" formaction="{{ url_for('reports.standard_report_pdf', report_key=selected_tab or 'sales_summary') }}" formtarget="_blank" class="btn btn-outline-secondary">Download PDF</button>
       </div>
     </div>
   </div>

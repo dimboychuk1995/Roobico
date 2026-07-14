@@ -168,6 +168,11 @@ small,
   height: 100%;
 }
 
+.app-sidebar-icon .bi {
+  font-size: 1.05rem;
+  line-height: 1;
+}
+
 .app-sidebar-text {
   white-space: nowrap;
 }

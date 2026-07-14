@@ -2749,7 +2749,7 @@
         }
 
         if (!payments.length) {
-          woMetaPaymentsBody.innerHTML = `<tr><td colspan="5" class="text-muted">No payments.</td></tr>`;
+          woMetaPaymentsBody.innerHTML = `<tr><td colspan="5" class="text-center text-muted small py-3">No payments yet.</td></tr>`;
           return;
         }
 

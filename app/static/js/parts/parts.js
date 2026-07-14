@@ -397,7 +397,7 @@
 
 			const payments = Array.isArray(summary.payments) ? summary.payments : [];
 			if (payments.length === 0) {
-				orderMetaPaymentsBody.innerHTML = `<tr><td colspan="5" class="text-muted">No payments.</td></tr>`;
+				orderMetaPaymentsBody.innerHTML = `<tr><td colspan="5" class="text-center text-muted small py-3">No payments yet.</td></tr>`;
 				return;
 			}
 
@@ -842,7 +842,7 @@
 			if (itemsBody.querySelectorAll("tr").length === 0) {
 				const empty = document.createElement("tr");
 				empty.id = "emptyOrderRow";
-				empty.innerHTML = `<td colspan="6" class="text-muted">No items added.</td>`;
+				empty.innerHTML = `<td colspan="6" class="text-center text-muted small py-3">No items added yet.</td>`;
 				itemsBody.appendChild(empty);
 			}
 		}
@@ -1353,7 +1353,7 @@
 			if (orderDatesBlock) orderDatesBlock.classList.add("d-none");
 			if (orderMetaCreated) orderMetaCreated.textContent = "-";
 			if (orderMetaReceived) orderMetaReceived.textContent = "-";
-			if (orderMetaPaymentsBody) orderMetaPaymentsBody.innerHTML = `<tr><td colspan="5" class="text-muted">No payments.</td></tr>`;
+			if (orderMetaPaymentsBody) orderMetaPaymentsBody.innerHTML = `<tr><td colspan="5" class="text-center text-muted small py-3">No payments yet.</td></tr>`;
 
 			// Reset scan UI
 			const scanProgress = document.getElementById("invoiceScanProgress");
@@ -2096,8 +2096,8 @@
 
 				if (!res.ok || !data.ok) {
 					partHistoryMeta.textContent = data?.error || "Failed to load part history";
-					partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
-					partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
+					partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-center text-muted small py-3">No orders for this part yet.</td></tr>`;
+					partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-center text-muted small py-3">No work orders with this part yet.</td></tr>`;
 					return;
 				}
 
@@ -2108,8 +2108,8 @@
 				_renderHistoryTables(_historyOrders, _historyWorkOrders, data.orders_pagination || {}, data.wo_pagination || {});
 			} catch (err) {
 				partHistoryMeta.textContent = "Network error while loading history";
-				partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
-				partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
+				partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-center text-muted small py-3">No orders for this part yet.</td></tr>`;
+				partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-center text-muted small py-3">No work orders with this part yet.</td></tr>`;
 			}
 		}
 
@@ -2149,8 +2149,8 @@
 
 		partHistoryModal?.addEventListener("hidden.bs.modal", function () {
 			if (partHistoryMeta) partHistoryMeta.textContent = "Loading...";
-			if (partHistoryOrdersBody) partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
-			if (partHistoryWorkOrdersBody) partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-muted">No data.</td></tr>`;
+			if (partHistoryOrdersBody) partHistoryOrdersBody.innerHTML = `<tr><td colspan="7" class="text-center text-muted small py-3">No orders for this part yet.</td></tr>`;
+			if (partHistoryWorkOrdersBody) partHistoryWorkOrdersBody.innerHTML = `<tr><td colspan="7" class="text-center text-muted small py-3">No work orders with this part yet.</td></tr>`;
 			_historyOrders = [];
 			_historyWorkOrders = [];
 			_historyPart = {};
@@ -2598,4 +2598,90 @@
 	}
 	// Ре-инициализация после мягкой подмены контента (поиск / сайдбар).
 	window.addEventListener("roobico:content-replaced", initPartsPage);
+})();
+
+/* ── Cores: возврат ядер вендору (вкладка Cores → журнал Cores Returns) ── */
+(function () {
+	"use strict";
+
+	var maxQty = 0;
+	var coreCost = 0;
+
+	function money(v) {
+		return "$" + (Math.round(v * 100) / 100).toFixed(2);
+	}
+
+	function getModalEl() {
+		return document.getElementById("coreReturnModal");
+	}
+
+	function refreshCredit() {
+		var qtyInput = document.getElementById("coreReturnQty");
+		var credit = document.getElementById("coreReturnCredit");
+		var qty = parseInt(qtyInput.value, 10) || 0;
+		if (qty > maxQty) { qtyInput.value = maxQty; qty = maxQty; }
+		if (qty < 0) { qtyInput.value = 0; qty = 0; }
+		credit.textContent = money(qty * coreCost);
+	}
+
+	document.addEventListener("click", function (event) {
+		var openBtn = event.target.closest(".js-core-return-btn");
+		if (openBtn) {
+			var modalEl = getModalEl();
+			if (!modalEl) return;
+			maxQty = parseInt(openBtn.dataset.maxQty, 10) || 0;
+			coreCost = parseFloat(openBtn.dataset.coreCost) || 0;
+			document.getElementById("coreReturnCoreId").value = openBtn.dataset.coreId || "";
+			document.getElementById("coreReturnMeta").textContent =
+				"Part # " + (openBtn.dataset.partNumber || "-") + " · core cost " + money(coreCost);
+			document.getElementById("coreReturnMaxHint").textContent = "On hand: " + maxQty;
+			var qtyInput = document.getElementById("coreReturnQty");
+			qtyInput.value = maxQty > 0 ? 1 : 0;
+			qtyInput.max = maxQty;
+			document.getElementById("coreReturnNotes").value = "";
+			document.getElementById("coreReturnVendor").value = "";
+			refreshCredit();
+			bootstrap.Modal.getOrCreateInstance(modalEl).show();
+			return;
+		}
+
+		if (event.target && event.target.id === "coreReturnSubmit") {
+			var submitBtn = event.target;
+			var coreId = document.getElementById("coreReturnCoreId").value;
+			var qty = parseInt(document.getElementById("coreReturnQty").value, 10) || 0;
+			if (!coreId || qty <= 0) {
+				if (window.appAlert) window.appAlert("Enter a quantity to return.", "warning");
+				return;
+			}
+			submitBtn.disabled = true;
+			fetch("/parts/api/cores/" + encodeURIComponent(coreId) + "/return", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					quantity: qty,
+					vendor_id: document.getElementById("coreReturnVendor").value || "",
+					notes: document.getElementById("coreReturnNotes").value || "",
+				}),
+			})
+				.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+				.then(function (res) {
+					if (!res.ok || !res.body.ok) {
+						if (window.appAlert) window.appAlert(res.body.error || "Failed to record the return.", "error");
+						submitBtn.disabled = false;
+						return;
+					}
+					bootstrap.Modal.getOrCreateInstance(getModalEl()).hide();
+					// Перезагружаем вкладку Cores: количества изменились.
+					window.location.href = "/parts/?tab=cores";
+				})
+				.catch(function () {
+					if (window.appAlert) window.appAlert("Network error. Please try again.", "error");
+					submitBtn.disabled = false;
+				});
+		}
+	});
+
+	document.addEventListener("input", function (event) {
+		if (event.target && event.target.id === "coreReturnQty") refreshCredit();
+	});
 })();

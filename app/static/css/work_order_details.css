@@ -217,3 +217,28 @@
 
 /* Блок кода/ссылки на светло-сером фоне (вместо инлайн #f8f9fa) */
 .surface-soft { background: var(--surface-soft, #f8f9fa); }
+
+/* Бэджи авторизаций в заголовках (WO и labor) — вместо инлайн font-size. */
+.wo-auth-badge {
+  font-size: 0.72em;
+  font-weight: 600;
+}
+
+/* Маленький chevron в кнопках-аккордеонах вложений. */
+.wo-chevron-sm {
+  font-size: 0.7rem;
+}
+
+/* Chip с итогом labor: контент по центру строки. */
+.wo-totals-chip.wo-chip-inline {
+  display: flex;
+  align-items: center;
+}
+
+/* Липкое превью документа в модалке распознавания WO. */
+.wo-sticky-preview {
+  position: sticky;
+  top: 0;
+  max-height: 85vh;
+  overflow: auto;
+}

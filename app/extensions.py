@@ -217,6 +217,8 @@ def ensure_shop_collections_indexes(shop_db):
 
     _safe_create_index(shop_db.cores, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("part_id", ASCENDING)], name="idx_cores_shop_active_part")
     _safe_create_index(shop_db.cores, [("shop_id", ASCENDING), ("quantity", DESCENDING)], name="idx_cores_shop_quantity_desc")
+    # Журнал возвратов ядер вендорам (вкладка Cores Returns).
+    _safe_create_index(shop_db.core_returns, [("shop_id", ASCENDING), ("returned_at", DESCENDING)], name="idx_core_returns_shop_returned_desc")
 
     # Generic counters/settings collections used by parts/work-orders settings.
     _safe_create_index(shop_db.counters, [("_id", ASCENDING)], name="idx_counters_id")

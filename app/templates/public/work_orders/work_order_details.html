@@ -9,12 +9,13 @@
 <div class="card shadow border-0">
   <div class="card-body">
 
-    <div class="d-flex align-items-center justify-content-between mb-4 p-3 rounded-3 wo-header">
-      <div>
-        <h1 class="h4 mb-1">{% if wo_number %}Work Order #{{ wo_number }}{% else %}Create Work Order{% endif %}<span id="woAuthBadge" class="ms-2" style="font-size:.7em;font-weight:600;"></span></h1>
-        <p class="text-muted small mb-0">Create or edit labor, parts, misc charges, and payment status in one place.</p>
+    <div class="page-header">
+      <h1 class="page-header__title">
+        {% if wo_number %}Work Order #{{ wo_number }}{% else %}Create Work Order{% endif %}<span id="woAuthBadge" class="ms-2 wo-auth-badge"></span>
+      </h1>
+      <div class="page-header__actions">
+        <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('work_orders.work_orders_page') }}">Back</a>
       </div>
-      <a class="btn btn-outline-secondary" href="{{ url_for('work_orders.work_orders_page') }}">Back</a>
     </div>
 
     <div class="wo-section mb-4">
@@ -98,7 +99,7 @@
           </div>
 
           <div class="col-lg-3 d-flex gap-2">
-            <button id="addUnitBtn" type="button" class="btn btn-success flex-grow-1" data-bs-toggle="modal" data-bs-target="#createUnitModal"
+            <button id="addUnitBtn" type="button" class="btn btn-primary flex-grow-1" data-bs-toggle="modal" data-bs-target="#createUnitModal"
                     {% if not selected_customer_id %}disabled{% endif %}>
               + Add Unit
             </button>
@@ -287,7 +288,7 @@
 
               <div class="d-flex justify-content-between align-items-center pb-3 mb-3 wo-labor-header">
                 <div>
-                  <h2 class="h6 mb-0">Labor <span class="labor-number">1</span><span class="laborAuthBadge ms-2" style="font-size:.75em;font-weight:600;"></span></h2>
+                  <h2 class="h6 mb-0">Labor <span class="labor-number">1</span><span class="laborAuthBadge ms-2 wo-auth-badge"></span></h2>
                   <div class="text-muted small mt-1 laborAssignSummary">Assigned: —</div>
                   <div class="wo-labor-summary mt-2">
                     <div class="wo-totals-chip">
@@ -302,7 +303,7 @@
                         Misc: <strong class="miscTotalDisplay">—</strong>
                       </div>
                     </div>
-                    <div class="wo-totals-chip" style="display:flex;align-items:center;">Labor total: <strong class="laborFullTotalDisplay ms-1">—</strong></div>
+                    <div class="wo-totals-chip wo-chip-inline">Labor total: <strong class="laborFullTotalDisplay ms-1">—</strong></div>
                   </div>
                 </div>
 
@@ -446,7 +447,7 @@
                       <i class="bi bi-paperclip"></i>
                       Labor Attachments
                       <span class="att-count badge text-bg-secondary ms-1" style="display:none;">0</span>
-                      <i class="bi bi-chevron-down ms-1" style="font-size:0.7rem;"></i>
+                      <i class="bi bi-chevron-down ms-1 wo-chevron-sm"></i>
                     </button>
                   </div>
                   <div class="collapse mt-2 labor-att-collapse">
@@ -527,7 +528,7 @@
            <i class="bi bi-paperclip"></i>
            Work Order Attachments
            <span class="wo-att-count badge text-bg-secondary ms-1" style="display:none;">0</span>
-           <i class="bi bi-chevron-down ms-1" style="font-size:0.7rem;"></i>
+           <i class="bi bi-chevron-down ms-1 wo-chevron-sm"></i>
          </button>
        </div>
        <div class="collapse mt-2" id="woAttCollapse">
@@ -588,8 +589,7 @@
             </p>
             <div class="row g-3">
               <div class="col-lg-5 col-xl-4" id="recognizeWoPreviewCol">
-                <div id="recognizeWoPreview" class="border rounded p-2 bg-light text-center"
-                     style="position:sticky; top:0; max-height:85vh; overflow:auto;">
+                <div id="recognizeWoPreview" class="border rounded p-2 bg-light text-center wo-sticky-preview">
                   <div class="text-muted small">No preview.</div>
                 </div>
               </div>

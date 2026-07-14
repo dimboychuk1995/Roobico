@@ -13,6 +13,10 @@
   background: #fff;
 }
 
+.cal-toolbar-actions {
+  min-width: 120px; /* симметрия с блоком навигации слева */
+}
+
 .cal-title {
   font-family: "Manrope", "Segoe UI", sans-serif; /* единый шрифт приложения */
   font-weight: 400;

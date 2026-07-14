@@ -573,6 +573,13 @@ def parts_page():
         page_key="cores_page",
         per_page_key="cores_per_page",
     )
+    core_returns_page_num, core_returns_per_page = get_pagination_params(
+        request.args,
+        default_per_page=20,
+        max_per_page=100,
+        page_key="core_returns_page",
+        per_page_key="core_returns_per_page",
+    )
     payments_page_num, payments_per_page = get_pagination_params(
         request.args,
         default_per_page=20,
@@ -1006,6 +1013,71 @@ def parts_page():
                 }
             )
 
+    # Cores Returns tab: журнал возвратов ядер вендорам (core_returns).
+    core_returns_list = []
+    core_returns_pagination = None
+    core_returns_totals = {"credit_total": 0.0, "returns_count": 0}
+    returns_coll = parts_coll.database.core_returns if parts_coll is not None else None
+    if returns_coll is not None and active_tab == "cores_returns":
+        returns_query = {"shop_id": shop["_id"], "is_active": {"$ne": False}}
+
+        returned_filter = _build_preferred_date_filter(
+            "returned_at",
+            date_filters["created_from"],
+            date_filters["created_to_exclusive"],
+        )
+        if returned_filter:
+            returns_query = {"$and": [returns_query, returned_filter]}
+
+        returns_search_filter = build_regex_search_filter(
+            q,
+            text_fields=["part_number", "description", "vendor_name", "notes"],
+            numeric_fields=["quantity", "core_cost", "credit_total"],
+            object_id_fields=["_id", "part_id", "core_id", "vendor_id", "shop_id", "created_by"],
+        )
+        if returns_search_filter:
+            returns_query = {"$and": [returns_query, returns_search_filter]}
+
+        totals_rows = list(returns_coll.aggregate([
+            {"$match": returns_query},
+            {"$group": {
+                "_id": None,
+                "credit_total": {"$sum": {"$ifNull": ["$credit_total", 0]}},
+                "returns_count": {"$sum": 1},
+            }},
+        ]))
+        if totals_rows:
+            core_returns_totals = {
+                "credit_total": float(totals_rows[0].get("credit_total") or 0),
+                "returns_count": int(totals_rows[0].get("returns_count") or 0),
+            }
+
+        returns_rows, core_returns_pagination = paginate_find(
+            returns_coll,
+            returns_query,
+            get_sort_params(
+                request.args,
+                [("returned_at", -1), ("created_at", -1)],
+                ["part_number", "quantity", "core_cost", "credit_total", "vendor_name", "returned_at"],
+            ),
+            core_returns_page_num,
+            core_returns_per_page,
+        )
+        for ret in returns_rows:
+            core_returns_list.append(
+                {
+                    "id": str(ret.get("_id")),
+                    "part_number": ret.get("part_number") or "-",
+                    "description": ret.get("description") or "",
+                    "quantity": int(ret.get("quantity") or 0),
+                    "core_cost": float(ret.get("core_cost") or 0),
+                    "credit_total": float(ret.get("credit_total") or 0),
+                    "vendor": ret.get("vendor_name") or "-",
+                    "notes": ret.get("notes") or "",
+                    "returned_at": _fmt_preferred_dt_label(ret.get("returned_at"), ret.get("created_at")),
+                }
+            )
+
     return _render_app_page(
         "public/parts.html",
         active_page="parts",
@@ -1021,6 +1093,9 @@ def parts_page():
         orders=orders_list,
         cores=cores_list,
         cores_pagination=cores_pagination,
+        core_returns=core_returns_list,
+        core_returns_pagination=core_returns_pagination,
+        core_returns_totals=core_returns_totals,
         parts_totals=parts_totals,
         orders_totals=orders_totals,
         payments=payments_list,
@@ -2106,6 +2181,106 @@ def parts_api_delete_payment(payment_id: str):
             "is_fully_paid": (refreshed_summary.get("payment_status") == "paid"),
         }
     )
+
+
+@parts_bp.post("/api/cores/<core_id>/return")
+@login_required
+@permission_required("parts.edit")
+def parts_api_core_return(core_id: str):
+    """
+    AJAX возврат ядер вендору: атомарно списывает quantity с документа в
+    `cores` и пишет запись в журнал `core_returns` (вкладка Cores Returns).
+    Body: { quantity: int, vendor_id?: str, notes?: str, returned_at?: "YYYY-MM-DD" }
+    """
+    from pymongo import ReturnDocument
+    from app.blueprints.work_orders.services.common import round2
+    from app.utils.mongo_tx import run_atomically
+
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop database not configured for this shop."}), 400
+
+    oid = _oid(core_id)
+    if not oid:
+        return jsonify({"ok": False, "error": "Invalid core id."}), 400
+
+    data = request.get_json(silent=True) or {}
+    try:
+        qty = int(data.get("quantity") or 0)
+    except (TypeError, ValueError):
+        qty = 0
+    if qty <= 0:
+        return jsonify({"ok": False, "error": "Quantity must be a positive number."}), 400
+
+    notes = str(data.get("notes") or "").strip()[:500]
+
+    vendor_oid = None
+    vendor_name = ""
+    vendor_raw = (data.get("vendor_id") or "").strip() if isinstance(data.get("vendor_id"), str) else ""
+    if vendor_raw:
+        vendor_oid = _oid(vendor_raw)
+        vendor = vendors_coll.find_one({"_id": vendor_oid, "shop_id": shop["_id"]}) if vendor_oid else None
+        if not vendor:
+            return jsonify({"ok": False, "error": "Vendor not found."}), 400
+        vendor_name = vendor.get("name") or vendor.get("company_name") or ""
+
+    returned_at = shop_local_date_to_utc(data.get("returned_at"), default_today=True)
+    user_oid = _oid(str(session.get(SESSION_USER_ID) or ""))
+    now = utcnow()
+
+    shop_db = parts_coll.database
+    client = get_mongo_client()
+
+    def _apply(tx_session):
+        # Гард quantity >= qty делает списание атомарным: параллельный
+        # возврат того же ядра не уведёт остаток в минус.
+        core_doc = shop_db.cores.find_one_and_update(
+            {
+                "_id": oid,
+                "shop_id": shop["_id"],
+                "is_active": {"$ne": False},
+                "quantity": {"$gte": qty},
+            },
+            {"$inc": {"quantity": -qty},
+             "$set": {"updated_at": now, "updated_by": user_oid}},
+            return_document=ReturnDocument.AFTER,
+            session=tx_session,
+        )
+        if not core_doc:
+            return None
+
+        core_cost = float(core_doc.get("core_cost") or 0)
+        shop_db.core_returns.insert_one(
+            {
+                "shop_id": shop["_id"],
+                "core_id": core_doc["_id"],
+                "part_id": core_doc.get("part_id"),
+                "part_number": core_doc.get("part_number") or "",
+                "description": core_doc.get("description") or "",
+                "quantity": qty,
+                "core_cost": core_cost,
+                "credit_total": round2(qty * core_cost),
+                "vendor_id": vendor_oid,
+                "vendor_name": vendor_name,
+                "notes": notes,
+                "returned_at": returned_at,
+                "is_active": True,
+                "created_at": now,
+                "created_by": user_oid,
+            },
+            session=tx_session,
+        )
+        return core_doc
+
+    core_doc = run_atomically(client, _apply)
+    if not core_doc:
+        return jsonify({"ok": False, "error": "Not enough cores on hand for this return."}), 400
+
+    return jsonify({
+        "ok": True,
+        "remaining_quantity": int(core_doc.get("quantity") or 0),
+        "credit_total": round2(qty * float(core_doc.get("core_cost") or 0)),
+    })
 
 
 @parts_bp.post("/api/orders/<order_id>/receive")

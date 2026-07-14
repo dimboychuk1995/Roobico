@@ -44,6 +44,19 @@
           </div>
           <div id="globalSearchResults" class="app-global-search-results d-none"></div>
 
+          {# Иконки пунктов меню: Bootstrap Icons по ключу. Новый раздел —
+             добавить ключ сюда, иначе получит нейтральный кружок. #}
+          {% set nav_icons = {
+            'dashboard': 'bi-grid-1x2',
+            'calendar': 'bi-calendar3',
+            'parts': 'bi-tools',
+            'vendors': 'bi-shop',
+            'customers': 'bi-people',
+            'work_orders': 'bi-clipboard-check',
+            'settings': 'bi-gear',
+            'reports': 'bi-graph-up',
+            'import_export': 'bi-arrow-down-up',
+          } %}
           {% for item in nav_items %}
             {% set is_active = (active_page == item.key) %}
             <a
@@ -53,44 +66,7 @@
               {% if is_active %}aria-current="page"{% endif %}
             >
               <span class="app-sidebar-icon" aria-hidden="true">
-                {% if item.key == 'dashboard' %}
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="3" y="3" width="8" height="8" rx="1.5"></rect>
-                    <rect x="13" y="3" width="8" height="5" rx="1.5"></rect>
-                    <rect x="13" y="10" width="8" height="11" rx="1.5"></rect>
-                    <rect x="3" y="13" width="8" height="8" rx="1.5"></rect>
-                  </svg>
-                {% elif item.key == 'parts' %}
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M14 5a3 3 0 1 1 4 4l-7.5 7.5a2.5 2.5 0 0 1-3.5-3.5L14 5Z"></path>
-                    <path d="m8 14 2 2"></path>
-                  </svg>
-                {% elif item.key == 'vendors' %}
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M3 9.5 12 4l9 5.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5Z"></path>
-                    <path d="M9 21v-7h6v7"></path>
-                  </svg>
-                {% elif item.key == 'customers' %}
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="8" r="3"></circle>
-                    <path d="M5 20a7 7 0 0 1 14 0"></path>
-                  </svg>
-                {% elif item.key == 'work_orders' %}
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <rect x="4" y="3" width="16" height="18" rx="2"></rect>
-                    <path d="M8 7h8M8 11h8M8 15h5"></path>
-                  </svg>
-                {% elif item.key == 'settings' %}
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="3"></circle>
-                    <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V20a2 2 0 1 1-4 0v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a2 2 0 0 1-2.8-2.8l.1-.1a1 1 0 0 0 .2-1.1 1 1 0 0 0-.9-.6H4a2 2 0 1 1 0-4h.2a1 1 0 0 0 .9-.6 1 1 0 0 0-.2-1.1l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1 1 0 0 0 1.1.2 1 1 0 0 0 .6-.9V4a2 2 0 1 1 4 0v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1 1 0 0 0-.2 1.1 1 1 0 0 0 .9.6H20a2 2 0 1 1 0 4h-.2a1 1 0 0 0-.9.6Z"></path>
-                  </svg>
-                {% else %}
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M4 12h16"></path>
-                    <path d="M12 4v16"></path>
-                  </svg>
-                {% endif %}
+                <i class="bi {{ nav_icons.get(item.key, 'bi-circle') }}"></i>
               </span>
               <span class="app-sidebar-text">{{ item.label }}</span>
             </a>
@@ -129,20 +105,22 @@
           ROOBICO
         </a>
 
-        <div class="ms-auto d-flex align-items-center gap-3">
-          <div class="text-end">
+        <div class="ms-auto d-flex align-items-center gap-3 flex-wrap">
+          {# На узких экранах прячем справочные блоки — остаются только
+             переключатель магазина и Logout. #}
+          <div class="text-end d-none d-lg-block">
             <div class="small text-muted">Logged in</div>
             <div class="fw-semibold">{{ app_user_display or "—" }}</div>
           </div>
 
-          <div class="text-end">
+          <div class="text-end d-none d-md-block">
             <div class="small text-muted">Organization</div>
             <div class="fw-semibold">{{ app_tenant_display or "—" }}</div>
           </div>
 
           <!-- ✅ Active shop switcher -->
           <div class="text-end">
-            <div class="small text-muted">Active shop</div>
+            <div class="small text-muted d-none d-sm-block">Active shop</div>
 
             {% if shop_options and shop_options|length > 0 %}
               <form method="POST" action="{{ url_for('main.set_active_shop') }}">
