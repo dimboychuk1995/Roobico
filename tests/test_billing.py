@@ -635,6 +635,75 @@ def test_blocked_owner_login_lands_on_billing(client, app, seed):
         _restore_tenant_a(app, seed)
 
 
+def _pay_now_env(app, monkeypatch, calls):
+    import app.blueprints.billing.tenant_routes as tenant_routes
+    app.config["STRIPE_SECRET_KEY"] = "sk_test_fake"
+
+    def fake_invoice(tenant, **kwargs):
+        calls.append(tenant["slug"])
+        return {"invoice_id": "in_selfsvc", "amount_cents": 15000,
+                "hosted_url": "https://invoice.stripe.com/i/self-service"}
+
+    monkeypatch.setattr(tenant_routes, "create_billing_invoice", fake_invoice)
+
+
+def test_pay_now_creates_invoice_and_redirects(client, app, seed, monkeypatch):
+    from tests.conftest import login, get_csrf_token
+    calls = []
+    _pay_now_env(app, monkeypatch, calls)
+    try:
+        login(client)
+        token = get_csrf_token(client)
+        resp = client.post("/settings/billing/pay-now", data={"csrf_token": token})
+    finally:
+        app.config["STRIPE_SECRET_KEY"] = ""
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "https://invoice.stripe.com/i/self-service"
+    assert calls == ["test-a"]
+
+
+def test_pay_now_reuses_open_invoice(client, app, seed, monkeypatch):
+    from tests.conftest import login, get_csrf_token
+    from app.extensions import get_master_db
+    calls = []
+    _pay_now_env(app, monkeypatch, calls)
+    with app.app_context():
+        get_master_db().billing_invoices.insert_one({
+            "_id": "in_open_selfsvc", "tenant_id": seed["tenant_a"]["_id"],
+            "status": "open", "amount_cents": 20000, "period_days": 30,
+            "hosted_invoice_url": "https://invoice.stripe.com/i/existing-open",
+            "created_at": datetime.utcnow(),
+        })
+    try:
+        login(client)
+        token = get_csrf_token(client)
+        resp = client.post("/settings/billing/pay-now", data={"csrf_token": token})
+    finally:
+        app.config["STRIPE_SECRET_KEY"] = ""
+        with app.app_context():
+            get_master_db().billing_invoices.delete_one({"_id": "in_open_selfsvc"})
+    assert resp.status_code == 302
+    assert resp.headers["Location"] == "https://invoice.stripe.com/i/existing-open"
+    assert calls == []  # новый инвойс не создавался
+
+
+def test_blocked_owner_can_pay_now(client, app, seed, monkeypatch):
+    """Заблокированный owner должен доходить до оплаты, а не ловить редирект."""
+    from tests.conftest import login, get_csrf_token
+    calls = []
+    _pay_now_env(app, monkeypatch, calls)
+    login(client)
+    token = get_csrf_token(client)
+    _expire_tenant_a(app, seed)
+    try:
+        resp = client.post("/settings/billing/pay-now", data={"csrf_token": token})
+        assert resp.status_code == 302
+        assert resp.headers["Location"] == "https://invoice.stripe.com/i/self-service"
+    finally:
+        app.config["STRIPE_SECRET_KEY"] = ""
+        _restore_tenant_a(app, seed)
+
+
 # ---------------------------------------------------------------------------
 # Индивидуальная цена тенанта (скидка % / фикс).
 # ---------------------------------------------------------------------------

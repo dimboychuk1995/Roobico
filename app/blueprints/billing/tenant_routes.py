@@ -33,6 +33,7 @@ from app.utils.stripe_client import (
     apply_billing_discount,
     compute_amount_cents,
     count_billable,
+    create_billing_invoice,
     create_card_setup_session,
     stripe_configured,
 )
@@ -135,6 +136,55 @@ def subscription_page():
         grace_days=PAST_DUE_GRACE_DAYS,
         card_saved=request.args.get("card") == "saved",
     )
+
+
+@billing_bp.post("/settings/billing/pay-now")
+@login_required
+@permission_required("settings.manage_billing")
+def pay_now():
+    """
+    Оплатить подписку прямо сейчас: если по тенанту уже висит открытый
+    инвойс — ведём на его hosted-страницу; иначе создаём новый на текущую
+    сумму и ведём платить. Оплата через webhook продлевает подписку —
+    заблокированный owner разблокируется сам.
+    """
+    if not stripe_configured():
+        flash("Online payments are not available right now. Please contact support.", "error")
+        return redirect(url_for("billing.subscription_page"))
+
+    master = get_master_db()
+    tenant = _session_tenant(master)
+    if not tenant:
+        flash("Session data mismatch. Please login again.", "error")
+        session.clear()
+        return redirect(url_for("main.index"))
+
+    open_invoice = master.billing_invoices.find_one(
+        {"tenant_id": tenant["_id"], "status": {"$in": ["open", "draft"]}},
+        sort=[("created_at", -1)],
+    )
+    if open_invoice and open_invoice.get("hosted_invoice_url"):
+        return redirect(open_invoice["hosted_invoice_url"])
+
+    try:
+        result = create_billing_invoice(
+            tenant, auto_charge=False, purpose="self_service", days_until_due=7,
+        )
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("billing.subscription_page"))
+    except stripe.error.StripeError:
+        current_app.logger.exception(
+            "Failed to create self-service invoice for tenant %s", tenant.get("slug")
+        )
+        flash("Could not create the invoice. Please try again later.", "error")
+        return redirect(url_for("billing.subscription_page"))
+
+    hosted_url = result.get("hosted_url")
+    if not hosted_url:
+        flash("Invoice created — check your email for the payment link.", "success")
+        return redirect(url_for("billing.subscription_page"))
+    return redirect(hosted_url)
 
 
 @billing_bp.post("/settings/billing/setup-card")

@@ -155,13 +155,32 @@ def get_or_create_customer(tenant: dict) -> str:
     """
     Returns the Stripe customer id for `tenant`, creating it if missing.
     Persists `stripe_customer_id` on the tenant doc.
+
+    Сохранённый id проверяется живым запросом: id из другого режима
+    (test-клиент при live-ключах и наоборот) в текущем режиме не существует —
+    тогда пересоздаём клиента и сбрасываем кэш карты (карта принадлежала
+    старому клиенту).
     """
     s = _stripe()
     master = get_master_db()
 
     cid = (tenant.get("stripe_customer_id") or "").strip()
     if cid:
-        return cid
+        try:
+            cust = s.Customer.retrieve(cid)
+            if not getattr(cust, "deleted", False):
+                return cid
+        except stripe.error.InvalidRequestError:
+            pass  # "No such customer" — пересоздаём ниже
+        current_app.logger.warning(
+            "Stripe customer %s for tenant %s is gone (test/live mode switch "
+            "or deleted) — creating a fresh one",
+            cid, tenant.get("slug"),
+        )
+        master.tenants.update_one(
+            {"_id": tenant["_id"]},
+            {"$unset": {"stripe_default_card": ""}},
+        )
 
     cust = s.Customer.create(
         name=tenant.get("name") or "(unnamed)",

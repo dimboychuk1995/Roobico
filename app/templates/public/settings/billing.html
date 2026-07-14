@@ -25,9 +25,12 @@
   {% else %}
     Your last payment failed. Please pay the open invoice or update your card.
   {% endif %}
-  {% if open_invoice and open_invoice.hosted_invoice_url %}
-    <a href="{{ open_invoice.hosted_invoice_url }}" target="_blank" rel="noopener" class="alert-link">Pay invoice now</a>
-  {% endif %}
+  <form method="post" action="{{ url_for('billing.pay_now') }}" class="d-inline ms-1">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="btn btn-light btn-sm" {% if not stripe_ready or price.monthly_total <= 0 %}disabled{% endif %}>
+      Pay now — ${{ '%.2f'|format(price.monthly_total) }}
+    </button>
+  </form>
 </div>
 {% endif %}
 
@@ -64,6 +67,13 @@
         <div class="text-muted small mt-2">
           Renewals are billed automatically 3 days before the period ends.
         </div>
+        <form method="post" action="{{ url_for('billing.pay_now') }}" class="mt-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-primary btn-sm"
+                  {% if not stripe_ready or price.monthly_total <= 0 %}disabled{% endif %}>
+            {{ 'Pay open invoice' if open_invoice else 'Pay now' }} — ${{ '%.2f'|format((open_invoice.amount_cents / 100) if open_invoice else price.monthly_total) }}
+          </button>
+        </form>
       </div>
     </div>
   </div>

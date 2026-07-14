@@ -259,6 +259,7 @@ def create_app():
             BILLING_SELF_SERVICE_ENDPOINTS = {
                 "billing.subscription_page",
                 "billing.setup_card",
+                "billing.pay_now",
                 "auth.logout",
                 "static",
             }
