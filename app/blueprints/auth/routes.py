@@ -92,11 +92,14 @@ def login():
         flash("Tenant not found or inactive.", "error")
         return redirect(url_for("main.index"))
 
-    # Subscription gate: expired tenants cannot log in.
+    # Subscription gate. Owner'а с истёкшей подпиской ПУСКАЕМ — но только на
+    # страницу биллинга (before_request держит его там), чтобы он мог сам
+    # оплатить и разблокироваться. Остальные роли — от ворот поворот.
     from app import _is_tenant_subscription_blocked
-    if _is_tenant_subscription_blocked(tenant):
+    subscription_blocked = _is_tenant_subscription_blocked(tenant)
+    if subscription_blocked and (user.get("role") or "").strip().lower() != "owner":
         flash(
-            "Your subscription has expired. Please contact Roobico support to renew.",
+            "Your subscription has expired. Please ask the account owner to renew it.",
             "error",
         )
         return redirect(url_for("main.index"))
@@ -118,6 +121,10 @@ def login():
     perms = _compute_effective_permissions(user, tenant)
     session["user_permissions"] = perms
     session.modified = True
+
+    if subscription_blocked:
+        flash("Your subscription has expired. Renew it below to restore access.", "error")
+        return redirect(app_url("billing.subscription_page"))
 
     # In production this points at https://app.roobico.com/dashboard so the
     # browser leaves the public login host and lands on the application host.

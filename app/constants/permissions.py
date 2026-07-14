@@ -90,6 +90,7 @@ PERMISSIONS: dict[str, str] = {
     "settings.manage_notifications": "Manage notification settings",
     "settings.manage_pdf_design": "Manage PDF design",
     "settings.manage_integrations": "Manage 3rd-party integrations (uAttend, etc.)",
+    "settings.manage_billing": "Manage Roobico subscription & billing (owner)",
 }
 
 ALL_PERMISSIONS: list[str] = sorted(PERMISSIONS.keys())
@@ -217,6 +218,7 @@ PERMISSION_GROUPS: list[dict] = [
             "settings.manage_notifications",
             "settings.manage_pdf_design",
             "settings.manage_integrations",
+            "settings.manage_billing",
         ],
     },
 ]
@@ -256,12 +258,13 @@ PROTECTED_ROLE_KEYS: set[str] = {"owner"}
 def build_default_roles() -> list[dict]:
     allp = _all()
 
-    # Полный доступ
+    # Полный доступ. Биллинг подписки Roobico — только owner (protected-роль
+    # получает ALL_PERMISSIONS автоматически, остальным этот ключ не сеем).
     owner = allp
-    general_manager = allp
+    general_manager = allp - {"settings.manage_billing"}
 
-    # Manager: всё кроме управления ролями
-    manager = allp - {"settings.manage_roles"}
+    # Manager: всё кроме управления ролями и биллинга
+    manager = allp - {"settings.manage_roles", "settings.manage_billing"}
 
     # Parts manager
     parts_manager = _safe_subset({

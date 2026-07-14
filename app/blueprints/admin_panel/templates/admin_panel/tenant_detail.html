@@ -268,6 +268,10 @@
           {{ stripe_info.default_card.brand|capitalize }} •••• {{ stripe_info.default_card.last4 }}
           · exp {{ stripe_info.default_card.exp_month }}/{{ stripe_info.default_card.exp_year }}
         </div>
+      {% elif stripe_info.default_card %}
+        <div class="billing-sub" style="font-size:.9rem; color:#e2e8f0;">
+          Card on file (<code>{{ stripe_info.default_card.pm_id }}</code>)
+        </div>
       {% else %}
         <div class="billing-sub">No saved card. Send invoice → tenant adds card on hosted page.</div>
       {% endif %}
@@ -314,7 +318,7 @@
               style="margin:0;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn"
-                  {% if billing.monthly_total <= 0 or not (stripe_info.default_card and stripe_info.default_card.last4) %}disabled{% endif %}>
+                  {% if billing.monthly_total <= 0 or not stripe_info.default_card %}disabled{% endif %}>
             Charge saved card
           </button>
         </form>
@@ -326,6 +330,53 @@
       </div>
     </div>
   </div>
+  {% endif %}
+</div>
+
+<!-- BILLING HISTORY -->
+<div class="section">
+  <h3>Billing history</h3>
+  {% if invoices %}
+  <table class="data">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Invoice</th>
+        <th>Amount</th>
+        <th>Purpose</th>
+        <th>Method</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for inv in invoices %}
+      <tr>
+        <td style="white-space:nowrap;">{{ inv.created_at.strftime('%Y-%m-%d %H:%M') if inv.created_at else '—' }}</td>
+        <td>
+          {% if inv.hosted_invoice_url %}
+            <a href="{{ inv.hosted_invoice_url }}" target="_blank" rel="noopener"><code>{{ inv._id }}</code></a>
+          {% else %}
+            <code>{{ inv._id }}</code>
+          {% endif %}
+        </td>
+        <td>${{ '%.2f'|format((inv.amount_cents or 0) / 100) }}</td>
+        <td style="color:#94a3b8; font-size:.85rem;">{{ inv.purpose or '—' }}</td>
+        <td style="color:#94a3b8; font-size:.85rem;">{{ 'auto charge' if inv.collection_method == 'charge_automatically' else 'email invoice' }}</td>
+        <td>
+          {% if inv.status == 'paid' %}
+            <span class="badge ok">paid</span>
+          {% elif inv.status in ('open', 'draft') %}
+            <span class="badge muted">{{ inv.status }}</span>
+          {% else %}
+            <span class="badge bad">{{ inv.status or '—' }}</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty">No invoices yet.</div>
   {% endif %}
 </div>
 

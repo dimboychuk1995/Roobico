@@ -1,11 +1,16 @@
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from flask import Flask, g, session, request, redirect, flash, url_for, jsonify, render_template
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.proxy_fix import ProxyFix
 from bson import ObjectId
+
+# Сколько дней после конца оплаченного периода тенант со статусом past_due
+# (карта не списалась, Stripe ретраит) ещё может работать. Trial и просто
+# истёкшие подписки grace не получают — блокируются сразу.
+PAST_DUE_GRACE_DAYS = 7
 
 
 def _is_tenant_subscription_blocked(tenant: dict) -> bool:
@@ -13,7 +18,10 @@ def _is_tenant_subscription_blocked(tenant: dict) -> bool:
     True → tenant must NOT be allowed into the app.
     Rule:
       - subscription_status == "expired" → blocked.
-      - subscription_until is datetime and is in the past → blocked.
+      - subscription_until is datetime and is in the past → blocked,
+        EXCEPT status == "past_due" within PAST_DUE_GRACE_DAYS of the end
+        (failed auto-charge being retried — don't lock paying tenants out
+        the same night their card bounces).
       - otherwise → allowed (tenants without any subscription field set
         are treated as not yet billed and pass through).
     """
@@ -24,6 +32,8 @@ def _is_tenant_subscription_blocked(tenant: dict) -> bool:
         return True
     until = tenant.get("subscription_until")
     if isinstance(until, datetime) and until <= datetime.utcnow():
+        if status == "past_due" and until + timedelta(days=PAST_DUE_GRACE_DAYS) > datetime.utcnow():
+            return False
         return True
     return False
 
@@ -242,21 +252,32 @@ def create_app():
             session.clear()
             return
 
-        # защита: подписка истекла → выкидываем из сессии и редиректим на
-        # public login с сообщением. Платёжных endpoints для самообслуживания
-        # пока нет — оплата идёт через админку, после чего тенант сможет
-        # зайти снова.
+        # защита: подписка истекла. Owner'а не выкидываем, а запираем на
+        # странице биллинга (там он может оплатить инвойс / привязать карту
+        # и разблокироваться сам); остальные роли — из сессии на public login.
         if _is_tenant_subscription_blocked(tenant):
-            session.clear()
-            flash(
-                "Your subscription has expired. Please contact Roobico support to renew.",
-                "error",
-            )
-            from app.utils.hosts import public_url
-            target = public_url("main.index")
-            if not target.startswith("http"):
-                target = url_for("main.index")
-            return redirect(target)
+            BILLING_SELF_SERVICE_ENDPOINTS = {
+                "billing.subscription_page",
+                "billing.setup_card",
+                "auth.logout",
+                "static",
+            }
+            endpoint = request.endpoint or ""
+            if endpoint in BILLING_SELF_SERVICE_ENDPOINTS:
+                pass  # разрешённая страница — пропускаем ниже к shop-guard'ам
+            elif (user.get("role") or "").strip().lower() == "owner":
+                return redirect(url_for("billing.subscription_page"))
+            else:
+                session.clear()
+                flash(
+                    "Your subscription has expired. Please ask the account owner to renew it.",
+                    "error",
+                )
+                from app.utils.hosts import public_url
+                target = public_url("main.index")
+                if not target.startswith("http"):
+                    target = url_for("main.index")
+                return redirect(target)
 
         # защита: если активный shop стал inactive — переключаем на первый
         # активный из allowed; если активных нет — обнуляем shop_id, чтобы

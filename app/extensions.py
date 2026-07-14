@@ -145,6 +145,13 @@ def ensure_master_collections_indexes(master_db):
     # Rate limiting (login / forgot-password). TTL подчищает неактивные ключи.
     _safe_create_index(master_db.rate_limits, [("updated_at", ASCENDING)], expireAfterSeconds=3600, name="ttl_rate_limits_updated")
 
+    # Stripe billing. stripe_events — дедуп webhook-событий (_id = event id),
+    # TTL 90 дней: Stripe ретраит доставку максимум ~3 дня, запас кратный.
+    _safe_create_index(master_db.stripe_events, [("created_at", ASCENDING)], expireAfterSeconds=90 * 24 * 3600, name="ttl_stripe_events_created")
+    # billing_invoices — наш реестр инвойсов (_id = invoice id): renewal-cron
+    # ищет открытые инвойсы тенанта, админка/отчёты — историю по дате.
+    _safe_create_index(master_db.billing_invoices, [("tenant_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)], name="idx_billing_invoices_tenant_status_created")
+
 
 def ensure_shop_collections_indexes(shop_db):
     """

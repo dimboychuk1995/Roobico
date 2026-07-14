@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="margin:0;padding:20px;background:#f5f5f5;font-family:Arial,Helvetica,sans-serif;color:#333;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08);">
+  <tr>
+    <td style="background:#145e33;padding:24px 32px;color:#fff;">
+      <div style="font-size:20px;font-weight:700;">Roobico</div>
+      <div style="font-size:22px;font-weight:700;margin-top:18px;border-top:1px solid rgba(255,255,255,.25);padding-top:14px;">
+        &#9888;&#65039; Payment failed
+      </div>
+    </td>
+  </tr>
+  <tr>
+    <td style="padding:24px 32px;">
+      <p style="font-size:14px;line-height:1.5;margin-top:0;">
+        Hello{% if tenant_name %} {{ tenant_name }}{% endif %},
+      </p>
+      <p style="font-size:14px;line-height:1.5;">
+        We tried to charge your card for your Roobico subscription
+        ({{ amount_due }}), but the payment did not go through.
+      </p>
+      {% if hosted_invoice_url %}
+      <p style="font-size:14px;line-height:1.5;">
+        Please pay the invoice or update your card on the secure payment page:
+      </p>
+      <p style="text-align:center;margin:24px 0;">
+        <a href="{{ hosted_invoice_url }}"
+           style="display:inline-block;background:#145e33;color:#fff;text-decoration:none;font-size:15px;font-weight:700;padding:12px 28px;border-radius:6px;">
+          Pay invoice
+        </a>
+      </p>
+      {% endif %}
+      <p style="font-size:14px;line-height:1.5;">
+        We will retry the charge automatically. If the payment is not
+        completed within {{ grace_days }} days after your paid period ends,
+        access to your Roobico account will be suspended until the invoice
+        is settled.
+      </p>
+      <p style="font-size:13px;line-height:1.5;color:#888;">
+        Questions? Just reply to this email.
+      </p>
+    </td>
+  </tr>
+  <tr>
+    <td style="background:#f0f0f0;padding:14px 32px;font-size:11px;color:#999;">
+      Roobico — shop management for auto repair &amp; fleets.
+    </td>
+  </tr>
+</table>
+</body>
+</html>

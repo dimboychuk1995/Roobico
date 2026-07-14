@@ -170,14 +170,19 @@ def create_billing_invoice(
     tenant: dict,
     *,
     auto_charge: bool,
-    period_label: str = "30 days",
+    period_days: int = 30,
     days_until_due: int = 7,
+    purpose: str = "manual",
 ) -> dict:
     """
     Create + finalize a one-shot invoice for the tenant's current billable
     units. If `auto_charge` is True, Stripe attempts to charge the saved
     default payment method immediately. Otherwise it sends a hosted
     invoice email.
+
+    Every invoice is mirrored into `master.billing_invoices` — the webhook
+    uses that doc as an idempotency guard when extending the subscription,
+    and the renewal cron uses it to avoid double-billing a cycle.
 
     Returns: {"invoice_id": "in_...", "amount_cents": int, "hosted_url": str|None,
               "status": "open"|"paid"|...}
@@ -189,6 +194,8 @@ def create_billing_invoice(
     amount = compute_amount_cents(counts)
     if amount <= 0:
         raise ValueError("Tenant has no billable units (no active locations/users).")
+
+    period_label = f"{period_days} days"
 
     # Step 1: pending invoice item attached to the customer.
     s.InvoiceItem.create(
@@ -223,6 +230,8 @@ def create_billing_invoice(
             "tenant_id": str(tenant["_id"]),
             "tenant_slug": tenant.get("slug") or "",
             "period_label": period_label,
+            "period_days": str(period_days),
+            "purpose": purpose,
         },
     )
     if auto_charge:
@@ -234,6 +243,45 @@ def create_billing_invoice(
     inv = s.Invoice.create(**invoice_kwargs)
     # Finalize so it gets a hosted_invoice_url and number.
     inv = s.Invoice.finalize_invoice(inv.id)
+
+    if auto_charge:
+        # Stripe сам пытается оплатить charge_automatically-инвойс лишь
+        # ~через час после финализации — списываем сразу, чтобы админский
+        # charge-now и ночной renewal получали мгновенный результат.
+        # Отказ карты не роняет вызов: инвойс остаётся open, Stripe будет
+        # ретраить, а invoice.payment_failed запускает dunning.
+        try:
+            inv = s.Invoice.pay(inv.id)
+        except stripe.error.CardError:
+            current_app.logger.exception(
+                "Immediate charge failed for invoice %s (tenant %s)",
+                inv.id, tenant.get("slug"),
+            )
+            inv = s.Invoice.retrieve(inv.id)
+
+    # Mirror into our ledger. `status`/`extended` are $setOnInsert only:
+    # a charge_automatically invoice can be paid synchronously during
+    # finalize, so the invoice.paid webhook may have upserted this doc
+    # already — we must not overwrite what the handler wrote.
+    get_master_db().billing_invoices.update_one(
+        {"_id": inv.id},
+        {
+            "$set": {
+                "tenant_id": tenant["_id"],
+                "amount_cents": amount,
+                "period_days": period_days,
+                "collection_method": invoice_kwargs["collection_method"],
+                "purpose": purpose,
+                "hosted_invoice_url": getattr(inv, "hosted_invoice_url", None),
+            },
+            "$setOnInsert": {
+                "status": getattr(inv, "status", None) or "open",
+                "extended": False,
+                "created_at": datetime.utcnow(),
+            },
+        },
+        upsert=True,
+    )
 
     if not auto_charge:
         # Trigger Stripe to email the tenant the hosted invoice link.
@@ -252,22 +300,141 @@ def create_billing_invoice(
     }
 
 
-def charge_saved_card(tenant: dict, period_label: str = "30 days") -> dict:
+def charge_saved_card(
+    tenant: dict, period_days: int = 30, purpose: str = "manual"
+) -> dict:
     """
     Convenience wrapper for the renewal path: create an invoice with
     `charge_automatically` so Stripe immediately bills the saved card.
-    Raises if no default payment method is on file.
+    Raises ValueError if no default payment method is on file.
     """
     s = _stripe()
     customer_id = get_or_create_customer(tenant)
     cust = s.Customer.retrieve(customer_id)
+    # StripeObject в SDK >= 15 — не dict (.get() нет), только атрибуты.
+    inv_settings = getattr(cust, "invoice_settings", None)
     default_pm = (
-        (cust.get("invoice_settings") or {}).get("default_payment_method")
-        or cust.get("default_source")
+        (getattr(inv_settings, "default_payment_method", None) if inv_settings else None)
+        or getattr(cust, "default_source", None)
     )
     if not default_pm:
         raise ValueError(
             "Tenant has no saved payment method. Send an invoice first so "
             "the customer can add a card on the hosted page."
         )
-    return create_billing_invoice(tenant, auto_charge=True, period_label=period_label)
+    return create_billing_invoice(
+        tenant, auto_charge=True, period_days=period_days, purpose=purpose
+    )
+
+
+def ensure_default_payment_method(
+    tenant: dict,
+    inv: Optional[dict] = None,
+    preferred_pm_id: Optional[str] = None,
+    force: bool = False,
+) -> Optional[dict]:
+    """
+    Если у клиента ещё нет default payment method, но карта прикреплена
+    (attached PM) — делаем её дефолтной, иначе renewal-cron никогда не
+    сможет списывать автоматически (Stripe сохраняет карту, но дефолтной
+    сам не ставит). Вызывается из webhook'ов invoice.paid (inv) и
+    payment_method.attached (preferred_pm_id).
+
+    force=True — сделать preferred_pm_id дефолтной, даже если дефолтная
+    уже есть: тенант явно добавил новую карту («Update card»), списания
+    должны переехать на неё, а не остаться на старой.
+
+    Возвращает кэш карты для tenant-дока ({"pm_id", "brand", "last4", ...})
+    либо None, если делать нечего.
+    """
+    s = _stripe()
+    customer_id = (tenant.get("stripe_customer_id") or "").strip() \
+        or ((inv or {}).get("customer") or "")
+    if not customer_id:
+        return None
+
+    cust = s.Customer.retrieve(customer_id)
+    inv_settings = getattr(cust, "invoice_settings", None)
+    current_default = getattr(inv_settings, "default_payment_method", None) \
+        if inv_settings else None
+    if current_default and not force:
+        return None  # дефолтная карта уже есть
+    if current_default and force and current_default == preferred_pm_id:
+        return None  # уже дефолтная — нечего делать
+
+    pms = s.Customer.list_payment_methods(customer_id, type="card")
+    pm_list = list(getattr(pms, "data", None) or [])
+    if not pm_list:
+        return None  # тенант не сохранял карту — остаёмся на инвойсах письмом
+
+    target = None
+    if preferred_pm_id:
+        target = next((pm for pm in pm_list if pm.id == preferred_pm_id), None)
+    # Предпочитаем карту, которой оплатили именно этот инвойс.
+    pi_id = (inv or {}).get("payment_intent")
+    if target is None and pi_id and isinstance(pi_id, str):
+        try:
+            pi = s.PaymentIntent.retrieve(pi_id)
+            paying_pm = getattr(pi, "payment_method", None)
+            target = next((pm for pm in pm_list if pm.id == paying_pm), None)
+        except stripe.error.StripeError:
+            current_app.logger.exception(
+                "Could not resolve paying card for invoice %s", (inv or {}).get("id")
+            )
+    if target is None and not force and len(pm_list) == 1:
+        target = pm_list[0]
+    if target is None:
+        # force без найденной preferred-карты — существующую дефолтную не трогаем.
+        return None
+
+    s.Customer.modify(
+        customer_id,
+        invoice_settings={"default_payment_method": target.id},
+    )
+    return _payment_method_cache_entry(target)
+
+
+def _payment_method_cache_entry(pm) -> dict:
+    """PaymentMethod (StripeObject) → dict для tenant.stripe_default_card."""
+    card = getattr(pm, "card", None)
+    cached = {"pm_id": pm.id}
+    if card is not None:
+        cached.update({
+            "brand": getattr(card, "brand", None),
+            "last4": getattr(card, "last4", None),
+            "exp_month": getattr(card, "exp_month", None),
+            "exp_year": getattr(card, "exp_year", None),
+        })
+    return cached
+
+
+def describe_payment_method(pm_id: str) -> dict:
+    """
+    Кэш-запись карты по pm-id (для webhook'ов, где Stripe отдаёт
+    default_payment_method строкой без деталей). Ошибка Stripe не
+    скрывается — раскручивается наверх, вызывающий решает сам.
+    """
+    s = _stripe()
+    return _payment_method_cache_entry(s.PaymentMethod.retrieve(pm_id))
+
+
+def create_card_setup_session(
+    tenant: dict, success_url: str, cancel_url: str
+) -> str:
+    """
+    Hosted-страница Stripe Checkout (mode=setup) для привязки карты: тенант
+    вводит карту, Stripe прикрепляет её к Customer (событие
+    payment_method.attached), наш webhook делает её дефолтной. Возвращает
+    URL страницы — хендлер делает redirect.
+    """
+    s = _stripe()
+    customer_id = get_or_create_customer(tenant)
+    sess = s.checkout.Session.create(
+        mode="setup",
+        customer=customer_id,
+        payment_method_types=["card"],
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata={"tenant_id": str(tenant["_id"]), "purpose": "card_setup"},
+    )
+    return sess.url

@@ -238,6 +238,14 @@ def tenant_detail(tenant_id: str):
         if stripe_info["last_invoice_id"]:
             stripe_info["invoice_url"] = f"{base}/invoices/{stripe_info['last_invoice_id']}"
 
+    # История инвойсов из нашего реестра (пишут webhook'и + create_billing_invoice).
+    invoices = list(
+        master.billing_invoices
+        .find({"tenant_id": tid})
+        .sort("created_at", -1)
+        .limit(15)
+    )
+
     return render_template(
         "admin_panel/tenant_detail.html",
         admin=admin,
@@ -247,6 +255,7 @@ def tenant_detail(tenant_id: str):
         billing=billing,
         subscription=subscription,
         stripe_info=stripe_info,
+        invoices=invoices,
     )
 
 

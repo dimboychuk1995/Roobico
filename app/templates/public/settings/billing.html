@@ -1,0 +1,177 @@
+{% extends "layouts/app_base.html" %}
+{% block page_title %}Subscription & Billing{% endblock %}
+
+{% block app_content %}
+<div class="page-header">
+  <h1 class="page-header__title">Subscription &amp; Billing</h1>
+  <div class="page-header__actions">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('main.settings') }}">Back to Settings</a>
+  </div>
+</div>
+
+{% if card_saved %}
+<div class="alert alert-success" role="alert">
+  Card saved. Future renewals will be charged automatically.
+</div>
+{% endif %}
+
+{% if subscription.state in ('expired', 'grace', 'past_due') %}
+<div class="alert alert-danger" role="alert">
+  {% if subscription.state == 'expired' %}
+    Your subscription has expired. Pay the invoice below or add a card to restore access for your team.
+  {% elif subscription.state == 'grace' %}
+    We couldn't charge your card. Access will be suspended {{ grace_days }} days after the paid period ends —
+    please pay the invoice or update your card.
+  {% else %}
+    Your last payment failed. Please pay the open invoice or update your card.
+  {% endif %}
+  {% if open_invoice and open_invoice.hosted_invoice_url %}
+    <a href="{{ open_invoice.hosted_invoice_url }}" target="_blank" rel="noopener" class="alert-link">Pay invoice now</a>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="row g-3">
+  <!-- Subscription status -->
+  <div class="col-12 col-md-6 col-xl-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h2 class="h6 text-muted text-uppercase mb-2">Subscription</h2>
+        {% if subscription.state == 'active' %}
+          <span class="badge text-bg-success">Active</span>
+        {% elif subscription.state == 'ending_soon' %}
+          <span class="badge text-bg-warning">Renews soon</span>
+        {% elif subscription.state in ('past_due', 'grace') %}
+          <span class="badge text-bg-danger">Payment failed</span>
+        {% elif subscription.state == 'expired' %}
+          <span class="badge text-bg-danger">Expired</span>
+        {% else %}
+          <span class="badge text-bg-secondary">Not set up</span>
+        {% endif %}
+        {% if subscription.is_trial %}
+          <span class="badge text-bg-info">Trial</span>
+        {% endif %}
+        <div class="mt-2">
+          {% if subscription.until %}
+            <div class="fw-semibold">Paid until {{ subscription.until_display }}</div>
+            {% if subscription.days_left is not none and subscription.days_left >= 0 %}
+              <div class="text-muted small">{{ subscription.days_left }} day{{ '' if subscription.days_left == 1 else 's' }} left</div>
+            {% endif %}
+          {% else %}
+            <div class="text-muted small">No subscription period set.</div>
+          {% endif %}
+        </div>
+        <div class="text-muted small mt-2">
+          Renewals are billed automatically 3 days before the period ends.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Monthly price -->
+  <div class="col-12 col-md-6 col-xl-4">
+    <div class="card h-100">
+      <div class="card-body">
+        <h2 class="h6 text-muted text-uppercase mb-2">Monthly price</h2>
+        <div class="d-flex justify-content-between small">
+          <span>{{ price.locations }} location{{ '' if price.locations == 1 else 's' }} × ${{ '%.0f'|format(price.per_location) }}</span>
+          <span>${{ '%.2f'|format(price.locations_cost) }}</span>
+        </div>
+        <div class="d-flex justify-content-between small">
+          <span>{{ price.full_users }} user{{ '' if price.full_users == 1 else 's' }} × ${{ '%.0f'|format(price.per_full_user) }}</span>
+          <span>${{ '%.2f'|format(price.full_cost) }}</span>
+        </div>
+        <div class="d-flex justify-content-between small">
+          <span>{{ price.mechanics }} mechanic{{ '' if price.mechanics == 1 else 's' }} × ${{ '%.0f'|format(price.per_mechanic) }}</span>
+          <span>${{ '%.2f'|format(price.mech_cost) }}</span>
+        </div>
+        <hr class="my-2">
+        <div class="d-flex justify-content-between fw-semibold">
+          <span>Total per month</span>
+          <span>${{ '%.2f'|format(price.monthly_total) }}</span>
+        </div>
+        <div class="text-muted small mt-2">
+          Based on currently active locations and users.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Payment method -->
+  <div class="col-12 col-md-6 col-xl-4">
+    <div class="card h-100">
+      <div class="card-body d-flex flex-column">
+        <h2 class="h6 text-muted text-uppercase mb-2">Payment method</h2>
+        {% if card and card.last4 %}
+          <div class="fw-semibold">{{ (card.brand or 'Card')|capitalize }} •••• {{ card.last4 }}</div>
+          {% if card.exp_month and card.exp_year %}
+            <div class="text-muted small">Expires {{ card.exp_month }}/{{ card.exp_year }}</div>
+          {% endif %}
+        {% elif card %}
+          <div class="fw-semibold">Card on file</div>
+        {% else %}
+          <div class="text-muted small">
+            No card on file — each renewal is sent as an invoice by email.
+            Add a card to pay automatically.
+          </div>
+        {% endif %}
+        <form method="post" action="{{ url_for('billing.setup_card') }}" class="mt-auto pt-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-primary btn-sm" {% if not stripe_ready %}disabled{% endif %}>
+            {{ 'Update card' if card else 'Add card' }}
+          </button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Invoices -->
+<div class="card mt-3">
+  <div class="card-header">Invoices</div>
+  <div class="card-body">
+    {% if invoices %}
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Amount</th>
+            <th>Status</th>
+            <th class="text-end">Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for inv in invoices %}
+          <tr>
+            <td>{{ inv.date_display }}</td>
+            <td>${{ '%.2f'|format((inv.amount_cents or 0) / 100) }}</td>
+            <td>
+              {% if inv.status == 'paid' %}
+                <span class="badge text-bg-success">Paid</span>
+              {% elif inv.status in ('open', 'draft') %}
+                <span class="badge text-bg-warning">Open</span>
+              {% elif inv.status == 'refunded' %}
+                <span class="badge text-bg-info">Refunded</span>
+              {% else %}
+                <span class="badge text-bg-secondary">{{ inv.status or '—' }}</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              {% if inv.status in ('open', 'draft') and inv.hosted_invoice_url %}
+                <a class="btn btn-sm btn-primary" href="{{ inv.hosted_invoice_url }}" target="_blank" rel="noopener">Pay</a>
+              {% elif inv.hosted_invoice_url %}
+                <a class="btn btn-sm btn-outline-secondary" href="{{ inv.hosted_invoice_url }}" target="_blank" rel="noopener">View</a>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="text-muted small">No invoices yet. Your first invoice arrives when the trial ends.</div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
