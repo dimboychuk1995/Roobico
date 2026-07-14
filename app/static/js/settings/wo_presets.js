@@ -478,7 +478,8 @@
       })
       .catch(function (err) {
         console.error("Failed to load preset:", err);
-        alert("Failed to load preset data.");
+        if (window.appAlert) window.appAlert("Failed to load preset data.", "error");
+        else window.alert("Failed to load preset data.");
       });
   });
 

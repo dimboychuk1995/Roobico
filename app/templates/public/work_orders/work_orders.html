@@ -1,6 +1,6 @@
 {% extends "layouts/app_base.html" %}
 {% from "components/attachments.html" import attachments_block, attachments_modal %}
-{% from "components/ui.html" import empty_state %}
+{% from "components/ui.html" import empty_state, wo_status_badge %}
 
 {% block page_title %}Work Orders{% endblock %}
 
@@ -113,13 +113,7 @@
                     <td class="text-end fw-semibold">${{ "%.2f"|format(w.grand_total) }}</td>
                     <td class="text-end">${{ "%.2f"|format(w.balance or 0) }}</td>
                     <td class="text-center">
-                      {% if w.is_paid %}
-                        <span class="badge text-bg-success">Paid</span>
-                      {% elif w.is_in_progress %}
-                        <span class="badge text-bg-info">In Progress</span>
-                      {% else %}
-                        <span class="badge text-bg-warning">Unpaid</span>
-                      {% endif %}
+                      {{ wo_status_badge('paid' if w.is_paid else ('in progress' if w.is_in_progress else 'unpaid')) }}
                     </td>
                     <td class="text-end text-nowrap">
                       {% if not w.is_paid %}

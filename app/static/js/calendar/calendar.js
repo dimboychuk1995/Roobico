@@ -1,6 +1,12 @@
 (function () {
   "use strict";
 
+  /* SweetAlert-уведомление с fallback на нативный alert. */
+  function notify(message, type) {
+    if (window.appAlert) window.appAlert(message, type || "error");
+    else window.alert(message);
+  }
+
   /* ── constants ── */
   var DAY_NAMES = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
   var MONTH_NAMES = [
@@ -589,7 +595,7 @@
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        if (data.error) { alert(data.error); }
+        if (data.error) { notify(data.error); }
         loadEvents();
       })
       .catch(function () { loadEvents(); });
@@ -956,7 +962,7 @@
     var startVal = elStart.value;
     var endVal = elEnd.value;
     if (!dateVal || !startVal || !endVal) {
-      alert("Date and time are required.");
+      notify("Date and time are required.", "warning");
       return;
     }
 
@@ -996,7 +1002,7 @@
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (data.error) {
-          alert(data.error);
+          notify(data.error);
           return;
         }
         getModal().hide();
@@ -1009,7 +1015,7 @@
     var customerId = elCustomer.value;
     var unitId = elUnit.value;
     if (!customerId || !unitId) {
-      alert("Please select a customer and unit first.");
+      notify("Please select a customer and unit first.", "warning");
       return;
     }
     console.log("[CalendarCreateWO] selectedPresets:", JSON.stringify(selectedPresets));
@@ -1027,14 +1033,18 @@
   elDelBtn.addEventListener("click", function () {
     var eventId = elEventId.value;
     if (!eventId) return;
-    if (!confirm("Delete this appointment?")) return;
-
-    fetch("/calendar/api/events/" + eventId, { method: "DELETE" })
-      .then(function (r) { return r.json(); })
-      .then(function () {
-        getModal().hide();
-        loadEvents();
-      });
+    var proceed = window.appConfirm
+      ? window.appConfirm("Delete this appointment?")
+      : Promise.resolve(window.confirm("Delete this appointment?"));
+    proceed.then(function (ok) {
+      if (!ok) return;
+      fetch("/calendar/api/events/" + eventId, { method: "DELETE" })
+        .then(function (r) { return r.json(); })
+        .then(function () {
+          getModal().hide();
+          loadEvents();
+        });
+    });
   });
 
   /* ── settings modal ── */
@@ -1135,7 +1145,7 @@
   if (settingsSaveBtn) {
     settingsSaveBtn.addEventListener("click", function () {
       var statuses = collectStatusesFromRows();
-      if (!statuses.length) { alert("Add at least one status."); return; }
+      if (!statuses.length) { notify("Add at least one status.", "warning"); return; }
 
       fetch("/calendar/api/statuses", {
         method: "PUT",
@@ -1144,7 +1154,7 @@
       })
         .then(function (r) { return r.json(); })
         .then(function (data) {
-          if (data.error) { alert(data.error); return; }
+          if (data.error) { notify(data.error); return; }
           cachedStatuses = data;
           getSettingsModal().hide();
           renderEvents();

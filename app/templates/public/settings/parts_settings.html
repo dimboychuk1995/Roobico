@@ -68,7 +68,7 @@
                         <form method="post"
                               action="{{ url_for('settings.parts_locations_delete', location_id=loc_id) }}"
                               class="d-inline"
-                              onsubmit="return confirm('Delete this location?');">
+                              onsubmit="return appConfirmSubmit(this, 'Delete this location?');">
                           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                           <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
                         </form>
@@ -153,7 +153,7 @@
                         <form method="post"
                               action="{{ url_for('settings.parts_categories_delete', category_id=cat_id) }}"
                               class="d-inline"
-                              onsubmit="return confirm('Delete this category?');">
+                              onsubmit="return appConfirmSubmit(this, 'Delete this category?');">
                           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                           <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
                         </form>

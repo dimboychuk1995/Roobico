@@ -55,6 +55,31 @@
   {%- endif -%}
 {%- endmacro %}
 
+{# Статус work order — ЕДИНЫЕ цвета на всех страницах (список WO, карточка
+   клиента, карточка юнита). paid=зелёный, in progress=синий, остальное=жёлтый. #}
+{% macro wo_status_badge(status) -%}
+  {%- set s = (status or '') | lower | replace('_', ' ') | trim -%}
+  {%- if s == 'paid' -%}
+    <span class="badge text-bg-success">Paid</span>
+  {%- elif s == 'in progress' -%}
+    <span class="badge text-bg-info">In Progress</span>
+  {%- else -%}
+    <span class="badge text-bg-warning">{{ s | title if s else 'Open' }}</span>
+  {%- endif -%}
+{%- endmacro %}
+
+{# Статус оплаты (parts orders, инвойсы): paid / partially_paid / unpaid. #}
+{% macro payment_status_badge(status) -%}
+  {%- set s = (status or '') | lower -%}
+  {%- if s == 'paid' -%}
+    <span class="badge text-bg-success">Paid</span>
+  {%- elif s == 'partially_paid' -%}
+    <span class="badge text-bg-warning">Partially Paid</span>
+  {%- else -%}
+    <span class="badge text-bg-secondary">Unpaid</span>
+  {%- endif -%}
+{%- endmacro %}
+
 {# Пустое состояние списка/таблицы: иконка + заголовок + подсказка.
    Стили — .empty-state в public.css. #}
 {% macro empty_state(title, hint=None) %}

@@ -14,7 +14,7 @@
 }
 
 .cal-title {
-  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-family: "Manrope", "Segoe UI", sans-serif; /* единый шрифт приложения */
   font-weight: 400;
   font-size: 1.15rem;
   white-space: nowrap;
@@ -68,7 +68,7 @@
 }
 
 .cal-day-name {
-  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-family: "Manrope", "Segoe UI", sans-serif; /* единый шрифт приложения */
   font-size: .6875rem;
   font-weight: 500;
   text-transform: uppercase;
@@ -83,7 +83,7 @@
 }
 
 .cal-day-number {
-  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-family: "Manrope", "Segoe UI", sans-serif; /* единый шрифт приложения */
   font-size: 1.5rem;
   font-weight: 400;
   color: #3c4043;
@@ -130,7 +130,7 @@
   align-items: flex-start;
   justify-content: flex-end;
   padding: 0 8px 0 0;
-  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-family: "Manrope", "Segoe UI", sans-serif; /* единый шрифт приложения */
   font-size: .75rem;
   color: #70757a;
   box-sizing: border-box;
@@ -238,7 +238,7 @@
   box-sizing: border-box;
   border: 1px solid rgba(255,255,255,.45);
   color: #fff;
-  font-family: 'Google Sans', Roboto, Arial, sans-serif;
+  font-family: "Manrope", "Segoe UI", sans-serif; /* единый шрифт приложения */
   font-size: .75rem;
   line-height: 1.25;
   overflow: hidden;

@@ -1,6 +1,6 @@
 {% extends "layouts/app_base.html" %}
 {% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
-{% from "components/ui.html" import empty_state %}
+{% from "components/ui.html" import empty_state, payment_status_badge %}
 
 {% block page_title %}Parts{% endblock %}
 
@@ -139,10 +139,10 @@
                                   data-bs-toggle="modal" data-bs-target="#createPartModal">
                       Edit
                     </button>
-                    <form method="post" action="{{ url_for('parts.parts_deactivate', part_id=p._id) }}" class="d-inline">
+                    <form method="post" action="{{ url_for('parts.parts_deactivate', part_id=p._id) }}" class="d-inline"
+                          onsubmit="return appConfirmSubmit(this, 'Deactivate this part?');">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <button class="btn btn-sm btn-outline-danger"
-                              onclick="return confirm('Deactivate this part?');">
+                      <button class="btn btn-sm btn-outline-danger">
                         Deactivate
                       </button>
                     </form>
@@ -260,15 +260,7 @@
                     <td class="text-end fw-semibold">${{ "%.2f"|format(o.total_amount or 0) }}</td>
                     <td class="text-end">${{ "%.2f"|format(o.paid_amount or 0) }}</td>
                     <td class="text-end">${{ "%.2f"|format(o.remaining_balance or 0) }}</td>
-                    <td>
-                      {% if o.payment_status == 'paid' %}
-                        <span class="badge text-bg-success">Paid</span>
-                      {% elif o.payment_status == 'partially_paid' %}
-                        <span class="badge text-bg-warning">Partially Paid</span>
-                      {% else %}
-                        <span class="badge text-bg-secondary">Unpaid</span>
-                      {% endif %}
-                    </td>
+                    <td>{{ payment_status_badge(o.payment_status) }}</td>
                     <td>
                       {% if o.status == 'received' %}
                         <span class="badge text-bg-success">{{ o.status or 'ordered' }}</span>
@@ -401,17 +393,17 @@
               <tbody>
                 {% for p in payments %}
                   <tr>
-                    <td><span class="badge bg-secondary">{{ p.order_number or '-' }}</span></td>
+                    <td><span class="badge text-bg-secondary">{{ p.order_number or '-' }}</span></td>
                     <td>{{ p.vendor or '-' }}</td>
                     <td>
                       {% if p.order_status == 'received' %}
-                        <span class="badge bg-success">{{ p.order_status }}</span>
+                        <span class="badge text-bg-success">{{ p.order_status }}</span>
                       {% else %}
-                        <span class="badge bg-warning text-dark">{{ p.order_status or 'ordered' }}</span>
+                        <span class="badge text-bg-warning">{{ p.order_status or 'ordered' }}</span>
                       {% endif %}
                     </td>
                     <td class="text-end fw-semibold">${{ "%.2f"|format(p.amount or 0) }}</td>
-                    <td><span class="badge bg-secondary text-uppercase">{{ p.payment_method or 'cash' }}</span></td>
+                    <td><span class="badge text-bg-secondary text-uppercase">{{ p.payment_method or 'cash' }}</span></td>
                     <td>{{ p.created_at }}</td>
                     <td>{{ p.notes if p.notes else '-' }}</td>
                     <td class="text-end">

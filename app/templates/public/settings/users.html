@@ -93,12 +93,13 @@
                     </button>
 
                     {% if u.get('_id_str') != (session.get('user_id') or '')|string and u.get('is_active', True) %}
-                      <form method="post" action="{{ url_for('settings.users_deactivate', user_id=u.get('_id_str')) }}" class="d-inline">
+                      <form method="post" action="{{ url_for('settings.users_deactivate', user_id=u.get('_id_str')) }}" class="d-inline"
+                            onsubmit="return appConfirmSubmit(this, 'Deactivate this user?');">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="q" value="{{ q or '' }}">
                         <input type="hidden" name="page" value="{{ pagination.page if pagination else 1 }}">
                         <input type="hidden" name="per_page" value="{{ pagination.per_page if pagination else 20 }}">
-                        <button class="btn btn-sm btn-outline-danger" onclick="return confirm('Deactivate this user?');">
+                        <button class="btn btn-sm btn-outline-danger">
                           Deactivate
                         </button>
                       </form>

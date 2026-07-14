@@ -1,7 +1,7 @@
 {% extends "layouts/app_base.html" %}
 {% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
 {% from "components/unit_recalls.html" import unit_recalls_btn, unit_recalls_modal %}
-{% from "components/ui.html" import empty_state %}
+{% from "components/ui.html" import empty_state, wo_status_badge %}
 {% block page_title %}Unit Details{% endblock %}
 
 {% block app_content %}
@@ -99,13 +99,7 @@
                 {% for item in tab_items %}
                   <tr>
                     <td><span class="badge text-bg-secondary">{{ item.wo_number }}</span></td>
-                    <td>
-                      {% if item.status == 'paid' %}
-                        <span class="badge text-bg-success">paid</span>
-                      {% else %}
-                        <span class="badge text-bg-warning">{{ item.status }}</span>
-                      {% endif %}
-                    </td>
+                    <td>{{ wo_status_badge(item.status) }}</td>
                     <td class="text-end">${{ "%.2f"|format(item.grand_total or 0) }}</td>
                     <td class="text-end">${{ "%.2f"|format(item.paid_amount or 0) }}</td>
                     <td class="text-end fw-semibold">${{ "%.2f"|format(item.remaining_balance or 0) }}</td>

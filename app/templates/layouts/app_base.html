@@ -176,6 +176,15 @@
 
 </div>
 
+{# Flash-сообщения → SweetAlert-тосты. Читает раннер в public_base
+   (после определения appAlert). На auth-страницах flash рендерится
+   инлайном — этот блок есть только во внутреннем layout'е. #}
+{% with flash_messages = get_flashed_messages(with_categories=true) %}
+  {% if flash_messages %}
+  <script type="application/json" id="flashMessages">{{ flash_messages | tojson }}</script>
+  {% endif %}
+{% endwith %}
+
 <script>
   (function () {
     var shell = document.querySelector(".app-shell");
@@ -347,6 +356,10 @@
       resultsBox.innerHTML = "";
       return;
     }
+    // Спиннер сразу — пользователь видит, что поиск пошёл.
+    resultsBox.innerHTML =
+      '<div class="gs-empty"><span class="spinner-border spinner-border-sm me-2"></span>Searching…</div>';
+    showResults();
     debounceTimer = setTimeout(function () { doSearch(q); }, 300);
   });
 
@@ -360,15 +373,19 @@
         renderResults(data.results || []);
       })
       .catch(function (e) {
-        if (e.name !== "AbortError") resultsBox.classList.add("d-none");
+        if (e.name === "AbortError") return;
+        resultsBox.innerHTML = '<div class="gs-empty">Search failed — try again.</div>';
+        showResults();
       });
   }
 
   function positionResults() {
     var rect = input.getBoundingClientRect();
-    var desiredWidth = Math.max(900, rect.width);
-    var maxWidth = Math.max(320, window.innerWidth - rect.left - 16);
-    var width = Math.min(desiredWidth, maxWidth);
+    // Ширина по вьюпорту, а не жёсткие 900px: на ноутбуке дропдаун
+    // не должен перекрывать весь контент.
+    var desiredWidth = Math.max(560, rect.width);
+    var maxWidth = Math.max(320, window.innerWidth - rect.left - 24);
+    var width = Math.min(desiredWidth, maxWidth, 760);
     resultsBox.style.position = "fixed";
     resultsBox.style.top  = (rect.bottom + 4) + "px";
     resultsBox.style.left = rect.left + "px";

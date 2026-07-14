@@ -139,7 +139,8 @@
       })
       .catch(function () {
         if (self.progress) self.progress.style.display = "none";
-        alert("Upload failed — network error.");
+        if (window.appAlert) window.appAlert("Upload failed — network error.", "error");
+        else window.alert("Upload failed — network error.");
       });
   };
 

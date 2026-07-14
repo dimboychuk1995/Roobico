@@ -26,7 +26,7 @@
                     data-preset-id="{{ p.id }}">Edit</button>
             <form method="post"
                   action="{{ url_for('settings.wo_presets_delete', preset_id=p.id) }}"
-                  onsubmit="return confirm('Delete this preset?');">
+                  onsubmit="return appConfirmSubmit(this, 'Delete this preset?');">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
               <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
             </form>

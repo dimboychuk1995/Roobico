@@ -108,7 +108,7 @@
                     >
                       Edit
                     </button>
-                    <form method="post" action="{{ url_for('settings.work_orders_labor_rates_delete', rate_id=rate.id) }}" onsubmit="return confirm('Delete this labor rate?');">
+                    <form method="post" action="{{ url_for('settings.work_orders_labor_rates_delete', rate_id=rate.id) }}" onsubmit="return appConfirmSubmit(this, 'Delete this labor rate?');">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                       <button class="btn btn-sm btn-outline-danger" type="submit">Delete</button>
                     </form>

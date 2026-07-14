@@ -1,6 +1,6 @@
 {% extends "layouts/app_base.html" %}
 {% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
-{% from "components/ui.html" import empty_state %}
+{% from "components/ui.html" import empty_state, wo_status_badge %}
 {% block page_title %}Customer Details{% endblock %}
 
 {% block app_content %}
@@ -144,13 +144,7 @@
                 {% for item in tab_items %}
                   <tr>
                     <td><span class="badge text-bg-secondary">{{ item.wo_number }}</span></td>
-                    <td>
-                      {% if item.status == 'paid' %}
-                        <span class="badge text-bg-success">paid</span>
-                      {% else %}
-                        <span class="badge text-bg-warning">{{ item.status }}</span>
-                      {% endif %}
-                    </td>
+                    <td>{{ wo_status_badge(item.status) }}</td>
                     <td>{{ item.unit }}</td>
                     <td class="text-end">${{ "%.2f"|format(item.grand_total or 0) }}</td>
                     <td class="text-end">${{ "%.2f"|format(item.paid_amount or 0) }}</td>
@@ -620,7 +614,7 @@
     );
     if (input === null) return;
     var emails = input.split(',').map(function (e) { return e.trim(); }).filter(function (e) { return e.length > 0; });
-    if (!emails.length) { alert('Please provide at least one email.'); return; }
+    if (!emails.length) { appAlert('Please provide at least one email.', 'warning'); return; }
 
     btn.disabled = true; var original = btn.textContent; btn.textContent = 'Sending…';
     fetch('/portal/api/customers/' + encodeURIComponent(cid) + '/send-link', {
@@ -632,13 +626,18 @@
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
       .then(function (res) {
         if (!res.ok || !res.body.ok) {
-          alert('Failed: ' + (res.body && res.body.error || 'Unknown error'));
+          appAlert('Failed: ' + (res.body && res.body.error || 'Unknown error'), 'error');
         } else {
-          alert('Portal link sent to:\n' + (res.body.sent_to || []).join(', ') +
-                '\n\nLink valid until: ' + (res.body.expires_at || ''));
+          Swal.fire({
+            icon: 'success',
+            title: 'Portal link sent',
+            html: (res.body.sent_to || []).join(', ') +
+                  (res.body.expires_at ? '<br><small>Valid until ' + res.body.expires_at + '</small>' : ''),
+            confirmButtonColor: '#1a7a42',
+          });
         }
       })
-      .catch(function (err) { alert('Network error: ' + err.message); })
+      .catch(function (err) { appAlert('Network error: ' + err.message, 'error'); })
       .finally(function () { btn.disabled = false; btn.textContent = original; });
   });
 })();
