@@ -11,7 +11,7 @@
 
 {% if card_saved %}
 <div class="alert alert-success" role="alert">
-  Card saved. Future renewals will be charged automatically.
+  Payment method saved. Future renewals will be charged automatically.
 </div>
 {% endif %}
 
@@ -54,19 +54,17 @@
         {% if subscription.is_trial %}
           <span class="badge text-bg-info">Trial</span>
         {% endif %}
-        <div class="mt-2">
-          {% if subscription.until %}
-            <div class="fw-semibold">Paid until {{ subscription.until_display }}</div>
+        {% if subscription.until %}
+          <div class="fs-5 fw-semibold mt-2">Paid until {{ subscription.until_display }}</div>
+          <div class="text-muted small">
             {% if subscription.days_left is not none and subscription.days_left >= 0 %}
-              <div class="text-muted small">{{ subscription.days_left }} day{{ '' if subscription.days_left == 1 else 's' }} left</div>
+              {{ subscription.days_left }} day{{ '' if subscription.days_left == 1 else 's' }} left ·
             {% endif %}
-          {% else %}
-            <div class="text-muted small">No subscription period set.</div>
-          {% endif %}
-        </div>
-        <div class="text-muted small mt-2">
-          Renewals are billed automatically 3 days before the period ends.
-        </div>
+            renews automatically 3 days before the period ends
+          </div>
+        {% else %}
+          <div class="text-muted small mt-2">No subscription period set.</div>
+        {% endif %}
         <form method="post" action="{{ url_for('billing.pay_now') }}" class="mt-3">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-primary btn-sm"
@@ -118,27 +116,27 @@
   <!-- Payment method -->
   <div class="col-12 col-md-6 col-xl-4">
     <div class="card h-100">
-      <div class="card-body d-flex flex-column">
+      <div class="card-body">
         <h2 class="h6 text-muted text-uppercase mb-2">Payment method</h2>
         {% if card and card.last4 %}
           <div class="fw-semibold">{{ (card.brand or 'Card')|capitalize }} •••• {{ card.last4 }}</div>
           {% if card.exp_month and card.exp_year %}
             <div class="text-muted small">Expires {{ card.exp_month }}/{{ card.exp_year }}</div>
           {% endif %}
+          <div class="text-muted small mt-2">
+            Renewals are charged to this card automatically. Paying an invoice
+            with a different card replaces it.
+          </div>
         {% elif card %}
           <div class="fw-semibold">Card on file</div>
+          <div class="text-muted small mt-2">Renewals are charged automatically.</div>
         {% else %}
           <div class="text-muted small">
-            No card on file — each renewal is sent as an invoice by email.
-            Add a card to pay automatically.
+            No card on file yet. Your card is saved automatically when you pay
+            your first invoice — after that, renewals are charged to it without
+            any action from you.
           </div>
         {% endif %}
-        <form method="post" action="{{ url_for('billing.setup_card') }}" class="mt-auto pt-3">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="btn btn-primary btn-sm" {% if not stripe_ready %}disabled{% endif %}>
-            {{ 'Update card' if card else 'Add card' }}
-          </button>
-        </form>
       </div>
     </div>
   </div>
@@ -188,7 +186,9 @@
       </table>
     </div>
     {% else %}
-    <div class="text-muted small">No invoices yet. Your first invoice arrives when the trial ends.</div>
+    <div class="text-muted small">
+      No invoices yet.{% if subscription.is_trial %} Your first invoice arrives when the trial ends.{% endif %}
+    </div>
     {% endif %}
   </div>
 </div>
