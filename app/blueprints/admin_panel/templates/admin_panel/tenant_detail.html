@@ -74,8 +74,44 @@
     </div>
     <div class="billing-card" style="background:#0b3b27; border-color:#166534;">
       <div class="billing-label" style="color:#86efac;">Monthly total</div>
-      <div class="billing-value" style="color:#bbf7d0;">${{ '{:,}'.format(billing.monthly_total) }}</div>
-      <div class="billing-sub" style="color:#86efac;">based on currently active counts</div>
+      <div class="billing-value" style="color:#bbf7d0;">${{ '{:,.2f}'.format(billing.effective_total) }}</div>
+      <div class="billing-sub" style="color:#86efac;">
+        {% if billing.discount_desc %}
+          {{ billing.discount_desc }} · computed ${{ '{:,}'.format(billing.monthly_total) }}
+        {% else %}
+          based on currently active counts
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="billing-card">
+      <div class="billing-label">Custom pricing</div>
+      <form method="post"
+            action="{{ url_for('admin_panel.tenant_set_discount', tenant_id=tenant._id|string) }}"
+            class="sub-form" style="margin-top:.5rem;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>
+          <span>Mode</span>
+          <select name="mode">
+            <option value="none" {% if not billing.discount %}selected{% endif %}>Standard rate</option>
+            <option value="percent" {% if billing.discount.type == 'percent' %}selected{% endif %}>Discount %</option>
+            <option value="fixed" {% if billing.discount.type == 'fixed' %}selected{% endif %}>Fixed $/mo</option>
+          </select>
+        </label>
+        <label>
+          <span>Value</span>
+          <input type="number" name="value" min="0" step="0.01"
+                 value="{{ billing.discount.value if billing.discount else '' }}">
+        </label>
+        <label class="full">
+          <span>Note (audit log)</span>
+          <textarea name="note" maxlength="200"
+                    placeholder="e.g. Founding customer deal">{{ billing.discount.note or '' }}</textarea>
+        </label>
+        <div class="full">
+          <button type="submit" class="btn success">Apply pricing</button>
+        </div>
+      </form>
     </div>
   </div>
 </div>
@@ -296,29 +332,29 @@
     <div class="sub-card" style="flex:2 1 480px;">
       <div class="billing-label" style="margin-bottom:.5rem;">Charge / invoice this tenant now</div>
       <div class="billing-sub" style="margin-bottom:.6rem;">
-        Computed amount based on current active counts:
-        <strong style="color:#bbf7d0;">${{ '{:,}'.format(billing.monthly_total) }}/mo</strong>
-        ({{ billing.locations_active }} loc + {{ billing.full_active }} full + {{ billing.mech_active }} mech).
+        Amount to bill:
+        <strong style="color:#bbf7d0;">${{ '{:,.2f}'.format(billing.effective_total) }}/mo</strong>
+        ({{ billing.locations_active }} loc + {{ billing.full_active }} full + {{ billing.mech_active }} mech{% if billing.discount_desc %}, {{ billing.discount_desc }}{% endif %}).
       </div>
 
       <div class="sub-quick">
         <form method="post"
               action="{{ url_for('billing.admin_send_invoice', tenant_id=tenant._id|string) }}"
-              onsubmit="return confirm('Send a Stripe invoice for ${{ '{:,}'.format(billing.monthly_total) }} to {{ tenant.name }}? They will receive an email with a hosted payment page.');"
+              onsubmit="return confirm('Send a Stripe invoice for ${{ '{:,.2f}'.format(billing.effective_total) }} to {{ tenant.name }}? They will receive an email with a hosted payment page.');"
               style="margin:0;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="btn success" {% if billing.monthly_total <= 0 %}disabled{% endif %}>
+          <button type="submit" class="btn success" {% if billing.effective_total <= 0 %}disabled{% endif %}>
             Send invoice (hosted page)
           </button>
         </form>
 
         <form method="post"
               action="{{ url_for('billing.admin_charge_now', tenant_id=tenant._id|string) }}"
-              onsubmit="return confirm('Charge the saved card on file for ${{ '{:,}'.format(billing.monthly_total) }}? This bills immediately.');"
+              onsubmit="return confirm('Charge the saved card on file for ${{ '{:,.2f}'.format(billing.effective_total) }}? This bills immediately.');"
               style="margin:0;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn"
-                  {% if billing.monthly_total <= 0 or not stripe_info.default_card %}disabled{% endif %}>
+                  {% if billing.effective_total <= 0 or not stripe_info.default_card %}disabled{% endif %}>
             Charge saved card
           </button>
         </form>

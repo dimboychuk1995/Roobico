@@ -23,6 +23,7 @@ from flask import current_app
 
 from app.extensions import get_master_db
 from app.utils.stripe_client import (
+    apply_billing_discount,
     charge_saved_card,
     compute_amount_cents,
     count_billable,
@@ -96,7 +97,9 @@ def run_renewals(*, now: datetime | None = None, dry_run: bool = False,
             continue
 
         counts = count_billable(tenant["_id"])
-        if compute_amount_cents(counts) <= 0:
+        amount_cents, _ = apply_billing_discount(compute_amount_cents(counts), tenant)
+        if amount_cents <= 0:
+            # Нет billable-юнитов либо админ поставил фикс $0 (бесплатный тенант).
             stats["skipped_no_billable"] += 1
             continue
 

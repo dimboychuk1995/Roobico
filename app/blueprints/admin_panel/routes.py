@@ -176,7 +176,14 @@ def tenant_detail(tenant_id: str):
     mech_cost = mech_active * PRICE_PER_MECHANIC
     monthly_total = locations_cost + full_cost + mech_cost
 
+    # Индивидуальная цена (скидка % / фикс) — то, что реально уйдёт в инвойс.
+    from app.utils.stripe_client import apply_billing_discount
+    effective_cents, discount_desc = apply_billing_discount(monthly_total * 100, tenant)
+
     billing = {
+        "discount": tenant.get("billing_discount") or {},
+        "discount_desc": discount_desc,
+        "effective_total": effective_cents / 100,
         "locations_total": len(shops),
         "locations_active": locations_active,
         "locations_inactive": locations_inactive,
@@ -257,6 +264,72 @@ def tenant_detail(tenant_id: str):
         stripe_info=stripe_info,
         invoices=invoices,
     )
+
+
+@admin_panel_bp.post("/admin/tenants/<tenant_id>/set-discount")
+@admin_required
+def tenant_set_discount(tenant_id: str):
+    """Индивидуальная цена тенанта: скидка в % или фиксированная сумма/мес.
+    Применяется ко всем будущим инвойсам (create_billing_invoice)."""
+    admin = get_current_admin()
+    master = get_master_db()
+    tid = _oid(tenant_id)
+    tenant = master.tenants.find_one({"_id": tid})
+    if not tenant:
+        abort(404)
+
+    mode = (request.form.get("mode") or "").strip().lower()
+    note = (request.form.get("note") or "").strip()[:200]
+    before = tenant.get("billing_discount")
+
+    if mode == "none":
+        new_discount = None
+    elif mode in ("percent", "fixed"):
+        try:
+            value = float(request.form.get("value") or "")
+        except ValueError:
+            flash("Discount value must be a number.", "error")
+            return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
+        if mode == "percent" and not (0 < value <= 100):
+            flash("Percent discount must be between 0 and 100.", "error")
+            return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
+        if mode == "fixed" and value < 0:
+            flash("Fixed price cannot be negative.", "error")
+            return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
+        new_discount = {"type": mode, "value": value, "note": note}
+    else:
+        flash("Invalid discount mode.", "error")
+        return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
+
+    if new_discount is None:
+        master.tenants.update_one(
+            {"_id": tid},
+            {"$unset": {"billing_discount": ""},
+             "$set": {"updated_at": datetime.utcnow()}},
+        )
+    else:
+        master.tenants.update_one(
+            {"_id": tid},
+            {"$set": {"billing_discount": new_discount,
+                      "updated_at": datetime.utcnow()}},
+        )
+
+    log_admin_action(
+        admin,
+        action="tenant.billing.set_discount",
+        target_type="tenant",
+        target_id=tid,
+        before={"billing_discount": before},
+        after={"billing_discount": new_discount},
+        extra={"tenant_name": tenant.get("name"), "note": note},
+    )
+    if new_discount is None:
+        flash("Custom pricing removed — tenant is billed at the standard rate.", "success")
+    elif mode == "percent":
+        flash(f"Discount set: {value:g}% off the computed monthly total.", "success")
+    else:
+        flash(f"Custom price set: ${value:,.2f}/mo regardless of unit counts.", "success")
+    return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
 
 
 @admin_panel_bp.post("/admin/tenants/<tenant_id>/toggle-active")

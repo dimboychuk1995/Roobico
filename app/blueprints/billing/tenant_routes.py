@@ -30,6 +30,7 @@ from app.utils.stripe_client import (
     PRICE_PER_FULL_USER_CENTS,
     PRICE_PER_LOCATION_CENTS,
     PRICE_PER_MECHANIC_CENTS,
+    apply_billing_discount,
     compute_amount_cents,
     count_billable,
     create_card_setup_session,
@@ -93,6 +94,8 @@ def subscription_page():
         return redirect(url_for("main.index"))
 
     counts = count_billable(tenant["_id"])
+    base_cents = compute_amount_cents(counts)
+    effective_cents, discount_desc = apply_billing_discount(base_cents, tenant)
     price = {
         "locations": counts["locations_active"],
         "full_users": counts["full_active"],
@@ -103,7 +106,9 @@ def subscription_page():
         "per_location": PRICE_PER_LOCATION_CENTS / 100,
         "per_full_user": PRICE_PER_FULL_USER_CENTS / 100,
         "per_mechanic": PRICE_PER_MECHANIC_CENTS / 100,
-        "monthly_total": compute_amount_cents(counts) / 100,
+        "base_total": base_cents / 100,
+        "discount_desc": discount_desc,
+        "monthly_total": effective_cents / 100,
     }
 
     invoices = list(

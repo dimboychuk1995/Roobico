@@ -635,6 +635,123 @@ def test_blocked_owner_login_lands_on_billing(client, app, seed):
         _restore_tenant_a(app, seed)
 
 
+# ---------------------------------------------------------------------------
+# Индивидуальная цена тенанта (скидка % / фикс).
+# ---------------------------------------------------------------------------
+
+def test_apply_billing_discount_rules():
+    from app.utils.stripe_client import apply_billing_discount
+    # Нет скидки / мусор в поле → сумма как есть.
+    assert apply_billing_discount(15000, {}) == (15000, None)
+    assert apply_billing_discount(15000, {"billing_discount": {"type": "percent"}}) == (15000, None)
+    assert apply_billing_discount(15000, {"billing_discount": {"type": "percent", "value": "abc"}}) == (15000, None)
+    assert apply_billing_discount(15000, {"billing_discount": {"type": "percent", "value": 150}}) == (15000, None)
+    # Процент.
+    amount, desc = apply_billing_discount(15000, {"billing_discount": {"type": "percent", "value": 20}})
+    assert amount == 12000 and "20" in desc
+    # Фикс перекрывает расчёт (и может быть выше расчётного).
+    amount, desc = apply_billing_discount(15000, {"billing_discount": {"type": "fixed", "value": 99.5}})
+    assert amount == 9950 and desc == "custom price"
+    amount, _ = apply_billing_discount(15000, {"billing_discount": {"type": "fixed", "value": 0}})
+    assert amount == 0
+
+
+def test_renewal_skips_free_custom_price_tenant(app, seed, renewal_env):
+    from app.extensions import get_master_db
+    with app.app_context():
+        _make_billable_tenant(
+            get_master_db(), "renew-free",
+            subscription_status="active",
+            subscription_until=datetime.utcnow() + timedelta(days=1),
+            billing_discount={"type": "fixed", "value": 0},
+            _test_has_card=True,
+        )
+
+    stats = _run(app, "renew-free")
+    assert stats["skipped_no_billable"] == 1
+    assert renewal_env == []
+
+
+def test_tenant_billing_page_shows_discount(client, app, seed):
+    from tests.conftest import login
+    from app.extensions import get_master_db
+    with app.app_context():
+        get_master_db().tenants.update_one(
+            {"_id": seed["tenant_a"]["_id"]},
+            {"$set": {"billing_discount": {"type": "percent", "value": 25}}},
+        )
+    try:
+        login(client)
+        resp = client.get("/settings/billing")
+        assert resp.status_code == 200
+        assert "discount" in resp.get_data(as_text=True).lower()
+    finally:
+        with app.app_context():
+            get_master_db().tenants.update_one(
+                {"_id": seed["tenant_a"]["_id"]},
+                {"$unset": {"billing_discount": ""}},
+            )
+
+
+def _admin_client(client, app):
+    """Создаёт админа и логинит тестовый client в админку."""
+    from werkzeug.security import generate_password_hash
+    from app.extensions import get_master_db
+    with app.app_context():
+        get_master_db().admin_users.update_one(
+            {"email": "admin@test.local"},
+            {"$set": {
+                "email": "admin@test.local",
+                "password_hash": generate_password_hash("admin-pass-123"),
+                "is_active": True,
+                "created_at": datetime.utcnow(),
+            }},
+            upsert=True,
+        )
+    page = client.get("/admin/login").get_data(as_text=True)
+    import re
+    token = re.search(r'name="csrf_token" value="([^"]+)"', page).group(1)
+    resp = client.post("/admin/login", data={
+        "email": "admin@test.local", "password": "admin-pass-123",
+        "csrf_token": token,
+    })
+    assert resp.status_code == 302
+    return token
+
+
+def test_admin_sets_and_clears_discount(client, app, seed):
+    from app.extensions import get_master_db
+    token = _admin_client(client, app)
+    tid = str(seed["tenant_a"]["_id"])
+
+    # Ставим 30%.
+    resp = client.post(f"/admin/tenants/{tid}/set-discount", data={
+        "mode": "percent", "value": "30", "note": "test deal", "csrf_token": token,
+    })
+    assert resp.status_code == 302
+    with app.app_context():
+        t = get_master_db().tenants.find_one({"_id": seed["tenant_a"]["_id"]})
+        assert t["billing_discount"] == {"type": "percent", "value": 30.0, "note": "test deal"}
+        assert get_master_db().admin_audit.count_documents(
+            {"action": "tenant.billing.set_discount", "target_id": t["_id"]}) >= 1
+
+    # Невалидный процент не проходит.
+    client.post(f"/admin/tenants/{tid}/set-discount", data={
+        "mode": "percent", "value": "150", "csrf_token": token,
+    })
+    with app.app_context():
+        t = get_master_db().tenants.find_one({"_id": seed["tenant_a"]["_id"]})
+        assert t["billing_discount"]["value"] == 30.0
+
+    # Снимаем.
+    client.post(f"/admin/tenants/{tid}/set-discount", data={
+        "mode": "none", "csrf_token": token,
+    })
+    with app.app_context():
+        t = get_master_db().tenants.find_one({"_id": seed["tenant_a"]["_id"]})
+        assert "billing_discount" not in t
+
+
 def test_blocked_non_owner_cannot_login(client, app, seed):
     from werkzeug.security import generate_password_hash
     from app.extensions import get_master_db

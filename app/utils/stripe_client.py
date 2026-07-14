@@ -123,6 +123,30 @@ def describe_breakdown(counts: dict) -> str:
     return " + ".join(parts) if parts else "no billable units"
 
 
+def apply_billing_discount(amount_cents: int, tenant: dict) -> tuple:
+    """
+    Индивидуальная цена тенанта. tenant.billing_discount (ставится из
+    админки, admin_panel.tenant_set_discount):
+      {"type": "percent", "value": 20}  → скидка 20% от расчётной суммы
+      {"type": "fixed",   "value": 250} → фикс $250/мес, расчёт игнорируется
+
+    Возвращает (amount_cents_после_скидки, описание | None). Невалидная
+    или отсутствующая скидка — сумма без изменений.
+    """
+    discount = tenant.get("billing_discount") or {}
+    dtype = discount.get("type")
+    try:
+        value = float(discount.get("value"))
+    except (TypeError, ValueError):
+        return amount_cents, None
+    if dtype == "percent" and 0 < value <= 100:
+        discounted = int(round(amount_cents * (100.0 - value) / 100.0))
+        return discounted, f"{value:g}% discount"
+    if dtype == "fixed" and value >= 0:
+        return int(round(value * 100)), "custom price"
+    return amount_cents, None
+
+
 # ---------------------------------------------------------------------------
 # Customer.
 # ---------------------------------------------------------------------------
@@ -191,18 +215,24 @@ def create_billing_invoice(
 
     customer_id = get_or_create_customer(tenant)
     counts = count_billable(tenant["_id"])
-    amount = compute_amount_cents(counts)
+    amount, discount_desc = apply_billing_discount(compute_amount_cents(counts), tenant)
     if amount <= 0:
-        raise ValueError("Tenant has no billable units (no active locations/users).")
+        raise ValueError(
+            "Tenant has no billable amount (no active locations/users, "
+            "or the custom price is $0)."
+        )
 
     period_label = f"{period_days} days"
+    line_description = _line_description(counts, period_label)
+    if discount_desc:
+        line_description += f" — {discount_desc}"
 
     # Step 1: pending invoice item attached to the customer.
     s.InvoiceItem.create(
         customer=customer_id,
         amount=amount,
         currency=BILLING_CURRENCY,
-        description=_line_description(counts, period_label),
+        description=line_description,
         metadata={
             "tenant_id": str(tenant["_id"]),
             "locations_active": str(counts["locations_active"]),
@@ -272,6 +302,7 @@ def create_billing_invoice(
                 "period_days": period_days,
                 "collection_method": invoice_kwargs["collection_method"],
                 "purpose": purpose,
+                "discount": discount_desc,
                 "hosted_invoice_url": getattr(inv, "hosted_invoice_url", None),
             },
             "$setOnInsert": {

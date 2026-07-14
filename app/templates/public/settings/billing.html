@@ -85,6 +85,14 @@
           <span>{{ price.mechanics }} mechanic{{ '' if price.mechanics == 1 else 's' }} × ${{ '%.0f'|format(price.per_mechanic) }}</span>
           <span>${{ '%.2f'|format(price.mech_cost) }}</span>
         </div>
+        {% if price.discount_desc and price.base_total > price.monthly_total %}
+        <div class="d-flex justify-content-between small text-success">
+          <span>{{ price.discount_desc|capitalize }}</span>
+          <span>&minus;${{ '%.2f'|format(price.base_total - price.monthly_total) }}</span>
+        </div>
+        {% elif price.discount_desc %}
+        <div class="small text-muted">Custom pricing applied</div>
+        {% endif %}
         <hr class="my-2">
         <div class="d-flex justify-content-between fw-semibold">
           <span>Total per month</span>
