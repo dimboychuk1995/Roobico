@@ -640,14 +640,20 @@ def _pay_now_env(app, monkeypatch, calls):
     app.config["STRIPE_SECRET_KEY"] = "sk_test_fake"
 
     def fake_invoice(tenant, **kwargs):
-        calls.append(tenant["slug"])
+        calls.append(("invoice", tenant["slug"]))
         return {"invoice_id": "in_selfsvc", "amount_cents": 15000,
                 "hosted_url": "https://invoice.stripe.com/i/self-service"}
 
+    def fake_checkout(tenant, success_url, cancel_url, **kwargs):
+        calls.append(("checkout", tenant["slug"]))
+        return "https://checkout.stripe.com/c/self-service"
+
     monkeypatch.setattr(tenant_routes, "create_billing_invoice", fake_invoice)
+    monkeypatch.setattr(tenant_routes, "create_payment_checkout_session", fake_checkout)
 
 
-def test_pay_now_creates_invoice_and_redirects(client, app, seed, monkeypatch):
+def test_pay_now_without_card_goes_through_checkout(client, app, seed, monkeypatch):
+    """Без сохранённой карты — Checkout (он гарантированно сохраняет карту)."""
     from tests.conftest import login, get_csrf_token
     calls = []
     _pay_now_env(app, monkeypatch, calls)
@@ -658,8 +664,34 @@ def test_pay_now_creates_invoice_and_redirects(client, app, seed, monkeypatch):
     finally:
         app.config["STRIPE_SECRET_KEY"] = ""
     assert resp.status_code == 302
+    assert resp.headers["Location"] == "https://checkout.stripe.com/c/self-service"
+    assert calls == [("checkout", "test-a")]
+
+
+def test_pay_now_with_card_uses_hosted_invoice(client, app, seed, monkeypatch):
+    from tests.conftest import login, get_csrf_token
+    from app.extensions import get_master_db
+    calls = []
+    _pay_now_env(app, monkeypatch, calls)
+    with app.app_context():
+        get_master_db().tenants.update_one(
+            {"_id": seed["tenant_a"]["_id"]},
+            {"$set": {"stripe_default_card": {"pm_id": "pm_x", "last4": "4242"}}},
+        )
+    try:
+        login(client)
+        token = get_csrf_token(client)
+        resp = client.post("/settings/billing/pay-now", data={"csrf_token": token})
+    finally:
+        app.config["STRIPE_SECRET_KEY"] = ""
+        with app.app_context():
+            get_master_db().tenants.update_one(
+                {"_id": seed["tenant_a"]["_id"]},
+                {"$unset": {"stripe_default_card": ""}},
+            )
+    assert resp.status_code == 302
     assert resp.headers["Location"] == "https://invoice.stripe.com/i/self-service"
-    assert calls == ["test-a"]
+    assert calls == [("invoice", "test-a")]
 
 
 def test_pay_now_reuses_open_invoice(client, app, seed, monkeypatch):
@@ -698,7 +730,7 @@ def test_blocked_owner_can_pay_now(client, app, seed, monkeypatch):
     try:
         resp = client.post("/settings/billing/pay-now", data={"csrf_token": token})
         assert resp.status_code == 302
-        assert resp.headers["Location"] == "https://invoice.stripe.com/i/self-service"
+        assert resp.headers["Location"] == "https://checkout.stripe.com/c/self-service"
     finally:
         app.config["STRIPE_SECRET_KEY"] = ""
         _restore_tenant_a(app, seed)

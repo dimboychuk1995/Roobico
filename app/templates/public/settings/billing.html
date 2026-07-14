@@ -9,7 +9,12 @@
   </div>
 </div>
 
-{% if card_saved %}
+{% if payment_done %}
+<div class="alert alert-success" role="alert">
+  Payment received — your subscription will update here within a few seconds.
+  Your card is saved for automatic renewals.
+</div>
+{% elif card_saved %}
 <div class="alert alert-success" role="alert">
   Payment method saved. Future renewals will be charged automatically.
 </div>

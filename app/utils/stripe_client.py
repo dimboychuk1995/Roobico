@@ -468,6 +468,57 @@ def describe_payment_method(pm_id: str) -> dict:
     return _payment_method_cache_entry(s.PaymentMethod.retrieve(pm_id))
 
 
+def create_payment_checkout_session(
+    tenant: dict, success_url: str, cancel_url: str, period_days: int = 30
+) -> str:
+    """
+    Оплата подписки через Stripe Checkout (mode=payment) с гарантированным
+    сохранением карты: hosted-страница инвойса карту к клиенту не прикрепляет
+    (проверено и в sandbox, и в live), а Checkout с setup_future_usage —
+    обязан. Checkout создаёт инвойс (invoice_creation) с теми же metadata,
+    что и create_billing_invoice, поэтому webhook invoice.paid продлевает
+    подписку обычным путём, а payment_method.attached делает карту дефолтной.
+    """
+    s = _stripe()
+    customer_id = get_or_create_customer(tenant)
+    counts = count_billable(tenant["_id"])
+    amount, discount_desc = apply_billing_discount(compute_amount_cents(counts), tenant)
+    if amount <= 0:
+        raise ValueError(
+            "Tenant has no billable amount (no active locations/users, "
+            "or the custom price is $0)."
+        )
+    line_description = _line_description(counts, f"{period_days} days")
+    if discount_desc:
+        line_description += f" — {discount_desc}"
+
+    metadata = {
+        "tenant_id": str(tenant["_id"]),
+        "tenant_slug": tenant.get("slug") or "",
+        "period_days": str(period_days),
+        "purpose": "self_service_checkout",
+    }
+    sess = s.checkout.Session.create(
+        mode="payment",
+        customer=customer_id,
+        line_items=[{
+            "price_data": {
+                "currency": BILLING_CURRENCY,
+                "product_data": {"name": line_description},
+                "unit_amount": amount,
+            },
+            "quantity": 1,
+        }],
+        # Карта сохраняется для off-session списаний (renewal-cron).
+        payment_intent_data={"setup_future_usage": "off_session"},
+        invoice_creation={"enabled": True, "invoice_data": {"metadata": metadata}},
+        metadata=metadata,
+        success_url=success_url,
+        cancel_url=cancel_url,
+    )
+    return sess.url
+
+
 def create_card_setup_session(
     tenant: dict, success_url: str, cancel_url: str
 ) -> str:

@@ -35,6 +35,7 @@ from app.utils.stripe_client import (
     count_billable,
     create_billing_invoice,
     create_card_setup_session,
+    create_payment_checkout_session,
     stripe_configured,
 )
 from . import billing_bp
@@ -135,6 +136,7 @@ def subscription_page():
         stripe_ready=stripe_configured(),
         grace_days=PAST_DUE_GRACE_DAYS,
         card_saved=request.args.get("card") == "saved",
+        payment_done=request.args.get("paid") == "1",
     )
 
 
@@ -166,25 +168,37 @@ def pay_now():
     if open_invoice and open_invoice.get("hosted_invoice_url"):
         return redirect(open_invoice["hosted_invoice_url"])
 
+    base = url_for("billing.subscription_page", _external=True)
     try:
-        result = create_billing_invoice(
-            tenant, auto_charge=False, purpose="self_service", days_until_due=7,
-        )
+        if tenant.get("stripe_default_card"):
+            # Карта уже на файле — обычный инвойс, hosted-страница даст
+            # оплатить сохранённой картой в один клик.
+            result = create_billing_invoice(
+                tenant, auto_charge=False, purpose="self_service", days_until_due=7,
+            )
+            target_url = result.get("hosted_url")
+        else:
+            # Карты нет — Checkout с setup_future_usage: hosted-инвойс карту
+            # не сохраняет, а Checkout прикрепит её для автосписаний.
+            target_url = create_payment_checkout_session(
+                tenant,
+                success_url=base + "?paid=1",
+                cancel_url=base,
+            )
     except ValueError as e:
         flash(str(e), "error")
         return redirect(url_for("billing.subscription_page"))
     except stripe.error.StripeError:
         current_app.logger.exception(
-            "Failed to create self-service invoice for tenant %s", tenant.get("slug")
+            "Failed to start self-service payment for tenant %s", tenant.get("slug")
         )
-        flash("Could not create the invoice. Please try again later.", "error")
+        flash("Could not start the payment. Please try again later.", "error")
         return redirect(url_for("billing.subscription_page"))
 
-    hosted_url = result.get("hosted_url")
-    if not hosted_url:
+    if not target_url:
         flash("Invoice created — check your email for the payment link.", "success")
         return redirect(url_for("billing.subscription_page"))
-    return redirect(hosted_url)
+    return redirect(target_url)
 
 
 @billing_bp.post("/settings/billing/setup-card")
