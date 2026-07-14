@@ -38,8 +38,15 @@ def test_page_renders(logged_in, path, marker):
 
 
 def test_auth_pages_render(client):
-    for path in ("/", "/forgot-password"):
-        resp = client.get(path)
-        assert resp.status_code == 200
-        body = resp.get_data(as_text=True)
-        assert "css/auth.css" in body, f"{path}: auth.css not linked"
+    # Лендинг ("/") — на своём landing.css; forgot/reset остались на auth.css.
+    resp = client.get("/")
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    assert "css/landing.css" in body, "/: landing.css not linked"
+    assert "Start free 30-day trial" in body
+    assert "No credit card required" in body
+    assert 'name="password_confirm"' in body
+
+    resp = client.get("/forgot-password")
+    assert resp.status_code == 200
+    assert "css/auth.css" in resp.get_data(as_text=True), "/forgot-password: auth.css not linked"

@@ -68,14 +68,9 @@ def login_user(
 
 
 def logout_user() -> None:
-    session.pop(SESSION_USER_ID, None)
-    session.pop(SESSION_TENANT_ID, None)
-    session.pop(SESSION_TENANT_DB, None)
-
-    # ✅ shop context
-    session.pop(SESSION_SHOP_ID, None)
-    session.pop(SESSION_SHOP_IDS, None)
-
+    # Полная очистка: выборочные pop'ы оставляли в сессии хвосты
+    # (например, user_permissions), которым нечего делать после логаута.
+    session.clear()
     session.modified = True
 
 

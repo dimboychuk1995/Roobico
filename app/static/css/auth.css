@@ -1,243 +1,423 @@
 /*
- * Auth-страницы (логин / forgot password / reset password).
- * Вынесено из <style>-блоков трёх шаблонов — правки дизайна делать здесь.
- * Компактный вариант для forgot/reset включается классом .auth-compact
- * на .auth-split.
+ * Auth-страницы (логин / регистрация / forgot password / reset password).
+ * Правки дизайна делать здесь. Компактный вариант для forgot/reset
+ * включается классом .auth-compact на .auth-split.
+ *
+ * ВАЖНО: public_base глушит анимации глобально (`* { animation: none !important }`),
+ * поэтому анимации здесь объявлены классами с !important — специфичность
+ * класса перебивает `*`.
  */
-  body.public-shell {
-    margin: 0;
-    padding: 0;
-    min-height: 100vh;
-    background: #f5f5f5;
-  }
-  .auth-split {
-    display: flex;
-    min-height: 100vh;
-  }
-  /* LEFT PANEL — login */
-  .auth-left {
-    width: 480px;
-    min-width: 380px;
-    background: #fff;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    padding: 3rem 3.5rem;
-    position: relative;
-    z-index: 2;
-    box-shadow: 4px 0 24px rgba(0,0,0,0.06);
-  }
-  .auth-logo {
-    text-align: center;
-    margin-bottom: 2.5rem;
-  }
-  .auth-logo img {
-    width: 72px;
-    height: 72px;
-    margin-bottom: 0.6rem;
-  }
-  .auth-logo h1 {
-    font-size: 2rem;
-    font-weight: 900;
-    color: #16a34a;
-    margin: 0;
-    letter-spacing: 0.03em;
-  }
-  .auth-form-label {
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: #94a3b8;
-    margin-bottom: 0.35rem;
-  }
-  .auth-input {
-    border: none;
-    border-bottom: 2px solid #e2e8f0;
-    border-radius: 0;
-    padding: 0.5rem 0;
-    font-size: 0.95rem;
-    background: transparent;
-    transition: border-color 0.2s;
-  }
-  .auth-input:focus {
-    box-shadow: none;
-    border-color: #16a34a;
-    outline: none;
-  }
-  .auth-btn {
-    width: 100%;
-    padding: 0.75rem;
-    background: #0f172a;
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    font-size: 0.85rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    cursor: pointer;
-    transition: background 0.2s;
-  }
-  .auth-btn:hover {
-    background: #1e293b;
-    color: #fff;
-  }
-  .auth-forgot {
-    text-align: center;
-    margin-top: 0.75rem;
-  }
-  .auth-forgot a {
-    font-size: 0.82rem;
-    color: #64748b;
-    text-decoration: underline;
-  }
-  .auth-forgot a:hover {
-    color: #0f172a;
-  }
-  .auth-divider {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin: 1.75rem 0;
-    color: #94a3b8;
-    font-size: 0.78rem;
-  }
-  .auth-divider::before, .auth-divider::after {
-    content: "";
-    flex: 1;
-    border-top: 1px solid #e2e8f0;
-  }
-  /* Registration toggle */
-  .auth-register-toggle {
-    width: 100%;
-    padding: 0.65rem;
-    background: transparent;
-    color: #16a34a;
-    border: 2px solid #16a34a;
-    border-radius: 6px;
-    font-size: 0.82rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  .auth-register-toggle:hover {
-    background: #16a34a;
-    color: #fff;
-  }
-  .auth-register-panel {
-    max-height: 0;
-    overflow: hidden;
-    transition: max-height 0.4s ease;
-  }
-  .auth-register-panel.open {
-    max-height: 800px;
-  }
-  .auth-section-label {
-    font-size: 0.7rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: #16a34a;
-    margin-bottom: 0.5rem;
-    margin-top: 1rem;
-  }
-  .auth-footer {
-    text-align: center;
-    margin-top: 1.5rem;
-    font-size: 0.75rem;
-    color: #94a3b8;
-  }
-  .auth-footer a {
-    color: #64748b;
-    text-decoration: underline;
-  }
+body.public-shell {
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  background: #f5f5f5;
+  font-family: "Manrope", system-ui, -apple-system, sans-serif;
+}
+.auth-split {
+  display: flex;
+  min-height: 100vh;
+}
 
-  /* RIGHT PANEL — hero */
-  .auth-right {
-    flex: 1;
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
-    display: flex;
+/* ── LEFT PANEL — формы ─────────────────────────────────────────────── */
+.auth-left {
+  width: 520px;
+  min-width: 400px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 3rem 3.5rem;
+  position: relative;
+  z-index: 2;
+  box-shadow: 4px 0 24px rgba(0, 0, 0, 0.06);
+}
+.auth-logo {
+  text-align: center;
+  margin-bottom: 2.25rem;
+}
+.auth-logo img {
+  width: 64px;
+  height: 64px;
+  margin-bottom: 0.6rem;
+}
+.auth-logo h1 {
+  font-size: 1.9rem;
+  font-weight: 800;
+  color: #16a34a;
+  margin: 0;
+  letter-spacing: 0.06em;
+}
+.auth-logo-tagline {
+  font-size: 0.82rem;
+  color: #94a3b8;
+  margin-top: 0.2rem;
+}
+.auth-form-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  margin-bottom: 0.35rem;
+}
+.auth-input {
+  border: 1.5px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.6rem 0.9rem;
+  font-size: 0.95rem;
+  background: #f8fafc;
+}
+.auth-input:focus {
+  box-shadow: 0 0 0 4px rgba(22, 163, 74, 0.12);
+  border-color: #16a34a;
+  background: #fff;
+  outline: none;
+}
+.auth-input-invalid,
+.auth-input-invalid:focus {
+  border-color: #dc2626;
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.1);
+}
+.auth-input-wrap {
+  position: relative;
+}
+.auth-input-wrap .auth-input {
+  width: 100%;
+  padding-right: 2.6rem;
+}
+.auth-eye {
+  position: absolute;
+  top: 50%;
+  right: 0.6rem;
+  transform: translateY(-50%);
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  padding: 0.2rem 0.35rem;
+  cursor: pointer;
+  line-height: 1;
+}
+.auth-eye:hover {
+  color: #0f172a;
+}
+.auth-field-error {
+  font-size: 0.78rem;
+  color: #dc2626;
+  margin: 0.15rem 0 0.35rem;
+}
+.auth-field-hint {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-bottom: 0.9rem;
+}
+.auth-btn {
+  width: 100%;
+  padding: 0.8rem;
+  background: #0f172a;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.18);
+}
+.auth-btn:hover {
+  background: #1e293b;
+  color: #fff;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.26);
+}
+.auth-btn-success {
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  box-shadow: 0 4px 14px rgba(22, 163, 74, 0.3);
+}
+.auth-btn-success:hover {
+  background: linear-gradient(135deg, #15803d, #166534);
+  box-shadow: 0 6px 18px rgba(22, 163, 74, 0.38);
+}
+.auth-forgot {
+  text-align: center;
+  margin-top: 0.85rem;
+}
+.auth-forgot a {
+  font-size: 0.82rem;
+  color: #64748b;
+  text-decoration: underline;
+}
+.auth-forgot a:hover {
+  color: #0f172a;
+}
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 1.6rem 0;
+  color: #94a3b8;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid #e2e8f0;
+}
+
+/* ── Регистрация ────────────────────────────────────────────────────── */
+.auth-register-toggle {
+  width: 100%;
+  padding: 0.75rem;
+  background: transparent;
+  color: #16a34a;
+  border: 2px solid #16a34a;
+  border-radius: 10px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+.auth-register-toggle:hover,
+.auth-register-toggle.active {
+  background: #16a34a;
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(22, 163, 74, 0.3);
+}
+.auth-register-panel {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.4s ease;
+}
+.auth-register-panel.open {
+  max-height: 1100px;
+}
+.auth-register-panel form {
+  padding-top: 0.75rem;
+}
+.auth-section-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #16a34a;
+  margin-bottom: 0.5rem;
+  margin-top: 1rem;
+  padding-bottom: 0.25rem;
+  border-bottom: 1px solid #f1f5f9;
+}
+.auth-trial-note {
+  text-align: center;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-top: 0.6rem;
+}
+.auth-footer {
+  text-align: center;
+  margin-top: 1.5rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+.auth-footer a {
+  color: #64748b;
+  text-decoration: underline;
+}
+
+/* ── RIGHT PANEL — hero ─────────────────────────────────────────────── */
+.auth-right {
+  flex: 1;
+  background:
+    radial-gradient(1000px 600px at 85% -10%, rgba(22, 163, 74, 0.18), transparent 60%),
+    radial-gradient(800px 500px at 0% 110%, rgba(22, 163, 74, 0.1), transparent 55%),
+    linear-gradient(150deg, #0b1220 0%, #101b30 55%, #0b1220 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  position: relative;
+  overflow: hidden;
+}
+/* тонкая сетка поверх градиента */
+.auth-right::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 44px 44px;
+  mask-image: radial-gradient(70% 70% at 60% 40%, #000 30%, transparent 100%);
+  pointer-events: none;
+}
+.auth-hero {
+  text-align: center;
+  max-width: 560px;
+  position: relative;
+  z-index: 1;
+}
+.auth-hero-icon {
+  width: 96px;
+  height: 96px;
+  margin-bottom: 1.75rem;
+  border-radius: 22px;
+  box-shadow:
+    0 8px 32px rgba(22, 163, 74, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+.auth-hero h2 {
+  font-family: "Fraunces", Georgia, serif;
+  font-size: 2.7rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 0.85rem;
+  letter-spacing: -0.01em;
+  line-height: 1.12;
+}
+.auth-hero h2 em {
+  font-style: italic;
+  color: #4ade80;
+}
+.auth-hero p {
+  font-size: 1rem;
+  color: rgba(255, 255, 255, 0.68);
+  line-height: 1.65;
+  margin: 0 auto 1.9rem;
+  max-width: 460px;
+}
+.auth-hero-checklist {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem 1.5rem;
+  max-width: 430px;
+  margin: 0 auto;
+  text-align: left;
+}
+.auth-hero-check {
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 0.9rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+.auth-hero-check .bi {
+  color: #4ade80;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+/* мини-дашборд (иллюстрация) */
+.auth-hero-cards {
+  position: relative;
+  max-width: 360px;
+  margin: 2.4rem auto 0;
+}
+.auth-hero-card {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 16px;
+  padding: 1.1rem 1.3rem;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.35);
+  text-align: left;
+}
+.auth-hero-card-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 0.6rem;
+}
+.auth-hero-card-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 0.86rem;
+  margin-bottom: 0.35rem;
+}
+.auth-hero-card-row strong {
+  color: #fff;
+  font-size: 1.05rem;
+}
+.auth-hero-card-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  margin-top: 0.55rem;
+}
+.auth-hero-card-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: linear-gradient(90deg, #16a34a, #4ade80);
+}
+.auth-hero-chip {
+  position: absolute;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(74, 222, 128, 0.35);
+  border-radius: 999px;
+  padding: 0.4rem 0.85rem;
+  color: #d1fae5;
+  font-size: 0.76rem;
+  font-weight: 600;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+}
+.auth-hero-chip .bi {
+  color: #4ade80;
+}
+.auth-hero-chip-1 {
+  top: -16px;
+  right: -34px;
+  animation: auth-float 5s ease-in-out infinite !important;
+}
+.auth-hero-chip-2 {
+  bottom: -14px;
+  left: -30px;
+  animation: auth-float 6s 1.2s ease-in-out infinite !important;
+}
+@keyframes auth-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+.auth-hero-foot {
+  margin-top: 2.4rem;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.02em;
+}
+
+/* ── Responsive ─────────────────────────────────────────────────────── */
+@media (max-width: 991px) {
+  .auth-split {
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem;
-    position: relative;
-    overflow: hidden;
   }
-  .auth-right::before {
-    content: "";
-    position: absolute;
-    top: -50%;
-    right: -30%;
-    width: 80%;
-    height: 200%;
-    background: radial-gradient(circle, rgba(22,163,74,0.08) 0%, transparent 70%);
-    pointer-events: none;
+  .auth-left {
+    width: 100%;
+    min-width: unset;
+    padding: 2rem 1.5rem;
   }
-  .auth-hero {
-    text-align: center;
-    max-width: 500px;
-    position: relative;
-    z-index: 1;
-  }
-  .auth-hero-icon {
-    width: 120px;
-    height: 120px;
-    margin-bottom: 2rem;
-    border-radius: 24px;
-    box-shadow: 0 8px 32px rgba(22,163,74,0.3);
+  .auth-right {
+    min-height: 340px;
+    padding: 2.5rem 1.25rem;
   }
   .auth-hero h2 {
-    font-size: 2.2rem;
-    font-weight: 900;
-    color: #fff;
-    margin-bottom: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
+    font-size: 2rem;
   }
-  .auth-hero h2 span {
-    color: #16a34a;
+  .auth-hero-cards {
+    display: none; /* иллюстрация не влезает — чек-листа достаточно */
   }
-  .auth-hero p {
-    font-size: 1rem;
-    color: rgba(255,255,255,0.7);
-    line-height: 1.6;
-    margin-bottom: 2rem;
-  }
-  .auth-hero-features {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-    justify-content: center;
-  }
-  .auth-hero-feature {
-    background: rgba(255,255,255,0.07);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 8px;
-    padding: 0.5rem 1rem;
-    color: rgba(255,255,255,0.8);
-    font-size: 0.82rem;
-    font-weight: 500;
-  }
-
-  /* Responsive */
-  @media (max-width: 991px) {
-    .auth-split {
-      flex-direction: column;
-    }
-    .auth-left {
-      width: 100%;
-      min-width: unset;
-      padding: 2rem 1.5rem;
-    }
-    .auth-right {
-      min-height: 300px;
-      padding: 2rem 1.5rem;
-    }
-  }
+}
 
 /* ── Компактный вариант (forgot / reset password) ───────────────────── */
 .auth-compact .auth-right { min-height: 200px; }
@@ -247,10 +427,6 @@
 
 /* Заголовок формы на белой панели (вместо инлайн-стиля) */
 .auth-form-title { font-weight: 700; color: #0f172a; }
-
-/* Зелёная кнопка (reset password) */
-.auth-btn-success { background: #16a34a; }
-.auth-btn-success:hover { background: #15803d; }
 
 /* Ссылка "Back to Login" */
 .auth-back { text-align: center; margin-top: 1.5rem; }

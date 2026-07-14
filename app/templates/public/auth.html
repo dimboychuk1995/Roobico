@@ -1,120 +1,367 @@
 {% extends "layouts/public_base.html" %}
 
-{% block title %}Login / Registration{% endblock %}
+{% block title %}Roobico — Shop Management Software for Auto Repair Shops & Fleets{% endblock %}
+
+{% block meta %}
+  <meta name="description" content="Roobico is an all-in-one shop management platform for auto repair shops and fleets: work orders, parts inventory, customers, invoicing, payments, NHTSA recall alerts, and reporting. Free 30-day trial, no credit card required.">
+  <meta name="keywords" content="auto repair shop software, shop management system, work order software, fleet maintenance software, parts inventory, auto shop invoicing, mechanic software, repair shop CRM">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://roobico.com/">
+  <!-- Open Graph -->
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Roobico">
+  <meta property="og:title" content="Roobico — Shop Management Software for Auto Repair Shops & Fleets">
+  <meta property="og:description" content="Work orders, parts inventory, customers, payments, and reporting — everything a repair shop needs in one place. Free 30-day trial, no credit card required.">
+  <meta property="og:url" content="https://roobico.com/">
+  <meta property="og:image" content="https://roobico.com{{ url_for('static', filename='images/main_logo.png') }}">
+  <!-- Twitter -->
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Roobico — Shop Management Software for Auto Repair Shops & Fleets">
+  <meta name="twitter:description" content="Work orders, parts, customers, payments, and reporting for repair shops. Free 30-day trial, no credit card required.">
+  <meta name="twitter:image" content="https://roobico.com{{ url_for('static', filename='images/main_logo.png') }}">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Roobico",
+    "applicationCategory": "BusinessApplication",
+    "operatingSystem": "Web",
+    "url": "https://roobico.com/",
+    "description": "All-in-one shop management platform for auto repair shops and fleets: work orders, parts inventory, customers, invoicing, payments, and reporting.",
+    "offers": {
+      "@type": "Offer",
+      "price": "100",
+      "priceCurrency": "USD",
+      "description": "From $100/month per location. Free 30-day trial, no credit card required."
+    }
+  }
+  </script>
+{% endblock %}
 
 {% block extra_styles %}
-<link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/landing.css') }}">
+<script>
+  /* Лендинг — фиксированный дизайн, не зависит от темы приложения. */
+  document.documentElement.removeAttribute('data-theme');
+</script>
 {% endblock %}
 
 {% block content %}
-<div class="auth-split">
-  <!-- LEFT — Login -->
-  <div class="auth-left">
-    <div class="auth-logo">
-      <img src="{{ url_for('static', filename='images/main_logo.png') }}" alt="Roobico">
+<div class="land-split">
+
+  <!-- LEFT — логин всегда на виду -->
+  <aside class="land-login">
+    <div class="land-login-logo">
+      <img src="{{ url_for('static', filename='images/main_logo.png') }}" alt="Roobico — shop management software">
       <h1>ROOBICO</h1>
+      <div class="land-login-tagline">Shop management, minus the chaos</div>
     </div>
 
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for cat, msg in messages %}
-        <div class="alert alert-{{ 'success' if cat in ('success', 'info') else 'danger' }} py-2 small">{{ msg }}</div>
+        <div class="land-alert land-alert-{{ 'success' if cat in ('success', 'info') else 'error' }}">{{ msg }}</div>
       {% endfor %}
     {% endwith %}
 
-    <form method="post" action="/login" autocomplete="on">
+    <form method="post" action="/login" autocomplete="on" id="loginForm">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="mb-4">
-        <div class="auth-form-label">Email</div>
-        <input id="login_email" name="email" type="email" class="form-control auth-input" placeholder="you@company.com" required />
+      <div class="land-field">
+        <div class="land-label">Email</div>
+        <input id="login_email" name="email" type="email" class="land-input" placeholder="you@company.com" required />
       </div>
-      <div class="mb-4">
-        <div class="auth-form-label">Password</div>
-        <input id="login_password" name="password" type="password" class="form-control auth-input" required />
+      <div class="land-field">
+        <div class="land-label">Password</div>
+        <div class="land-input-wrap">
+          <input id="login_password" name="password" type="password" class="land-input" required />
+          <button type="button" class="land-eye" data-eye-for="login_password" aria-label="Show password" tabindex="-1">
+            <i class="bi bi-eye"></i>
+          </button>
+        </div>
       </div>
-      <button type="submit" class="auth-btn">Log In</button>
+      <button type="submit" class="land-btn land-btn-dark land-btn-block">Log in</button>
     </form>
-
-    <div class="auth-forgot">
-      <a href="/forgot-password">Forgot password</a>
+    <div class="land-form-foot">
+      <a href="/forgot-password">Forgot password?</a>
     </div>
 
-    <div class="auth-divider">or</div>
-
-    <button type="button" class="auth-register-toggle" onclick="toggleRegister()">
-      Create Account
-    </button>
-
-    <div class="auth-register-panel" id="registerPanel">
-      <form method="post" action="/tenant/register" autocomplete="on">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <div class="auth-section-label">Company</div>
-        <div class="mb-3">
-          <div class="auth-form-label">Company name</div>
-          <input id="company_name" name="company_name" type="text" class="form-control auth-input" placeholder="Your Company LLC" required />
-        </div>
-        <div class="mb-3">
-          <div class="auth-form-label">Company address</div>
-          <input id="company_address" name="company_address" type="text" class="form-control auth-input" placeholder="Start typing an address…" autocomplete="off" data-address-autocomplete required />
-        </div>
-        <div class="mb-3">
-          <div class="auth-form-label">Phone number</div>
-          <input id="company_phone" name="company_phone" type="tel" class="form-control auth-input" placeholder="+1 (555) 555-5555" required />
-        </div>
-
-        <div class="auth-section-label">Owner</div>
-        <div class="row g-3 mb-3">
-          <div class="col-6">
-            <div class="auth-form-label">First name</div>
-            <input id="first_name" name="first_name" type="text" class="form-control auth-input" placeholder="John" required />
-          </div>
-          <div class="col-6">
-            <div class="auth-form-label">Last name</div>
-            <input id="last_name" name="last_name" type="text" class="form-control auth-input" placeholder="Smith" required />
-          </div>
-        </div>
-        <div class="row g-3 mb-3">
-          <div class="col-6">
-            <div class="auth-form-label">Email</div>
-            <input id="reg_email" name="email" type="email" class="form-control auth-input" placeholder="admin@company.com" required />
-          </div>
-          <div class="col-6">
-            <div class="auth-form-label">Password</div>
-            <input id="reg_password" name="password" type="password" class="form-control auth-input" required />
-          </div>
-        </div>
-        <button type="submit" class="auth-btn auth-btn-success">Create Account</button>
-      </form>
+    <div class="land-form-switch">
+      New to Roobico?<br>
+      <a href="#" data-open-register>Start your free 30-day trial</a> — no credit card required
     </div>
+  </aside>
 
-    <div class="auth-footer">
-      By logging in you are agreeing to our <a href="#">Terms of Service</a>.
-    </div>
+  <!-- RIGHT — лендинг -->
+  <div class="land">
+    <header class="land-nav">
+      <span class="land-brand">ROOBICO<span>.</span></span>
+      <div class="land-nav-spacer"></div>
+      <a class="land-nav-link" href="#pricing" data-scroll-pricing>Pricing</a>
+      <button type="button" class="land-btn land-btn-primary" data-open-register>Start free trial</button>
+    </header>
+
+    <section class="land-hero">
+      <h1>Run your shop <em>like clockwork</em></h1>
+      <p class="land-hero-sub">
+        All-in-one platform for work orders, parts inventory, customers, payments,
+        and reporting — built for auto repair shops and fleets.
+      </p>
+
+      <div class="land-cta-row">
+        <button type="button" class="land-btn land-btn-primary land-btn-lg" data-open-register>
+          Start free 30-day trial
+        </button>
+      </div>
+      <div class="land-cta-note">
+        <i class="bi bi-check-circle-fill"></i> No credit card required &nbsp;·&nbsp; Cancel anytime
+      </div>
+
+      <div class="land-checklist">
+        <div class="land-check"><i class="bi bi-check-circle-fill"></i> Work orders &amp; estimates</div>
+        <div class="land-check"><i class="bi bi-check-circle-fill"></i> Parts &amp; inventory</div>
+        <div class="land-check"><i class="bi bi-check-circle-fill"></i> Customers &amp; units</div>
+        <div class="land-check"><i class="bi bi-check-circle-fill"></i> Invoices &amp; payments</div>
+        <div class="land-check"><i class="bi bi-check-circle-fill"></i> NHTSA recall alerts</div>
+        <div class="land-check"><i class="bi bi-check-circle-fill"></i> Reports &amp; PDF export</div>
+      </div>
+
+      <div class="land-cards" aria-hidden="true">
+        <div class="land-card-demo">
+          <div class="land-card-demo-label">Today</div>
+          <div class="land-card-demo-row"><span>Work orders</span><strong>12</strong></div>
+          <div class="land-card-demo-row"><span>Labor &amp; parts</span><strong>$8,540</strong></div>
+          <div class="land-card-demo-bar"><span style="width:72%"></span></div>
+        </div>
+        <div class="land-chip land-chip-1"><i class="bi bi-check-lg"></i> Invoice #2214 paid</div>
+        <div class="land-chip land-chip-2"><i class="bi bi-bell-fill"></i> Recall alert sent</div>
+      </div>
+    </section>
+
+    <section class="land-pricing" id="pricing">
+      <h2>Simple, honest pricing</h2>
+      <div class="land-pricing-sub">Pay only for what's active in your shop. No plans, no tiers, no surprises.</div>
+      <div class="land-price-grid">
+        <div class="land-price-tile">
+          <div class="land-price-amount">$100<small>/mo</small></div>
+          <div class="land-price-label">per location</div>
+        </div>
+        <div class="land-price-tile">
+          <div class="land-price-amount">$50<small>/mo</small></div>
+          <div class="land-price-label">per user</div>
+        </div>
+        <div class="land-price-tile">
+          <div class="land-price-amount">$25<small>/mo</small></div>
+          <div class="land-price-label">per mechanic</div>
+        </div>
+      </div>
+      <div class="land-price-note">
+        <i class="bi bi-check-circle-fill"></i> Free 30-day trial &nbsp;·&nbsp;
+        <i class="bi bi-check-circle-fill"></i> No credit card required &nbsp;·&nbsp;
+        <i class="bi bi-check-circle-fill"></i> Deactivated staff is free
+      </div>
+      <button type="button" class="land-btn land-btn-primary land-btn-lg" data-open-register>
+        Start free 30-day trial
+      </button>
+    </section>
+
+    <footer class="land-foot">
+      Built for US repair shops &amp; fleets · © Roobico
+    </footer>
   </div>
 
-  <!-- RIGHT — Hero -->
-  <div class="auth-right">
-    <div class="auth-hero">
-      <img src="{{ url_for('static', filename='images/main_logo.png') }}" alt="Roobico" class="auth-hero-icon">
-      <h2>Manage Your Shop<span>.</span></h2>
-      <p>All-in-one platform for work orders, parts inventory, customers, payments, and reporting — built for repair shops.</p>
-      <div class="auth-hero-features">
-        <div class="auth-hero-feature">Work Orders</div>
-        <div class="auth-hero-feature">Parts & Inventory</div>
-        <div class="auth-hero-feature">Customers</div>
-        <div class="auth-hero-feature">Payments</div>
-        <div class="auth-hero-feature">Reports</div>
-        <div class="auth-hero-feature">Email & PDF</div>
+  <!-- OVERLAY: регистрация по центру -->
+  <div class="land-overlay" id="landOverlay" aria-hidden="true">
+    <div class="land-form-card land-form-card-wide visible" id="viewRegister">
+      <div class="land-form-head">
+        <div>
+          <div class="land-form-title">Start your free 30-day trial</div>
+          <div class="land-form-sub">No credit card required. Full access from day one.</div>
+        </div>
+        <button type="button" class="land-close" data-close-register aria-label="Close">✕</button>
+      </div>
+
+      <div id="registerErrors"></div>
+
+      <form method="post" action="/tenant/register" autocomplete="on" id="registerForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+        <div class="land-section-label">Company</div>
+        <div class="land-grid-2">
+          <div class="land-field">
+            <div class="land-label">Company name</div>
+            <input id="company_name" name="company_name" type="text" class="land-input" placeholder="Your Company LLC" required />
+          </div>
+          <div class="land-field">
+            <div class="land-label">Phone number</div>
+            <input id="company_phone" name="company_phone" type="tel" class="land-input" placeholder="+1 (555) 555-5555" required />
+          </div>
+        </div>
+        <div class="land-field">
+          <div class="land-label">Company address</div>
+          <input id="company_address" name="company_address" type="text" class="land-input" placeholder="Start typing an address…" autocomplete="off" data-address-autocomplete required />
+        </div>
+
+        <div class="land-section-label">Owner account</div>
+        <div class="land-grid-2">
+          <div class="land-field">
+            <div class="land-label">First name</div>
+            <input id="first_name" name="first_name" type="text" class="land-input" placeholder="John" required />
+          </div>
+          <div class="land-field">
+            <div class="land-label">Last name</div>
+            <input id="last_name" name="last_name" type="text" class="land-input" placeholder="Smith" required />
+          </div>
+        </div>
+        <div class="land-field">
+          <div class="land-label">Email</div>
+          <input id="reg_email" name="email" type="email" class="land-input" placeholder="admin@company.com" required />
+        </div>
+        <div class="land-grid-2">
+          <div class="land-field">
+            <div class="land-label">Password</div>
+            <div class="land-input-wrap">
+              <input id="reg_password" name="password" type="password" class="land-input" minlength="8" required />
+              <button type="button" class="land-eye" data-eye-for="reg_password" aria-label="Show password" tabindex="-1">
+                <i class="bi bi-eye"></i>
+              </button>
+            </div>
+          </div>
+          <div class="land-field">
+            <div class="land-label">Confirm password</div>
+            <input id="reg_password_confirm" name="password_confirm" type="password" class="land-input" minlength="8" required />
+          </div>
+        </div>
+        <div class="land-error" id="passwordMismatch" hidden>Passwords do not match.</div>
+        <div class="land-hint">At least 8 characters.</div>
+
+        <button type="submit" class="land-btn land-btn-primary land-btn-block land-btn-lg" id="registerSubmit">
+          Create account — free for 30 days
+        </button>
+        <div class="land-form-foot">
+          $100/mo per location + $50 per user + $25 per mechanic after the trial.
+          No credit card required today.
+        </div>
+      </form>
+      <div class="land-form-switch">
+        Already have an account? <a href="#" data-close-register>Log in on the left</a>
       </div>
     </div>
   </div>
+
 </div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
-function toggleRegister() {
-  const panel = document.getElementById('registerPanel');
-  panel.classList.toggle('open');
-}
+(function () {
+  var overlay = document.getElementById('landOverlay');
+
+  function openRegister() {
+    overlay.classList.add('open');
+    overlay.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    setTimeout(function () { document.getElementById('company_name').focus(); }, 250);
+  }
+  function closeRegister() {
+    overlay.classList.remove('open');
+    overlay.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  }
+
+  document.querySelectorAll('[data-open-register]').forEach(function (el) {
+    el.addEventListener('click', function (e) { e.preventDefault(); openRegister(); });
+  });
+  document.querySelectorAll('[data-close-register]').forEach(function (el) {
+    el.addEventListener('click', function (e) { e.preventDefault(); closeRegister(); });
+  });
+  overlay.addEventListener('click', function (e) {
+    if (e.target === overlay) closeRegister();
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') closeRegister();
+  });
+
+  // Pricing в навбаре: подскролл + подсветка секции. На высоких экранах
+  // весь лендинг влезает без прокрутки — подсветка делает клик заметным.
+  document.querySelectorAll('[data-scroll-pricing]').forEach(function (el) {
+    el.addEventListener('click', function (e) {
+      e.preventDefault();
+      var pricing = document.getElementById('pricing');
+      pricing.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      pricing.classList.remove('land-pricing-flash');
+      void pricing.offsetWidth; // перезапуск анимации при повторном клике
+      pricing.classList.add('land-pricing-flash');
+    });
+  });
+
+  // Показ/скрытие пароля.
+  document.querySelectorAll('.land-eye').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var input = document.getElementById(btn.dataset.eyeFor);
+      var icon = btn.querySelector('i');
+      var show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      icon.className = show ? 'bi bi-eye-slash' : 'bi bi-eye';
+    });
+  });
+
+  // Подтверждение пароля: живая подсветка.
+  var pass = document.getElementById('reg_password');
+  var confirmPass = document.getElementById('reg_password_confirm');
+  var mismatch = document.getElementById('passwordMismatch');
+  function checkPasswords() {
+    var bad = confirmPass.value && pass.value !== confirmPass.value;
+    mismatch.hidden = !bad;
+    confirmPass.classList.toggle('land-input-invalid', bad);
+    return !bad;
+  }
+  pass.addEventListener('input', checkPasswords);
+  confirmPass.addEventListener('input', checkPasswords);
+
+  // Регистрация: /tenant/register — JSON API. Сабмитим fetch'ем, ошибки
+  // показываем в карточке; после успеха сразу логиним владельца.
+  var regForm = document.getElementById('registerForm');
+  var regErrors = document.getElementById('registerErrors');
+  var regSubmit = document.getElementById('registerSubmit');
+
+  regForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    if (pass.value !== confirmPass.value) {
+      checkPasswords();
+      confirmPass.focus();
+      return;
+    }
+    regErrors.innerHTML = '';
+    regSubmit.disabled = true;
+    regSubmit.textContent = 'Creating your shop…';
+
+    fetch(regForm.action, { method: 'POST', body: new FormData(regForm) })
+      .then(function (resp) { return resp.json().then(function (data) { return { ok: resp.ok, data: data }; }); })
+      .then(function (result) {
+        if (result.ok && result.data.ok) {
+          // Аккаунт создан — логиним сразу.
+          regSubmit.textContent = 'Done! Logging you in…';
+          document.getElementById('login_email').value = document.getElementById('reg_email').value;
+          document.getElementById('login_password').value = pass.value;
+          document.getElementById('loginForm').submit();
+          return;
+        }
+        var errors = (result.data && result.data.errors) || ['Something went wrong. Please try again.'];
+        regErrors.innerHTML = errors.map(function (err) {
+          var div = document.createElement('div');
+          div.className = 'land-alert land-alert-error';
+          div.textContent = err;
+          return div.outerHTML;
+        }).join('');
+        regSubmit.disabled = false;
+        regSubmit.textContent = 'Create account — free for 30 days';
+        regErrors.scrollIntoView({ block: 'nearest' });
+      })
+      .catch(function () {
+        regErrors.innerHTML = '<div class="land-alert land-alert-error">Network error. Please try again.</div>';
+        regSubmit.disabled = false;
+        regSubmit.textContent = 'Create account — free for 30 days';
+      });
+  });
+})();
 </script>
 {% endblock %}

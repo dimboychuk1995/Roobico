@@ -490,8 +490,11 @@ def register_tenant():
     last_name = (request.form.get("last_name") or "").strip()
     email = (request.form.get("email") or "").strip().lower()
     password = request.form.get("password") or ""
+    password_confirm = request.form.get("password_confirm") or ""
 
     errors = []
+    if password != password_confirm:
+        errors.append("Passwords do not match.")
     if len(company_name) < 2:
         errors.append("Company name is required.")
     if len(company_address) < 5:
