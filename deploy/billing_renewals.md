@@ -13,7 +13,9 @@
    - `STRIPE_WEBHOOK_SECRET` (см. ниже),
    - `RESEND_API_KEY` / `RESEND_FROM_EMAIL` — для dunning-писем.
 2. В Stripe Dashboard → Developers → Webhooks зарегистрирован endpoint
-   `https://roobico.com/billing/stripe/webhook` с событиями:
+   `https://app.roobico.com/billing/stripe/webhook` (именно app-хост:
+   на public-хосте enforce_host_split отвечает 302, Stripe считает это
+   ошибкой доставки) с событиями:
    `invoice.paid`, `invoice.payment_succeeded`, `invoice.payment_failed`,
    `invoice.voided`, `invoice.marked_uncollectible`, `charge.refunded`,
    `customer.updated`, `payment_method.attached`.
