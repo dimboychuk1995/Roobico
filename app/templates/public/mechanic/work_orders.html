@@ -1,0 +1,76 @@
+{% extends "layouts/public_base.html" %}
+{% block title %}Work Orders — Roobico{% endblock %}
+
+{% block extra_styles %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/mechanic.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="container mech-wrap" id="mechListPage">
+
+  <div class="mech-header">
+    <div class="mech-header-title">
+      <i class="bi bi-wrench-adjustable"></i>
+      <span>Work Orders</span>
+    </div>
+    <div class="mech-header-actions">
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="mechThemeToggle" title="Theme">
+        <i class="bi bi-moon"></i>
+      </button>
+      <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('auth.logout') }}" title="Log out">
+        <i class="bi bi-box-arrow-right"></i>
+      </a>
+    </div>
+  </div>
+
+  <div class="mech-toolbar">
+    <div class="mech-search">
+      <i class="bi bi-search"></i>
+      <input type="search" class="form-control" id="mechSearchInput" placeholder="Search work orders..." autocomplete="off">
+    </div>
+    <div class="mech-filter-chips" id="mechStatusChips">
+      <button type="button" class="mech-chip active" data-status="all">All</button>
+      <button type="button" class="mech-chip" data-status="in_progress">In Progress</button>
+      <button type="button" class="mech-chip" data-status="open">Open</button>
+    </div>
+  </div>
+
+  <div id="mechActiveNow" style="display:none">
+    <div class="mech-section-title"><span class="mech-timer-dot"></span> In work now</div>
+    <div id="mechActiveNowList" class="mech-list"></div>
+  </div>
+
+  <div class="mech-section-title" id="mechAllTitle" style="display:none">All work orders</div>
+  <div id="mechWoList" class="mech-list" aria-live="polite"></div>
+
+  <div id="mechListEmpty" class="empty-state" style="display:none">
+    <div class="empty-state-title">No work orders found</div>
+    <div class="empty-state-hint">Try a different search or create a new one.</div>
+  </div>
+
+  <div class="mech-pagination" id="mechPagination" style="display:none">
+    <button type="button" class="btn btn-outline-secondary" id="mechPrevBtn">Prev</button>
+    <span class="mech-page-label" id="mechPageLabel"></span>
+    <button type="button" class="btn btn-outline-secondary" id="mechNextBtn">Next</button>
+  </div>
+
+  <a class="mech-fab" href="{{ url_for('mechanic.work_order_new') }}" title="New work order">
+    <i class="bi bi-plus-lg"></i>
+  </a>
+</div>
+
+<div class="mech-timer-bar" id="mechTimerBar" style="display:none">
+  <div class="mech-timer-info">
+    <span class="mech-timer-dot"></span>
+    <a href="#" id="mechTimerBarLink" class="mech-timer-label"></a>
+    <span class="mech-timer-elapsed" id="mechTimerBarElapsed">0:00:00</span>
+  </div>
+  <button type="button" class="btn btn-danger btn-sm" id="mechTimerBarStopBtn">
+    <i class="bi bi-stop-fill"></i> Stop
+  </button>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='js/mechanic/mechanic_wo.js') }}"></script>
+{% endblock %}

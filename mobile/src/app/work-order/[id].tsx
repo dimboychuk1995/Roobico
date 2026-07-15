@@ -17,15 +17,19 @@ import {
 } from "react-native";
 
 import { AttachmentsBlock } from "@/components/attachments-block";
+import { LaborTimer } from "@/components/labor-timer";
 import { Badge, KV, RowCard } from "@/components/ui";
-import { useAuth } from "@/context/auth";
+import { useHasPermission, useIsMechanic } from "@/context/auth";
 import { useToast } from "@/context/toast";
 import {
   ApiError,
+  MechWorkOrderDetails,
+  TimerResponse,
   WoPayments,
   WorkOrderDetails,
   deleteWoPayment,
   deleteWorkOrder,
+  fetchMechanicWoDetails,
   fetchWoPayments,
   fetchWorkOrderDetails,
   money,
@@ -39,11 +43,201 @@ import { useTheme } from "@/lib/theme";
 const PAYMENT_METHODS = ["cash", "check", "card", "ach", "other"];
 
 export default function WorkOrderDetailsScreen() {
+  const isMechanic = useIsMechanic();
+  return isMechanic ? <MechanicWoScreen /> : <ManagerWoScreen />;
+}
+
+function statusBadgeFor(status: string) {
+  return status === "paid"
+    ? <Badge label="Paid" tone="success" />
+    : status === "in_progress"
+      ? <Badge label="In Progress" tone="info" />
+      : <Badge label="Open" tone="warning" />;
+}
+
+/** Механик: детали без цен + Start/Stop таймеры на каждой работе. */
+function MechanicWoScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const theme = useTheme();
+  const router = useRouter();
+
+  const [wo, setWo] = useState<MechWorkOrderDetails | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState("");
+  const [serverOffsetMs, setServerOffsetMs] = useState(0);
+
+  const canEdit = useHasPermission("work_orders.create");
+
+  const load = useCallback(async () => {
+    if (!id) return;
+    try {
+      const data = await fetchMechanicWoDetails(id);
+      setWo(data);
+      const t = Date.parse(data.server_now);
+      if (Number.isFinite(t)) setServerOffsetMs(t - Date.now());
+      setError("");
+    } catch (e) {
+      setError(e instanceof ApiError ? e.message : "Failed to load work order.");
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
+
+  const onTimerChanged = useCallback((res: TimerResponse) => {
+    const t = Date.parse(res.server_now);
+    if (Number.isFinite(t)) setServerOffsetMs(t - Date.now());
+    setWo((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        status: "in_progress",
+        my_running_timer: res.timer && !res.timer.stopped_at
+          ? {
+              work_order_id: res.timer.work_order_id,
+              wo_number: res.timer.wo_number,
+              labor_id: res.timer.labor_id,
+              started_at: res.timer.started_at,
+            }
+          : null,
+        labors: prev.labors.map((l) => ({
+          ...l,
+          time: res.time_summary[l.labor_id] || {
+            total_seconds: 0,
+            completed_seconds: 0,
+            my_seconds: 0,
+            my_running: false,
+            my_started_at: "",
+            running_users: [],
+          },
+        })),
+      };
+    });
+  }, []);
+
+  if (loading) {
+    return (
+      <View style={[styles.center, { backgroundColor: theme.bg }]}>
+        <Stack.Screen options={{ title: "Work Order" }} />
+        <ActivityIndicator color={theme.primary} size="large" />
+      </View>
+    );
+  }
+
+  if (error || !wo) {
+    return (
+      <View style={[styles.center, { backgroundColor: theme.bg }]}>
+        <Stack.Screen options={{ title: "Work Order" }} />
+        <Text style={{ color: theme.danger, textAlign: "center", padding: 24 }}>
+          {error || "Work order not found."}
+        </Text>
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView
+      style={{ backgroundColor: theme.bg }}
+      contentContainerStyle={styles.container}
+      refreshControl={
+        <RefreshControl
+          refreshing={refreshing}
+          onRefresh={() => {
+            setRefreshing(true);
+            load();
+          }}
+          tintColor={theme.primary}
+        />
+      }
+    >
+      <Stack.Screen
+        options={{
+          title: `WO #${wo.wo_number ?? ""}`,
+          headerRight: () =>
+            canEdit && wo.status !== "paid" ? (
+              <Pressable
+                onPress={() => router.push({ pathname: "/work-order-form", params: { id: wo.id } })}
+                hitSlop={8}
+                style={{ paddingHorizontal: 8 }}
+              >
+                <Ionicons name="create-outline" size={22} color={theme.primary} />
+              </Pressable>
+            ) : null,
+        }}
+      />
+
+      <RowCard>
+        <View style={styles.headerRow}>
+          <Text style={[styles.woNumber, { color: theme.text }]}>WO #{wo.wo_number ?? ""}</Text>
+          {statusBadgeFor(wo.status)}
+        </View>
+        <KV label="Customer" value={wo.customer.label} />
+        <KV label="Unit" value={wo.unit.label} />
+        {wo.unit.vin ? <KV label="VIN" value={wo.unit.vin} /> : null}
+        {wo.unit.mileage != null && wo.unit.mileage !== "" ? (
+          <KV label="Mileage" value={String(wo.unit.mileage)} />
+        ) : null}
+        <KV label="Date" value={wo.date} />
+      </RowCard>
+
+      <Text style={[styles.sectionTitle, { color: theme.muted }]}>JOBS</Text>
+      {wo.labors.map((labor, idx) => {
+        const t = labor.time;
+        return (
+          <RowCard key={labor.labor_id || idx}>
+            <Text style={[styles.laborTitle, { color: theme.text }]}>
+              {idx + 1}. {labor.description || "—"}
+            </Text>
+            {labor.issue_description ? (
+              <Text style={[styles.issue, { color: theme.muted }]}>
+                Issue: {labor.issue_description}
+              </Text>
+            ) : null}
+            {labor.parts.length > 0 ? (
+              <View style={[styles.partsBox, { borderColor: theme.border }]}>
+                {labor.parts.map((p, pIdx) => (
+                  <View key={pIdx} style={styles.partRow}>
+                    <Text style={[styles.partLabel, { color: theme.text }]} numberOfLines={1}>
+                      {p.part_number || p.description}
+                      {p.part_number && p.description ? ` — ${p.description}` : ""}
+                    </Text>
+                    <Text style={[styles.partQty, { color: theme.muted }]}>×{p.qty}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+            {labor.labor_id && wo.status !== "paid" ? (
+              <LaborTimer
+                woId={wo.id}
+                laborId={labor.labor_id}
+                completedSeconds={t.completed_seconds || 0}
+                runningUsers={t.running_users || []}
+                myRunning={t.my_running}
+                serverOffsetMs={serverOffsetMs}
+                onChanged={onTimerChanged}
+              />
+            ) : null}
+          </RowCard>
+        );
+      })}
+
+      <AttachmentsBlock entityType="work_order" entityId={wo.id} />
+    </ScrollView>
+  );
+}
+
+function ManagerWoScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const theme = useTheme();
   const toast = useToast();
   const router = useRouter();
-  const { session } = useAuth();
 
   const [wo, setWo] = useState<WorkOrderDetails | null>(null);
   const [payments, setPayments] = useState<WoPayments | null>(null);
@@ -54,9 +248,10 @@ export default function WorkOrderDetailsScreen() {
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [emailModalOpen, setEmailModalOpen] = useState(false);
 
-  const canPay = (session?.permissions || []).includes("work_orders.record_payment")
-    || (session?.permissions || []).includes("work_orders.create")
-    || session?.user.role === "owner";
+  // Реальный ключ платежей — work_orders.manage_payments (record_payment не
+  // существует в каталоге; старый фолбэк на create давал платежи всем).
+  const canPay = useHasPermission("work_orders.manage_payments");
+  const canEdit = useHasPermission("work_orders.create");
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -181,7 +376,7 @@ export default function WorkOrderDetailsScreen() {
         options={{
           title: `WO #${wo.wo_number}`,
           headerRight: () =>
-            canPay && wo.status !== "paid" ? (
+            canEdit && wo.status !== "paid" ? (
               <Pressable
                 onPress={() => router.push({ pathname: "/work-order-form", params: { id: wo.id } })}
                 hitSlop={8}

@@ -13,6 +13,7 @@ from app.extensions import get_master_db
 from app.utils.sales_tax import get_shop_zip_code
 from app.blueprints.work_orders.services.common import (
     as_bool,
+    ensure_labor_id,
     f64,
     i32,
     oid,
@@ -623,6 +624,7 @@ def normalize_saved_labors(raw, shop_db=None):
 
         out.append(
             {
+                "labor_id": ensure_labor_id(block.get("labor_id")),
                 "labor": {
                     "description": labor_description,
                     "hours": labor_hours,

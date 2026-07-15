@@ -19,7 +19,7 @@ from app.extensions import csrf, get_master_db
 from app.utils.auth import SESSION_SHOP_ID, is_logged_in, login_user, logout_user
 from app.utils.mongo_search import build_regex_search_filter
 from app.utils.pagination import get_pagination_params, paginate_find
-from app.utils.permissions import permission_required
+from app.utils.permissions import enforce_mechanic_status, has_permission, permission_required
 from app.utils.rate_limit import hit_rate_limit
 from app.utils.tenant import get_shop_db as _tenant_get_shop_db, oid
 
@@ -185,6 +185,12 @@ def mobile_work_orders():
         unit_id=oid(request.args.get("unit_id")),
     )
 
+    if not has_permission("work_orders.view_costs"):
+        from app.blueprints.work_orders.services.mechanic_view import strip_wo_list_item
+
+        items = [strip_wo_list_item(i) for i in items]
+        totals = {}
+
     return jsonify({
         "ok": True,
         "items": items,
@@ -208,6 +214,18 @@ def mobile_work_order_details(work_order_id):
     wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True})
     if not wo:
         return jsonify({"ok": False, "error": "work_order_not_found"}), 404
+
+    # Механик-режим: безденежная форма деталей (та же, что на веб-странице
+    # механика) — без цен, тоталов, часов и ставок, с таймерами по строкам.
+    if not has_permission("work_orders.view_costs"):
+        from datetime import timezone as _tz
+
+        from app.blueprints.work_orders.services.common import utcnow
+        from app.blueprints.work_orders.services.mechanic_view import mechanic_wo_payload
+
+        payload = mechanic_wo_payload(shop_db, shop, wo, oid(session.get("user_id")))
+        payload["server_now"] = utcnow().astimezone(_tz.utc).isoformat().replace("+00:00", "Z")
+        return jsonify(payload), 200
 
     # Полный контекст WO уже собирается для PDF — переиспользуем его,
     # убрав PDF-специфику (конфиг дизайна, логотип-base64).
@@ -236,6 +254,7 @@ def mobile_work_order_details(work_order_id):
                 item["part_id"] = str(item["part_id"])
             parts_out.append(item)
         raw_labors.append({
+            "labor_id": str(block.get("labor_id") or ""),
             "description": str(labor_src.get("description") or "").strip(),
             "hours": str(labor_src.get("hours") or "").strip(),
             "rate_code": str(labor_src.get("rate_code") or "").strip(),
@@ -327,7 +346,12 @@ def mobile_labor_rates():
     shop_db, shop = get_shop_db()
     if shop_db is None:
         return jsonify({"ok": False, "error": "shop_db_missing"}), 200
-    return jsonify({"ok": True, "items": get_labor_rates(shop_db, shop["_id"])}), 200
+
+    items = get_labor_rates(shop_db, shop["_id"])
+    if not has_permission("work_orders.view_costs"):
+        # Механик видит названия/коды ставок, но не $/час.
+        items = [{k: v for k, v in r.items() if k != "hourly_rate"} for r in items]
+    return jsonify({"ok": True, "items": items}), 200
 
 
 def _mobile_wo_taxable(shop_db, data, existing_totals, customer_id):
@@ -345,6 +369,9 @@ def _mobile_wo_taxable(shop_db, data, existing_totals, customer_id):
 @permission_required("work_orders.create")
 def mobile_part_price():
     from app.blueprints.work_orders.services.mobile_editor import suggest_part_price
+
+    if not has_permission("work_orders.view_costs"):
+        return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.view_costs"}), 403
 
     shop_db, shop = get_shop_db()
     if shop_db is None:
@@ -408,6 +435,13 @@ def mobile_work_order_create():
         return jsonify({"ok": False, "error": "labors_required",
                         "message": "At least one labor is required."}), 400
 
+    # Механик-режим: клиентские цены/часы игнорируются, сервер автозаполняет
+    # цены из каталога/прайсинг-правил (как на веб-странице механика).
+    if not has_permission("work_orders.view_costs"):
+        from app.blueprints.work_orders.services.mechanic_editor import build_mechanic_labors_payload
+
+        labors_payload = build_mechanic_labors_payload(shop_db, shop, customer_id, labors_payload)
+
     labors, totals_raw = compute_labors_and_totals(shop_db, shop, labors_payload)
     totals = align_totals_with_labors(normalize_totals_payload(totals_raw), labors)
     shop_tax = _get_shop_sales_tax_context(shop, shop_db)
@@ -422,7 +456,7 @@ def mobile_work_order_create():
 
     inventory_result = deduct_parts_from_inventory(shop_db, labors, user_id)
 
-    status = "in_progress" if str(data.get("status") or "").strip().lower() == "in_progress" else "open"
+    status = "in_progress" if enforce_mechanic_status(str(data.get("status") or "").strip().lower()) == "in_progress" else "open"
     doc = {
         "shop_id": shop["_id"],
         "tenant_id": shop.get("tenant_id"),
@@ -494,6 +528,13 @@ def mobile_work_order_edit(work_order_id):
         return jsonify({"ok": False, "error": "labors_required",
                         "message": "At least one labor is required."}), 400
 
+    # Механик-режим: merge по labor_id — менеджерские hours/rate/цены
+    # сохраняются, клиентские деньги игнорируются.
+    if not has_permission("work_orders.view_costs"):
+        from app.blueprints.work_orders.services.mechanic_editor import merge_mechanic_edit
+
+        labors_payload = merge_mechanic_edit(shop_db, shop, wo, labors_payload)
+
     labors, totals_raw = compute_labors_and_totals(shop_db, shop, labors_payload)
     totals = align_totals_with_labors(normalize_totals_payload(totals_raw), labors)
 
@@ -523,7 +564,7 @@ def mobile_work_order_edit(work_order_id):
         "updated_at": now,
         "updated_by": user_id,
     }
-    save_status = str(data.get("status") or "").strip().lower()
+    save_status = enforce_mechanic_status(str(data.get("status") or "").strip().lower())
     if save_status in ("open", "in_progress"):
         set_fields["status"] = save_status
 
@@ -985,16 +1026,19 @@ def mobile_parts():
         per_page,
     )
 
+    show_costs = has_permission("parts.view_costs")
     items = []
     for p in rows:
-        items.append({
+        item = {
             "id": str(p["_id"]),
             "part_number": p.get("part_number") or "",
             "description": p.get("description") or "",
             "reference": p.get("reference") or "",
             "in_stock": int(p.get("in_stock") or 0),
-            "average_cost": float(p.get("average_cost") or 0),
-            "selling_price": float(p.get("selling_price") or 0),
-        })
+        }
+        if show_costs:
+            item["average_cost"] = float(p.get("average_cost") or 0)
+            item["selling_price"] = float(p.get("selling_price") or 0)
+        items.append(item)
 
     return jsonify({"ok": True, "items": items, "pagination": _pagination_payload(pagination)}), 200

@@ -1,12 +1,15 @@
-import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useFocusEffect, useRouter } from "expo-router";
+import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { ListScreen } from "@/components/list-screen";
 import { Badge, RowCard } from "@/components/ui";
+import { useIsMechanic } from "@/context/auth";
 import {
+  ActiveTimerItem,
   AllPaymentRow,
   WorkOrderRow,
+  fetchActiveTimers,
   fetchAllPayments,
   fetchEstimates,
   fetchWorkOrders,
@@ -30,6 +33,7 @@ function statusBadge(item: WorkOrderRow) {
 
 function WorkOrderCard({ item }: { item: WorkOrderRow }) {
   const theme = useTheme();
+  const isMechanic = useIsMechanic();
   return (
     <RowCard>
       <View style={styles.topRow}>
@@ -43,15 +47,53 @@ function WorkOrderCard({ item }: { item: WorkOrderRow }) {
         {item.unit !== "-" ? `${item.unit} · ` : ""}
         {item.date}
       </Text>
-      <View style={styles.totalsRow}>
-        <Text style={[styles.total, { color: theme.text }]}>{money(item.grand_total)}</Text>
-        {item.balance > 0 ? (
-          <Text style={[styles.balance, { color: theme.warning }]}>
-            Balance {money(item.balance)}
-          </Text>
-        ) : null}
-      </View>
+      {!isMechanic ? (
+        <View style={styles.totalsRow}>
+          <Text style={[styles.total, { color: theme.text }]}>{money(item.grand_total ?? 0)}</Text>
+          {(item.balance ?? 0) > 0 ? (
+            <Text style={[styles.balance, { color: theme.warning }]}>
+              Balance {money(item.balance ?? 0)}
+            </Text>
+          ) : null}
+        </View>
+      ) : null}
     </RowCard>
+  );
+}
+
+/** «Сейчас в работе»: идущие таймеры всех механиков магазина. */
+function ActiveNowSection({
+  items,
+  onOpen,
+}: {
+  items: ActiveTimerItem[];
+  onOpen: (woId: string) => void;
+}) {
+  const theme = useTheme();
+  if (!items.length) return null;
+  return (
+    <View style={styles.activeNowWrap}>
+      <Text style={[styles.activeNowTitle, { color: theme.muted }]}>● IN WORK NOW</Text>
+      {items.map((t, idx) => (
+        <Pressable key={`${t.work_order_id}-${t.user_id}-${idx}`} onPress={() => onOpen(t.work_order_id)}>
+          <RowCard>
+            <View style={styles.topRow}>
+              <Text style={[styles.number, { color: theme.text }]}>WO #{t.wo_number ?? "—"}</Text>
+              <Badge label="In Progress" tone="info" />
+            </View>
+            <Text style={[styles.customer, { color: theme.text }]} numberOfLines={1}>
+              {t.customer}
+              {t.labor_description ? ` · ${t.labor_description}` : ""}
+            </Text>
+            <Text style={[styles.meta, { color: theme.danger }]} numberOfLines={1}>
+              ● {t.user_name || "—"}
+              {t.mine ? " (you)" : ""}
+            </Text>
+          </RowCard>
+        </Pressable>
+      ))}
+      <Text style={[styles.activeNowTitle, { color: theme.muted, marginTop: 8 }]}>ALL WORK ORDERS</Text>
+    </View>
   );
 }
 
@@ -78,15 +120,30 @@ function PaymentCard({ item }: { item: AllPaymentRow }) {
 export default function WorkOrdersScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const isMechanic = useIsMechanic();
   const [segment, setSegment] = useState<SegmentKey>("work_orders");
+  const [activeTimers, setActiveTimers] = useState<ActiveTimerItem[]>([]);
 
   const openWo = (woId: string) => {
     if (woId) router.push({ pathname: "/work-order/[id]", params: { id: woId } });
   };
 
-  const segmentBar = (
+  // Механик видит сверху, какие WO прямо сейчас в работе у других механиков.
+  useFocusEffect(
+    useCallback(() => {
+      if (!isMechanic) return;
+      fetchActiveTimers()
+        .then((d) => setActiveTimers(d.items || []))
+        .catch(() => {});
+    }, [isMechanic])
+  );
+
+  // Payments и Estimates — денежные разделы, механику не показываем.
+  const segments = isMechanic ? SEGMENTS.filter((s) => s.key === "work_orders") : SEGMENTS;
+
+  const segmentBar = segments.length < 2 ? null : (
     <View style={styles.segmentRow}>
-      {SEGMENTS.map((s) => {
+      {segments.map((s) => {
         const active = s.key === segment;
         return (
           <Pressable
@@ -147,6 +204,16 @@ export default function WorkOrdersScreen() {
     );
   }
 
+  const workOrdersHeader =
+    isMechanic && activeTimers.length ? (
+      <>
+        {segmentBar}
+        <ActiveNowSection items={activeTimers} onOpen={openWo} />
+      </>
+    ) : (
+      segmentBar
+    );
+
   return (
     <ListScreen<WorkOrderRow>
       key="work_orders"
@@ -160,7 +227,7 @@ export default function WorkOrdersScreen() {
       searchPlaceholder="Search work orders..."
       emptyTitle="No work orders found"
       emptyHint="Try a different search."
-      header={segmentBar}
+      header={workOrdersHeader}
     />
   );
 }
@@ -174,6 +241,8 @@ const styles = StyleSheet.create({
   total: { fontSize: 15, fontWeight: "700" },
   balance: { fontSize: 13, fontWeight: "600" },
   segmentRow: { flexDirection: "row", gap: 8, paddingHorizontal: 12, paddingVertical: 6 },
+  activeNowWrap: { paddingHorizontal: 12, gap: 8 },
+  activeNowTitle: { fontSize: 11, fontWeight: "700", letterSpacing: 1, marginTop: 6 },
   segmentChip: {
     borderWidth: 1,
     borderRadius: 999,

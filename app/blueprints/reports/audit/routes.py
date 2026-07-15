@@ -1692,9 +1692,31 @@ def _report_mechanic_hours(shop_db, shop_id, date_ctx, chart_bucket="month"):
                     mech_name = bucket["mechanic_name"]
                     tb[mech_name] = _round2(tb.get(mech_name, 0) + allocated)
 
+    # Фактические часы из таймеров механиков (wo_time_logs) — рядом с billed.
+    from app.blueprints.work_orders.services.time_tracking import summarize_mechanic_hours
+
+    tracked = summarize_mechanic_hours(
+        shop_db,
+        shop_id,
+        date_from=date_ctx.get("created_from"),
+        date_to_exclusive=date_ctx.get("created_to_exclusive"),
+    )
+    for uid, info in tracked.items():
+        bucket = mechanics.setdefault(uid, {
+            "mechanic_id": uid,
+            "mechanic_name": str(info.get("user_name") or "").strip() or "-",
+            "total_hours": 0.0,
+            "wo_count": 0,
+            "labor_entries": 0,
+        })
+        bucket["tracked_hours"] = _round2((info.get("seconds") or 0) / 3600.0)
+    for bucket in mechanics.values():
+        bucket.setdefault("tracked_hours", 0.0)
+
     rows = sorted(mechanics.values(), key=lambda x: x.get("total_hours", 0), reverse=True)
 
     total_hours = _round2(sum(float(r.get("total_hours") or 0) for r in rows))
+    total_tracked_hours = _round2(sum(float(r.get("tracked_hours") or 0) for r in rows))
     total_wo = sum(int(r.get("wo_count") or 0) for r in rows)
     total_entries = sum(int(r.get("labor_entries") or 0) for r in rows)
 
@@ -1715,6 +1737,7 @@ def _report_mechanic_hours(shop_db, shop_id, date_ctx, chart_bucket="month"):
         "summary": {
             "mechanics_count": len(rows),
             "total_hours": total_hours,
+            "total_tracked_hours": total_tracked_hours,
             "total_wo": total_wo,
             "total_entries": total_entries,
         },

@@ -200,6 +200,11 @@ def ensure_shop_collections_indexes(shop_db):
     _safe_create_index(shop_db.work_order_payments, [("work_order_id", ASCENDING), ("is_active", ASCENDING)], name="idx_work_order_payments_order_active")
     _safe_create_index(shop_db.work_order_payments, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_work_order_payments_shop_active_created_desc")
 
+    # Логи времени механиков (start/stop на labor-строках WO)
+    _safe_create_index(shop_db.wo_time_logs, [("shop_id", ASCENDING), ("user_id", ASCENDING), ("stopped_at", ASCENDING)], name="idx_wo_time_logs_shop_user_open")
+    _safe_create_index(shop_db.wo_time_logs, [("shop_id", ASCENDING), ("work_order_id", ASCENDING), ("labor_id", ASCENDING)], name="idx_wo_time_logs_shop_wo_labor")
+    _safe_create_index(shop_db.wo_time_logs, [("shop_id", ASCENDING), ("started_at", DESCENDING)], name="idx_wo_time_logs_shop_started_desc")
+
     # Settings/reference collections used in lookups and pagination
     _safe_create_index(shop_db.labor_rates, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("name", ASCENDING)], name="idx_labor_rates_shop_active_name")
     _safe_create_index(shop_db.labor_rates, [("shop_id", ASCENDING), ("code", ASCENDING)], name="idx_labor_rates_shop_code")

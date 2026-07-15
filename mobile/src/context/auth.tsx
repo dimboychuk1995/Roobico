@@ -89,3 +89,19 @@ export function useAuth(): AuthState {
   if (!ctx) throw new Error("useAuth must be used inside AuthProvider");
   return ctx;
 }
+
+/** Проверка права; owner всегда имеет все права (как на сервере). */
+export function useHasPermission(perm: string): boolean {
+  const { session } = useAuth();
+  if (!session) return false;
+  if (session.user.role === "owner") return true;
+  return (session.permissions || []).includes(perm);
+}
+
+/**
+ * Механик-режим: пользователь без work_orders.view_costs не видит цен нигде —
+ * упрощённые WO-экраны, одна кнопка Save (всегда in_progress), таймеры работ.
+ */
+export function useIsMechanic(): boolean {
+  return !useHasPermission("work_orders.view_costs");
+}

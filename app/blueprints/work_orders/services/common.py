@@ -55,6 +55,15 @@ def round2(v):
     return round(n + 1e-12, 2)
 
 
+def ensure_labor_id(value=None) -> str:
+    """
+    Стабильный ID labor-строки WO: сохраняем присланный, иначе генерируем.
+    К нему привязаны логи времени механиков (wo_time_logs) — терять нельзя.
+    """
+    raw = str(value or "").strip()
+    return raw if raw else str(ObjectId())
+
+
 def as_bool(v) -> bool:
     if isinstance(v, bool):
         return v

@@ -1,0 +1,471 @@
+/* Механик-режим: mobile-first страницы WO без цен.
+   Только layout-правила; цвета — через CSS-переменные из public.css /
+   theme_dark.css, чтобы обе темы работали без дублирования. */
+
+.mech-wrap {
+  max-width: 720px;
+  padding: 12px 12px 96px; /* снизу место под sticky timer bar */
+}
+
+.mech-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.mech-header-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.mech-header-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.mech-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.mech-search {
+  position: relative;
+}
+
+.mech-search .bi-search {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.mech-search input {
+  padding-left: 36px;
+  min-height: 44px;
+}
+
+.mech-filter-chips {
+  display: flex;
+  gap: 8px;
+}
+
+.mech-chip {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--muted);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.mech-chip.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+
+.mech-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.mech-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  margin: 14px 0 8px;
+}
+
+.mech-active-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.mech-active-elapsed {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--danger);
+}
+
+.mech-wo-card {
+  display: block;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  padding: 12px 14px;
+  text-decoration: none;
+  color: var(--text);
+}
+
+.mech-wo-card:hover {
+  border-color: var(--primary);
+  color: var(--text);
+}
+
+.mech-wo-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.mech-wo-number {
+  font-weight: 700;
+}
+
+.mech-wo-meta {
+  color: var(--muted);
+  font-size: 0.88rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.mech-wo-running {
+  color: var(--danger);
+  font-size: 0.8rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.mech-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.mech-page-label {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.mech-fab {
+  position: fixed;
+  right: 18px;
+  bottom: 84px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  box-shadow: var(--shadow-card);
+  z-index: 1020;
+}
+
+.mech-fab:hover {
+  background: var(--primary-deep);
+  color: #fff;
+}
+
+/* --- детали WO --- */
+
+.mech-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  margin-bottom: 12px;
+}
+
+.mech-info-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text);
+  padding: 2px 0;
+}
+
+.mech-info-row .bi {
+  color: var(--muted);
+}
+
+.mech-labor-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-soft);
+  background: var(--surface);
+  margin-bottom: 12px;
+}
+
+.mech-labor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.mech-labor-title {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.mech-labor-body {
+  padding: 12px 14px;
+}
+
+.mech-labor-desc {
+  min-height: 64px;
+}
+
+.mech-timer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.mech-timer-btn {
+  min-width: 132px;
+  min-height: 44px;
+  font-weight: 700;
+}
+
+.mech-labor-tracked {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.mech-labor-tracked .running {
+  color: var(--danger);
+  font-weight: 700;
+}
+
+.mech-parts {
+  margin-top: 12px;
+}
+
+.mech-parts-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+
+.mech-part-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.mech-part-row:last-child {
+  border-bottom: 0;
+}
+
+.mech-part-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.mech-part-number {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.mech-part-desc {
+  color: var(--muted);
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mech-qty {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mech-qty button {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 700;
+}
+
+.mech-qty input {
+  width: 48px;
+  text-align: center;
+  min-height: 36px;
+}
+
+.mech-part-remove {
+  border: 0;
+  background: none;
+  color: var(--danger);
+  font-size: 1.1rem;
+  padding: 6px;
+}
+
+.mech-add-part {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.mech-add-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.mech-add-labor {
+  flex: 1;
+  min-height: 46px;
+}
+
+.mech-unit-row {
+  display: flex;
+  gap: 8px;
+}
+
+.mech-unit-row .form-select {
+  flex: 1;
+}
+
+.mech-save-row {
+  margin-bottom: 24px;
+}
+
+.mech-save-row .btn {
+  min-height: 52px;
+}
+
+.mech-save-hint {
+  text-align: center;
+  font-size: 0.82rem;
+  margin-top: 6px;
+}
+
+/* --- парт-пикер --- */
+
+.mech-part-results {
+  max-height: 55vh;
+  overflow-y: auto;
+}
+
+.mech-part-result {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: none;
+  padding: 10px 6px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+.mech-part-result:hover {
+  background: var(--surface-soft);
+}
+
+.mech-part-result .meta {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+/* --- sticky бар текущего таймера --- */
+
+.mech-timer-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1030;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.mech-timer-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mech-timer-label {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mech-timer-elapsed {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--danger);
+}
+
+.mech-timer-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--danger);
+  flex: 0 0 auto;
+  animation: mechPulse 1.2s ease-in-out infinite !important;
+}
+
+@keyframes mechPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+@media (min-width: 576px) {
+  .mech-toolbar {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .mech-search {
+    flex: 1;
+    max-width: 360px;
+  }
+}

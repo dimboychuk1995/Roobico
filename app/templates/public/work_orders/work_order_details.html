@@ -190,6 +190,7 @@
     <script type="application/json" id="workOrderInitialTotalsData">{{ (initial_totals or {})|tojson }}</script>
     <script type="application/json" id="workOrderCreatedData">{{ {"created": work_order_created, "id": created_work_order_id, "status": work_order_status}|tojson }}</script>
     <script type="application/json" id="workOrderAuthorizationsData">{{ (initial_authorizations or [])|tojson }}</script>
+    <script type="application/json" id="woTimeSummary">{{ (time_summary or {})|tojson }}</script>
 
 
 

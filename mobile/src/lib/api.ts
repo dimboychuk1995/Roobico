@@ -129,12 +129,13 @@ export interface WorkOrderRow {
   date: string;
   unit: string;
   mileage: number | null;
-  labor_total: number;
-  parts_total: number;
-  sales_tax_total: number;
-  grand_total: number;
-  paid_amount: number;
-  balance: number;
+  // Денежные поля отсутствуют в ответе для механиков (без view_costs).
+  labor_total?: number;
+  parts_total?: number;
+  sales_tax_total?: number;
+  grand_total?: number;
+  paid_amount?: number;
+  balance?: number;
   is_paid: boolean;
   is_in_progress: boolean;
   status: string;
@@ -323,6 +324,126 @@ export interface WorkOrderDetails {
 
 export function fetchWorkOrderDetails(id: string) {
   return request<WorkOrderDetails>(`/api/mobile/work_orders/${encodeURIComponent(id)}`);
+}
+
+// ── Механик-режим: безденежные детали WO + таймеры работ ────────────
+
+export interface MechRunningUser {
+  user_id: string;
+  user_name: string;
+  started_at: string; // ISO UTC
+  mine: boolean;
+}
+
+export interface MechLaborTime {
+  total_seconds: number; // завершённые + идущие (на момент ответа)
+  completed_seconds: number; // только завершённые сессии — база для тикеров
+  my_seconds: number;
+  my_running: boolean;
+  my_started_at: string;
+  // Над одной работой могут работать несколько механиков одновременно.
+  running_users: MechRunningUser[];
+}
+
+export interface MechWoPart {
+  part_id: string;
+  part_number: string;
+  description: string;
+  qty: number;
+  one_time_part: boolean;
+}
+
+export interface MechWoLabor {
+  labor_id: string;
+  description: string;
+  issue_description: string;
+  parts: MechWoPart[];
+  time: MechLaborTime;
+}
+
+export interface MechRunningTimer {
+  work_order_id: string;
+  wo_number: number | string | null;
+  labor_id: string;
+  started_at: string;
+  labor_description?: string;
+}
+
+export interface MechWorkOrderDetails {
+  ok: boolean;
+  id: string;
+  wo_number: number | string | null;
+  status: string;
+  customer: { id: string; label: string };
+  unit: { id: string; label: string; vin: string; unit_number: string; mileage: number | string | null };
+  date: string;
+  labors: MechWoLabor[];
+  my_running_timer: MechRunningTimer | null;
+  server_now: string;
+}
+
+/** Для механиков /api/mobile/work_orders/<id> возвращает эту форму (без цен). */
+export function fetchMechanicWoDetails(id: string) {
+  return request<MechWorkOrderDetails>(`/api/mobile/work_orders/${encodeURIComponent(id)}`);
+}
+
+export interface TimerLog {
+  id: string;
+  work_order_id: string;
+  wo_number: number | string | null;
+  labor_id: string;
+  user_id: string;
+  user_name: string;
+  started_at: string;
+  stopped_at: string;
+  seconds: number | null;
+}
+
+export interface TimerResponse {
+  ok: boolean;
+  timer: TimerLog;
+  stopped_previous?: TimerLog | null;
+  time_summary: Record<string, MechLaborTime>;
+  server_now: string;
+}
+
+export function startLaborTimer(woId: string, laborId: string) {
+  return request<TimerResponse>("/work_orders/api/mechanic/timers/start", {
+    method: "POST",
+    body: JSON.stringify({ work_order_id: woId, labor_id: laborId }),
+  });
+}
+
+export function stopLaborTimer() {
+  return request<TimerResponse>("/work_orders/api/mechanic/timers/stop", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export function fetchCurrentTimer() {
+  return request<{ ok: boolean; timer: (MechRunningTimer & { labor_description?: string }) | null; server_now: string }>(
+    "/work_orders/api/mechanic/timers/current"
+  );
+}
+
+export interface ActiveTimerItem {
+  work_order_id: string;
+  wo_number: number | string | null;
+  customer: string;
+  labor_id: string;
+  labor_description: string;
+  user_id: string;
+  user_name: string;
+  started_at: string;
+  mine: boolean;
+}
+
+/** Все идущие таймеры магазина — блок «сейчас в работе» над списком WO. */
+export function fetchActiveTimers() {
+  return request<{ ok: boolean; items: ActiveTimerItem[]; server_now: string }>(
+    "/work_orders/api/mechanic/timers/active"
+  );
 }
 
 export interface PaymentRow {
@@ -642,7 +763,7 @@ export function decodeVin(vin: string) {
 export interface LaborRate {
   code: string;
   name: string;
-  hourly_rate: number;
+  hourly_rate?: number; // сервер не отдаёт $/час механикам
 }
 
 export function fetchLaborRates() {
@@ -656,7 +777,7 @@ export interface PartSearchItem {
   part_number: string;
   description: string;
   reference: string;
-  average_cost: number;
+  average_cost?: number; // отсутствует для механиков
   in_stock: number;
 }
 
@@ -679,8 +800,8 @@ export interface WoFormPart {
   part_number: string;
   description: string;
   qty: number;
-  cost: number;
-  price: number;
+  cost?: number; // механики не шлют цен — сервер заполняет сам
+  price?: number;
   core_charge?: number;
   misc_charge?: number;
   misc_charge_description?: string;
@@ -688,6 +809,7 @@ export interface WoFormPart {
 }
 
 export interface WoFormLabor {
+  labor_id?: string; // стабильный ID строки: сервер сохраняет по нему часы/цены/таймеры
   description: string;
   hours: string;
   rate_code: string;
@@ -701,7 +823,7 @@ export interface WoSaveResult {
   id: string;
   wo_number?: number;
   status: string;
-  grand_total: number;
+  grand_total?: number; // отсутствует в ответах механик-эндпоинтов
   inventory_warnings: string[];
 }
 
@@ -744,8 +866,8 @@ export interface PresetDetail {
     part_number: string;
     description: string;
     qty: number;
-    cost: number;
-    price: number | null;
+    cost?: number; // отсутствует для механиков (сервер стрипит деньги)
+    price?: number | null;
     core_has_charge?: boolean;
     core_cost?: number;
   }[];

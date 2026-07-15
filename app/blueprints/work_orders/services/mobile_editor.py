@@ -10,7 +10,7 @@ normalize/align/_apply_sales_tax, что и веб-сохранение.
 """
 from __future__ import annotations
 
-from app.blueprints.work_orders.services.common import f64, i32, round2
+from app.blueprints.work_orders.services.common import ensure_labor_id, f64, i32, round2
 from app.blueprints.work_orders.services.lookups import (
     get_labor_rates,
     get_shop_supply_percentage,
@@ -130,13 +130,15 @@ def compute_labors_and_totals(shop_db, shop, labors_payload):
 
         block_full = round2(labor_base + shop_supply + parts_sum + core_sum + misc_sum)
 
+        assigned = raw.get("assigned_mechanics")
         labors_nested.append({
+            "labor_id": ensure_labor_id(raw.get("labor_id")),
             "labor": {
                 "description": description,
                 "hours": hours_raw,
                 "rate_code": rate_code,
                 "labor_full_total": block_full,
-                "assigned_mechanics": [],
+                "assigned_mechanics": assigned if isinstance(assigned, list) else [],
                 "issue_description": issue_description,
             },
             "parts": parts_clean,

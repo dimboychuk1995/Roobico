@@ -9,9 +9,14 @@
       "Glob",
       "Grep",
       "WebFetch",
-      "WebSearch"
+      "WebSearch",
+      "WebFetch(domain:www.vinaudit.com)"
     ],
     "ask": [
+      "Bash(git commit*)",
+      "Bash(*git commit*)",
+      "PowerShell(git commit*)",
+      "PowerShell(*git commit*)",
       "Bash(git push*)",
       "Bash(*git push*)",
       "PowerShell(git push*)",

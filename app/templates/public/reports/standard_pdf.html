@@ -103,7 +103,8 @@
         {% elif selected_tab == 'mechanic_hours' %}
           <tr>
             <th>Mechanic</th>
-            <th class="text-end">Hours</th>
+            <th class="text-end">Billed Hours</th>
+            <th class="text-end">Tracked Hours</th>
             <th class="text-end">Work Orders</th>
             <th class="text-end">Labor Entries</th>
           </tr>
@@ -168,6 +169,7 @@
             <tr>
               <td>{{ row.mechanic_name }}</td>
               <td class="text-end">{{ "%.2f"|format(row.total_hours or 0) }}</td>
+              <td class="text-end">{{ "%.2f"|format(row.tracked_hours or 0) }}</td>
               <td class="text-end">{{ row.wo_count or 0 }}</td>
               <td class="text-end">{{ row.labor_entries or 0 }}</td>
             </tr>

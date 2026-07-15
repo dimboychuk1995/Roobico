@@ -1536,6 +1536,7 @@
       i.value = "";
     });
     delete clone.dataset.issueDescription;
+    delete clone.dataset.laborId;
     clone.querySelectorAll(".laborAssignSummary").forEach(el => {
       el.textContent = "Assigned: —";
     });
@@ -2150,6 +2151,8 @@
       const laborHours = (b?.labor?.hours ?? b?.labor_hours ?? "");
       const laborRate = (b?.labor?.rate_code ?? b?.labor_rate_code ?? "");
 
+      el.dataset.laborId = String(b?.labor_id ?? "");
+
       if (ld) ld.value = String(laborDesc ?? "");
       if (lh) lh.value = String(laborHours ?? "");
       if (lr) lr.value = String(laborRate ?? "");
@@ -2277,6 +2280,7 @@
       });
 
       out.push({
+        labor_id: String(bEl.dataset.laborId || ""),
         labor_description,
         labor_hours: labor_hours === "" ? 0 : Number(labor_hours),
         labor_rate_code,
@@ -3240,6 +3244,54 @@
       });
     }
     applyAuthorizationBadges();
+
+    // ---------- tracked mechanic time (read-only, из wo_time_logs) ----------
+    const woTimeSummary = readJsonScript("woTimeSummary", {});
+    function applyTrackedTime() {
+      const keys = Object.keys(woTimeSummary || {});
+      if (!keys.length) return;
+      const escText = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => (
+        { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+      ));
+      const fmtTracked = (seconds) => {
+        const s = Math.max(0, Math.floor(Number(seconds) || 0));
+        const h = Math.floor(s / 3600);
+        const m = Math.round((s % 3600) / 60);
+        return h > 0 ? `${h}h ${m}m` : `${m}m`;
+      };
+      const seenIds = new Set();
+      Array.from(blocksContainer.querySelectorAll(".wo-labor")).forEach((blockEl) => {
+        const laborId = String(blockEl.dataset.laborId || "");
+        if (laborId) seenIds.add(laborId);
+        const bucket = woTimeSummary[laborId];
+        const anchor = blockEl.querySelector(".laborAssignSummary");
+        const runningUsers = (bucket && bucket.running_users) || [];
+        if (!anchor || !bucket || !(bucket.total_seconds > 0 || runningUsers.length)) return;
+        const users = bucket.users || {};
+        const perUser = Object.keys(users)
+          .map((uid) => `${users[uid].user_name || "—"} ${fmtTracked(users[uid].seconds)}`)
+          .join(", ");
+        const runningNames = runningUsers.map((u) => u.user_name || "—").join(", ");
+        const line = document.createElement("div");
+        line.className = "text-muted small mt-1 laborTrackedTime";
+        line.innerHTML =
+          `Tracked: <strong>${fmtTracked(bucket.total_seconds)}</strong>` +
+          (perUser ? ` — ${escText(perUser)}` : "") +
+          (runningNames ? ` <span class="text-danger">&#9679; ${escText(runningNames)} working</span>` : "");
+        anchor.insertAdjacentElement("afterend", line);
+      });
+      // Логи строк, удалённых из WO: показываем суммарно, чтобы время не «терялось».
+      const orphanSeconds = keys
+        .filter((k) => !seenIds.has(k))
+        .reduce((sum, k) => sum + (Number(woTimeSummary[k]?.total_seconds) || 0), 0);
+      if (orphanSeconds > 0) {
+        const note = document.createElement("div");
+        note.className = "text-muted small mt-2";
+        note.textContent = `Tracked on removed labor lines: ${fmtTracked(orphanSeconds)}`;
+        blocksContainer.insertAdjacentElement("afterend", note);
+      }
+    }
+    applyTrackedTime();
 
     // Render misc charges tables for all blocks
     Array.from(blocksContainer.querySelectorAll(".wo-labor")).forEach(blockEl => {

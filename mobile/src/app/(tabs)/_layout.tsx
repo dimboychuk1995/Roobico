@@ -2,11 +2,17 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { Tabs, useRouter } from "expo-router";
 import { Pressable } from "react-native";
 
+import { useHasPermission } from "@/context/auth";
 import { useTheme } from "@/lib/theme";
 
 export default function TabsLayout() {
   const theme = useTheme();
   const router = useRouter();
+  // Табы гейтятся по правам: у роли mechanic нет dashboard/customers/parts —
+  // сервер и так вернёт 403, но пустые экраны показывать незачем.
+  const canDashboard = useHasPermission("dashboard.view");
+  const canCustomers = useHasPermission("customers.view");
+  const canParts = useHasPermission("parts.view");
 
   const addButton = (onPress: () => void) => () => (
     <Pressable onPress={onPress} hitSlop={8} style={{ paddingHorizontal: 14 }}>
@@ -29,6 +35,7 @@ export default function TabsLayout() {
         name="index"
         options={{
           title: "Dashboard",
+          href: canDashboard ? undefined : null,
           tabBarIcon: ({ color, size }) => <Ionicons name="grid-outline" color={color} size={size} />,
         }}
       />
@@ -46,6 +53,7 @@ export default function TabsLayout() {
         name="customers"
         options={{
           title: "Customers",
+          href: canCustomers ? undefined : null,
           tabBarIcon: ({ color, size }) => <Ionicons name="people-outline" color={color} size={size} />,
           headerRight: addButton(() => router.push("/customer-form")),
         }}
@@ -54,6 +62,7 @@ export default function TabsLayout() {
         name="parts"
         options={{
           title: "Parts",
+          href: canParts ? undefined : null,
           tabBarIcon: ({ color, size }) => <Ionicons name="construct-outline" color={color} size={size} />,
         }}
       />

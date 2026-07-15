@@ -94,6 +94,7 @@ from app.blueprints.work_orders.services.common import (
     append_and_filter,
     as_bool,
     build_created_at_range_filter,
+    ensure_labor_id,
     build_preferred_date_range_filter,
     f64,
     format_dt_label,
@@ -104,7 +105,12 @@ from app.blueprints.work_orders.services.common import (
     round2,
     utcnow,
 )
-from app.utils.permissions import permission_required
+from app.utils.permissions import (
+    enforce_mechanic_status,
+    has_permission,
+    is_mechanic_mode,
+    permission_required,
+)
 from app.utils.display_datetime import (
     format_date_mmddyyyy,
     format_preferred_shop_date,
@@ -336,6 +342,7 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
         "today_date_input_value": get_active_shop_today_iso(),
 
         "initial_labors": (form_state or {}).get("initial_labors") or [],
+        "time_summary": (form_state or {}).get("time_summary") or {},
         "initial_totals": normalize_totals_payload((form_state or {}).get("initial_totals") or {}),
         "work_order_status": (form_state or {}).get("work_order_status") or "open",
         "pending_attachment_id": pending_attachment_id,
@@ -367,6 +374,9 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
 @login_required
 @permission_required("work_orders.view")
 def work_orders_page():
+    if is_mechanic_mode():
+        return redirect(url_for("mechanic.work_orders_list"))
+
     shop_db, shop = get_shop_db()
     if shop_db is None:
         flash("Shop database not configured.", "error")
@@ -417,6 +427,9 @@ def work_orders_page():
 @login_required
 @permission_required("work_orders.view")
 def estimates_api():
+    if not has_permission("work_orders.view_costs"):
+        return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.view_costs"}), 403
+
     shop_db, shop = get_shop_db()
     if shop_db is None:
         return jsonify({"ok": False, "error": "Shop database not configured."}), 400
@@ -470,6 +483,12 @@ def customers_api():
 @login_required
 @permission_required("work_orders.create")
 def work_order_details_page():
+    if is_mechanic_mode():
+        wo_id = (request.args.get("work_order_id") or "").strip()
+        if wo_id:
+            return redirect(url_for("mechanic.work_order_details", work_order_id=wo_id))
+        return redirect(url_for("mechanic.work_order_new"))
+
     shop_db, shop = get_shop_db()
     if shop_db is None:
         flash("Shop database not configured.", "error")
@@ -490,6 +509,10 @@ def work_order_details_page():
         work_order_status = (wo.get("status") or "open").strip().lower()
         if work_order_status not in ("open", "paid"):
             work_order_status = "open"
+
+        from app.blueprints.work_orders.services.time_tracking import summarize_wo_time
+
+        time_summary = summarize_wo_time(shop_db, shop["_id"], wo["_id"])
 
         return render_details(
             shop_db,
@@ -521,6 +544,7 @@ def work_order_details_page():
                 },
                 "work_order_status": work_order_status,
                 "authorizations": list(wo.get("authorizations") or []),
+                "time_summary": time_summary,
             },
         )
 
@@ -605,7 +629,7 @@ def create_work_order():
     labors_map: dict[int, dict] = {}
 
     # labor
-    labor_re = re.compile(r"^(?:labors|blocks)\[(\d+)\]\[(labor_description|labor_hours|labor_rate_code|labor_total_ui|labor_full_total|assigned_mechanics_json|issue_description)\]$")
+    labor_re = re.compile(r"^(?:labors|blocks)\[(\d+)\]\[(labor_id|labor_description|labor_hours|labor_rate_code|labor_total_ui|labor_full_total|assigned_mechanics_json|issue_description)\]$")
     # parts
     parts_re = re.compile(
         r"^(?:labors|blocks)\[(\d+)\]\[parts\]\[(\d+)\]\[(part_id|part_number|description|qty|cost|price|core_charge|misc_charge|misc_charge_description|one_time_part)\]$"
@@ -618,7 +642,9 @@ def create_work_order():
             field = m.group(2)
             b = labors_map.setdefault(bidx, {"labor": {}, "parts": []})
 
-            if field == "labor_description":
+            if field == "labor_id":
+                b["labor_id"] = (val or "").strip()
+            elif field == "labor_description":
                 b["labor"]["description"] = (val or "").strip()
             elif field == "labor_hours":
                 b["labor"]["hours"] = (val or "").strip()
@@ -680,6 +706,7 @@ def create_work_order():
             assigned_mechanics = normalize_assigned_mechanics(assigned_data, mechanics_by_id)
 
         labors.append({
+            "labor_id": ensure_labor_id(b.get("labor_id")),
             "labor": {
                 "description": (labor.get("description") or "").strip(),
                 "hours": (labor.get("hours") or "").strip(),
@@ -756,7 +783,7 @@ def create_work_order():
         "wo_number": wo_number,
         "customer_id": customer_id,
         "unit_id": unit_id,
-        "status": "in_progress" if (request.form.get("create_status") or "").strip().lower() == "in_progress" else "open",
+        "status": "in_progress" if enforce_mechanic_status((request.form.get("create_status") or "").strip().lower()) == "in_progress" else "open",
         "labors": labors,
         "work_order_date": work_order_date,
 
@@ -976,6 +1003,9 @@ def api_parts_search():
             if len(items) >= limit:
                 break
 
+    if not has_permission("work_orders.view_costs"):
+        items = [strip_part_search_item(i) for i in items]
+
     return jsonify({"items": items}), 200
 
 
@@ -1172,6 +1202,9 @@ def api_units_for_customer():
 @login_required
 @permission_required("work_orders.create")
 def api_parts_pricing_for_customer():
+    if not has_permission("work_orders.view_costs"):
+        return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.view_costs"}), 403
+
     shop_db, shop = get_shop_db()
     if shop_db is None:
         return jsonify({"pricing": None, "error": "shop_db_missing"}), 200
@@ -1463,7 +1496,8 @@ def api_work_order_update(work_order_id):
         set_fields["unit_id"] = new_unit_id
 
     # ✅ Optional explicit status transition: "open" (completed) or "in_progress"
-    save_status = (data.get("save_status") or "").strip().lower()
+    # В механик-режиме статус форсится в in_progress независимо от клиента.
+    save_status = enforce_mechanic_status((data.get("save_status") or "").strip().lower())
     if save_status in ("open", "in_progress"):
         set_fields["status"] = save_status
 
@@ -1502,6 +1536,9 @@ def api_work_order_payment(work_order_id):
     Request body: {amount, payment_method, notes}
     Saves to work_order_payments collection and updates work_order status if fully paid.
     """
+    if not has_permission("work_orders.view_costs"):
+        return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.view_costs"}), 403
+
     shop_db, shop = get_shop_db()
     if shop_db is None:
         return jsonify({"ok": False, "error": "shop_db_missing"}), 200
@@ -1599,6 +1636,9 @@ def api_get_work_order_payments(work_order_id):
     """
     Get all payments for a work order with balance info.
     """
+    if not has_permission("work_orders.view_costs"):
+        return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.view_costs"}), 403
+
     shop_db, shop = get_shop_db()
     if shop_db is None:
         return jsonify({"ok": False, "error": "shop_db_missing"}), 200
@@ -1655,6 +1695,9 @@ def api_get_work_order_payments(work_order_id):
 @login_required
 @permission_required("work_orders.create")
 def api_delete_work_order_payment(payment_id):
+    if not has_permission("work_orders.view_costs"):
+        return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.view_costs"}), 403
+
     shop_db, shop = get_shop_db()
     if shop_db is None:
         return jsonify({"ok": False, "error": "shop_db_missing"}), 200
@@ -1723,6 +1766,9 @@ def api_delete_work_order_payment(payment_id):
 @permission_required("work_orders.view")
 def api_bulk_payment_customers():
     """Customers that have unpaid invoices (for the bulk payment modal)."""
+    if not has_permission("work_orders.view_costs"):
+        return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.view_costs"}), 403
+
     shop_db, shop = get_shop_db()
     if shop_db is None:
         return jsonify({"ok": False, "error": "shop_db_missing"}), 200
@@ -1735,6 +1781,9 @@ def api_bulk_payment_customers():
 @permission_required("work_orders.view")
 def api_bulk_payment_unpaid_work_orders(customer_id):
     """Unpaid invoices of one customer with balances, oldest first."""
+    if not has_permission("work_orders.view_costs"):
+        return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.view_costs"}), 403
+
     shop_db, shop = get_shop_db()
     if shop_db is None:
         return jsonify({"ok": False, "error": "shop_db_missing"}), 200
@@ -1759,6 +1808,9 @@ def api_bulk_payment():
                    allocations: [{work_order_id, amount}, ...]}
     All-or-nothing: any invalid allocation rejects the whole request.
     """
+    if not has_permission("work_orders.view_costs"):
+        return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.view_costs"}), 403
+
     shop_db, shop = get_shop_db()
     if shop_db is None:
         return jsonify({"ok": False, "error": "shop_db_missing"}), 200
@@ -1785,6 +1837,9 @@ def api_get_all_payments():
     """
     Get all payments for the current shop.
     """
+    if not has_permission("work_orders.view_costs"):
+        return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.view_costs"}), 403
+
     shop_db, shop = get_shop_db()
     if shop_db is None:
         return jsonify({"ok": False, "error": "shop_db_missing"}), 200
@@ -2003,6 +2058,14 @@ def api_work_order_set_status(work_order_id):
     if status not in ("open", "paid", "in_progress"):
         return jsonify({"ok": False, "error": "invalid_status"}), 200
 
+    # Механик-режим: разрешён только in_progress, и нельзя трогать paid WO —
+    # иначе смена статуса удалит записи платежей (delete_many ниже).
+    if is_mechanic_mode():
+        if status != "in_progress":
+            return jsonify({"ok": False, "error": "forbidden_status"}), 403
+        if (wo.get("status") or "").strip().lower() == "paid":
+            return jsonify({"ok": False, "error": "paid_cannot_change"}), 403
+
     now = utcnow()
     user_id = current_user_id()
 
@@ -2141,6 +2204,10 @@ def _save_new_contact_to_customer(shop_db, customer_id, new_contact):
 @login_required
 @permission_required("work_orders.view")
 def api_download_work_order_pdf(work_order_id):
+    # PDF содержит все цены — недоступен без права видеть стоимости.
+    if not has_permission("work_orders.view_costs"):
+        return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.view_costs"}), 403
+
     shop_db, shop = get_shop_db()
     if shop_db is None:
         return jsonify({"ok": False, "error": "Shop not found"}), 404
@@ -2818,6 +2885,15 @@ def api_preset_detail(preset_id):
         except Exception:
             pass
 
+    # Механик-режим: пресет отдаём без денег (цены проставит сервер при
+    # сохранении WO) — только парт/описание/количество.
+    if not has_permission("work_orders.view_costs"):
+        money_keys = ("cost", "price", "core_has_charge", "core_cost", "misc_has_charge", "misc_charges")
+        enriched_parts = [
+            {k: v for k, v in ep.items() if k not in money_keys}
+            for ep in enriched_parts
+        ]
+
     return jsonify({
         "id": str(doc["_id"]),
         "name": doc.get("name") or "",
@@ -2826,4 +2902,313 @@ def api_preset_detail(preset_id):
         "labor_rate_code": doc.get("labor_rate_code"),
         "allow_discount": bool(doc.get("allow_discount")),
         "parts": enriched_parts,
+    }), 200
+
+# -------------------- MECHANIC MODE (безденежные эндпоинты + таймеры) --------------------
+# Общий API для веб-страницы механика и мобильного приложения. Доступны любому
+# пользователю с соответствующим правом (менеджерам тоже) — просто никогда не
+# возвращают цены/тоталы. Логика — в services/mechanic_view.py,
+# services/mechanic_editor.py и services/time_tracking.py.
+
+from app.blueprints.work_orders.services.mechanic_view import (
+    mechanic_wo_payload,
+    strip_part_search_item,
+    strip_wo_list_item,
+)
+from app.blueprints.work_orders.services.mechanic_editor import (
+    build_mechanic_labors_payload,
+    merge_mechanic_edit,
+)
+from app.blueprints.work_orders.services import time_tracking
+
+
+def _server_now_iso() -> str:
+    return utcnow().isoformat().replace("+00:00", "Z")
+
+
+def _current_user_display_name() -> str:
+    user = get_master_db().users.find_one(
+        {"_id": current_user_id()},
+        {"first_name": 1, "last_name": 1, "name": 1, "email": 1},
+    ) or {}
+    full = f"{str(user.get('first_name') or '').strip()} {str(user.get('last_name') or '').strip()}".strip()
+    return full or str(user.get("name") or "").strip() or str(user.get("email") or "").strip()
+
+
+@work_orders_bp.get("/work_orders/api/mechanic/work_orders")
+@login_required
+@permission_required("work_orders.view")
+def api_mechanic_work_orders():
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    q = (request.args.get("q") or "").strip()
+    status = (request.args.get("status") or "all").strip().lower()
+    paid_status = status if status in ("in_progress",) else ("unpaid" if status == "open" else "all")
+    page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
+
+    items, pagination, _totals = get_work_orders_list(
+        shop_db, shop["_id"], page, per_page, q=q, paid_status=paid_status,
+    )
+
+    running = time_tracking.get_running_timer(shop_db, shop, current_user_id())
+    running_wo_id = str(running.get("work_order_id")) if running else ""
+
+    out_items = []
+    for item in items:
+        stripped = strip_wo_list_item(item)
+        stripped["my_timer_running"] = bool(running_wo_id) and item.get("id") == running_wo_id
+        out_items.append(stripped)
+
+    return jsonify({
+        "ok": True,
+        "items": out_items,
+        "pagination": pagination,
+        "server_now": _server_now_iso(),
+    }), 200
+
+
+@work_orders_bp.get("/work_orders/api/mechanic/work_orders/<work_order_id>")
+@login_required
+@permission_required("work_orders.view")
+def api_mechanic_work_order_details(work_order_id):
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return jsonify({"ok": False, "error": "invalid_work_order_id"}), 400
+
+    wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True})
+    if not wo:
+        return jsonify({"ok": False, "error": "work_order_not_found"}), 404
+
+    payload = mechanic_wo_payload(shop_db, shop, wo, current_user_id())
+    payload["server_now"] = _server_now_iso()
+    return jsonify(payload), 200
+
+
+@work_orders_bp.post("/work_orders/api/mechanic/work_orders")
+@login_required
+@permission_required("work_orders.create")
+def api_mechanic_work_order_create():
+    from app.blueprints.work_orders.services.mobile_editor import compute_labors_and_totals
+
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    data = request.get_json(silent=True) or {}
+    customer_id = oid(data.get("customer_id"))
+    unit_id = oid(data.get("unit_id"))
+    if not customer_id or not unit_id:
+        return jsonify({"ok": False, "error": "customer_unit_required"}), 400
+
+    customer = shop_db.customers.find_one({"_id": customer_id, "shop_id": shop["_id"], "is_active": True})
+    if not customer:
+        return jsonify({"ok": False, "error": "customer_not_found"}), 404
+    unit = shop_db.units.find_one({"_id": unit_id, "shop_id": shop["_id"], "is_active": True})
+    if not unit or unit.get("customer_id") != customer_id:
+        return jsonify({"ok": False, "error": "unit_not_found"}), 404
+
+    labors_payload = data.get("labors")
+    if not isinstance(labors_payload, list) or not labors_payload:
+        return jsonify({"ok": False, "error": "labors_required"}), 400
+
+    # Клиентские цены/часы/статус игнорируются; сервер автозаполняет цены.
+    enriched = build_mechanic_labors_payload(shop_db, shop, customer_id, labors_payload)
+    labors, totals_raw = compute_labors_and_totals(shop_db, shop, enriched)
+    totals = align_totals_with_labors(normalize_totals_payload(totals_raw), labors)
+    shop_tax = _get_shop_sales_tax_context(shop, shop_db)
+    totals = _apply_sales_tax_to_totals(
+        totals,
+        shop_tax.get("rate") or 0,
+        _is_customer_taxable(shop_db, customer_id),
+    )
+
+    now = utcnow()
+    user_id = current_user_id()
+
+    inventory_result = deduct_parts_from_inventory(shop_db, labors, user_id)
+
+    doc = {
+        "shop_id": shop["_id"],
+        "tenant_id": shop.get("tenant_id"),
+        "wo_number": get_next_wo_number(shop_db, shop["_id"]),
+        "customer_id": customer_id,
+        "unit_id": unit_id,
+        "status": "in_progress",
+        "labors": labors,
+        "work_order_date": now,
+        "totals": totals,
+        "inventory_deducted": len(inventory_result["deducted"]) > 0,
+        "inventory_deductions": inventory_result["deducted"],
+        "is_active": True,
+        "created_at": now,
+        "updated_at": now,
+        "created_by": user_id,
+        "updated_by": user_id,
+    }
+    res = shop_db.work_orders.insert_one(doc)
+    core_sync = sync_work_order_cores(shop_db, shop, [], labors, user_id)
+
+    return jsonify({
+        "ok": True,
+        "id": str(res.inserted_id),
+        "wo_number": doc["wo_number"],
+        "status": "in_progress",
+        "inventory_warnings": inventory_result.get("errors") or [],
+        "core_sync_errors": core_sync.get("errors") or [],
+    }), 200
+
+
+@work_orders_bp.post("/work_orders/api/mechanic/work_orders/<work_order_id>")
+@login_required
+@permission_required("work_orders.create")
+def api_mechanic_work_order_update(work_order_id):
+    from app.blueprints.work_orders.services.mobile_editor import compute_labors_and_totals
+
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return jsonify({"ok": False, "error": "invalid_work_order_id"}), 400
+
+    wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True})
+    if not wo:
+        return jsonify({"ok": False, "error": "work_order_not_found"}), 404
+    if (wo.get("status") or "open") == "paid":
+        return jsonify({"ok": False, "error": "paid_cannot_edit"}), 400
+
+    data = request.get_json(silent=True) or {}
+    labors_payload = data.get("labors")
+    if not isinstance(labors_payload, list) or not labors_payload:
+        return jsonify({"ok": False, "error": "labors_required"}), 400
+
+    merged = merge_mechanic_edit(shop_db, shop, wo, labors_payload)
+    labors, totals_raw = compute_labors_and_totals(shop_db, shop, merged)
+    totals = align_totals_with_labors(normalize_totals_payload(totals_raw), labors)
+
+    existing_totals = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
+    locked_tax_rate = existing_totals.get("sales_tax_rate")
+    if locked_tax_rate is None:
+        locked_tax_rate = _get_shop_sales_tax_context(shop, shop_db).get("rate") or 0
+    is_taxable = existing_totals.get("is_taxable")
+    if is_taxable is None:
+        is_taxable = _is_customer_taxable(shop_db, wo.get("customer_id"))
+    totals = _apply_sales_tax_to_totals(totals, locked_tax_rate, bool(is_taxable))
+
+    now = utcnow()
+    user_id = current_user_id()
+    old_labors = wo.get("labors") or []
+
+    inventory_adjustment = adjust_inventory_for_part_changes(shop_db, old_labors, labors, user_id)
+    core_sync = sync_work_order_cores(shop_db, shop, old_labors, labors, user_id)
+
+    shop_db.work_orders.update_one(
+        {"_id": wo_id},
+        {"$set": {
+            "labors": labors,
+            "totals": totals,
+            "status": "in_progress",
+            "inventory_adjusted_at": now,
+            "updated_at": now,
+            "updated_by": user_id,
+        }},
+    )
+
+    return jsonify({
+        "ok": True,
+        "id": str(wo_id),
+        "status": "in_progress",
+        "inventory_warnings": inventory_adjustment.get("errors") or [],
+        "core_sync_errors": core_sync.get("errors") or [],
+    }), 200
+
+
+@work_orders_bp.post("/work_orders/api/mechanic/timers/start")
+@login_required
+@permission_required("work_orders.view")
+def api_mechanic_timer_start():
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    data = request.get_json(silent=True) or {}
+    user_id = current_user_id()
+
+    log, stopped_prev, error = time_tracking.start_timer(
+        shop_db, shop, user_id, _current_user_display_name(),
+        data.get("work_order_id"), data.get("labor_id"),
+    )
+    if error:
+        code = 404 if error in ("work_order_not_found", "labor_not_found") else 400
+        return jsonify({"ok": False, "error": error}), code
+
+    return jsonify({
+        "ok": True,
+        "timer": time_tracking._log_payload(log),
+        "stopped_previous": time_tracking._log_payload(stopped_prev) if stopped_prev else None,
+        "time_summary": time_tracking.summarize_wo_time(
+            shop_db, shop["_id"], log.get("work_order_id"), user_id=user_id
+        ),
+        "server_now": _server_now_iso(),
+    }), 200
+
+
+@work_orders_bp.post("/work_orders/api/mechanic/timers/stop")
+@login_required
+@permission_required("work_orders.view")
+def api_mechanic_timer_stop():
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    user_id = current_user_id()
+    log, error = time_tracking.stop_timer(shop_db, shop, user_id)
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
+
+    return jsonify({
+        "ok": True,
+        "timer": time_tracking._log_payload(log),
+        "time_summary": time_tracking.summarize_wo_time(
+            shop_db, shop["_id"], log.get("work_order_id"), user_id=user_id
+        ),
+        "server_now": _server_now_iso(),
+    }), 200
+
+
+@work_orders_bp.get("/work_orders/api/mechanic/timers/current")
+@login_required
+@permission_required("work_orders.view")
+def api_mechanic_timer_current():
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    return jsonify({
+        "ok": True,
+        "timer": time_tracking.running_timer_payload(shop_db, shop, current_user_id()),
+        "server_now": _server_now_iso(),
+    }), 200
+
+
+@work_orders_bp.get("/work_orders/api/mechanic/timers/active")
+@login_required
+@permission_required("work_orders.view")
+def api_mechanic_timers_active():
+    """Все идущие таймеры магазина — блок «сейчас в работе» в списке WO."""
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    return jsonify({
+        "ok": True,
+        "items": time_tracking.active_timers(shop_db, shop, current_user_id()),
+        "server_now": _server_now_iso(),
     }), 200

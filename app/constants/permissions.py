@@ -280,6 +280,7 @@ def build_default_roles() -> list[dict]:
         "parts.delete",
         "parts.adjust_stock",
         "parts.view_costs",
+        "work_orders.view_costs",
         "parts_orders.view",
         "parts_orders.create",
         "parts_orders.edit",
@@ -314,11 +315,14 @@ def build_default_roles() -> list[dict]:
         "reports.view",
     })
 
-    # Mechanic — только просмотр своих WO
+    # Mechanic — механик-режим: работает с WO без цен (нет work_orders.view_costs),
+    # create нужен для сохранения WO и поиска партов; апдейты форсятся в in_progress.
     mechanic = _safe_subset({
         "calendar.view",
         "work_orders.view",
+        "work_orders.create",
         "attachments.view",
+        "attachments.upload",
     })
 
     # Viewer — read-only офис/аудит
@@ -330,6 +334,7 @@ def build_default_roles() -> list[dict]:
         "parts.view",
         "parts_orders.view",
         "work_orders.view",
+        "work_orders.view_costs",
         "attachments.view",
         "reports.view",
         "reports.view_audit",

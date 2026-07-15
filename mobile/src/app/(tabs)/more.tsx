@@ -5,11 +5,11 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { useAuth } from "@/context/auth";
 import { useTheme } from "@/lib/theme";
 
-const ITEMS: { title: string; subtitle: string; icon: string; href: Href }[] = [
+const ITEMS: { title: string; subtitle: string; icon: string; href: Href; perm?: string }[] = [
   { title: "Search", subtitle: "Find anything across the shop", icon: "search-outline", href: "/search" },
-  { title: "Vendors", subtitle: "Suppliers and balances", icon: "business-outline", href: "/vendors" },
-  { title: "Calendar", subtitle: "Appointments", icon: "calendar-outline", href: "/calendar" },
-  { title: "Reports", subtitle: "Sales, payments, parts", icon: "bar-chart-outline", href: "/reports" },
+  { title: "Vendors", subtitle: "Suppliers and balances", icon: "business-outline", href: "/vendors", perm: "vendors.view" },
+  { title: "Calendar", subtitle: "Appointments", icon: "calendar-outline", href: "/calendar", perm: "calendar.view" },
+  { title: "Reports", subtitle: "Sales, payments, parts", icon: "bar-chart-outline", href: "/reports", perm: "reports.view" },
   { title: "Settings", subtitle: "Shop, account", icon: "settings-outline", href: "/settings" },
 ];
 
@@ -17,10 +17,13 @@ export default function MoreScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { session } = useAuth();
+  const isOwner = session?.user.role === "owner";
+  const permissions = session?.permissions || [];
+  const items = ITEMS.filter((item) => !item.perm || isOwner || permissions.includes(item.perm));
 
   return (
     <ScrollView style={{ backgroundColor: theme.bg }} contentContainerStyle={styles.container}>
-      {ITEMS.map((item) => (
+      {items.map((item) => (
         <Pressable
           key={item.title}
           onPress={() => router.push(item.href)}

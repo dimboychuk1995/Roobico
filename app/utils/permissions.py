@@ -160,6 +160,26 @@ def has_permission(permission_key: str) -> bool:
     return permission_key in get_effective_permissions()
 
 
+def is_mechanic_mode() -> bool:
+    """
+    Механик-режим: пользователь работает с WO, но не должен видеть цены.
+    Определяется отсутствием work_orders.view_costs (владелец/менеджеры
+    получают его через полный набор прав).
+    """
+    perms = get_effective_permissions()
+    return "work_orders.view" in perms and "work_orders.view_costs" not in perms
+
+
+def enforce_mechanic_status(requested: str | None) -> str | None:
+    """
+    Любое сохранение WO в механик-режиме принудительно ставит in_progress —
+    завершает WO только пользователь, который видит цены (менеджер).
+    """
+    if is_mechanic_mode():
+        return "in_progress"
+    return requested
+
+
 # Порядок «безопасной посадки»: куда отправлять пользователя, если у него
 # нет доступа к запрошенной странице. Берём первую страницу, на которую у
 # него ЕСТЬ право. Важно: нельзя редиректить на страницу, к которой доступа
@@ -184,6 +204,8 @@ def first_allowed_landing() -> str | None:
     доступ, либо None если доступа нет ни к одной.
     """
     perms = get_effective_permissions()
+    if "work_orders.view" in perms and "work_orders.view_costs" not in perms:
+        return "mechanic.work_orders_list"
     for perm, endpoint in _SAFE_LANDING_ORDER:
         if perm in perms:
             return endpoint

@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -20,6 +20,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Field, SubmitButton } from "@/components/form";
 import { SearchPickerModal } from "@/components/search-picker";
 import { RowCard } from "@/components/ui";
+import { useIsMechanic } from "@/context/auth";
 import { useToast } from "@/context/toast";
 import {
   ApiError,
@@ -34,6 +35,7 @@ import {
   fetchCustomerDetails,
   fetchCustomers,
   fetchLaborRates,
+  fetchMechanicWoDetails,
   fetchPartPrice,
   fetchPresetDetail,
   fetchPresets,
@@ -63,6 +65,9 @@ export default function WorkOrderFormScreen() {
   const theme = useTheme();
   const toast = useToast();
   const router = useRouter();
+  // Механик: без цен/часов/ставок, парты только part+qty, одна кнопка Save
+  // (всегда in_progress) — сервер сам проставит цены и сохранит менеджерские поля.
+  const isMechanic = useIsMechanic();
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -103,7 +108,15 @@ export default function WorkOrderFormScreen() {
         const parts: WoFormPart[] = [];
         for (const p of l.parts || []) {
           const top = (p.candidates || [])[0];
-          if (top) {
+          if (top && isMechanic) {
+            // Механик цен не видит и не шлёт — сервер заполнит при сохранении.
+            parts.push({
+              part_id: top.part_id,
+              part_number: top.part_number,
+              description: top.description,
+              qty: p.qty || 1,
+            });
+          } else if (top) {
             let price = top.selling_price || 0;
             if (!price) {
               try {
@@ -150,7 +163,7 @@ export default function WorkOrderFormScreen() {
         return only ? newLabors : [...prev, ...newLabors];
       });
       toast.show(
-        `AI: ${newLabors.length} labor(s) recognized${unmatched ? `, ${unmatched} part(s) not matched — check prices` : ""}.`,
+        `AI: ${newLabors.length} labor(s) recognized${unmatched ? `, ${unmatched} part(s) not matched — ${isMechanic ? "verify parts" : "check prices"}` : ""}.`,
         "success"
       );
     } catch (e) {
@@ -167,7 +180,32 @@ export default function WorkOrderFormScreen() {
         const rateList = await fetchLaborRates();
         setRates(rateList);
 
-        if (isEdit && id) {
+        if (isEdit && id && isMechanic) {
+          // Механик получает безденежную форму деталей; сервер при сохранении
+          // склеит по labor_id и сохранит менеджерские часы/ставки/цены.
+          const wo = await fetchMechanicWoDetails(id);
+          setCustomer({ id: wo.customer.id, label: wo.customer.label });
+          setUnit({ id: wo.unit.id, label: wo.unit.label });
+          if (wo.labors.length) {
+            setLabors(
+              wo.labors.map((l) => ({
+                labor_id: l.labor_id,
+                description: l.description,
+                hours: "",
+                rate_code: "",
+                labor_total: null,
+                issue_description: l.issue_description,
+                parts: l.parts.map((p) => ({
+                  part_id: p.part_id || "",
+                  part_number: p.part_number || "",
+                  description: p.description || "",
+                  qty: p.qty || 0,
+                  one_time_part: !!p.one_time_part,
+                })),
+              }))
+            );
+          }
+        } else if (isEdit && id) {
           const wo = await fetchWorkOrderDetails(id);
           setCustomer({ id: wo.customer_id, label: wo.cust_name });
           setUnit({ id: wo.unit_id, label: wo.unit_label });
@@ -175,6 +213,7 @@ export default function WorkOrderFormScreen() {
           if (raw && raw.length) {
             setLabors(
               raw.map((l) => ({
+                labor_id: l.labor_id || "",
                 description: l.description,
                 hours: l.hours,
                 rate_code: l.rate_code,
@@ -223,6 +262,28 @@ export default function WorkOrderFormScreen() {
     }
   };
 
+  // Возврат с экрана создания юнита: обновить список юнитов клиента и,
+  // если появился ровно один новый, выбрать его автоматически.
+  const refreshUnitsOnFocus = useCallback(() => {
+    if (isEdit || !customer) return;
+    fetchCustomerDetails(customer.id)
+      .then((details) => {
+        const fresh = details.units.map((u) => ({ id: u.id, label: u.label }));
+        setUnits((prev) => {
+          if (!unit && fresh.length && fresh.length === prev.length + 1) {
+            const known = new Set(prev.map((u) => u.id));
+            const added = fresh.find((u) => !known.has(u.id));
+            if (added) setUnit(added);
+          }
+          return fresh;
+        });
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customer?.id, isEdit, unit]);
+
+  useFocusEffect(refreshUnitsOnFocus);
+
   // ── лейборы ───────────────────────────────────────────────────────
   const patchLabor = (idx: number, patch: Partial<WoFormLabor>) => {
     setLabors((prev) => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
@@ -255,35 +316,37 @@ export default function WorkOrderFormScreen() {
     setPartModalLabor(null);
     if (laborIdx === null) return;
 
-    let price = item.average_cost;
-    let coreCharge = 0;
-    try {
-      const p = await fetchPartPrice(item.id, customer?.id || "");
-      price = p.price;
-      coreCharge = p.core_charge;
-    } catch {
-      // остаётся average_cost
+    let newPart: WoFormPart;
+    if (isMechanic) {
+      // Цены заполнит сервер при сохранении; part_price для механика закрыт.
+      newPart = {
+        part_id: item.id,
+        part_number: item.part_number,
+        description: item.description,
+        qty: 1,
+      };
+    } else {
+      let price = item.average_cost ?? 0;
+      let coreCharge = 0;
+      try {
+        const p = await fetchPartPrice(item.id, customer?.id || "");
+        price = p.price;
+        coreCharge = p.core_charge;
+      } catch {
+        // остаётся average_cost
+      }
+      newPart = {
+        part_id: item.id,
+        part_number: item.part_number,
+        description: item.description,
+        qty: 1,
+        cost: item.average_cost ?? 0,
+        price,
+        core_charge: coreCharge,
+      };
     }
     setLabors((prev) =>
-      prev.map((l, i) =>
-        i === laborIdx
-          ? {
-              ...l,
-              parts: [
-                ...l.parts,
-                {
-                  part_id: item.id,
-                  part_number: item.part_number,
-                  description: item.description,
-                  qty: 1,
-                  cost: item.average_cost,
-                  price,
-                  core_charge: coreCharge,
-                },
-              ],
-            }
-          : l
-      )
+      prev.map((l, i) => (i === laborIdx ? { ...l, parts: [...l.parts, newPart] } : l))
     );
   };
 
@@ -294,6 +357,16 @@ export default function WorkOrderFormScreen() {
       const preset = await fetchPresetDetail(item.id);
       const parts: WoFormPart[] = [];
       for (const p of preset.parts || []) {
+        if (isMechanic) {
+          // Только парт и количество — цены проставит сервер при сохранении.
+          parts.push({
+            part_id: p.part_id || "",
+            part_number: p.part_number,
+            description: p.description,
+            qty: p.qty || 1,
+          });
+          continue;
+        }
         let price = p.price;
         if (price == null) {
           // Нет фиксированной цены — считаем по прайсинг-матрице клиента.
@@ -316,8 +389,8 @@ export default function WorkOrderFormScreen() {
       }
       const newLabor: WoFormLabor = {
         description: preset.name || preset.description || "",
-        hours: preset.labor_hours != null ? String(preset.labor_hours) : "",
-        rate_code: preset.labor_rate_code || "",
+        hours: isMechanic ? "" : preset.labor_hours != null ? String(preset.labor_hours) : "",
+        rate_code: isMechanic ? "" : preset.labor_rate_code || "",
         labor_total: null,
         parts,
       };
@@ -353,7 +426,8 @@ export default function WorkOrderFormScreen() {
 
   // ── предварительный подсчёт (финально считает сервер + налог) ─────
   const estimate = useMemo(() => {
-    const rateMap = new Map(rates.map((r) => [r.code, r.hourly_rate]));
+    if (isMechanic) return { laborSum: 0, partsSum: 0, total: 0 };
+    const rateMap = new Map(rates.map((r) => [r.code, r.hourly_rate ?? 0]));
     let laborSum = 0;
     let partsSum = 0;
     for (const l of labors) {
@@ -367,7 +441,17 @@ export default function WorkOrderFormScreen() {
       for (const p of l.parts) partsSum += (p.qty || 0) * (p.price || 0);
     }
     return { laborSum, partsSum, total: laborSum + partsSum };
-  }, [labors, rates]);
+  }, [labors, rates, isMechanic]);
+
+  // Defense-in-depth: механик не должен передавать деньги даже нулями —
+  // сервер их и так игнорирует, но и в трафике их быть не должно.
+  const stripMoney = (items: WoFormLabor[]): WoFormLabor[] =>
+    items.map(({ labor_total, ...l }) => ({
+      ...l,
+      hours: "",
+      rate_code: "",
+      parts: l.parts.map(({ cost, price, core_charge, misc_charge, ...p }) => p),
+    }));
 
   // ── сохранение ────────────────────────────────────────────────────
   const save = async (status: "open" | "in_progress") => {
@@ -375,12 +459,16 @@ export default function WorkOrderFormScreen() {
       toast.show("Select customer and unit.", "error");
       return;
     }
-    const validLabors = labors.filter(
+    let validLabors = labors.filter(
       (l) => l.description.trim() || l.parts.length > 0
     );
     if (!validLabors.length) {
       toast.show("Add at least one labor with a description.", "error");
       return;
+    }
+    if (isMechanic) {
+      validLabors = stripMoney(validLabors);
+      status = "in_progress";
     }
 
     setBusy(true);
@@ -472,29 +560,31 @@ export default function WorkOrderFormScreen() {
               onChangeText={(v) => patchLabor(idx, { description: v })}
               placeholder="Brake job…"
             />
-            <View style={styles.hoursRow}>
-              <View style={{ flex: 1 }}>
-                <Field
-                  label="Hours"
-                  value={labor.hours}
-                  onChangeText={(v) => patchLabor(idx, { hours: v, labor_total: null })}
-                  keyboardType="decimal-pad"
-                  placeholder="0"
-                />
+            {!isMechanic ? (
+              <View style={styles.hoursRow}>
+                <View style={{ flex: 1 }}>
+                  <Field
+                    label="Hours"
+                    value={labor.hours}
+                    onChangeText={(v) => patchLabor(idx, { hours: v, labor_total: null })}
+                    keyboardType="decimal-pad"
+                    placeholder="0"
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Field
+                    label="Labor total (manual)"
+                    value={labor.labor_total ? String(labor.labor_total) : ""}
+                    onChangeText={(v) => {
+                      const num = parseFloat(v.replace(",", "."));
+                      patchLabor(idx, { labor_total: Number.isFinite(num) ? num : null });
+                    }}
+                    keyboardType="decimal-pad"
+                    placeholder="auto"
+                  />
+                </View>
               </View>
-              <View style={{ flex: 1 }}>
-                <Field
-                  label="Labor total (manual)"
-                  value={labor.labor_total ? String(labor.labor_total) : ""}
-                  onChangeText={(v) => {
-                    const num = parseFloat(v.replace(",", "."));
-                    patchLabor(idx, { labor_total: Number.isFinite(num) ? num : null });
-                  }}
-                  keyboardType="decimal-pad"
-                  placeholder="auto"
-                />
-              </View>
-            </View>
+            ) : null}
 
             <View style={styles.issueHeader}>
               <Text style={[styles.fieldLabel, { color: theme.muted, marginTop: 0, marginBottom: 0 }]}>
@@ -530,29 +620,33 @@ export default function WorkOrderFormScreen() {
               multiline
             />
 
-            <Text style={[styles.fieldLabel, { color: theme.muted }]}>RATE</Text>
-            <View style={styles.rateRow}>
-              {rates.map((r) => {
-                const active = labor.rate_code === r.code;
-                return (
-                  <Pressable
-                    key={r.code}
-                    onPress={() => patchLabor(idx, { rate_code: r.code })}
-                    style={[
-                      styles.rateChip,
-                      {
-                        backgroundColor: active ? theme.primary : theme.surfaceSoft,
-                        borderColor: active ? theme.primary : theme.border,
-                      },
-                    ]}
-                  >
-                    <Text style={{ color: active ? "#fff" : theme.text, fontSize: 12, fontWeight: "600" }}>
-                      {r.name} (${r.hourly_rate}/h)
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+            {!isMechanic ? (
+              <>
+                <Text style={[styles.fieldLabel, { color: theme.muted }]}>RATE</Text>
+                <View style={styles.rateRow}>
+                  {rates.map((r) => {
+                    const active = labor.rate_code === r.code;
+                    return (
+                      <Pressable
+                        key={r.code}
+                        onPress={() => patchLabor(idx, { rate_code: r.code })}
+                        style={[
+                          styles.rateChip,
+                          {
+                            backgroundColor: active ? theme.primary : theme.surfaceSoft,
+                            borderColor: active ? theme.primary : theme.border,
+                          },
+                        ]}
+                      >
+                        <Text style={{ color: active ? "#fff" : theme.text, fontSize: 12, fontWeight: "600" }}>
+                          {r.name} (${r.hourly_rate ?? 0}/h)
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </>
+            ) : null}
 
             {/* Запчасти лейбора */}
             {labor.parts.map((p, pIdx) => (
@@ -561,9 +655,15 @@ export default function WorkOrderFormScreen() {
                   <Text style={{ color: theme.text, fontSize: 13, fontWeight: "600" }} numberOfLines={1}>
                     {p.part_number || p.description || "Part"}
                   </Text>
-                  <Text style={{ color: theme.muted, fontSize: 12 }}>
-                    {money(p.price)} × {p.qty} = {money(p.price * p.qty)}
-                  </Text>
+                  {!isMechanic ? (
+                    <Text style={{ color: theme.muted, fontSize: 12 }}>
+                      {money(p.price ?? 0)} × {p.qty} = {money((p.price ?? 0) * p.qty)}
+                    </Text>
+                  ) : p.description && p.part_number ? (
+                    <Text style={{ color: theme.muted, fontSize: 12 }} numberOfLines={1}>
+                      {p.description}
+                    </Text>
+                  ) : null}
                 </View>
                 <TextInput
                   style={[styles.qtyInput, { borderColor: theme.border, color: theme.text }]}
@@ -571,15 +671,17 @@ export default function WorkOrderFormScreen() {
                   onChangeText={(v) => patchPart(idx, pIdx, { qty: parseInt(v, 10) || 0 })}
                   keyboardType="number-pad"
                 />
-                <TextInput
-                  style={[styles.priceInput, { borderColor: theme.border, color: theme.text }]}
-                  value={String(p.price || "")}
-                  onChangeText={(v) => {
-                    const num = parseFloat(v.replace(",", "."));
-                    patchPart(idx, pIdx, { price: Number.isFinite(num) ? num : 0 });
-                  }}
-                  keyboardType="decimal-pad"
-                />
+                {!isMechanic ? (
+                  <TextInput
+                    style={[styles.priceInput, { borderColor: theme.border, color: theme.text }]}
+                    value={String(p.price || "")}
+                    onChangeText={(v) => {
+                      const num = parseFloat(v.replace(",", "."));
+                      patchPart(idx, pIdx, { price: Number.isFinite(num) ? num : 0 });
+                    }}
+                    keyboardType="decimal-pad"
+                  />
+                ) : null}
                 <Pressable onPress={() => removePart(idx, pIdx)} hitSlop={8}>
                   <Ionicons name="close-circle" size={20} color={theme.danger} />
                 </Pressable>
@@ -624,35 +726,52 @@ export default function WorkOrderFormScreen() {
           </Pressable>
         </View>
 
-        {/* Итого */}
-        <RowCard>
-          <View style={styles.estimateRow}>
-            <Text style={{ color: theme.muted, fontSize: 13 }}>Labor</Text>
-            <Text style={{ color: theme.text, fontWeight: "600" }}>{money(estimate.laborSum)}</Text>
-          </View>
-          <View style={styles.estimateRow}>
-            <Text style={{ color: theme.muted, fontSize: 13 }}>Parts</Text>
-            <Text style={{ color: theme.text, fontWeight: "600" }}>{money(estimate.partsSum)}</Text>
-          </View>
-          <View style={styles.estimateRow}>
-            <Text style={{ color: theme.text, fontWeight: "800", fontSize: 15 }}>Subtotal</Text>
-            <Text style={{ color: theme.text, fontWeight: "800", fontSize: 15 }}>
-              {money(estimate.total)}
+        {/* Итого (механику не показываем) */}
+        {!isMechanic ? (
+          <RowCard>
+            <View style={styles.estimateRow}>
+              <Text style={{ color: theme.muted, fontSize: 13 }}>Labor</Text>
+              <Text style={{ color: theme.text, fontWeight: "600" }}>{money(estimate.laborSum)}</Text>
+            </View>
+            <View style={styles.estimateRow}>
+              <Text style={{ color: theme.muted, fontSize: 13 }}>Parts</Text>
+              <Text style={{ color: theme.text, fontWeight: "600" }}>{money(estimate.partsSum)}</Text>
+            </View>
+            <View style={styles.estimateRow}>
+              <Text style={{ color: theme.text, fontWeight: "800", fontSize: 15 }}>Subtotal</Text>
+              <Text style={{ color: theme.text, fontWeight: "800", fontSize: 15 }}>
+                {money(estimate.total)}
+              </Text>
+            </View>
+            <Text style={{ color: theme.muted, fontSize: 11 }}>
+              Shop supply & tax are applied on save.
             </Text>
-          </View>
-          <Text style={{ color: theme.muted, fontSize: 11 }}>
-            Shop supply & tax are applied on save.
-          </Text>
-        </RowCard>
+          </RowCard>
+        ) : null}
 
-        <SubmitButton title={isEdit ? "Save" : "Create work order"} onPress={() => save("open")} busy={busy} />
-        <Pressable
-          style={[styles.inProgressBtn, { borderColor: theme.border }]}
-          onPress={() => save("in_progress")}
-          disabled={busy}
-        >
-          <Text style={{ color: theme.text, fontWeight: "600" }}>Save as In Progress</Text>
-        </Pressable>
+        {isMechanic ? (
+          <>
+            <SubmitButton
+              title={isEdit ? "Save" : "Create work order"}
+              onPress={() => save("in_progress")}
+              busy={busy}
+            />
+            <Text style={{ color: theme.muted, fontSize: 11, textAlign: "center", marginTop: 6 }}>
+              Saved work orders go to the manager for review.
+            </Text>
+          </>
+        ) : (
+          <>
+            <SubmitButton title={isEdit ? "Save" : "Create work order"} onPress={() => save("open")} busy={busy} />
+            <Pressable
+              style={[styles.inProgressBtn, { borderColor: theme.border }]}
+              onPress={() => save("in_progress")}
+              disabled={busy}
+            >
+              <Text style={{ color: theme.text, fontWeight: "600" }}>Save as In Progress</Text>
+            </Pressable>
+          </>
+        )}
       </ScrollView>
 
       {/* Модалки выбора */}
@@ -665,6 +784,14 @@ export default function WorkOrderFormScreen() {
           setUnit(u);
           setUnitModal(false);
         }}
+        onCreateNew={
+          customer
+            ? () => {
+                setUnitModal(false);
+                router.push({ pathname: "/unit-form", params: { customerId: customer.id } });
+              }
+            : undefined
+        }
       />
       <PickPartModal visible={partModalLabor !== null} onClose={() => setPartModalLabor(null)} onPick={addPart} />
       <PickPresetModal visible={presetModal} onClose={() => setPresetModal(false)} onPick={applyPreset} />
@@ -701,11 +828,13 @@ function PickUnitModal({
   units,
   onClose,
   onPick,
+  onCreateNew,
 }: {
   visible: boolean;
   units: UnitOption[];
   onClose: () => void;
   onPick: (u: UnitOption) => void;
+  onCreateNew?: () => void;
 }) {
   const theme = useTheme();
   return (
@@ -720,6 +849,17 @@ function PickUnitModal({
         <FlatList
           data={units}
           keyExtractor={(u) => u.id}
+          ListHeaderComponent={
+            onCreateNew ? (
+              <Pressable
+                style={[styles.modalItem, { borderBottomColor: theme.border, flexDirection: "row", alignItems: "center", gap: 8 }]}
+                onPress={onCreateNew}
+              >
+                <Ionicons name="add-circle-outline" size={20} color={theme.primary} />
+                <Text style={{ color: theme.primary, fontSize: 15, fontWeight: "600" }}>New unit</Text>
+              </Pressable>
+            ) : null
+          }
           renderItem={({ item }) => (
             <Pressable
               style={[styles.modalItem, { borderBottomColor: theme.border }]}

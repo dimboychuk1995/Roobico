@@ -187,7 +187,7 @@
         ["wo_count", "po_count", "invoiced_hours", "total_mech_hours"]
       ],
       "mechanic_hours": [
-        ["total_hours", "mechanics_count"],
+        ["total_hours", "total_tracked_hours", "mechanics_count"],
         ["total_wo", "total_entries"]
       ]
     };
@@ -443,7 +443,7 @@
       return '<tr class="text-muted"><th>Category</th><th class="text-end">Amount</th></tr>';
     }
     if (tab === "mechanic_hours") {
-      return '<tr class="text-muted"><th>Mechanic</th><th class="text-end">Hours</th><th class="text-end">Work Orders</th><th class="text-end">Labor Entries</th></tr>';
+      return '<tr class="text-muted"><th>Mechanic</th><th class="text-end">Billed Hours</th><th class="text-end">Tracked Hours</th><th class="text-end">Work Orders</th><th class="text-end">Labor Entries</th></tr>';
     }
     return '<tr class="text-muted"><th>Vendor</th><th class="text-end">Orders</th><th class="text-end">Parts</th><th class="text-end">Cores</th><th class="text-end">Shop Supply</th><th class="text-end">Tools</th><th class="text-end">Utilities</th><th class="text-end">Pmt to Svc</th><th class="text-end">Non‑Inv Total</th><th class="text-end">Total</th><th class="text-end">Paid</th><th class="text-end">Balance</th></tr>';
   }
@@ -510,6 +510,7 @@
     if (tab === "mechanic_hours") {
       return '<tr><td>' + escapeHtml(row.mechanic_name) + '</td>' +
         '<td class="text-end fw-semibold">' + fmtHours(row.total_hours) + '</td>' +
+        '<td class="text-end">' + fmtHours(row.tracked_hours) + '</td>' +
         '<td class="text-end">' + (row.wo_count || 0) + '</td>' +
         '<td class="text-end">' + (row.labor_entries || 0) + '</td></tr>';
     }
