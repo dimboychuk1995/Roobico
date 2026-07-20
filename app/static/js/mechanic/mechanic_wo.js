@@ -706,14 +706,21 @@
           '<div class="meta">Not from catalog — manager fills the price</div>' +
         "</button>";
       }
-      html += (items || []).map(function (p) {
-        return '<button type="button" class="mech-part-result" data-part-id="' + esc(p.id) + '"' +
+      function partResultBtn(p, altFor) {
+        return '<button type="button" class="mech-part-result' + (altFor ? " mech-part-result-alt" : "") + '" data-part-id="' + esc(p.id) + '"' +
           ' data-part-number="' + esc(p.part_number) + '" data-description="' + esc(p.description) + '">' +
-          '<div class="mech-part-number">' + esc(p.part_number || p.description) + "</div>" +
-          '<div class="meta">' + esc(p.description || "") +
+          '<div class="mech-part-number">' + (altFor ? "&#8646; " : "") + esc(p.part_number || p.description) + "</div>" +
+          '<div class="meta">' + (altFor ? "Cross ref for " + esc(altFor) + " · " : "") + esc(p.description || "") +
             (p.in_stock != null ? " · Stock: " + esc(p.in_stock) : "") + "</div>" +
         "</button>";
-      }).join("");
+      }
+      (items || []).forEach(function (p) {
+        html += partResultBtn(p, "");
+        // Взаимозаменяемые парты — строками под основным результатом.
+        (Array.isArray(p.alternates) ? p.alternates : []).forEach(function (alt) {
+          html += partResultBtn(alt, p.part_number || "");
+        });
+      });
       box.innerHTML = html || '<div class="text-muted small p-2">Nothing found.</div>';
     }
 

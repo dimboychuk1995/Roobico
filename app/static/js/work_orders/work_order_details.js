@@ -1237,7 +1237,14 @@
   function renderDropdown(dd, items) {
     const list = Array.isArray(items) ? items : [];
     const oneTimeItem = { __one_time_part: true };
-    const displayItems = [oneTimeItem, ...list];
+    const displayItems = [oneTimeItem];
+    // Взаимозаменяемые парты идут отдельными строками сразу под своим результатом.
+    list.forEach((it) => {
+      displayItems.push(it);
+      (Array.isArray(it.alternates) ? it.alternates : []).forEach((alt) => {
+        displayItems.push(Object.assign({}, alt, { __alt_for: it.part_number || "" }));
+      });
+    });
     dd._items = displayItems;
 
     dd.innerHTML = displayItems.map((it, idx) => {
@@ -1259,9 +1266,10 @@
         ? ` • Charges: core $${money(coreCost)}${miscCost > 0 ? `, misc $${money(miscCost)}` : ""}`
         : "";
       const trackingText = it.do_not_track_inventory ? " • Not tracked" : "";
-      const meta = `Stock: ${it.in_stock ?? 0} • Avg cost: $${money(toNum(it.average_cost) ?? 0)}${trackingText}${chargesText}`;
+      const altText = it.__alt_for ? `⇄ Cross ref for ${it.__alt_for} • ` : "";
+      const meta = `${altText}Stock: ${it.in_stock ?? 0} • Avg cost: $${money(toNum(it.average_cost) ?? 0)}${trackingText}${chargesText}`;
       return `
-        <div class="parts-dd-item" data-idx="${idx}">
+        <div class="parts-dd-item${it.__alt_for ? " parts-dd-item-alt" : ""}" data-idx="${idx}">
           <div class="parts-dd-title">${escapeHtml(title)}</div>
           <div class="parts-dd-meta">${escapeHtml(meta)}</div>
         </div>

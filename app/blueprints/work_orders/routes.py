@@ -14,6 +14,7 @@ from app.utils.auth import login_required, SESSION_TENANT_ID, SESSION_USER_ID
 from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
 from app.utils.mongo_search import build_regex_search_filter
 from app.utils.parts_search import build_query_tokens, part_matches_query
+from app.utils.parts_interchange import attach_alternates
 from app.utils.entity_search import build_unit_search_terms, search_customer_ids, search_unit_ids
 from app.utils.mongo_tx import run_atomically
 from app.blueprints.work_orders.services.authorizations import (
@@ -897,6 +898,32 @@ def api_parts_search():
         "misc_charges": 1,
     }
 
+    def _serialize_item(p):
+        misc_items = []
+        for m in (p.get("misc_charges") or []):
+            if not isinstance(m, dict):
+                continue
+            misc_items.append({
+                "description": str(m.get("description") or "").strip(),
+                "price": float(m.get("price") or 0),
+            })
+
+        return {
+            "id": str(p.get("_id")),
+            "part_number": p.get("part_number") or "",
+            "description": p.get("description") or "",
+            "reference": p.get("reference") or "",
+            "average_cost": float(p.get("average_cost") or 0),
+            "in_stock": int(p.get("in_stock") or 0),
+            "do_not_track_inventory": bool(p.get("do_not_track_inventory")),
+            "has_selling_price": bool(p.get("has_selling_price")),
+            "selling_price": float(p.get("selling_price") or 0),
+            "core_has_charge": bool(p.get("core_has_charge")),
+            "core_cost": float(p.get("core_cost") or 0),
+            "misc_has_charge": bool(p.get("misc_has_charge")),
+            "misc_charges": misc_items,
+        }
+
     fetch_limit = min(300, max(50, limit * 6))
     cursor = parts_col.find(query, projection).sort([("part_number", 1)]).limit(fetch_limit)
 
@@ -916,30 +943,7 @@ def api_parts_search():
             continue
         seen_ids.add(part_id)
 
-        misc_items = []
-        for m in (p.get("misc_charges") or []):
-            if not isinstance(m, dict):
-                continue
-            misc_items.append({
-                "description": str(m.get("description") or "").strip(),
-                "price": float(m.get("price") or 0),
-            })
-
-        items.append({
-            "id": str(p.get("_id")),
-            "part_number": p.get("part_number") or "",
-            "description": p.get("description") or "",
-            "reference": p.get("reference") or "",
-            "average_cost": float(p.get("average_cost") or 0),
-            "in_stock": int(p.get("in_stock") or 0),
-            "do_not_track_inventory": bool(p.get("do_not_track_inventory")),
-            "has_selling_price": bool(p.get("has_selling_price")),
-            "selling_price": float(p.get("selling_price") or 0),
-            "core_has_charge": bool(p.get("core_has_charge")),
-            "core_cost": float(p.get("core_cost") or 0),
-            "misc_has_charge": bool(p.get("misc_has_charge")),
-            "misc_charges": misc_items,
-        })
+        items.append(_serialize_item(p))
 
         if len(items) >= limit:
             break
@@ -978,36 +982,18 @@ def api_parts_search():
                 continue
             seen_ids.add(part_id)
 
-            misc_items = []
-            for m in (p.get("misc_charges") or []):
-                if not isinstance(m, dict):
-                    continue
-                misc_items.append({
-                    "description": str(m.get("description") or "").strip(),
-                    "price": float(m.get("price") or 0),
-                })
-
-            items.append({
-                "id": str(p.get("_id")),
-                "part_number": p.get("part_number") or "",
-                "description": p.get("description") or "",
-                "reference": p.get("reference") or "",
-                "average_cost": float(p.get("average_cost") or 0),
-                "in_stock": int(p.get("in_stock") or 0),
-                "do_not_track_inventory": bool(p.get("do_not_track_inventory")),
-                "has_selling_price": bool(p.get("has_selling_price")),
-                "selling_price": float(p.get("selling_price") or 0),
-                "core_has_charge": bool(p.get("core_has_charge")),
-                "core_cost": float(p.get("core_cost") or 0),
-                "misc_has_charge": bool(p.get("misc_has_charge")),
-                "misc_charges": misc_items,
-            })
+            items.append(_serialize_item(p))
 
             if len(items) >= limit:
                 break
 
+    attach_alternates(parts_col, shop["_id"], items, _serialize_item)
+
     if not has_permission("work_orders.view_costs"):
         items = [strip_part_search_item(i) for i in items]
+        for i in items:
+            if i.get("alternates"):
+                i["alternates"] = [strip_part_search_item(a) for a in i["alternates"]]
 
     return jsonify({"items": items}), 200
 

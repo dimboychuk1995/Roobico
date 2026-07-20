@@ -403,6 +403,13 @@
   font-size: 0.84rem;
 }
 
+/* Взаимозаменяемый парт (cross reference) под основным результатом */
+.mech-part-result-alt {
+  padding-left: 24px;
+  border-left: 3px solid var(--border);
+  background: var(--surface-soft);
+}
+
 /* --- sticky бар текущего таймера --- */
 
 .mech-timer-bar {

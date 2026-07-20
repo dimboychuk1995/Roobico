@@ -1045,6 +1045,21 @@ def mobile_parts():
         per_page,
     )
 
+    # Кросс-референсы (взаимозаменяемые парты) для страницы — одним запросом.
+    page_groups = {p.get("interchange_group") for p in rows if p.get("interchange_group")}
+    members_by_group = {}
+    if page_groups:
+        cursor = shop_db.parts.find(
+            {
+                "shop_id": shop["_id"],
+                "interchange_group": {"$in": list(page_groups)},
+                "is_active": True,
+            },
+            {"part_number": 1, "description": 1, "in_stock": 1, "interchange_group": 1},
+        ).sort([("part_number", 1)])
+        for m in cursor:
+            members_by_group.setdefault(m.get("interchange_group"), []).append(m)
+
     show_costs = has_permission("parts.view_costs")
     items = []
     for p in rows:
@@ -1054,6 +1069,16 @@ def mobile_parts():
             "description": p.get("description") or "",
             "reference": p.get("reference") or "",
             "in_stock": int(p.get("in_stock") or 0),
+            "cross_refs": [
+                {
+                    "id": str(m["_id"]),
+                    "part_number": m.get("part_number") or "",
+                    "description": m.get("description") or "",
+                    "in_stock": int(m.get("in_stock") or 0),
+                }
+                for m in members_by_group.get(p.get("interchange_group"), [])
+                if m.get("_id") != p.get("_id")
+            ],
         }
         if show_costs:
             item["average_cost"] = float(p.get("average_cost") or 0)

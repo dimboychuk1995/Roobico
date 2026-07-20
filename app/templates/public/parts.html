@@ -69,13 +69,21 @@
               <th style="min-width:180px;">Vendor</th>
               <th style="min-width:180px;">Category</th>
               <th style="min-width:180px;">Location</th>
-              <th class="text-end no-sort" style="width:220px;">Actions</th>
+              <th class="text-end no-sort" style="width:350px;">Actions</th>
             </tr>
           </thead>
           <tbody>
             {% for p in parts %}
               <tr>
-                <td class="fw-semibold">{{ p.part_number }}</td>
+                <td class="fw-semibold">
+                  {{ p.part_number }}
+                  {% if p.cross_ref_numbers %}
+                    <div class="small text-muted fw-normal cross-ref-hint"
+                         title="Interchangeable with: {{ p.cross_ref_numbers | join(', ') }}">
+                      &#8646; {{ p.cross_ref_numbers[:3] | join(', ') }}{% if p.cross_ref_numbers | length > 3 %} +{{ p.cross_ref_numbers | length - 3 }} more{% endif %}
+                    </div>
+                  {% endif %}
+                </td>
                 <td class="text-muted">{{ p.description if p.description else "-" }}</td>
                 <td class="text-muted">{{ p.reference if p.reference else "-" }}</td>
                 <td class="text-end">
@@ -137,19 +145,24 @@
                     </form>
                   {% else %}
                     <div class="d-flex gap-1 justify-content-end flex-nowrap">
-                    <button type="button" class="btn btn-sm btn-outline-secondary partHistoryBtn"
+                    <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap flex-shrink-0 partCrossRefsBtn"
+                            data-part-id="{{ p._id }}" data-part-number="{{ p.part_number }}"
+                            data-bs-toggle="modal" data-bs-target="#partCrossRefsModal">
+                      Cross refs
+                    </button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap flex-shrink-0 partHistoryBtn"
                             data-part-id="{{ p._id }}" data-part-number="{{ p.part_number }}"
                             data-bs-toggle="modal" data-bs-target="#partHistoryModal">
                       History
                     </button>
                     {% if not p.do_not_track_inventory %}
-                    <button type="button" class="btn btn-sm btn-outline-secondary partLocationsBtn"
+                    <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap flex-shrink-0 partLocationsBtn"
                             data-part-id="{{ p._id }}" data-part-number="{{ p.part_number }}"
                             data-bs-toggle="modal" data-bs-target="#partLocationsModal">
                       Locations
                     </button>
                     {% endif %}
-                    <button type="button" class="btn btn-sm btn-outline-primary editPartBtn"
+                    <button type="button" class="btn btn-sm btn-outline-primary text-nowrap flex-shrink-0 editPartBtn"
                                   data-part-id="{{ p._id }}"
                                   data-part-json="{{ (p.edit_payload or {}) | tojson | forceescape }}"
                                   data-bs-toggle="modal" data-bs-target="#createPartModal">
@@ -158,7 +171,7 @@
                     <form method="post" action="{{ url_for('parts.parts_deactivate', part_id=p._id) }}" class="d-inline"
                           onsubmit="return appConfirmSubmit(this, 'Deactivate this part?');">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <button class="btn btn-sm btn-outline-danger">
+                      <button class="btn btn-sm btn-outline-danger text-nowrap flex-shrink-0">
                         Deactivate
                       </button>
                     </form>
@@ -1060,6 +1073,11 @@
         </div>
 
         <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary me-auto d-none partCrossRefsBtn" id="editPartCrossRefsBtn"
+                  data-part-id="" data-part-number=""
+                  data-bs-toggle="modal" data-bs-target="#partCrossRefsModal">
+            Cross references
+          </button>
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
           <button type="submit" class="btn btn-primary">Create</button>
         </div>
@@ -1270,6 +1288,46 @@
         </label>
         <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
         <button type="button" class="btn btn-primary" id="createOrderBtn">Create order</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Part Cross References Modal (взаимозаменяемые парты) -->
+<div class="modal fade" id="partCrossRefsModal" tabindex="-1" aria-labelledby="partCrossRefsModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="partCrossRefsModalLabel">Cross references — <span id="crossRefsPartNumber"></span></h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" style="min-height:340px;">
+        <div class="position-relative mb-3" style="max-width:420px;">
+          <input type="text" id="crossRefSearch" class="form-control form-control-sm"
+                 placeholder="Add cross reference: search part by number..." autocomplete="off">
+          <div id="crossRefDropdown" class="list-group position-absolute w-100 shadow"
+               style="z-index:1080; display:none; max-height:260px; overflow:auto;"></div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-2">
+            <thead>
+              <tr>
+                <th style="min-width:150px;">Part #</th>
+                <th style="min-width:200px;">Description</th>
+                <th class="text-end" style="width:100px;">In stock</th>
+                <th class="text-end" style="width:120px;">Avg cost</th>
+                <th class="text-end" style="width:100px;"></th>
+              </tr>
+            </thead>
+            <tbody id="partCrossRefsBody">
+              <tr><td colspan="5" class="text-center text-muted small py-3">No cross references yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="text-muted small">Linked parts are interchangeable: they show up as alternatives in work orders and parts orders.</div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
   </div>

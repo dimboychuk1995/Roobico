@@ -1016,13 +1016,13 @@
 					const el = document.createElement("button");
 					el.type = "button";
 					el.className = "list-group-item list-group-item-action";
-					
+
 					const priceDisplay = Number(item.average_cost || 0).toFixed(2);
 					const inStock = parseInt(item.in_stock || 0, 10);
-					const coreInfo = item.core_has_charge && item.core_cost > 0 
+					const coreInfo = item.core_has_charge && item.core_cost > 0
 						? `<span class="badge bg-warning text-dark ms-1" title="Core charge included">+Core $${Number(item.core_cost).toFixed(2)}</span>`
 						: '';
-					
+
 					el.innerHTML = `
 						<div class="d-flex justify-content-between">
 							<div class="fw-semibold">${escapeHtml(item.part_number)}</div>
@@ -1032,6 +1032,24 @@
 					`;
 					el.addEventListener("click", () => addOrIncrementItem(item));
 					dropdown.appendChild(el);
+
+					// Взаимозаменяемые парты — отдельными строками под основным результатом.
+					(Array.isArray(item.alternates) ? item.alternates : []).forEach((alt) => {
+						const altEl = document.createElement("button");
+						altEl.type = "button";
+						altEl.className = "list-group-item list-group-item-action cross-ref-alt-item";
+						const altPrice = Number(alt.average_cost || 0).toFixed(2);
+						const altStock = parseInt(alt.in_stock || 0, 10);
+						altEl.innerHTML = `
+							<div class="d-flex justify-content-between">
+								<div><span class="text-muted small">&#8646; Cross ref:</span> <span class="fw-semibold">${escapeHtml(alt.part_number)}</span></div>
+								<div class="text-muted small">$${altPrice} <span class="ms-2 badge ${altStock > 0 ? 'bg-success' : 'bg-secondary'}">${altStock} in stock</span></div>
+							</div>
+							<div class="text-muted small">${escapeHtml(alt.description || "")}</div>
+						`;
+						altEl.addEventListener("click", () => addOrIncrementItem(alt));
+						dropdown.appendChild(altEl);
+					});
 				});
 
 				showDropdown();
@@ -2179,6 +2197,180 @@
 		});
 
 		// ---------------------------------------------------------------
+		// Cross references modal (взаимозаменяемые парты)
+		// ---------------------------------------------------------------
+		const partCrossRefsModal = document.getElementById("partCrossRefsModal");
+		let _crossRefPartId = null;
+
+		onDocument("click", function (e) {
+			if (!isPartsPageAlive()) return;
+			const btn = e.target.closest(".partCrossRefsBtn");
+			if (!btn) return;
+			const partId = btn.getAttribute("data-part-id");
+			if (!partId) return;
+			_crossRefPartId = partId;
+			const titleEl = document.getElementById("crossRefsPartNumber");
+			if (titleEl) titleEl.textContent = btn.getAttribute("data-part-number") || "";
+			if (crossRefsBody) crossRefsBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted small py-3">Loading...</td></tr>';
+			_reloadCrossRefs();
+		});
+
+		partCrossRefsModal?.addEventListener("hidden.bs.modal", function () {
+			_crossRefPartId = null;
+			_renderCrossRefs([]);
+			_hideCrossRefDropdown();
+			if (crossRefSearch) crossRefSearch.value = "";
+			// Модалка могла открываться поверх Edit part: Bootstrap снимает
+			// modal-open с body — возвращаем, пока нижняя модалка открыта.
+			if (document.querySelector(".modal.show")) {
+				document.body.classList.add("modal-open");
+			}
+		});
+
+		const crossRefsBody = document.getElementById("partCrossRefsBody");
+		const crossRefSearch = document.getElementById("crossRefSearch");
+		const crossRefDropdown = document.getElementById("crossRefDropdown");
+		let _crossRefs = [];
+		let _crossRefAbort = null;
+
+		function _renderCrossRefs(list) {
+			_crossRefs = Array.isArray(list) ? list : [];
+			if (!crossRefsBody) return;
+			if (!_crossRefs.length) {
+				crossRefsBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted small py-3">No cross references yet.</td></tr>';
+				return;
+			}
+			crossRefsBody.innerHTML = _crossRefs.map(function (x) {
+				const stock = x.do_not_track_inventory ? "Not tracked" : String(x.in_stock != null ? x.in_stock : 0);
+				const partUrl = "/parts/?tab=parts&q=" + encodeURIComponent(x.part_number || "");
+				return '<tr>' +
+					'<td class="fw-semibold"><a href="' + escapeHtml(partUrl) + '" target="_blank" rel="noopener" class="text-decoration-none">' + escapeHtml(x.part_number || "") + '</a></td>' +
+					'<td class="text-muted">' + (escapeHtml(x.description || "") || "-") + '</td>' +
+					'<td class="text-end">' + escapeHtml(stock) + '</td>' +
+					'<td class="text-end">' + Number(x.average_cost || 0).toFixed(2) + '</td>' +
+					'<td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger cross-ref-remove-btn" data-cross-ref-id="' + escapeHtml(x.id || "") + '">Remove</button></td>' +
+					'</tr>';
+			}).join("");
+		}
+
+		function _hideCrossRefDropdown() {
+			if (crossRefDropdown) {
+				crossRefDropdown.style.display = "none";
+				crossRefDropdown.innerHTML = "";
+			}
+		}
+
+		async function _reloadCrossRefs() {
+			if (!_crossRefPartId) return;
+			try {
+				const res = await fetch(`/parts/api/${encodeURIComponent(_crossRefPartId)}/cross-refs`, {
+					headers: { "Accept": "application/json" }
+				});
+				const data = await res.json();
+				if (res.ok && data.ok) {
+					_renderCrossRefs(data.items);
+				} else {
+					_renderCrossRefs([]);
+					appAlert((data && data.error) || "Failed to load cross references", "error");
+				}
+			} catch (err) {
+				_renderCrossRefs([]);
+				appAlert("Network error while loading cross references", "error");
+			}
+		}
+
+		async function _addCrossRef(otherId) {
+			_hideCrossRefDropdown();
+			if (crossRefSearch) crossRefSearch.value = "";
+			try {
+				const res = await fetch(`/parts/api/${encodeURIComponent(_crossRefPartId)}/cross-refs/add`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json", "Accept": "application/json" },
+					body: JSON.stringify({ other_part_id: otherId }),
+				});
+				const data = await res.json();
+				if (!res.ok || !data.ok) {
+					appAlert((data && data.error) || "Failed to add cross reference", "error");
+					return;
+				}
+				_renderCrossRefs(data.items);
+			} catch (err) {
+				appAlert("Network error while adding cross reference", "error");
+			}
+		}
+
+		crossRefSearch?.addEventListener("input", async function () {
+			const q = (crossRefSearch.value || "").trim();
+			if (q.length < 2) { _hideCrossRefDropdown(); return; }
+
+			try {
+				if (_crossRefAbort) _crossRefAbort.abort();
+				_crossRefAbort = new AbortController();
+				const res = await fetch(`/parts/api/search?q=${encodeURIComponent(q)}&limit=20`, {
+					signal: _crossRefAbort.signal,
+				});
+				const data = await res.json();
+				if (!data.ok || !crossRefDropdown) { _hideCrossRefDropdown(); return; }
+
+				const existingIds = new Set(_crossRefs.map(function (x) { return x.id; }));
+				const items = (data.items || []).filter(function (it) {
+					return it.id !== _crossRefPartId && !existingIds.has(it.id);
+				});
+
+				crossRefDropdown.innerHTML = "";
+				if (!items.length) {
+					crossRefDropdown.innerHTML = '<div class="list-group-item text-muted small">No parts found</div>';
+				} else {
+					items.forEach(function (it) {
+						const btn = document.createElement("button");
+						btn.type = "button";
+						btn.className = "list-group-item list-group-item-action";
+						const inStock = parseInt(it.in_stock || 0, 10);
+						btn.innerHTML =
+							'<div class="d-flex justify-content-between">' +
+							'<span class="fw-semibold">' + escapeHtml(it.part_number || "") + '</span>' +
+							'<span class="badge ' + (inStock > 0 ? "bg-success" : "bg-secondary") + '">' + inStock + ' in stock</span>' +
+							'</div>' +
+							'<div class="text-muted small">' + (escapeHtml(it.description || "") || "-") + '</div>';
+						btn.addEventListener("click", function () { _addCrossRef(it.id); });
+						crossRefDropdown.appendChild(btn);
+					});
+				}
+				crossRefDropdown.style.display = "block";
+			} catch (err) {
+				if (err && err.name !== "AbortError") _hideCrossRefDropdown();
+			}
+		});
+
+		crossRefsBody?.addEventListener("click", async function (e) {
+			const btn = e.target.closest(".cross-ref-remove-btn");
+			if (!btn) return;
+			const refId = btn.getAttribute("data-cross-ref-id");
+			if (!refId) return;
+			if (!await appConfirm("Remove this part from the cross reference group?")) return;
+			try {
+				const res = await fetch(`/parts/api/${encodeURIComponent(refId)}/cross-refs/remove`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json", "Accept": "application/json" },
+					body: JSON.stringify({}),
+				});
+				const data = await res.json();
+				if (!res.ok || !data.ok) {
+					appAlert((data && data.error) || "Failed to remove cross reference", "error");
+					return;
+				}
+				await _reloadCrossRefs();
+			} catch (err) {
+				appAlert("Network error while removing cross reference", "error");
+			}
+		});
+
+		onDocument("click", function (e) {
+			if (!isPartsPageAlive() || !crossRefDropdown) return;
+			if (!crossRefDropdown.contains(e.target) && e.target !== crossRefSearch) _hideCrossRefDropdown();
+		});
+
+		// ---------------------------------------------------------------
 		// Stock by location modal (раскладка остатка по локациям + перенос)
 		// ---------------------------------------------------------------
 		let _locPartId = null;
@@ -2676,6 +2868,14 @@
 			editingPartId.value = partId || '';
 			modalTitle.textContent = 'Edit part: ' + (item.part_number || '');
 
+			// Кнопка Cross references доступна только при редактировании.
+			const crossBtn = document.getElementById('editPartCrossRefsBtn');
+			if (crossBtn) {
+				crossBtn.classList.toggle('d-none', !partId);
+				crossBtn.setAttribute('data-part-id', partId || '');
+				crossBtn.setAttribute('data-part-number', item.part_number || '');
+			}
+
 			partNumberInput.value = item.part_number || '';
 			descriptionInput.value = item.description || '';
 			referenceInput.value = item.reference || '';
@@ -2797,9 +2997,10 @@
 			const trigger = e.relatedTarget;
 			const editBtn = trigger ? trigger.closest('.editPartBtn') : null;
 			if (!editBtn) {
-				// Creating new part — hide attachments
+				// Creating new part — hide attachments and cross references
 				var attGroup = document.getElementById('partAttachmentsGroup');
 				if (attGroup) attGroup.style.display = 'none';
+				document.getElementById('editPartCrossRefsBtn')?.classList.add('d-none');
 				return;
 			}
 			const partId = String(editBtn.getAttribute('data-part-id') || '').trim();
@@ -2887,6 +3088,7 @@
 		createPartModal.addEventListener('hidden.bs.modal', function() {
 			editingPartId.value = '';
 			modalTitle.textContent = 'Create new part';
+			document.getElementById('editPartCrossRefsBtn')?.classList.add('d-none');
 			form.reset();
 			syncInStockVisibility();
 			syncSellingPriceVisibility();

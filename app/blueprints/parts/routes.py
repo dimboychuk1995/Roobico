@@ -12,6 +12,13 @@ from app.utils.auth import login_required, SESSION_TENANT_ID, SESSION_USER_ID
 from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
 from app.utils.mongo_search import build_regex_search_filter
 from app.utils.parts_search import build_parts_search_terms, build_query_tokens, part_matches_query
+from app.utils.parts_interchange import (
+    attach_alternates,
+    get_cross_refs,
+    link_parts,
+    serialize_cross_ref,
+    unlink_part,
+)
 from app.utils.permissions import permission_required
 from app.utils.display_datetime import (
     format_date_mmddyyyy,
@@ -778,6 +785,30 @@ def parts_page():
                 "misc_has_charge": bool(p.get("misc_has_charge")),
                 "misc_charges": misc_charges_safe,
             }
+
+        # Кросс-референсы для видимых партов (одним запросом на страницу).
+        page_groups = {p.get("interchange_group") for p in parts_in_stock if p.get("interchange_group")}
+        if page_groups:
+            members_by_group = {}
+            for m in parts_coll.find(
+                {
+                    "shop_id": shop["_id"],
+                    "interchange_group": {"$in": list(page_groups)},
+                    "is_active": True,
+                },
+                {"part_number": 1, "interchange_group": 1},
+            ):
+                members_by_group.setdefault(m.get("interchange_group"), []).append(m)
+
+            for p in parts_in_stock:
+                group = p.get("interchange_group")
+                if not group:
+                    continue
+                p["cross_ref_numbers"] = sorted(
+                    str(m.get("part_number") or "")
+                    for m in members_by_group.get(group, [])
+                    if m.get("_id") != p.get("_id")
+                )
 
     last_order_id = session.get("last_parts_order_id")
 
@@ -1567,6 +1598,20 @@ def parts_api_search():
         "core_cost": 1,
     }
 
+    def _serialize_item(p):
+        return {
+            "id": str(p["_id"]),
+            "part_number": p.get("part_number") or "",
+            "description": p.get("description") or "",
+            "average_cost": float(p.get("average_cost") or 0.0),
+            "in_stock": int(p.get("in_stock") or 0),
+            "vendor_id": str(p["vendor_id"]) if p.get("vendor_id") else "",
+            "has_selling_price": bool(p.get("has_selling_price")),
+            "selling_price": float(p.get("selling_price") or 0.0),
+            "core_has_charge": bool(p.get("core_has_charge", False)),
+            "core_cost": float(p.get("core_cost") or 0.0),
+        }
+
     fetch_limit = min(300, max(50, limit * 6))
     cursor = (
         parts_coll.find(query_filter, projection)
@@ -1590,18 +1635,7 @@ def parts_api_search():
             continue
         seen_ids.add(part_id)
 
-        items.append({
-            "id": str(p["_id"]),
-            "part_number": p.get("part_number") or "",
-            "description": p.get("description") or "",
-            "average_cost": float(p.get("average_cost") or 0.0),
-            "in_stock": int(p.get("in_stock") or 0),
-            "vendor_id": str(p["vendor_id"]) if p.get("vendor_id") else "",
-            "has_selling_price": bool(p.get("has_selling_price")),
-            "selling_price": float(p.get("selling_price") or 0.0),
-            "core_has_charge": bool(p.get("core_has_charge", False)),
-            "core_cost": float(p.get("core_cost") or 0.0),
-        })
+        items.append(_serialize_item(p))
 
         if len(items) >= limit:
             break
@@ -1639,20 +1673,12 @@ def parts_api_search():
                 continue
             seen_ids.add(part_id)
 
-            items.append({
-                "id": str(p["_id"]),
-                "part_number": p.get("part_number") or "",
-                "description": p.get("description") or "",
-                "average_cost": float(p.get("average_cost") or 0.0),
-                "vendor_id": str(p["vendor_id"]) if p.get("vendor_id") else "",
-                "has_selling_price": bool(p.get("has_selling_price")),
-                "selling_price": float(p.get("selling_price") or 0.0),
-                "core_has_charge": bool(p.get("core_has_charge", False)),
-                "core_cost": float(p.get("core_cost") or 0.0),
-            })
+            items.append(_serialize_item(p))
 
             if len(items) >= limit:
                 break
+
+    attach_alternates(parts_coll, shop["_id"], items, _serialize_item)
 
     return {"ok": True, "items": items}
 
@@ -3118,8 +3144,98 @@ def parts_api_get(part_id: str):
             "core_cost": float(part.get("core_cost") or 0.0),
             "misc_has_charge": bool(part.get("misc_has_charge", False)),
             "misc_charges": part.get("misc_charges") or [],
+            "cross_refs": [
+                serialize_cross_ref(x)
+                for x in get_cross_refs(parts_coll, shop["_id"], part)
+            ],
         }
     })
+
+
+# -----------------------------
+# Cross references (взаимозаменяемые парты)
+# -----------------------------
+
+@parts_bp.get("/api/<part_id>/cross-refs")
+@login_required
+@permission_required("parts.view")
+def parts_api_cross_refs(part_id: str):
+    """Список взаимозаменяемых партов для данного парта."""
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop not configured"}), 400
+
+    pid = _oid(part_id)
+    if not pid:
+        return jsonify({"ok": False, "error": "Invalid part id"}), 400
+
+    part = parts_coll.find_one({"_id": pid, "shop_id": shop["_id"]})
+    if not part:
+        return jsonify({"ok": False, "error": "Part not found"}), 404
+
+    return jsonify({
+        "ok": True,
+        "items": [
+            serialize_cross_ref(x)
+            for x in get_cross_refs(parts_coll, shop["_id"], part)
+        ],
+    })
+
+
+@parts_bp.post("/api/<part_id>/cross-refs/add")
+@login_required
+@permission_required("parts.edit")
+def parts_api_cross_refs_add(part_id: str):
+    """Связать парт с другим партом как взаимозаменяемые (слияние групп)."""
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop not configured"}), 400
+
+    pid = _oid(part_id)
+    data = request.get_json(silent=True) or {}
+    other_pid = _oid(str(data.get("other_part_id") or ""))
+    if not pid or not other_pid:
+        return jsonify({"ok": False, "error": "Invalid part id"}), 400
+    if pid == other_pid:
+        return jsonify({"ok": False, "error": "Cannot cross-reference a part with itself"}), 400
+
+    part = parts_coll.find_one({"_id": pid, "shop_id": shop["_id"]})
+    other = parts_coll.find_one({"_id": other_pid, "shop_id": shop["_id"]})
+    if not part or not other:
+        return jsonify({"ok": False, "error": "Part not found"}), 404
+
+    link_parts(parts_coll, shop["_id"], part, other)
+
+    part = parts_coll.find_one({"_id": pid, "shop_id": shop["_id"]})
+    return jsonify({
+        "ok": True,
+        "message": "Cross reference added",
+        "items": [
+            serialize_cross_ref(x)
+            for x in get_cross_refs(parts_coll, shop["_id"], part)
+        ],
+    })
+
+
+@parts_bp.post("/api/<part_id>/cross-refs/remove")
+@login_required
+@permission_required("parts.edit")
+def parts_api_cross_refs_remove(part_id: str):
+    """Убрать парт из его группы взаимозаменяемости."""
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop not configured"}), 400
+
+    pid = _oid(part_id)
+    if not pid:
+        return jsonify({"ok": False, "error": "Invalid part id"}), 400
+
+    part = parts_coll.find_one({"_id": pid, "shop_id": shop["_id"]})
+    if not part:
+        return jsonify({"ok": False, "error": "Part not found"}), 404
+
+    unlink_part(parts_coll, shop["_id"], part)
+    return jsonify({"ok": True, "message": "Cross reference removed"})
 
 
 @parts_bp.get("/api/<part_id>/history")

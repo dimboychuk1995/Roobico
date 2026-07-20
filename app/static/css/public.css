@@ -1176,6 +1176,19 @@ a:hover {
   background: var(--surface-soft, #f8f9fa);
 }
 
+/* Взаимозаменяемый парт (cross reference) под основным результатом поиска */
+.parts-dd-item-alt {
+  padding-left: 28px;
+  background: var(--surface-soft, #f8f9fa);
+  border-left: 3px solid var(--border, rgba(0,0,0,.15));
+}
+
+/* То же для автокомплитов на list-group (парт-ордера, кросс-рефы) */
+.cross-ref-alt-item {
+  padding-left: 1.9rem !important;
+  border-left: 3px solid var(--border, rgba(0,0,0,.15));
+}
+
 .parts-dd-title {
   font-weight: 600;
   line-height: 1.2;

@@ -168,6 +168,8 @@ def ensure_shop_collections_indexes(shop_db):
     _safe_create_index(shop_db.parts, [("shop_id", ASCENDING), ("category_id", ASCENDING), ("is_active", ASCENDING)], name="idx_parts_shop_category_active")
     _safe_create_index(shop_db.parts, [("shop_id", ASCENDING), ("location_id", ASCENDING), ("is_active", ASCENDING)], name="idx_parts_shop_location_active")
     _safe_create_index(shop_db.parts, [("search_terms", ASCENDING)], name="idx_parts_search_terms")
+    # Cross references: поиск партов одной группы взаимозаменяемости.
+    _safe_create_index(shop_db.parts, [("shop_id", ASCENDING), ("interchange_group", ASCENDING)], name="idx_parts_shop_interchange_group")
 
     # Parts orders
     _safe_create_index(shop_db.parts_orders, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_parts_orders_shop_active_created_desc")

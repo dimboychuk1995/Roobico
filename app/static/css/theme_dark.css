@@ -981,6 +981,15 @@ html[data-theme="dark"] .parts-dd-item-onetime {
   background: #232323;
 }
 
+html[data-theme="dark"] .parts-dd-item-alt {
+  background: #232323;
+  border-left-color: var(--border);
+}
+
+html[data-theme="dark"] .cross-ref-alt-item {
+  border-left-color: var(--border);
+}
+
 html[data-theme="dark"] .parts-dd-item-onetime:hover,
 html[data-theme="dark"] .parts-dd-item-onetime:focus,
 html[data-theme="dark"] .parts-dd-item-onetime.is-active {
