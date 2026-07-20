@@ -48,6 +48,8 @@ function RootNavigator() {
         <Stack.Screen name="work-order-form" options={{ title: "Work Order" }} />
         <Stack.Screen name="parts-order/[id]" options={{ title: "Parts Order" }} />
         <Stack.Screen name="parts-order-form" options={{ title: "Parts Order" }} />
+        <Stack.Screen name="stocktake/[id]" options={{ title: "Stocktake" }} />
+        <Stack.Screen name="stocktake-form" options={{ title: "New Stocktake" }} />
         <Stack.Screen name="search" options={{ title: "Search" }} />
       </Stack.Protected>
       <Stack.Protected guard={!loggedIn}>

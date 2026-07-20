@@ -26,6 +26,13 @@ from app.utils.permissions import permission_required, filter_nav_items
 from app.blueprints.main.routes import NAV_ITEMS
 from app.utils.layout import build_app_layout_context
 from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
+from app.utils.parts_locations import (
+    MAX_LOCATION_DEPTH,
+    collect_descendant_ids,
+    flatten_location_tree,
+    location_depth,
+    subtree_height,
+)
 from app.utils.sales_tax import get_zip_sales_tax_rate, get_custom_shop_sales_tax_settings, get_shop_zip_code
 
 
@@ -208,13 +215,6 @@ def parts_settings_index():
         )
 
     # ✅ ALWAYS filter by active shop_id
-    loc_page, loc_per_page = get_pagination_params(
-        request.args,
-        default_per_page=20,
-        max_per_page=100,
-        page_key="loc_page",
-        per_page_key="loc_per_page",
-    )
     cat_page, cat_per_page = get_pagination_params(
         request.args,
         default_per_page=20,
@@ -223,13 +223,12 @@ def parts_settings_index():
         per_page_key="cat_per_page",
     )
 
-    parts_locations, pagination_locations = paginate_find(
-        sdb.parts_locations,
-        {"shop_id": shop_oid},
-        get_sort_params(request.args, [("name", 1), ("created_at", 1)], ["name", "created_at"]),
-        loc_page,
-        loc_per_page,
+    # Локации — дерево целиком (их немного), без пагинации: flatten даёт
+    # порядок отображения, depth для отступов и path для подписей.
+    parts_locations = flatten_location_tree(
+        list(sdb.parts_locations.find({"shop_id": shop_oid}))
     )
+    pagination_locations = None
     parts_categories, pagination_categories = paginate_find(
         sdb.parts_categories,
         {"shop_id": shop_oid},
@@ -263,6 +262,7 @@ def parts_settings_index():
 
     edit_location_id = request.args.get("edit_location_id") or None
     edit_category_id = request.args.get("edit_category_id") or None
+    new_location_parent_id = request.args.get("new_location_parent_id") or ""
 
     # ── Sales Tax Rate ──
     api_tax_rate = None
@@ -294,6 +294,8 @@ def parts_settings_index():
         pagination_categories=pagination_categories,
         edit_location_id=edit_location_id,
         edit_category_id=edit_category_id,
+        new_location_parent_id=new_location_parent_id,
+        max_location_depth=MAX_LOCATION_DEPTH,
         pricing_mode=pricing_mode,
         pricing_rules=pricing_rules,
         pricing_scales=pricing_scales,
@@ -360,8 +362,19 @@ def parts_settings_save_tax():
 
 
 # -----------------------------
-# CRUD: Parts Locations
+# CRUD: Parts Locations (дерево: parent_id, подлокации)
 # -----------------------------
+
+def _resolve_location_parent(sdb, shop_oid, parent_id_raw: str):
+    """('' -> корень) Возвращает (parent_doc | None, error | None)."""
+    parent_id_raw = (parent_id_raw or "").strip()
+    if not parent_id_raw:
+        return None, None
+    parent = _find_one_by_id(sdb.parts_locations, parent_id_raw, {"shop_id": shop_oid})
+    if not parent:
+        return None, "Parent location not found."
+    return parent, None
+
 
 @settings_bp.route("/parts-settings/locations/create", methods=["POST"])
 @login_required
@@ -376,9 +389,21 @@ def parts_locations_create():
         flash("Location name is required.", "error")
         return redirect(url_for("settings.parts_settings_index"))
 
+    parent, err = _resolve_location_parent(sdb, shop_oid, request.form.get("parent_id", ""))
+    if err:
+        flash(err, "error")
+        return redirect(url_for("settings.parts_settings_index"))
+
+    if parent is not None:
+        all_locations = list(sdb.parts_locations.find({"shop_id": shop_oid}))
+        if location_depth(all_locations, parent["_id"]) + 1 >= MAX_LOCATION_DEPTH:
+            flash(f"Maximum location depth is {MAX_LOCATION_DEPTH} levels.", "error")
+            return redirect(url_for("settings.parts_settings_index"))
+
     doc = {
         "name": name,
         "shop_id": shop_oid,
+        "parent_id": parent["_id"] if parent is not None else None,
         "is_active": True,
         "created_at": utcnow(),
         "updated_at": utcnow(),
@@ -407,9 +432,25 @@ def parts_locations_update(location_id: str):
         flash("Location name is required.", "error")
         return redirect(url_for("settings.parts_settings_index", edit_location_id=location_id))
 
+    parent, err = _resolve_location_parent(sdb, shop_oid, request.form.get("parent_id", ""))
+    if err:
+        flash(err, "error")
+        return redirect(url_for("settings.parts_settings_index", edit_location_id=location_id))
+
+    parent_oid = parent["_id"] if parent is not None else None
+    if parent_oid is not None:
+        all_locations = list(sdb.parts_locations.find({"shop_id": shop_oid}))
+        if parent_oid == existing["_id"] or parent_oid in collect_descendant_ids(all_locations, existing["_id"]):
+            flash("Location cannot be moved under itself or its own sub-location.", "error")
+            return redirect(url_for("settings.parts_settings_index", edit_location_id=location_id))
+        new_depth = location_depth(all_locations, parent_oid) + 1
+        if new_depth + subtree_height(all_locations, existing["_id"]) >= MAX_LOCATION_DEPTH:
+            flash(f"Maximum location depth is {MAX_LOCATION_DEPTH} levels.", "error")
+            return redirect(url_for("settings.parts_settings_index", edit_location_id=location_id))
+
     sdb.parts_locations.update_one(
         {"_id": existing["_id"]},
-        {"$set": {"name": name, "updated_at": utcnow()}},
+        {"$set": {"name": name, "parent_id": parent_oid, "updated_at": utcnow()}},
     )
     flash("Location updated.", "success")
     return redirect(url_for("settings.parts_settings_index"))
@@ -428,6 +469,23 @@ def parts_locations_delete(location_id: str):
         flash("Location not found.", "error")
         return redirect(url_for("settings.parts_settings_index"))
 
+    # Нельзя удалять локацию, пока у неё есть подлокации, привязанные парты
+    # или ненулевой остаток — иначе остатки «повиснут» на удалённой локации.
+    if sdb.parts_locations.find_one({"shop_id": shop_oid, "parent_id": existing["_id"]}, {"_id": 1}):
+        flash("Delete or move its sub-locations first.", "error")
+        return redirect(url_for("settings.parts_settings_index"))
+
+    if sdb.parts.find_one({"shop_id": shop_oid, "location_id": existing["_id"], "is_active": True}, {"_id": 1}):
+        flash("Location is used as a primary location for some parts. Reassign them first.", "error")
+        return redirect(url_for("settings.parts_settings_index"))
+
+    if sdb.part_location_stock.find_one(
+        {"shop_id": shop_oid, "location_id": existing["_id"], "qty": {"$ne": 0}}, {"_id": 1}
+    ):
+        flash("Location still holds stock. Transfer it to another location first.", "error")
+        return redirect(url_for("settings.parts_settings_index"))
+
+    sdb.part_location_stock.delete_many({"shop_id": shop_oid, "location_id": existing["_id"]})
     sdb.parts_locations.delete_one({"_id": existing["_id"]})
     flash("Location deleted.", "success")
     return redirect(url_for("settings.parts_settings_index"))

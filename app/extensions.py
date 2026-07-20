@@ -211,6 +211,31 @@ def ensure_shop_collections_indexes(shop_db):
 
     _safe_create_index(shop_db.parts_categories, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("name", ASCENDING)], name="idx_parts_categories_shop_active_name")
     _safe_create_index(shop_db.parts_locations, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("name", ASCENDING)], name="idx_parts_locations_shop_active_name")
+    _safe_create_index(shop_db.parts_locations, [("shop_id", ASCENDING), ("parent_id", ASCENDING)], name="idx_parts_locations_shop_parent")
+
+    # Раскладка остатков по локациям: одна строка на (part, location);
+    # location_id=null («Unassigned») тоже уникален в рамках парта.
+    _safe_create_index(
+        shop_db.part_location_stock,
+        [("shop_id", ASCENDING), ("part_id", ASCENDING), ("location_id", ASCENDING)],
+        unique=True,
+        name="uniq_part_location_stock_shop_part_location",
+    )
+    _safe_create_index(shop_db.part_location_stock, [("shop_id", ASCENDING), ("location_id", ASCENDING)], name="idx_part_location_stock_shop_location")
+
+    # Журнал движений склада (append-only): история парта + отчёты по периоду.
+    _safe_create_index(shop_db.inventory_movements, [("shop_id", ASCENDING), ("part_id", ASCENDING), ("created_at", DESCENDING)], name="idx_inventory_movements_shop_part_created_desc")
+    _safe_create_index(shop_db.inventory_movements, [("shop_id", ASCENDING), ("created_at", DESCENDING)], name="idx_inventory_movements_shop_created_desc")
+
+    # Инвентаризации (stocktakes) и их позиции.
+    _safe_create_index(shop_db.stocktakes, [("shop_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)], name="idx_stocktakes_shop_status_created_desc")
+    _safe_create_index(
+        shop_db.stocktake_items,
+        [("stocktake_id", ASCENDING), ("part_id", ASCENDING), ("location_id", ASCENDING)],
+        unique=True,
+        name="uniq_stocktake_items_stocktake_part_location",
+    )
+    _safe_create_index(shop_db.stocktake_items, [("stocktake_id", ASCENDING), ("status", ASCENDING)], name="idx_stocktake_items_stocktake_status")
     _migrate_parts_pricing_rules(shop_db)
     _safe_create_index(shop_db.parts_pricing_rules, [("shop_id", ASCENDING)], name="idx_parts_pricing_rules_shop")
     _safe_create_index(

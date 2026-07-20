@@ -21,6 +21,19 @@ from app.utils.display_datetime import (
     shop_local_date_to_utc,
 )
 from app.utils.date_filters import build_date_range_filters
+from app.utils.parts_locations import (
+    flatten_location_tree,
+    load_shop_locations,
+    location_path_map,
+)
+from app.blueprints.parts.services.stock import (
+    apply_stock_change,
+    deduct_stock_distributed,
+    disable_tracking,
+    get_location_breakdown,
+    transfer_stock,
+    set_location_qty,
+)
 
 from . import parts_bp
 
@@ -258,10 +271,12 @@ def _get_parts_orders_totals(orders_coll, query: dict):
         "another_service": 0.0,
     }
 
-    cursor = orders_coll.find(query, {"items": 1, "non_inventory_amounts": 1})
+    cursor = orders_coll.find(query, {"items": 1, "non_inventory_amounts": 1, "is_return": 1})
     for order in cursor:
         amounts = _parts_order_amounts(order)
-        totals["total"] += amounts.get("total_amount") or 0.0
+        # Возвраты вендору — кредит: уменьшают сумму закупок.
+        sign = -1.0 if order.get("is_return") else 1.0
+        totals["total"] += sign * (amounts.get("total_amount") or 0.0)
 
         for line in (order.get("non_inventory_amounts") or []):
             if not isinstance(line, dict):
@@ -538,7 +553,7 @@ def parts_page():
         return redirect(url_for("dashboard.dashboard"))
 
     active_tab = (request.args.get("tab") or "parts").strip().lower()
-    if active_tab not in {"parts", "orders", "payments", "cores", "cores_returns"}:
+    if active_tab not in {"parts", "orders", "payments", "cores", "cores_returns", "stocktakes"}:
         active_tab = "parts"
 
     q = (request.args.get("q") or "").strip()
@@ -677,15 +692,29 @@ def parts_page():
         )
 
     if locs_coll is not None:
-        locations = list(
-            locs_coll.find({"is_active": {"$ne": False}})
-            .sort([("name", 1), ("created_at", -1)])
-        )
+        # Дерево локаций: name = полный путь ("Warehouse › Rack › Bin"),
+        # depth — для отступов в select'ах.
+        locations = [
+            {"_id": item["oid"], "name": item["path"], "depth": item["depth"]}
+            for item in flatten_location_tree(
+                list(locs_coll.find({"is_active": {"$ne": False}}))
+            )
+        ]
 
     # 3) Make lookup maps for showing names in the table
     vendor_map = {v["_id"]: _name_from_doc(v) for v in vendors if v.get("_id")}
     category_map = {c["_id"]: _name_from_doc(c) for c in categories if c.get("_id")}
     location_map = {l["_id"]: _name_from_doc(l) for l in locations if l.get("_id")}
+
+    # Раскладка остатков по локациям для страницы (одним запросом на все парты)
+    stock_rows_by_part = {}
+    if active_tab == "parts" and parts_in_stock and parts_coll is not None:
+        page_part_ids = [p["_id"] for p in parts_in_stock if p.get("_id")]
+        if page_part_ids:
+            for r in parts_coll.database.part_location_stock.find(
+                {"shop_id": shop["_id"], "part_id": {"$in": page_part_ids}}
+            ):
+                stock_rows_by_part.setdefault(r.get("part_id"), []).append(r)
 
     if active_tab == "parts":
         for p in parts_in_stock:
@@ -699,6 +728,27 @@ def parts_page():
                 p["category_name"] = category_map.get(cid) or ""
             if lid:
                 p["location_name"] = location_map.get(lid) or ""
+
+            # Раскладка по локациям: строки из part_location_stock; хвост
+            # легаси-данных (без строк) виртуально относим к primary-локации.
+            loc_agg = {}
+            for r in stock_rows_by_part.get(p.get("_id")) or []:
+                key = r.get("location_id")
+                loc_agg[key] = loc_agg.get(key, 0) + int(r.get("qty") or 0)
+            if not bool(p.get("do_not_track_inventory")):
+                remainder = _parse_int(p.get("in_stock"), default=0) - sum(loc_agg.values())
+                if remainder != 0:
+                    loc_agg[lid] = loc_agg.get(lid, 0) + remainder
+            breakdown = []
+            for key, qty_val in loc_agg.items():
+                if qty_val == 0 and len(loc_agg) > 1:
+                    continue
+                breakdown.append({
+                    "name": (location_map.get(key) or "Deleted location") if key else "Unassigned",
+                    "qty": int(qty_val),
+                })
+            breakdown.sort(key=lambda x: x["name"].lower())
+            p["locations_breakdown"] = breakdown
 
             misc_charges_safe = []
             for charge in (p.get("misc_charges") or []):
@@ -747,7 +797,9 @@ def parts_page():
         if paid_status == "paid":
             orders_query["payment_status"] = "paid"
         elif paid_status == "unpaid":
+            # Возвраты — кредит вендора, а не долг: в Unpaid им не место.
             orders_query["payment_status"] = {"$ne": "paid"}
+            orders_query["is_return"] = {"$ne": True}
 
         created_filter = _build_preferred_date_filter(
             "order_date",
@@ -794,6 +846,9 @@ def parts_page():
                 "created_at": 1,
                 "items": 1,
                 "non_inventory_amounts": 1,
+                "is_return": 1,
+                "return_for_order_number": 1,
+                "notes": 1,
             },
         )
         
@@ -808,8 +863,17 @@ def parts_page():
         paid_map = _build_parts_order_paid_map(payments_coll, order_ids) if payments_coll is not None else {}
 
         for order in orders_rows:
+            is_return_row = bool(order.get("is_return"))
             paid_amount = paid_map.get(order.get("_id"), 0.0)
-            payment_summary = _build_parts_order_payment_summary(order, paid_amount)
+            if is_return_row:
+                # Возврат — кредит вендора: в платёжном цикле не участвует.
+                payment_summary = {
+                    "payment_status": "credit",
+                    "paid_amount": 0.0,
+                    "remaining_balance": 0.0,
+                }
+            else:
+                payment_summary = _build_parts_order_payment_summary(order, paid_amount)
             amounts = _parts_order_amounts(order)
 
             # Lookup current in_stock for each part in the order
@@ -860,9 +924,12 @@ def parts_page():
                 "paid_amount": float(payment_summary.get("paid_amount") or 0.0),
                 "remaining_balance": float(payment_summary.get("remaining_balance") or 0.0),
                 "items_count": len(order.get("items") or []),
-                "total_amount": amounts.get("total_amount") or 0.0,
+                "total_amount": (-(amounts.get("total_amount") or 0.0)) if is_return_row else (amounts.get("total_amount") or 0.0),
                 "created_at": _fmt_preferred_dt_label(order.get("order_date"), order.get("created_at")),
                 "order_date": shop_date_input_value(order.get("order_date") or order.get("created_at"), default_today=True),
+                "is_return": is_return_row,
+                "return_for_order_number": order.get("return_for_order_number"),
+                "notes": str(order.get("notes") or ""),
             })
 
     # Payments tab list
@@ -1078,6 +1145,50 @@ def parts_page():
                 }
             )
 
+    # Stocktakes tab (инвентаризации)
+    stocktakes_list = []
+    stocktakes_pagination = None
+    if active_tab == "stocktakes" and parts_coll is not None:
+        st_page_num, st_per_page = get_pagination_params(
+            request.args,
+            default_per_page=20,
+            max_per_page=100,
+            page_key="stocktakes_page",
+            per_page_key="stocktakes_per_page",
+        )
+        st_rows, stocktakes_pagination = paginate_find(
+            parts_coll.database.stocktakes,
+            {"shop_id": shop["_id"], "is_active": {"$ne": False}},
+            [("created_at", -1)],
+            st_page_num,
+            st_per_page,
+        )
+        st_items_coll = parts_coll.database.stocktake_items
+        for st in st_rows:
+            counted_now = None
+            if st.get("status") == "open":
+                counted_now = st_items_coll.count_documents(
+                    {"stocktake_id": st["_id"], "status": "counted"}
+                )
+            st_totals = st.get("totals") or {}
+            st_scope = st.get("scope") or {}
+            stocktakes_list.append({
+                "id": str(st["_id"]),
+                "number": st.get("number"),
+                "name": st.get("name") or "",
+                "status": st.get("status") or "open",
+                "scope_location": st_scope.get("location_path") or "",
+                "scope_category": st_scope.get("category_name") or "",
+                "items_total": int(st.get("items_total") or 0),
+                "items_counted": int(
+                    counted_now if counted_now is not None else (st_totals.get("items_counted") or 0)
+                ),
+                "items_adjusted": int(st_totals.get("items_adjusted") or 0),
+                "shortage_value": float(st_totals.get("shortage_value") or 0.0),
+                "overage_value": float(st_totals.get("overage_value") or 0.0),
+                "created_label": format_date_mmddyyyy(st.get("created_at")),
+            })
+
     return _render_app_page(
         "public/parts.html",
         active_page="parts",
@@ -1101,6 +1212,8 @@ def parts_page():
         payments=payments_list,
         payments_pagination=payments_pagination,
         payments_totals=payments_totals,
+        stocktakes=stocktakes_list,
+        stocktakes_pagination=stocktakes_pagination,
         date_preset=date_preset,
         date_from=date_from,
         date_to=date_to,
@@ -1295,9 +1408,16 @@ def parts_create():
     }
 
     if not do_not_track_inventory:
-        doc["in_stock"] = in_stock
+        doc["in_stock"] = 0
 
-    parts_coll.insert_one(doc)
+    res = parts_coll.insert_one(doc)
+
+    # Стартовый остаток проводим через сервис остатков: строка локации + движение.
+    if not do_not_track_inventory and in_stock:
+        apply_stock_change(
+            parts_coll.database, shop["_id"], res.inserted_id, in_stock, "initial",
+            user_id=user_oid,
+        )
 
     flash("Part created successfully.", "success")
     return redirect(url_for("parts.parts_page"))
@@ -1380,9 +1500,16 @@ def parts_api_create():
         "tenant_id": tenant_oid,
     }
     if not do_not_track:
-        doc["in_stock"] = in_stock
+        doc["in_stock"] = 0
 
     res = parts_coll.insert_one(doc)
+
+    if not do_not_track and in_stock:
+        apply_stock_change(
+            parts_coll.database, shop["_id"], res.inserted_id, in_stock, "initial",
+            user_id=user_oid,
+        )
+
     return jsonify({"ok": True, "part_id": str(res.inserted_id)})
 
 
@@ -1844,16 +1971,30 @@ def parts_api_orders_get(order_id: str):
             })
 
     payments_coll = orders_coll.database.parts_order_payments
-    paid_amount = _sum_active_order_payments(payments_coll, oid)
-    payment_summary = _build_parts_order_payment_summary(order, paid_amount)
+    if order.get("is_return"):
+        # Возврат — кредит вендора: платёжный цикл не применим.
+        payment_summary = {
+            "total_amount": -float(_parse_float(order.get("credit_total"), default=0.0)),
+            "paid_amount": 0.0,
+            "remaining_balance": 0.0,
+            "payment_status": "credit",
+        }
+    else:
+        paid_amount = _sum_active_order_payments(payments_coll, oid)
+        payment_summary = _build_parts_order_payment_summary(order, paid_amount)
 
     return jsonify({
         "ok": True,
         "order": {
             "id": str(order.get("_id")),
+            "order_number": order.get("order_number"),
             "vendor_id": str(order.get("vendor_id")) if order.get("vendor_id") else "",
             "status": order.get("status") or "ordered",
             "vendor_bill": str(order.get("vendor_bill") or "").strip(),
+            "is_return": bool(order.get("is_return")),
+            "return_for_order_number": order.get("return_for_order_number"),
+            "credit_total": float(_parse_float(order.get("credit_total"), default=0.0)),
+            "notes": str(order.get("notes") or ""),
             "items": items,
             "non_inventory_amounts": [
                 {
@@ -1893,6 +2034,9 @@ def parts_api_orders_update(order_id: str):
     order = orders_coll.find_one({"_id": oid, "shop_id": shop["_id"], "is_active": {"$ne": False}})
     if not order:
         return jsonify({"ok": False, "error": "Order not found"}), 404
+
+    if order.get("is_return"):
+        return jsonify({"ok": False, "error": "Return orders cannot be edited."}), 400
 
     # Don't allow updating received orders
     if str(order.get("status") or "").strip().lower() == "received":
@@ -2000,6 +2144,9 @@ def parts_api_orders_payment(order_id: str):
     order = orders_coll.find_one({"_id": oid, "shop_id": shop["_id"], "is_active": {"$ne": False}})
     if not order:
         return jsonify({"ok": False, "error": "Order not found."}), 404
+
+    if order.get("is_return"):
+        return jsonify({"ok": False, "error": "Returns are vendor credits — payments are not applicable."}), 400
 
     data = request.get_json(silent=True) or {}
     amount = _parse_float(data.get("amount"), default=-1.0)
@@ -2306,6 +2453,9 @@ def parts_api_orders_receive(order_id: str):
     if order.get("is_active") is False:
         return jsonify({"ok": False, "error": "Order is inactive."}), 400
 
+    if order.get("is_return"):
+        return jsonify({"ok": False, "error": "Return orders cannot be received."}), 400
+
     if order.get("status") == "received":
         return jsonify({"ok": True, "updated_parts": 0, "message": "Order already received."})
 
@@ -2315,6 +2465,17 @@ def parts_api_orders_receive(order_id: str):
     vendor_bill = str(payload.get("vendor_bill") or request.form.get("vendor_bill") or "").strip()
     if len(vendor_bill) > 120:
         return jsonify({"ok": False, "error": "Vendor Bill is too long (max 120)."}), 400
+
+    # Локации приёмки по позициям: {part_id_str: location_id_str | ""}.
+    # "" — явный Unassigned; отсутствие ключа — дефолтная локация парта.
+    raw_item_locations = payload.get("item_locations")
+    if not isinstance(raw_item_locations, dict):
+        raw_item_locations = {}
+    valid_location_ids = set()
+    if locs_coll is not None and raw_item_locations:
+        valid_location_ids = {
+            doc["_id"] for doc in locs_coll.find({"shop_id": shop["_id"]}, {"_id": 1})
+        }
 
     items = order.get("items") or []
     if not isinstance(items, list):
@@ -2330,6 +2491,7 @@ def parts_api_orders_receive(order_id: str):
 
     updated = 0
     updated_not_tracked = 0
+    received_locations = {}
     for it in items:
         pid = it.get("part_id")
         if not pid:
@@ -2360,21 +2522,46 @@ def parts_api_orders_receive(order_id: str):
             updated += 1
             continue
 
+        has_choice = str(pid) in raw_item_locations
+        chosen_loc = None
+        if has_choice:
+            chosen_raw = str(raw_item_locations.get(str(pid)) or "").strip()
+            if chosen_raw:
+                chosen_oid = _oid(chosen_raw)
+                if not chosen_oid or chosen_oid not in valid_location_ids:
+                    return jsonify({
+                        "ok": False,
+                        "error": f"Invalid location for part '{part.get('part_number') or pid}'.",
+                    }), 400
+                chosen_loc = chosen_oid
+
         old_qty = int(part.get("in_stock") or 0)
         old_avg = float(part.get("average_cost") or 0.0)
 
         new_avg = _recalc_weighted_avg(old_qty, old_avg, recv_qty, recv_price)
-        new_qty = old_qty + recv_qty
 
-        parts_coll.update_one(
-            {"_id": pid},
-            {"$set": {
-                "in_stock": int(new_qty),
-                "average_cost": float(new_avg),
-                "updated_at": now,
-                "updated_by": user_oid,
-            }},
+        stock_kwargs = {}
+        if has_choice:
+            stock_kwargs["location_id"] = chosen_loc
+        stock_result = apply_stock_change(
+            parts_coll.database, shop["_id"], pid, recv_qty, "receive",
+            user_id=user_oid,
+            ref={"kind": "parts_order", "id": order["_id"], "label": str(order.get("order_number") or "")},
+            part_doc=part,
+            **stock_kwargs,
         )
+        used_loc = stock_result.get("location_id")
+        received_locations[str(pid)] = str(used_loc) if used_loc else ""
+
+        part_set = {
+            "average_cost": float(new_avg),
+            "updated_at": now,
+            "updated_by": user_oid,
+        }
+        # У парта нет дефолтной локации — выбранная при приёмке становится ею.
+        if chosen_loc is not None and not part.get("location_id"):
+            part_set["location_id"] = chosen_loc
+        parts_coll.update_one({"_id": pid}, {"$set": part_set})
 
         updated += 1
 
@@ -2385,6 +2572,7 @@ def parts_api_orders_receive(order_id: str):
             "vendor_bill": vendor_bill,
             "received_at": now,
             "received_by": user_oid,
+            "received_item_locations": received_locations,
             "updated_at": now,
             "updated_by": user_oid,
         }},
@@ -2397,10 +2585,298 @@ def parts_api_orders_receive(order_id: str):
     })
 
 
-def _rollback_received_order_inventory(parts_coll, items, user_oid, now):
-    """Rollback stock quantities for received order items (without touching avg cost)."""
+@parts_bp.get("/api/orders/<order_id>/receive-context")
+@login_required
+@permission_required("parts.edit")
+def parts_api_orders_receive_context(order_id: str):
+    """Данные для диалога приёмки: позиции с дефолтными локациями партов
+    + дерево локаций магазина."""
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or orders_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop database not configured."}), 400
+
+    oid = _oid(order_id)
+    if not oid:
+        return jsonify({"ok": False, "error": "Invalid order id."}), 400
+
+    order = orders_coll.find_one({"_id": oid, "shop_id": shop["_id"], "is_active": {"$ne": False}})
+    if not order:
+        return jsonify({"ok": False, "error": "Order not found."}), 404
+
+    items = [it for it in (order.get("items") or []) if isinstance(it, dict)]
+    part_ids = [it.get("part_id") for it in items if it.get("part_id")]
+    parts_map = {}
+    if part_ids:
+        parts_map = {
+            p["_id"]: p
+            for p in parts_coll.find(
+                {"_id": {"$in": part_ids}},
+                {"part_number": 1, "description": 1, "location_id": 1,
+                 "do_not_track_inventory": 1, "is_active": 1},
+            )
+        }
+
+    items_out = []
+    for it in items:
+        pid = it.get("part_id")
+        part = parts_map.get(pid)
+        if not part or part.get("is_active") is False:
+            continue
+        qty = _parse_int(it.get("quantity"), default=0)
+        if qty <= 0:
+            continue
+        if bool(part.get("do_not_track_inventory")):
+            continue
+        items_out.append({
+            "part_id": str(pid),
+            "part_number": str(part.get("part_number") or ""),
+            "description": str(part.get("description") or ""),
+            "quantity": qty,
+            "default_location_id": str(part.get("location_id")) if part.get("location_id") else "",
+        })
+
+    shop_db = parts_coll.database
+    tree = [
+        {"id": item["id"], "path": item["path"], "depth": item["depth"]}
+        for item in flatten_location_tree(load_shop_locations(shop_db, shop["_id"]))
+    ]
+
+    return jsonify({
+        "ok": True,
+        "items": items_out,
+        "locations": tree,
+        "vendor_bill": str(order.get("vendor_bill") or ""),
+    })
+
+
+# -----------------------------
+# Vendor returns (возвраты вендору по принятым/оплаченным заказам)
+# -----------------------------
+
+def _order_returnable_map(orders_coll, order) -> dict:
+    """
+    {part_id: {part_number, description, price, ordered, returned, returnable}}
+    ordered — количество в исходном заказе; returned — уже возвращено
+    активными возвратами по этому заказу.
+    """
+    out = {}
+    for it in (order.get("items") or []):
+        if not isinstance(it, dict):
+            continue
+        pid = it.get("part_id")
+        qty = _parse_int(it.get("quantity"), default=0)
+        if not pid or qty <= 0:
+            continue
+        row = out.setdefault(pid, {
+            "part_number": str(it.get("part_number") or ""),
+            "description": str(it.get("description") or ""),
+            "price": float(_parse_float(it.get("price"), default=0.0)),
+            "ordered": 0,
+            "returned": 0,
+        })
+        row["ordered"] += qty
+        row["price"] = float(_parse_float(it.get("price"), default=0.0))
+
+    for ret in orders_coll.find(
+        {"return_for_order_id": order["_id"], "is_return": True, "is_active": {"$ne": False}},
+        {"items": 1},
+    ):
+        for it in (ret.get("items") or []):
+            if not isinstance(it, dict):
+                continue
+            pid = it.get("part_id")
+            if pid in out:
+                out[pid]["returned"] += max(0, _parse_int(it.get("quantity"), default=0))
+
+    for row in out.values():
+        row["returnable"] = max(0, row["ordered"] - row["returned"])
+    return out
+
+
+def _order_return_allowed(order) -> bool:
+    """Возврат разрешён по принятому или оплаченному заказу (не по возврату)."""
+    if order.get("is_return"):
+        return False
+    return order.get("status") == "received" or order.get("payment_status") == "paid"
+
+
+@parts_bp.get("/api/orders/<order_id>/return-context")
+@login_required
+@permission_required("parts.edit")
+def parts_api_orders_return_context(order_id: str):
+    """Данные для диалога возврата: позиции с доступным к возврату количеством."""
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or orders_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop database not configured."}), 400
+
+    oid = _oid(order_id)
+    if not oid:
+        return jsonify({"ok": False, "error": "Invalid order id."}), 400
+
+    order = orders_coll.find_one({"_id": oid, "shop_id": shop["_id"], "is_active": {"$ne": False}})
+    if not order:
+        return jsonify({"ok": False, "error": "Order not found."}), 404
+    if not _order_return_allowed(order):
+        return jsonify({"ok": False, "error": "Return is available only for received or paid orders."}), 400
+
+    items_out = []
+    for pid, row in _order_returnable_map(orders_coll, order).items():
+        items_out.append({
+            "part_id": str(pid),
+            "part_number": row["part_number"],
+            "description": row["description"],
+            "price": row["price"],
+            "ordered": row["ordered"],
+            "returned": row["returned"],
+            "returnable": row["returnable"],
+        })
+    items_out.sort(key=lambda x: x["part_number"].lower())
+
+    return jsonify({
+        "ok": True,
+        "order_number": order.get("order_number"),
+        "was_received": order.get("status") == "received",
+        "items": items_out,
+    })
+
+
+@parts_bp.post("/api/orders/<order_id>/returns")
+@login_required
+@permission_required("parts.edit")
+def parts_api_orders_return_create(order_id: str):
+    """
+    Создать возврат вендору по заказу. Body: {items: [{part_id, quantity}], notes}.
+    Возврат — отдельный документ в parts_orders (is_return=True), виден
+    отдельной строкой во вкладке Orders. Если исходный заказ был принят,
+    возвращаемое количество списывается со склада (каскад: дефолтная локация,
+    затем остальные).
+    """
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or orders_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop database not configured."}), 400
+
+    oid = _oid(order_id)
+    if not oid:
+        return jsonify({"ok": False, "error": "Invalid order id."}), 400
+
+    order = orders_coll.find_one({"_id": oid, "shop_id": shop["_id"], "is_active": {"$ne": False}})
+    if not order:
+        return jsonify({"ok": False, "error": "Order not found."}), 404
+    if not _order_return_allowed(order):
+        return jsonify({"ok": False, "error": "Return is available only for received or paid orders."}), 400
+
+    payload = request.get_json(silent=True) or {}
+    raw_items = payload.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        return jsonify({"ok": False, "error": "Select at least one item to return."}), 400
+    notes = str(payload.get("notes") or "").strip()
+    if len(notes) > 500:
+        return jsonify({"ok": False, "error": "Notes are too long (max 500)."}), 400
+
+    returnable = _order_returnable_map(orders_coll, order)
+
+    return_items = []
+    credit_total = 0.0
+    for raw in raw_items:
+        if not isinstance(raw, dict):
+            continue
+        pid = _oid(str(raw.get("part_id") or ""))
+        qty = _parse_int(raw.get("quantity"), default=0)
+        if not pid or qty <= 0:
+            continue
+        row = returnable.get(pid)
+        if not row:
+            return jsonify({"ok": False, "error": "Item is not part of this order."}), 400
+        if qty > row["returnable"]:
+            return jsonify({
+                "ok": False,
+                "error": f"Cannot return {qty} of '{row['part_number']}': only {row['returnable']} available.",
+            }), 400
+        return_items.append({
+            "part_id": pid,
+            "part_number": row["part_number"],
+            "description": row["description"],
+            "quantity": int(qty),
+            "price": float(row["price"]),
+        })
+        credit_total += qty * float(row["price"])
+
+    if not return_items:
+        return jsonify({"ok": False, "error": "Select at least one item to return."}), 400
+
+    now = utcnow()
+    user_oid = _oid(session.get(SESSION_USER_ID))
+    shop_db = parts_coll.database
+    was_received = order.get("status") == "received"
+
+    return_doc = {
+        "shop_id": shop["_id"],
+        "tenant_id": order.get("tenant_id"),
+        "order_number": _get_next_order_number(shop_db, shop["_id"]),
+        "is_return": True,
+        "return_for_order_id": order["_id"],
+        "return_for_order_number": order.get("order_number"),
+        "vendor_id": order.get("vendor_id"),
+        "status": "returned",
+        "payment_status": "credit",
+        "items": return_items,
+        "credit_total": round(float(credit_total), 2),
+        "notes": notes,
+        "stock_deducted": bool(was_received),
+        "non_inventory_amounts": [],
+        "order_date": now,
+        "is_active": True,
+        "created_at": now,
+        "updated_at": now,
+        "created_by": user_oid,
+        "updated_by": user_oid,
+    }
+    res = orders_coll.insert_one(return_doc)
+    return_id = res.inserted_id
+
+    # Заказ был принят → возвращаемое физически уходит со склада.
+    # Оплачен, но не принят → на складе ничего нет, движение не пишем.
+    stock_errors = []
+    returned_chunks = []
+    if was_received:
+        ref = {"kind": "parts_order", "id": return_id, "label": f"R-{return_doc['order_number']}"}
+        for it in return_items:
+            result = deduct_stock_distributed(
+                shop_db, shop["_id"], it["part_id"], it["quantity"], "vendor_return",
+                user_id=user_oid, ref=ref,
+            )
+            if not result["ok"]:
+                stock_errors.append(f"{it['part_number']}: {result.get('error')}")
+                continue
+            for chunk in result.get("chunks") or []:
+                loc = chunk.get("location_id")
+                returned_chunks.append({
+                    "part_id": it["part_id"],
+                    "location_id": str(loc) if loc else "",
+                    "qty": int(chunk.get("qty") or 0),
+                })
+        orders_coll.update_one(
+            {"_id": return_id},
+            {"$set": {"returned_stock_chunks": returned_chunks}},
+        )
+
+    return jsonify({
+        "ok": True,
+        "return_id": str(return_id),
+        "order_number": return_doc["order_number"],
+        "credit_total": return_doc["credit_total"],
+        "stock_errors": stock_errors,
+    })
+
+
+def _rollback_received_order_inventory(parts_coll, items, user_oid, shop_id, ref=None, item_locations=None):
+    """Rollback stock quantities for received order items (without touching avg cost).
+    item_locations — {part_id_str: location_id_str | ""}, сохранённые при приёмке:
+    откат снимает остаток из тех же локаций, куда принимали."""
     if not isinstance(items, list):
         return 0, []
+    if not isinstance(item_locations, dict):
+        item_locations = {}
 
     errors = []
     updates = []
@@ -2431,25 +2907,26 @@ def _rollback_received_order_inventory(parts_coll, items, user_oid, now):
 
         updates.append({
             "part_id": pid,
-            "new_qty": current_qty - qty,
+            "qty": qty,
         })
 
     if errors:
         return 0, errors
 
+    shop_db = parts_coll.database
     updated = 0
     for upd in updates:
-        parts_coll.update_one(
-            {"_id": upd["part_id"]},
-            {
-                "$set": {
-                    "in_stock": int(upd["new_qty"]),
-                    "updated_at": now,
-                    "updated_by": user_oid,
-                }
-            },
+        stock_kwargs = {}
+        key = str(upd["part_id"])
+        if key in item_locations:
+            raw = str(item_locations.get(key) or "").strip()
+            stock_kwargs["location_id"] = _oid(raw) if raw else None
+        result = apply_stock_change(
+            shop_db, shop_id, upd["part_id"], -int(upd["qty"]), "unreceive",
+            user_id=user_oid, ref=ref, **stock_kwargs,
         )
-        updated += 1
+        if result["ok"] and not result.get("skipped"):
+            updated += 1
 
     return updated, []
 
@@ -2471,8 +2948,17 @@ def parts_api_orders_unreceive(order_id: str):
     if not order:
         return jsonify({"ok": False, "error": "Order not found."}), 404
 
+    if order.get("is_return"):
+        return jsonify({"ok": False, "error": "Return orders cannot be unreceived."}), 400
+
     if order.get("status") != "received":
         return jsonify({"ok": True, "updated_parts": 0, "message": "Order is not received."})
+
+    if orders_coll.find_one(
+        {"return_for_order_id": order["_id"], "is_return": True, "is_active": {"$ne": False}},
+        {"_id": 1},
+    ):
+        return jsonify({"ok": False, "error": "Order has active returns. Delete the returns first."}), 400
 
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
@@ -2481,7 +2967,9 @@ def parts_api_orders_unreceive(order_id: str):
         parts_coll,
         order.get("items") or [],
         user_oid,
-        now,
+        shop["_id"],
+        ref={"kind": "parts_order", "id": order["_id"], "label": str(order.get("order_number") or "")},
+        item_locations=order.get("received_item_locations"),
     )
     if rollback_errors:
         return jsonify({"ok": False, "error": rollback_errors[0], "details": rollback_errors}), 400
@@ -2497,6 +2985,7 @@ def parts_api_orders_unreceive(order_id: str):
             "$unset": {
                 "received_at": "",
                 "received_by": "",
+                "received_item_locations": "",
             },
         },
     )
@@ -2525,12 +3014,38 @@ def parts_api_orders_delete(order_id: str):
     user_oid = _oid(session.get(SESSION_USER_ID))
     updated = 0
 
-    if order.get("status") == "received":
+    if order.get("is_return"):
+        # Удаление возврата: вернуть списанное на склад в те же локации.
+        if order.get("stock_deducted"):
+            ref = {"kind": "parts_order", "id": order["_id"], "label": f"R-{order.get('order_number')}"}
+            for chunk in (order.get("returned_stock_chunks") or []):
+                if not isinstance(chunk, dict):
+                    continue
+                qty = _parse_int(chunk.get("qty"), default=0)
+                pid = chunk.get("part_id")
+                if not pid or qty <= 0:
+                    continue
+                loc_raw = str(chunk.get("location_id") or "").strip()
+                apply_stock_change(
+                    parts_coll.database, shop["_id"], pid, qty, "vendor_return",
+                    user_id=user_oid, ref=ref,
+                    location_id=_oid(loc_raw) if loc_raw else None,
+                )
+                updated += 1
+    elif order.get("status") == "received":
+        if orders_coll.find_one(
+            {"return_for_order_id": order["_id"], "is_return": True, "is_active": {"$ne": False}},
+            {"_id": 1},
+        ):
+            return jsonify({"ok": False, "error": "Order has active returns. Delete the returns first."}), 400
+
         updated, rollback_errors = _rollback_received_order_inventory(
             parts_coll,
             order.get("items") or [],
             user_oid,
-            now,
+            shop["_id"],
+            ref={"kind": "parts_order", "id": order["_id"], "label": str(order.get("order_number") or "")},
+            item_locations=order.get("received_item_locations"),
         )
         if rollback_errors:
             return jsonify({"ok": False, "error": rollback_errors[0], "details": rollback_errors}), 400
@@ -2923,20 +3438,166 @@ def parts_api_update(part_id: str):
             "updated_at": now,
             "updated_by": user_oid,
     }
-    unset_doc = {}
+    was_tracked = not bool(part.get("do_not_track_inventory"))
+    old_stock = int(part.get("in_stock") or 0)
 
     if do_not_track_inventory:
-        unset_doc["in_stock"] = ""
+        if was_tracked:
+            # Обнуляет раскладку по локациям и пишет движение tracking_off.
+            disable_tracking(parts_coll.database, shop["_id"], part, user_id=user_oid)
+        parts_coll.update_one({"_id": pid}, {"$set": set_doc, "$unset": {"in_stock": ""}})
     else:
-        set_doc["in_stock"] = in_stock
+        if not was_tracked:
+            set_doc["in_stock"] = 0
+        parts_coll.update_one({"_id": pid}, {"$set": set_doc})
 
-    update_doc = {"$set": set_doc}
-    if unset_doc:
-        update_doc["$unset"] = unset_doc
-
-    parts_coll.update_one({"_id": pid}, update_doc)
+        # Ручная правка остатка — дельтой через сервис (в primary-локацию).
+        base_stock = old_stock if was_tracked else 0
+        stock_delta = in_stock - base_stock
+        if stock_delta:
+            apply_stock_change(
+                parts_coll.database, shop["_id"], pid, stock_delta,
+                "manual_edit" if was_tracked else "initial",
+                user_id=user_oid,
+            )
 
     return jsonify({"ok": True, "message": "Part updated successfully"})
+
+
+# -----------------------------
+# Stock by location (раскладка остатка парта по локациям)
+# -----------------------------
+
+def _resolve_shop_location(locs_coll, shop, raw_id):
+    """'' -> Unassigned (None); иначе ObjectId существующей локации магазина."""
+    raw_id = str(raw_id or "").strip()
+    if not raw_id:
+        return None, None
+    loc_oid = _oid(raw_id)
+    if not loc_oid:
+        return None, "Invalid location id"
+    if locs_coll is None or not locs_coll.find_one({"_id": loc_oid, "shop_id": shop["_id"]}):
+        return None, "Location not found"
+    return loc_oid, None
+
+
+@parts_bp.get("/api/<part_id>/locations")
+@login_required
+@permission_required("parts.view")
+def parts_api_part_locations(part_id: str):
+    """Раскладка остатка парта по локациям + дерево локаций для переноса."""
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop not configured"}), 400
+
+    pid = _oid(part_id)
+    if not pid:
+        return jsonify({"ok": False, "error": "Invalid part id"}), 400
+
+    part = parts_coll.find_one({"_id": pid, "shop_id": shop["_id"]})
+    if not part:
+        return jsonify({"ok": False, "error": "Part not found"}), 404
+
+    shop_db = parts_coll.database
+    paths = location_path_map(load_shop_locations(shop_db, shop["_id"], include_inactive=True))
+    primary_id = str(part.get("location_id")) if part.get("location_id") else ""
+
+    rows = []
+    for row in get_location_breakdown(shop_db, shop["_id"], part):
+        loc_id = row.get("location_id")
+        loc_key = str(loc_id) if loc_id else ""
+        rows.append({
+            "location_id": loc_key,
+            "location_name": paths.get(loc_key) or ("Unassigned" if not loc_key else "Deleted location"),
+            "qty": int(row.get("qty") or 0),
+            "is_primary": bool(loc_key) and loc_key == primary_id,
+        })
+    rows.sort(key=lambda r: (r["location_id"] == "", r["location_name"].lower()))
+
+    tree = [
+        {"id": item["id"], "path": item["path"], "depth": item["depth"]}
+        for item in flatten_location_tree(load_shop_locations(shop_db, shop["_id"]))
+    ]
+
+    return jsonify({
+        "ok": True,
+        "part": {
+            "id": str(pid),
+            "part_number": str(part.get("part_number") or ""),
+            "in_stock": int(part.get("in_stock") or 0),
+            "do_not_track_inventory": bool(part.get("do_not_track_inventory")),
+        },
+        "rows": rows,
+        "locations": tree,
+    })
+
+
+@parts_bp.post("/api/<part_id>/locations/transfer")
+@login_required
+@permission_required("parts.edit")
+def parts_api_part_locations_transfer(part_id: str):
+    """Перенос количества между локациями ('' = Unassigned). Итог in_stock не меняется."""
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop not configured"}), 400
+
+    pid = _oid(part_id)
+    if not pid:
+        return jsonify({"ok": False, "error": "Invalid part id"}), 400
+    if not parts_coll.find_one({"_id": pid, "shop_id": shop["_id"]}, {"_id": 1}):
+        return jsonify({"ok": False, "error": "Part not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    qty = _parse_int(data.get("qty"), default=0)
+
+    from_loc, err = _resolve_shop_location(locs_coll, shop, data.get("from_location_id"))
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+    to_loc, err = _resolve_shop_location(locs_coll, shop, data.get("to_location_id"))
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+
+    user_oid = _oid(session.get(SESSION_USER_ID))
+    result = transfer_stock(
+        parts_coll.database, shop["_id"], pid, qty, from_loc, to_loc, user_id=user_oid,
+    )
+    if not result["ok"]:
+        return jsonify({"ok": False, "error": result.get("error") or "Transfer failed"}), 400
+    return jsonify({"ok": True})
+
+
+@parts_bp.post("/api/<part_id>/locations/adjust")
+@login_required
+@permission_required("parts.edit")
+def parts_api_part_locations_adjust(part_id: str):
+    """Установить фактическое количество в конкретной локации (ручная поправка)."""
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop not configured"}), 400
+
+    pid = _oid(part_id)
+    if not pid:
+        return jsonify({"ok": False, "error": "Invalid part id"}), 400
+    if not parts_coll.find_one({"_id": pid, "shop_id": shop["_id"]}, {"_id": 1}):
+        return jsonify({"ok": False, "error": "Part not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    new_qty = _parse_int(data.get("qty"), default=None)
+    if new_qty is None:
+        return jsonify({"ok": False, "error": "Quantity is required"}), 400
+
+    loc, err = _resolve_shop_location(locs_coll, shop, data.get("location_id"))
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+
+    user_oid = _oid(session.get(SESSION_USER_ID))
+    result = set_location_qty(
+        parts_coll.database, shop["_id"], pid, loc, new_qty,
+        movement_type="manual_edit", user_id=user_oid,
+    )
+    if not result["ok"]:
+        return jsonify({"ok": False, "error": result.get("error") or "Adjust failed"}), 400
+    return jsonify({"ok": True, "stock_after": result.get("stock_after")})
 
 
 @parts_bp.post("/<part_id>/deactivate")

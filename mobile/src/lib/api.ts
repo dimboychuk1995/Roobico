@@ -919,6 +919,8 @@ export interface PartsOrderRow {
   remaining_balance: number;
   payment_status: string;
   created_at: string;
+  is_return?: boolean;
+  return_for_order_number?: number | string | null;
 }
 
 export function fetchPartsOrders(q: string, page: number) {
@@ -930,12 +932,17 @@ export function fetchPartsOrders(q: string, page: number) {
 
 export interface PartsOrderDetail {
   id: string;
+  order_number?: number | string | null;
   vendor_id: string;
   status: string;
   vendor_bill: string;
   order_date: string;
   created_at: string | null;
   received_at: string | null;
+  is_return?: boolean;
+  return_for_order_number?: number | string | null;
+  credit_total?: number;
+  notes?: string;
   items: {
     part_id: string;
     part_number: string;
@@ -987,6 +994,147 @@ export function payPartsOrder(id: string, amount: number, method: string, notes:
   return request<{ ok: boolean }>(`/parts/api/orders/${encodeURIComponent(id)}/payment`, {
     method: "POST",
     body: JSON.stringify({ amount, payment_method: method, notes }),
+  });
+}
+
+// ── Vendor returns (возвраты вендору) ───────────────────────────────
+
+export interface ReturnContextItem {
+  part_id: string;
+  part_number: string;
+  description: string;
+  price: number;
+  ordered: number;
+  returned: number;
+  returnable: number;
+}
+
+export function fetchReturnContext(orderId: string) {
+  return request<{ ok: boolean; order_number: number | string; items: ReturnContextItem[] }>(
+    `/parts/api/orders/${encodeURIComponent(orderId)}/return-context`
+  );
+}
+
+export function createOrderReturn(
+  orderId: string,
+  items: { part_id: string; quantity: number }[],
+  notes: string
+) {
+  return request<{ ok: boolean; return_id: string; order_number: number; credit_total: number }>(
+    `/parts/api/orders/${encodeURIComponent(orderId)}/returns`,
+    { method: "POST", body: JSON.stringify({ items, notes }) }
+  );
+}
+
+// ── Stocktakes (инвентаризация) ─────────────────────────────────────
+
+export interface StocktakeRow {
+  id: string;
+  number: number | string | null;
+  name: string;
+  status: string;
+  scope_location: string;
+  scope_category: string;
+  items_total: number;
+  items_counted: number;
+  items_adjusted: number;
+  shortage_value: number;
+  overage_value: number;
+  created_label: string;
+}
+
+export function fetchStocktakes(q: string, page: number) {
+  return request<ListResponse<StocktakeRow>>(`/api/mobile/stocktakes?${listQuery(q, page)}`);
+}
+
+export interface StocktakeLocationOption {
+  id: string;
+  path: string;
+  depth: number;
+}
+
+export function fetchStocktakeOptions() {
+  return request<{
+    ok: boolean;
+    locations: StocktakeLocationOption[];
+    categories: { id: string; name: string }[];
+  }>("/api/mobile/stocktake_options");
+}
+
+export function createStocktake(payload: { name: string; location_id: string; category_id: string }) {
+  return request<{ ok: boolean; id: string; number: number }>("/api/mobile/stocktakes", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export interface StocktakeItemRow {
+  id: string;
+  part_number: string;
+  description: string;
+  location_path: string;
+  expected: number;
+  counted_qty: number | null;
+  variance: number | null;
+  variance_value: number | null;
+  status: string;
+  needs_recount: boolean;
+  auto_zeroed: boolean;
+}
+
+export interface StocktakeDetail {
+  ok: boolean;
+  id: string;
+  number: number | string | null;
+  name: string;
+  status: string;
+  scope_location: string;
+  scope_category: string;
+  created_label: string;
+  items_total: number;
+  items_counted: number;
+  discrepancies: number;
+  variance_value: number;
+  totals: {
+    items_adjusted: number;
+    items_zeroed: number;
+    shortage_value: number;
+    overage_value: number;
+  } | null;
+  items: StocktakeItemRow[];
+}
+
+export function fetchStocktakeDetail(id: string) {
+  return request<StocktakeDetail>(`/api/mobile/stocktakes/${encodeURIComponent(id)}`);
+}
+
+export function countStocktakeItem(stocktakeId: string, itemId: string, countedQty: number) {
+  return request<{
+    ok: boolean;
+    item: {
+      id: string;
+      counted_qty: number;
+      expected_at_count: number;
+      variance: number;
+      variance_value: number;
+    };
+  }>(`/parts/stocktakes/${encodeURIComponent(stocktakeId)}/count`, {
+    method: "POST",
+    body: JSON.stringify({ item_id: itemId, counted_qty: countedQty }),
+  });
+}
+
+export function completeStocktake(id: string, zeroUncounted: boolean) {
+  return request<{ ok: boolean }>(`/parts/stocktakes/${encodeURIComponent(id)}/complete`, {
+    method: "POST",
+    body: JSON.stringify({ zero_uncounted: zeroUncounted }),
+  });
+}
+
+export function cancelStocktake(id: string) {
+  return request<{ ok: boolean }>(`/parts/stocktakes/${encodeURIComponent(id)}/cancel`, {
+    method: "POST",
+    body: JSON.stringify({}),
   });
 }
 

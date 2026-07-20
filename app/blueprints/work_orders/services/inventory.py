@@ -6,6 +6,11 @@ from __future__ import annotations
 
 from bson import ObjectId
 
+from app.blueprints.parts.services.stock import (
+    PART_STOCK_PROJECTION,
+    apply_stock_change,
+    deduct_stock_distributed,
+)
 from app.blueprints.work_orders.services.common import as_bool, f64, i32, oid, round2, utcnow
 
 
@@ -97,7 +102,7 @@ def _collect_inventory_qty_by_part(shop_db, labors: list):
     return out, errors
 
 
-def deduct_parts_from_inventory(shop_db, labors: list, user_id: ObjectId) -> dict:
+def deduct_parts_from_inventory(shop_db, labors: list, user_id: ObjectId, ref: dict | None = None) -> dict:
     """
     Deduct parts used in a work order from inventory.
     Returns: {success: bool, deducted: [{part_id, part_number, qty_used}], errors: []}
@@ -107,7 +112,6 @@ def deduct_parts_from_inventory(shop_db, labors: list, user_id: ObjectId) -> dic
 
     deducted = []
     errors = []
-    now = utcnow()
 
     required_map, collect_errors = _collect_inventory_qty_by_part(shop_db, labors)
     errors.extend(collect_errors)
@@ -119,31 +123,27 @@ def deduct_parts_from_inventory(shop_db, labors: list, user_id: ObjectId) -> dic
         if not part_id or qty <= 0:
             continue
 
-        part_doc = shop_db.parts.find_one({"_id": part_id, "is_active": True}, {"in_stock": 1})
+        part_doc = shop_db.parts.find_one({"_id": part_id, "is_active": True}, PART_STOCK_PROJECTION)
         if not part_doc:
             errors.append(f"Part '{part_number}' not found in inventory")
             continue
 
-        current_stock = int(part_doc.get("in_stock") or 0)
-        # Allow stock to go negative — operators must be able to create the WO
-        # even if inventory is short.
-        new_stock = current_stock - qty
-        shop_db.parts.update_one(
-            {"_id": part_id},
-            {
-                "$set": {
-                    "in_stock": new_stock,
-                    "updated_at": now,
-                    "updated_by": user_id,
-                }
-            }
+        # Каскад по локациям: primary → остальные с остатком; нехватка уводит
+        # primary в минус (WO создаётся даже при дефиците).
+        result = deduct_stock_distributed(
+            shop_db, part_doc.get("shop_id"), part_id, qty, "wo_deduct",
+            user_id=user_id, ref=ref, part_doc=part_doc,
         )
+        if not result["ok"]:
+            errors.append(f"Part '{part_number}': {result.get('error')}")
+            continue
 
+        new_stock = result.get("stock_after")
         deducted.append({
             "part_id": str(part_id),
             "part_number": part_number,
             "qty_used": qty,
-            "previous_stock": current_stock,
+            "previous_stock": (new_stock + qty) if new_stock is not None else None,
             "new_stock": new_stock,
         })
 
@@ -154,7 +154,7 @@ def deduct_parts_from_inventory(shop_db, labors: list, user_id: ObjectId) -> dic
     }
 
 
-def restore_parts_to_inventory(shop_db, labors: list, user_id: ObjectId) -> dict:
+def restore_parts_to_inventory(shop_db, labors: list, user_id: ObjectId, ref: dict | None = None) -> dict:
     """
     Restore parts back to inventory (when work order is updated or deleted).
     Returns inventory updates in reverse.
@@ -164,7 +164,6 @@ def restore_parts_to_inventory(shop_db, labors: list, user_id: ObjectId) -> dict
 
     restored = []
     errors = []
-    now = utcnow()
 
     required_map, collect_errors = _collect_inventory_qty_by_part(shop_db, labors)
     errors.extend(collect_errors)
@@ -176,23 +175,18 @@ def restore_parts_to_inventory(shop_db, labors: list, user_id: ObjectId) -> dict
         if not part_id or qty <= 0:
             continue
 
-        part_doc = shop_db.parts.find_one({"_id": part_id, "is_active": True}, {"in_stock": 1})
+        part_doc = shop_db.parts.find_one({"_id": part_id, "is_active": True}, PART_STOCK_PROJECTION)
         if not part_doc:
             errors.append(f"Part '{part_number}' not found when restoring")
             continue
 
-        current_stock = int(part_doc.get("in_stock") or 0)
-        new_stock = current_stock + qty
-        shop_db.parts.update_one(
-            {"_id": part_id},
-            {
-                "$set": {
-                    "in_stock": new_stock,
-                    "updated_at": now,
-                    "updated_by": user_id,
-                }
-            }
+        result = apply_stock_change(
+            shop_db, part_doc.get("shop_id"), part_id, qty, "wo_restore",
+            user_id=user_id, ref=ref, part_doc=part_doc,
         )
+        if not result["ok"]:
+            errors.append(f"Part '{part_number}': {result.get('error')}")
+            continue
 
         restored.append({
             "part_id": str(part_id),
@@ -207,7 +201,7 @@ def restore_parts_to_inventory(shop_db, labors: list, user_id: ObjectId) -> dict
     }
 
 
-def adjust_inventory_for_part_changes(shop_db, old_labors: list, new_labors: list, user_id: ObjectId) -> dict:
+def adjust_inventory_for_part_changes(shop_db, old_labors: list, new_labors: list, user_id: ObjectId, ref: dict | None = None) -> dict:
     """
     When updating a work order, adjust inventory based on part quantity changes.
     Compares old vs new parts and makes adjustments.
@@ -217,7 +211,6 @@ def adjust_inventory_for_part_changes(shop_db, old_labors: list, new_labors: lis
 
     errors = []
     adjusted = []
-    now = utcnow()
 
     old_parts_map, old_errors = _collect_inventory_qty_by_part(shop_db, old_labors)
     new_parts_map, new_errors = _collect_inventory_qty_by_part(shop_db, new_labors)
@@ -242,38 +235,38 @@ def adjust_inventory_for_part_changes(shop_db, old_labors: list, new_labors: lis
         if not part_id:
             continue
 
-        part_doc = shop_db.parts.find_one({"_id": part_id, "is_active": True}, {"in_stock": 1})
+        part_doc = shop_db.parts.find_one({"_id": part_id, "is_active": True}, PART_STOCK_PROJECTION)
         if not part_doc:
             errors.append(f"Part '{part_number}' not found when adjusting")
             continue
 
-        current_stock = int(part_doc.get("in_stock") or 0)
-
-        # qty_diff > 0: more parts needed, deduct from stock
-        # qty_diff < 0: fewer parts needed, add back to stock
+        # qty_diff > 0: more parts needed — каскадное списание по локациям;
+        # qty_diff < 0: fewer parts needed — возврат в primary-локацию.
         # Allow stock to go negative — operators must be able to save the WO
         # even if inventory is short; we'll surface the negative balance
         # elsewhere instead of blocking the save.
-        new_stock = current_stock - qty_diff
+        if qty_diff > 0:
+            result = deduct_stock_distributed(
+                shop_db, part_doc.get("shop_id"), part_id, qty_diff, "wo_adjust",
+                user_id=user_id, ref=ref, part_doc=part_doc,
+            )
+        else:
+            result = apply_stock_change(
+                shop_db, part_doc.get("shop_id"), part_id, -qty_diff, "wo_adjust",
+                user_id=user_id, ref=ref, part_doc=part_doc,
+            )
+        if not result["ok"]:
+            errors.append(f"Part '{part_number}': {result.get('error')}")
+            continue
 
-        shop_db.parts.update_one(
-            {"_id": part_id},
-            {
-                "$set": {
-                    "in_stock": new_stock,
-                    "updated_at": now,
-                    "updated_by": user_id,
-                }
-            }
-        )
-
+        new_stock = result.get("stock_after")
         adjusted.append({
             "part_id": str(part_id),
             "part_number": part_number,
             "old_qty": old_qty,
             "new_qty": new_qty,
             "qty_change": qty_diff,
-            "previous_stock": current_stock,
+            "previous_stock": (new_stock + qty_diff) if new_stock is not None else None,
             "new_stock": new_stock,
         })
 

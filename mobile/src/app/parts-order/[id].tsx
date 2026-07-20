@@ -21,7 +21,10 @@ import { useToast } from "@/context/toast";
 import {
   ApiError,
   PartsOrderDetail,
+  ReturnContextItem,
+  createOrderReturn,
   fetchPartsOrder,
+  fetchReturnContext,
   money,
   payPartsOrder,
   receivePartsOrder,
@@ -42,6 +45,7 @@ export default function PartsOrderDetailsScreen() {
   const [busy, setBusy] = useState(false);
   const [payOpen, setPayOpen] = useState(false);
   const [receiveOpen, setReceiveOpen] = useState(false);
+  const [returnOpen, setReturnOpen] = useState(false);
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -106,6 +110,8 @@ export default function PartsOrderDetailsScreen() {
 
   const summary = order.payment_summary;
   const received = order.status === "received";
+  const isReturn = !!order.is_return;
+  const canReturn = !isReturn && (received || summary.payment_status === "paid");
   const itemsTotal = order.items.reduce((s, i) => s + i.quantity * i.price, 0);
 
   return (
@@ -123,17 +129,35 @@ export default function PartsOrderDetailsScreen() {
         />
       }
     >
-      <Stack.Screen options={{ title: "Parts Order" }} />
+      <Stack.Screen options={{ title: isReturn ? "Vendor Return" : "Parts Order" }} />
 
       <RowCard>
         <View style={styles.headerRow}>
-          <Text style={[styles.title, { color: theme.text }]}>Order</Text>
-          {received ? <Badge label="Received" tone="success" /> : <Badge label={order.status || "ordered"} tone="warning" />}
+          <Text style={[styles.title, { color: theme.text }]}>
+            {isReturn ? `Return #${order.order_number ?? ""}` : "Order"}
+          </Text>
+          {isReturn ? (
+            <Badge label="Return" tone="danger" />
+          ) : received ? (
+            <Badge label="Received" tone="success" />
+          ) : (
+            <Badge label={order.status || "ordered"} tone="warning" />
+          )}
         </View>
-        <KV label="Vendor bill" value={order.vendor_bill} />
-        <KV label="Order date" value={order.order_date} />
-        {order.received_at ? <KV label="Received at" value={order.received_at.slice(0, 10)} /> : null}
-        <KV label="Payment" value={summary.payment_status} />
+        {isReturn ? (
+          <>
+            <KV label="For order" value={`#${order.return_for_order_number ?? "—"}`} />
+            <KV label="Vendor credit" value={money(order.credit_total ?? 0)} />
+            {order.notes ? <KV label="Notes" value={order.notes} /> : null}
+          </>
+        ) : (
+          <>
+            <KV label="Vendor bill" value={order.vendor_bill} />
+            <KV label="Order date" value={order.order_date} />
+            {order.received_at ? <KV label="Received at" value={order.received_at.slice(0, 10)} /> : null}
+            <KV label="Payment" value={summary.payment_status} />
+          </>
+        )}
       </RowCard>
 
       <Text style={[styles.sectionTitle, { color: theme.muted }]}>ITEMS ({order.items.length})</Text>
@@ -184,7 +208,7 @@ export default function PartsOrderDetailsScreen() {
         </View>
       </RowCard>
 
-      {!received ? (
+      {isReturn ? null : !received ? (
         <Pressable
           style={[styles.primaryBtn, { backgroundColor: theme.primary, opacity: busy ? 0.7 : 1 }]}
           onPress={() => setReceiveOpen(true)}
@@ -204,7 +228,7 @@ export default function PartsOrderDetailsScreen() {
         </Pressable>
       )}
 
-      {summary.remaining_balance > 0 ? (
+      {!isReturn && summary.remaining_balance > 0 ? (
         <Pressable
           style={[styles.secondaryBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
           onPress={() => setPayOpen(true)}
@@ -213,6 +237,27 @@ export default function PartsOrderDetailsScreen() {
           <Text style={{ color: theme.primary, fontWeight: "600" }}>Record payment</Text>
         </Pressable>
       ) : null}
+
+      {canReturn ? (
+        <Pressable
+          style={[styles.secondaryBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
+          onPress={() => setReturnOpen(true)}
+          disabled={busy}
+        >
+          <Ionicons name="return-down-back-outline" size={16} color={theme.danger} />
+          <Text style={{ color: theme.danger, fontWeight: "600" }}>Return to vendor</Text>
+        </Pressable>
+      ) : null}
+
+      <ReturnModal
+        visible={returnOpen}
+        orderId={order.id}
+        onClose={() => setReturnOpen(false)}
+        onDone={() => {
+          setReturnOpen(false);
+          load();
+        }}
+      />
 
       <ReceiveModal
         visible={receiveOpen}
@@ -235,6 +280,118 @@ export default function PartsOrderDetailsScreen() {
         orderId={order.id}
       />
     </ScrollView>
+  );
+}
+
+function ReturnModal({
+  visible,
+  orderId,
+  onClose,
+  onDone,
+}: {
+  visible: boolean;
+  orderId: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const theme = useTheme();
+  const toast = useToast();
+  const [items, setItems] = useState<ReturnContextItem[]>([]);
+  const [qtys, setQtys] = useState<Record<string, string>>({});
+  const [notes, setNotes] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [loadedFor, setLoadedFor] = useState("");
+
+  // Загружаем доступное к возврату при каждом открытии.
+  if (visible && loadedFor !== orderId + ":open") {
+    setLoadedFor(orderId + ":open");
+    setLoading(true);
+    setQtys({});
+    setNotes("");
+    fetchReturnContext(orderId)
+      .then((d) => setItems((d.items || []).filter((it) => it.returnable > 0)))
+      .catch((e) => {
+        toast.show(e instanceof ApiError ? e.message : "Failed to load return details.", "error");
+        onClose();
+      })
+      .finally(() => setLoading(false));
+  }
+  if (!visible && loadedFor) {
+    setLoadedFor("");
+  }
+
+  const onSubmit = async () => {
+    const payload = items
+      .map((it) => ({ part_id: it.part_id, quantity: parseInt(qtys[it.part_id] || "0", 10) || 0 }))
+      .filter((x) => x.quantity > 0);
+    if (!payload.length) {
+      toast.show("Enter a quantity for at least one item.", "error");
+      return;
+    }
+    const over = items.find(
+      (it) => (parseInt(qtys[it.part_id] || "0", 10) || 0) > it.returnable
+    );
+    if (over) {
+      toast.show(`Only ${over.returnable} of ${over.part_number} can be returned.`, "error");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await createOrderReturn(orderId, payload, notes.trim());
+      toast.show(`Return R-${res.order_number} created (credit ${money(res.credit_total)}).`, "success");
+      onDone();
+    } catch (e) {
+      toast.show(e instanceof ApiError ? e.message : "Failed to create return.", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <SimpleModal visible={visible} onClose={onClose} title="Return to vendor">
+      {loading ? (
+        <ActivityIndicator color={theme.primary} style={{ marginVertical: 16 }} />
+      ) : items.length === 0 ? (
+        <Text style={{ color: theme.muted, fontSize: 13 }}>Nothing left to return on this order.</Text>
+      ) : (
+        <ScrollView style={{ maxHeight: 300 }}>
+          {items.map((it) => (
+            <View key={it.part_id} style={{ flexDirection: "row", alignItems: "center", gap: 10, marginTop: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: theme.text, fontWeight: "700", fontSize: 13 }} numberOfLines={1}>
+                  {it.part_number}
+                </Text>
+                <Text style={{ color: theme.muted, fontSize: 12 }}>
+                  {money(it.price)} · returnable {it.returnable}
+                </Text>
+              </View>
+              <TextInput
+                style={[
+                  styles.input,
+                  { width: 76, textAlign: "center", backgroundColor: theme.surfaceSoft, borderColor: theme.border, color: theme.text },
+                ]}
+                value={qtys[it.part_id] || ""}
+                onChangeText={(v) => setQtys((prev) => ({ ...prev, [it.part_id]: v }))}
+                keyboardType="number-pad"
+                placeholder="0"
+                placeholderTextColor={theme.muted}
+              />
+            </View>
+          ))}
+        </ScrollView>
+      )}
+      <Text style={[styles.inputLabel, { color: theme.muted }]}>NOTES (OPTIONAL)</Text>
+      <TextInput
+        style={[styles.input, { backgroundColor: theme.surfaceSoft, borderColor: theme.border, color: theme.text }]}
+        value={notes}
+        onChangeText={setNotes}
+        placeholder="Reason, RMA number…"
+        placeholderTextColor={theme.muted}
+        maxLength={500}
+      />
+      <ModalButtons onClose={onClose} onSubmit={onSubmit} busy={busy} submitLabel="Create return" />
+    </SimpleModal>
   );
 }
 

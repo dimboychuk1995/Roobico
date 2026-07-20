@@ -23,45 +23,79 @@
           <h2 class="h6 mb-0">Parts Locations</h2>
         </div>
 
+        <div class="text-muted small mb-2">
+          Up to {{ max_location_depth }} levels: e.g. Warehouse › Rack › Shelf › Bin.
+        </div>
+
         <!-- Create -->
         <form method="post" action="{{ url_for('settings.parts_locations_create') }}" class="row g-2 mb-3">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <div class="col-12 col-md-8">
+          <div class="col-12 col-md-5">
             <input type="text" name="name" class="form-control" placeholder="New location name" required>
           </div>
           <div class="col-12 col-md-4">
+            <select name="parent_id" class="form-select">
+              <option value="">— Top level —</option>
+              {% for loc in parts_locations %}
+                {% if loc.depth < max_location_depth - 1 %}
+                  <option value="{{ loc.id }}" {% if new_location_parent_id == loc.id %}selected{% endif %}>
+                    {{ '&mdash; '|safe * loc.depth }}{{ loc.name }}
+                  </option>
+                {% endif %}
+              {% endfor %}
+            </select>
+          </div>
+          <div class="col-12 col-md-3">
             <button class="btn btn-primary w-100" type="submit">Add</button>
           </div>
         </form>
 
         {% if parts_locations and parts_locations|length > 0 %}
           <div class="table-responsive">
-            <table class="table table-sm align-middle sortable">
+            <table class="table table-sm align-middle">
               <thead>
                 <tr>
-                  <th data-sort-field="name" style="width: 60%;">Name</th>
-                  <th class="text-end no-sort" style="width: 40%;">Actions</th>
+                  <th style="width: 60%;">Name</th>
+                  <th class="text-end" style="width: 40%;">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {% for loc in parts_locations %}
-                  {% set loc_id = loc._id|string %}
+                  {% set loc_id = loc.id %}
                   <tr>
                     <td>
                       {% if edit_location_id == loc_id %}
-                        <form method="post" action="{{ url_for('settings.parts_locations_update', location_id=loc_id) }}" class="d-flex gap-2">
+                        <form method="post" action="{{ url_for('settings.parts_locations_update', location_id=loc_id) }}" class="d-flex gap-2 flex-wrap">
                           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                          <input type="text" name="name" class="form-control form-control-sm" value="{{ loc.name }}" required>
+                          <input type="text" name="name" class="form-control form-control-sm" style="max-width: 200px;" value="{{ loc.name }}" required>
+                          <select name="parent_id" class="form-select form-select-sm" style="max-width: 220px;">
+                            <option value="">— Top level —</option>
+                            {% for opt in parts_locations %}
+                              {% if opt.id != loc_id %}
+                                <option value="{{ opt.id }}" {% if loc.parent_id == opt.id %}selected{% endif %}>
+                                  {{ '&mdash; '|safe * opt.depth }}{{ opt.name }}
+                                </option>
+                              {% endif %}
+                            {% endfor %}
+                          </select>
                           <button class="btn btn-sm btn-success" type="submit">Save</button>
                           <a class="btn btn-sm btn-outline-secondary"
                              href="{{ url_for('settings.parts_settings_index') }}">Cancel</a>
                         </form>
                       {% else %}
-                        {{ loc.name }}
+                        <span style="padding-left: {{ loc.depth * 18 }}px;">
+                          {% if loc.depth > 0 %}<i class="bi bi-arrow-return-right text-muted me-1"></i>{% endif %}
+                          {{ loc.name }}
+                        </span>
                       {% endif %}
                     </td>
                     <td class="text-end">
                       {% if edit_location_id != loc_id %}
+                        {% if loc.depth < max_location_depth - 1 %}
+                          <a class="btn btn-sm btn-outline-secondary"
+                             href="{{ url_for('settings.parts_settings_index', new_location_parent_id=loc_id) }}"
+                             title="Add sub-location">+ Sub</a>
+                        {% endif %}
                         <a class="btn btn-sm btn-outline-primary"
                            href="{{ url_for('settings.parts_settings_index', edit_location_id=loc_id) }}">Edit</a>
 
@@ -79,20 +113,6 @@
               </tbody>
             </table>
           </div>
-
-          {% if pagination_locations and pagination_locations.pages > 1 %}
-            <div class="d-flex align-items-center justify-content-between mt-2">
-              <div class="small text-muted">
-                Page {{ pagination_locations.page }} of {{ pagination_locations.pages }} · {{ pagination_locations.total }} total
-              </div>
-              <div class="btn-group btn-group-sm" role="group" aria-label="Locations pagination">
-                <a class="btn btn-outline-secondary {% if not pagination_locations.has_prev %}disabled{% endif %}"
-                   href="{{ url_for('settings.parts_settings_index', loc_page=pagination_locations.prev_page, loc_per_page=pagination_locations.per_page, cat_page=request.args.get('cat_page', 1), cat_per_page=request.args.get('cat_per_page', 20), edit_location_id=edit_location_id, edit_category_id=edit_category_id, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
-                <a class="btn btn-outline-secondary {% if not pagination_locations.has_next %}disabled{% endif %}"
-                   href="{{ url_for('settings.parts_settings_index', loc_page=pagination_locations.next_page, loc_per_page=pagination_locations.per_page, cat_page=request.args.get('cat_page', 1), cat_per_page=request.args.get('cat_per_page', 20), edit_location_id=edit_location_id, edit_category_id=edit_category_id, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
-              </div>
-            </div>
-          {% endif %}
         {% else %}
           <div class="text-muted">No locations yet.</div>
         {% endif %}

@@ -318,8 +318,18 @@ def mobile_parts_orders():
 
     items = []
     for r in rows:
-        paid = _sum_active_order_payments(shop_db.parts_order_payments, r.get("_id"))
-        summary = _build_parts_order_payment_summary(r, paid)
+        is_return_row = bool(r.get("is_return"))
+        if is_return_row:
+            # Возврат — кредит вендора: без платёжного цикла, сумма минусом.
+            summary = {
+                "total_amount": -float(r.get("credit_total") or 0.0),
+                "paid_amount": 0.0,
+                "remaining_balance": 0.0,
+                "payment_status": "credit",
+            }
+        else:
+            paid = _sum_active_order_payments(shop_db.parts_order_payments, r.get("_id"))
+            summary = _build_parts_order_payment_summary(r, paid)
         items.append({
             "id": str(r["_id"]),
             "order_number": r.get("order_number"),
@@ -332,6 +342,8 @@ def mobile_parts_orders():
             "remaining_balance": summary["remaining_balance"],
             "payment_status": summary["payment_status"],
             "created_at": format_dt_label(r.get("created_at")),
+            "is_return": is_return_row,
+            "return_for_order_number": r.get("return_for_order_number"),
         })
 
     return jsonify({"ok": True, "items": items, "pagination": _pagination_payload(pagination)}), 200
@@ -454,13 +466,17 @@ def mobile_work_order_create():
     now = utcnow()
     user_id = oid(session.get("user_id"))
 
-    inventory_result = deduct_parts_from_inventory(shop_db, labors, user_id)
+    wo_number = get_next_wo_number(shop_db, shop["_id"])
+    inventory_result = deduct_parts_from_inventory(
+        shop_db, labors, user_id,
+        ref={"kind": "work_order", "label": str(wo_number)},
+    )
 
     status = "in_progress" if enforce_mechanic_status(str(data.get("status") or "").strip().lower()) == "in_progress" else "open"
     doc = {
         "shop_id": shop["_id"],
         "tenant_id": shop.get("tenant_id"),
-        "wo_number": get_next_wo_number(shop_db, shop["_id"]),
+        "wo_number": wo_number,
         "customer_id": customer_id,
         "unit_id": unit_id,
         "status": status,
@@ -554,7 +570,10 @@ def mobile_work_order_edit(work_order_id):
     user_id = oid(session.get("user_id"))
     old_labors = wo.get("labors") or []
 
-    inventory_adjustment = adjust_inventory_for_part_changes(shop_db, old_labors, labors, user_id)
+    inventory_adjustment = adjust_inventory_for_part_changes(
+        shop_db, old_labors, labors, user_id,
+        ref={"kind": "work_order", "id": wo["_id"], "label": str(wo.get("wo_number") or "")},
+    )
     core_sync = sync_work_order_cores(shop_db, shop, old_labors, labors, user_id)
 
     set_fields = {
@@ -1042,3 +1061,204 @@ def mobile_parts():
         items.append(item)
 
     return jsonify({"ok": True, "items": items, "pagination": _pagination_payload(pagination)}), 200
+
+
+# ── Инвентаризация (stocktakes) ──────────────────────────────────────
+# count/complete/cancel мобильный клиент зовёт напрямую в веб-JSON
+# роуты /parts/stocktakes/<id>/... — здесь только список/создание/детали.
+
+
+@mobile_api_bp.get("/api/mobile/stocktakes")
+@api_login_required
+@permission_required("parts.view")
+def mobile_stocktakes():
+    from app.utils.display_datetime import format_date_mmddyyyy
+
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    q = (request.args.get("q") or "").strip()
+    page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
+
+    query = {"shop_id": shop["_id"], "is_active": {"$ne": False}}
+    search_filter = build_regex_search_filter(
+        q,
+        text_fields=["name", "status"],
+        numeric_fields=["number"],
+        object_id_fields=["_id"],
+    )
+    if search_filter:
+        query = {"$and": [query, search_filter]}
+
+    rows, pagination = paginate_find(
+        shop_db.stocktakes,
+        query,
+        [("created_at", -1)],
+        page,
+        per_page,
+    )
+
+    items = []
+    for st in rows:
+        counted_now = None
+        if st.get("status") == "open":
+            counted_now = shop_db.stocktake_items.count_documents(
+                {"stocktake_id": st["_id"], "status": "counted"}
+            )
+        totals = st.get("totals") or {}
+        scope = st.get("scope") or {}
+        items.append({
+            "id": str(st["_id"]),
+            "number": st.get("number"),
+            "name": st.get("name") or "",
+            "status": st.get("status") or "open",
+            "scope_location": scope.get("location_path") or "",
+            "scope_category": scope.get("category_name") or "",
+            "items_total": int(st.get("items_total") or 0),
+            "items_counted": int(
+                counted_now if counted_now is not None else (totals.get("items_counted") or 0)
+            ),
+            "items_adjusted": int(totals.get("items_adjusted") or 0),
+            "shortage_value": float(totals.get("shortage_value") or 0.0),
+            "overage_value": float(totals.get("overage_value") or 0.0),
+            "created_label": format_date_mmddyyyy(st.get("created_at")),
+        })
+
+    return jsonify({"ok": True, "items": items, "pagination": _pagination_payload(pagination)}), 200
+
+
+@mobile_api_bp.get("/api/mobile/stocktake_options")
+@api_login_required
+@permission_required("parts.view")
+def mobile_stocktake_options():
+    """Справочники для формы создания инвентаризации: дерево локаций + категории."""
+    from app.utils.parts_locations import flatten_location_tree, load_shop_locations
+
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    locations = [
+        {"id": item["id"], "path": item["path"], "depth": item["depth"]}
+        for item in flatten_location_tree(load_shop_locations(shop_db, shop["_id"]))
+    ]
+    categories = [
+        {"id": str(c["_id"]), "name": c.get("name") or ""}
+        for c in shop_db.parts_categories.find(
+            {"shop_id": shop["_id"], "is_active": {"$ne": False}}
+        ).sort("name", 1)
+    ]
+    return jsonify({"ok": True, "locations": locations, "categories": categories}), 200
+
+
+@mobile_api_bp.post("/api/mobile/stocktakes")
+@api_login_required
+@permission_required("parts.edit")
+def mobile_stocktake_create():
+    from app.blueprints.parts.services.stocktake import create_stocktake
+
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    data = request.get_json(silent=True) or {}
+    name = str(data.get("name") or "").strip()
+    location_id = oid(str(data.get("location_id") or "")) or None
+    category_id = oid(str(data.get("category_id") or "")) or None
+    user_id = oid(session.get("user_id"))
+
+    stocktake, err = create_stocktake(
+        shop_db, shop, user_id,
+        name=name, location_id=location_id, category_id=category_id,
+    )
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+
+    return jsonify({"ok": True, "id": str(stocktake["_id"]), "number": stocktake["number"]}), 200
+
+
+@mobile_api_bp.get("/api/mobile/stocktakes/<stocktake_id>")
+@api_login_required
+@permission_required("parts.view")
+def mobile_stocktake_detail(stocktake_id: str):
+    from app.blueprints.parts.services.stocktake import build_recount_flags
+    from app.utils.display_datetime import format_date_mmddyyyy
+
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    st_id = oid(stocktake_id)
+    if not st_id:
+        return jsonify({"ok": False, "error": "invalid_stocktake_id"}), 400
+
+    stocktake = shop_db.stocktakes.find_one(
+        {"_id": st_id, "shop_id": shop["_id"], "is_active": {"$ne": False}}
+    )
+    if not stocktake:
+        return jsonify({"ok": False, "error": "stocktake_not_found"}), 404
+
+    items = list(
+        shop_db.stocktake_items.find({"stocktake_id": stocktake["_id"]})
+        .sort([("location_path", 1), ("part_number", 1)])
+    )
+    recount_flags = (
+        build_recount_flags(shop_db, shop, stocktake, items)
+        if stocktake.get("status") == "open" else set()
+    )
+
+    counted = 0
+    discrepancies = 0
+    variance_value = 0.0
+    items_out = []
+    for it in items:
+        is_counted = it.get("status") == "counted"
+        variance = int(it.get("variance") or 0) if is_counted else None
+        item_value = (
+            variance * float(it.get("average_cost") or 0.0) if variance is not None else None
+        )
+        if is_counted:
+            counted += 1
+            if variance:
+                discrepancies += 1
+            variance_value += item_value or 0.0
+        items_out.append({
+            "id": str(it["_id"]),
+            "part_number": str(it.get("part_number") or ""),
+            "description": str(it.get("description") or ""),
+            "location_path": str(it.get("location_path") or ""),
+            "expected": int(
+                it.get("expected_at_count") if is_counted else (it.get("expected_initial") or 0)
+            ),
+            "counted_qty": int(it.get("counted_qty")) if it.get("counted_qty") is not None else None,
+            "variance": variance,
+            "variance_value": round(item_value, 2) if item_value is not None else None,
+            "status": str(it.get("status") or "pending"),
+            "needs_recount": str(it["_id"]) in recount_flags,
+            "auto_zeroed": bool(it.get("auto_zeroed")),
+        })
+
+    scope = stocktake.get("scope") or {}
+    totals = stocktake.get("totals") or None
+    return jsonify({
+        "ok": True,
+        "id": str(stocktake["_id"]),
+        "number": stocktake.get("number"),
+        "name": stocktake.get("name") or "",
+        "status": stocktake.get("status") or "open",
+        "scope_location": scope.get("location_path") or "",
+        "scope_category": scope.get("category_name") or "",
+        "created_label": format_date_mmddyyyy(stocktake.get("created_at")),
+        "items_total": len(items),
+        "items_counted": counted,
+        "discrepancies": discrepancies,
+        "variance_value": round(variance_value, 2),
+        "totals": {
+            "items_adjusted": int(totals.get("items_adjusted") or 0),
+            "items_zeroed": int(totals.get("items_zeroed") or 0),
+            "shortage_value": float(totals.get("shortage_value") or 0.0),
+            "overage_value": float(totals.get("overage_value") or 0.0),
+        } if totals else None,
+        "items": items_out,
+    }), 200

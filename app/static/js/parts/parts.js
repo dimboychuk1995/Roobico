@@ -1200,22 +1200,66 @@
 			}
 		}
 
-		async function askVendorBill(defaultValue) {
+		// Диалог приёмки: vendor bill + локация для каждой позиции.
+		// Дефолт селекта — дефолтная локация парта; если у парта её нет,
+		// выбранная здесь локация станет дефолтной (логика на бэкенде).
+		async function askReceiveDetails(orderId, defaultValue) {
 			if (typeof Swal === 'undefined') {
 				const value = window.prompt("Vendor Bill (invoice number). Leave blank if none.", String(defaultValue || "").trim());
 				if (value === null) return null;
-				return String(value || "").trim();
+				return { vendorBill: String(value || "").trim(), itemLocations: {} };
 			}
+
+			let ctx = { items: [], locations: [], vendor_bill: "" };
+			try {
+				const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/receive-context`, {
+					headers: { "Accept": "application/json" }
+				});
+				const data = await res.json();
+				if (res.ok && data && data.ok) ctx = data;
+			} catch (err) { /* нет контекста — покажем диалог без локаций */ }
+
+			const items = Array.isArray(ctx.items) ? ctx.items : [];
+			const locations = Array.isArray(ctx.locations) ? ctx.locations : [];
+
+			const locationOptions = function (selectedId) {
+				const opts = ['<option value=""' + (!selectedId ? ' selected' : '') + '>Unassigned</option>'];
+				locations.forEach(function (l) {
+					opts.push('<option value="' + escapeHtml(l.id) + '"' +
+						(selectedId === l.id ? ' selected' : '') + '>' + escapeHtml(l.path) + '</option>');
+				});
+				return opts.join("");
+			};
+
+			let html =
+				'<div class="text-start">' +
+				'<label class="form-label small mb-1">Vendor Bill (leave blank if none)</label>' +
+				'<input type="text" id="swalVendorBill" class="form-control form-control-sm" placeholder="e.g. INV-12345" value="' +
+				escapeHtml(String(defaultValue || "").trim()) + '">';
+
+			if (items.length && locations.length) {
+				html += '<div class="small text-muted mt-3 mb-1">Put received parts into:</div>' +
+					'<div style="max-height: 260px; overflow-y: auto;">' +
+					'<table class="table table-sm align-middle mb-0"><tbody>';
+				items.forEach(function (it) {
+					html += '<tr>' +
+						'<td class="small"><strong>' + escapeHtml(it.part_number) + '</strong>' +
+						' <span class="text-muted">× ' + Number(it.quantity || 0) + '</span></td>' +
+						'<td style="width: 55%;"><select class="form-select form-select-sm swal-recv-loc" data-part-id="' +
+						escapeHtml(it.part_id) + '">' + locationOptions(it.default_location_id) + '</select></td>' +
+						'</tr>';
+				});
+				html += '</tbody></table></div>';
+			}
+			html += '</div>';
+
 			// Temporarily hide the Bootstrap modal so its focus trap doesn't block SweetAlert input
 			const openModal = document.querySelector('.modal.show');
 			if (openModal) openModal.style.display = 'none';
 			const noAnim = { popup: '', backdrop: '' };
 			const result = await Swal.fire({
-				title: 'Vendor Bill',
-				text: 'Enter invoice number from the vendor (leave blank if none).',
-				input: 'text',
-				inputValue: String(defaultValue || "").trim(),
-				inputPlaceholder: 'e.g. INV-12345',
+				title: 'Receive Order',
+				html: html,
 				showCancelButton: true,
 				confirmButtonText: 'Receive Order',
 				cancelButtonText: 'Cancel',
@@ -1223,17 +1267,29 @@
 				cancelButtonColor: '#6c757d',
 				showClass: noAnim,
 				hideClass: noAnim,
+				focusConfirm: false,
+				preConfirm: function () {
+					const vendorBill = String((document.getElementById("swalVendorBill") || {}).value || "").trim();
+					const itemLocations = {};
+					document.querySelectorAll(".swal-recv-loc").forEach(function (sel) {
+						itemLocations[sel.dataset.partId] = sel.value || "";
+					});
+					return { vendorBill: vendorBill, itemLocations: itemLocations };
+				},
 			});
 			if (openModal) openModal.style.display = '';
 			if (!result.isConfirmed) return null;
-			return String(result.value || "").trim();
+			return result.value || { vendorBill: "", itemLocations: {} };
 		}
 
-		async function receiveOrderWithVendorBill(orderId, vendorBill) {
+		async function receiveOrderWithVendorBill(orderId, vendorBill, itemLocations) {
 			const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/receive`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json", "Accept": "application/json" },
-				body: JSON.stringify({ vendor_bill: String(vendorBill || "").trim() }),
+				body: JSON.stringify({
+					vendor_bill: String(vendorBill || "").trim(),
+					item_locations: itemLocations || {},
+				}),
 			});
 			const data = await res.json();
 			if (!res.ok || !data || !data.ok) {
@@ -1247,14 +1303,14 @@
 
 			const oid = createdOrderId.value || "";
 			if (!oid) { showError("Order id missing."); return; }
-			const vendorBill = await askVendorBill(currentVendorBill);
-			if (vendorBill === null) return;
+			const details = await askReceiveDetails(oid, currentVendorBill);
+			if (details === null) return;
 
 			receiveBtn.disabled = true;
 
 			try {
-				await receiveOrderWithVendorBill(oid, vendorBill);
-				currentVendorBill = vendorBill;
+				await receiveOrderWithVendorBill(oid, details.vendorBill, details.itemLocations);
+				currentVendorBill = details.vendorBill;
 
 				const modalEl = document.getElementById("orderModal");
 				const modal = window.bootstrap?.Modal?.getInstance(modalEl);
@@ -1277,12 +1333,12 @@
 			receiveOrderModalBtn.addEventListener("click", async function () {
 				const orderId = createdOrderId.value;
 				if (!orderId) return;
-				const vendorBill = await askVendorBill(currentVendorBill);
-				if (vendorBill === null) return;
+				const details = await askReceiveDetails(orderId, currentVendorBill);
+				if (details === null) return;
 
 				try {
-					const data = await receiveOrderWithVendorBill(orderId, vendorBill);
-					currentVendorBill = vendorBill;
+					const data = await receiveOrderWithVendorBill(orderId, details.vendorBill, details.itemLocations);
+					currentVendorBill = details.vendorBill;
 					appAlert(`Order received! ${data.updated_parts} parts updated.`, 'success');
 					const modalEl = document.getElementById("orderModal");
 					const modal = window.bootstrap?.Modal?.getInstance(modalEl);
@@ -2122,6 +2178,164 @@
 			loadPartHistory(partId);
 		});
 
+		// ---------------------------------------------------------------
+		// Stock by location modal (раскладка остатка по локациям + перенос)
+		// ---------------------------------------------------------------
+		let _locPartId = null;
+
+		function _plmEl(id) { return document.getElementById(id); }
+
+		function _plmSetLoading(loading) {
+			const loadEl = _plmEl("partLocationsLoading");
+			const contentEl = _plmEl("partLocationsContent");
+			if (loadEl) loadEl.classList.toggle("d-none", !loading);
+			if (contentEl) contentEl.classList.toggle("d-none", loading);
+		}
+
+		function renderPartLocations(data) {
+			const part = data.part || {};
+			const rows = Array.isArray(data.rows) ? data.rows : [];
+			const locations = Array.isArray(data.locations) ? data.locations : [];
+
+			const pn = _plmEl("plmPartNumber");
+			const total = _plmEl("plmTotal");
+			if (pn) pn.textContent = part.part_number || "-";
+			if (total) total.textContent = String(part.in_stock != null ? part.in_stock : 0);
+
+			const body = _plmEl("plmRows");
+			if (body) {
+				if (!rows.length) {
+					body.innerHTML = '<tr><td colspan="3" class="text-center text-muted small py-3">No stock at any location yet.</td></tr>';
+				} else {
+					body.innerHTML = rows.map(function (r) {
+						const name = escapeHtml(r.location_name || "Unassigned") +
+							(r.is_primary ? ' <span class="badge bg-secondary ms-1">primary</span>' : "");
+						const locId = escapeHtml(r.location_id || "");
+						return '<tr>' +
+							'<td>' + name + '</td>' +
+							'<td class="text-end fw-semibold">' + Number(r.qty || 0) + '</td>' +
+							'<td class="text-end">' +
+							'<div class="input-group input-group-sm flex-nowrap justify-content-end">' +
+							'<input type="number" step="1" class="form-control form-control-sm plm-adjust-input" style="max-width:90px;" value="' + Number(r.qty || 0) + '">' +
+							'<button type="button" class="btn btn-outline-primary plm-adjust-btn" data-location-id="' + locId + '">Set</button>' +
+							'</div>' +
+							'</td>' +
+							'</tr>';
+					}).join("");
+				}
+			}
+
+			const optionsHtml = ['<option value="">Unassigned</option>'].concat(
+				locations.map(function (l) {
+					return '<option value="' + escapeHtml(l.id) + '">' + escapeHtml(l.path) + '</option>';
+				})
+			).join("");
+			const fromSel = _plmEl("plmFrom");
+			const toSel = _plmEl("plmTo");
+			if (fromSel) fromSel.innerHTML = optionsHtml;
+			if (toSel) toSel.innerHTML = optionsHtml;
+			const qtyInput = _plmEl("plmQty");
+			if (qtyInput) qtyInput.value = "";
+		}
+
+		async function loadPartLocations(partId) {
+			_locPartId = partId;
+			_plmSetLoading(true);
+			try {
+				const res = await fetch(`/parts/api/${encodeURIComponent(partId)}/locations`, {
+					method: "GET",
+					headers: { "Accept": "application/json" }
+				});
+				const data = await res.json();
+				if (!res.ok || !data.ok) {
+					appAlert((data && data.error) || "Failed to load locations", "error");
+					return;
+				}
+				renderPartLocations(data);
+				_plmSetLoading(false);
+			} catch (err) {
+				appAlert("Network error while loading locations", "error");
+			}
+		}
+
+		onDocument("click", function (e) {
+			if (!isPartsPageAlive()) return;
+			const btn = e.target.closest(".partLocationsBtn");
+			if (!btn) return;
+			const partId = btn.getAttribute("data-part-id");
+			if (!partId) return;
+			loadPartLocations(partId);
+		});
+
+		onDocument("click", async function (e) {
+			if (!isPartsPageAlive()) return;
+			const btn = e.target.closest(".plm-adjust-btn");
+			if (!btn || !_locPartId) return;
+			const row = btn.closest("tr");
+			const input = row ? row.querySelector(".plm-adjust-input") : null;
+			if (!input || input.value === "") {
+				appAlert("Enter quantity first.", "warning");
+				return;
+			}
+			try {
+				const res = await fetch(`/parts/api/${encodeURIComponent(_locPartId)}/locations/adjust`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json", "Accept": "application/json" },
+					body: JSON.stringify({
+						location_id: btn.getAttribute("data-location-id") || "",
+						qty: input.value
+					})
+				});
+				const data = await res.json();
+				if (!res.ok || !data.ok) {
+					appAlert((data && data.error) || "Failed to update quantity", "error");
+					return;
+				}
+				appAlert("Quantity updated.", "success");
+				loadPartLocations(_locPartId);
+			} catch (err) {
+				appAlert("Network error while updating quantity", "error");
+			}
+		});
+
+		onDocument("click", async function (e) {
+			if (!isPartsPageAlive()) return;
+			const btn = e.target.closest("#plmTransferBtn");
+			if (!btn || !_locPartId) return;
+			const fromSel = _plmEl("plmFrom");
+			const toSel = _plmEl("plmTo");
+			const qtyInput = _plmEl("plmQty");
+			const qty = parseInt((qtyInput && qtyInput.value) || "0", 10);
+			if (!qty || qty <= 0) {
+				appAlert("Enter transfer quantity.", "warning");
+				return;
+			}
+			if ((fromSel ? fromSel.value : "") === (toSel ? toSel.value : "")) {
+				appAlert("Choose two different locations.", "warning");
+				return;
+			}
+			try {
+				const res = await fetch(`/parts/api/${encodeURIComponent(_locPartId)}/locations/transfer`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json", "Accept": "application/json" },
+					body: JSON.stringify({
+						from_location_id: fromSel ? fromSel.value : "",
+						to_location_id: toSel ? toSel.value : "",
+						qty: qty
+					})
+				});
+				const data = await res.json();
+				if (!res.ok || !data.ok) {
+					appAlert((data && data.error) || "Transfer failed", "error");
+					return;
+				}
+				appAlert("Transferred.", "success");
+				loadPartLocations(_locPartId);
+			} catch (err) {
+				appAlert("Network error while transferring", "error");
+			}
+		});
+
 		onDocument("click", function (e) {
 			if (!isPartsPageAlive()) return;
 			const woRow = e.target.closest(".workOrderHistoryRow");
@@ -2247,15 +2461,108 @@
 				if (!orderId) return;
 
 				const vendorBillDefault = String(receiveStatusBtn.getAttribute("data-vendor-bill") || "").trim();
-				const vendorBill = await askVendorBill(vendorBillDefault);
-				if (vendorBill === null) return;
+				const details = await askReceiveDetails(orderId, vendorBillDefault);
+				if (details === null) return;
 
 				try {
-					const data = await receiveOrderWithVendorBill(orderId, vendorBill);
+					const data = await receiveOrderWithVendorBill(orderId, details.vendorBill, details.itemLocations);
 					appAlert(`Order received! ${data.updated_parts} parts updated.`, 'success');
 					location.reload();
 				} catch (err) {
 					appAlert(err.message || "Network error while receiving order", 'error');
+				}
+				return;
+			}
+
+			// Возврат вендору: диалог с позициями и доступным к возврату количеством
+			const returnBtn = e.target.closest(".returnOrderBtn");
+			if (returnBtn) {
+				const orderId = returnBtn.getAttribute("data-order-id");
+				if (!orderId) return;
+
+				let ctx = null;
+				try {
+					const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/return-context`, {
+						headers: { "Accept": "application/json" }
+					});
+					const data = await res.json();
+					if (!res.ok || !data || !data.ok) {
+						appAlert((data && data.error) || "Failed to load return details", "error");
+						return;
+					}
+					ctx = data;
+				} catch (err) {
+					appAlert("Network error while loading return details", "error");
+					return;
+				}
+
+				const returnableItems = (ctx.items || []).filter(function (it) { return it.returnable > 0; });
+				if (!returnableItems.length) {
+					appAlert("Nothing left to return on this order.", "info");
+					return;
+				}
+
+				let html =
+					'<div class="text-start">' +
+					'<div class="small text-muted mb-2">Order #' + escapeHtml(String(ctx.order_number || "")) +
+					' — enter quantities to return:</div>' +
+					'<div style="max-height: 260px; overflow-y: auto;">' +
+					'<table class="table table-sm align-middle mb-2"><tbody>';
+				returnableItems.forEach(function (it) {
+					html += '<tr>' +
+						'<td class="small"><strong>' + escapeHtml(it.part_number) + '</strong>' +
+						'<div class="text-muted">$' + Number(it.price || 0).toFixed(2) +
+						' · returnable: ' + Number(it.returnable) + '</div></td>' +
+						'<td style="width: 110px;"><input type="number" min="0" max="' + Number(it.returnable) +
+						'" step="1" value="0" class="form-control form-control-sm swal-return-qty" data-part-id="' +
+						escapeHtml(it.part_id) + '"></td>' +
+						'</tr>';
+				});
+				html += '</tbody></table></div>' +
+					'<label class="form-label small mb-1">Notes (optional)</label>' +
+					'<input type="text" id="swalReturnNotes" class="form-control form-control-sm" maxlength="500" placeholder="Reason, RMA number...">' +
+					'</div>';
+
+				const result = await Swal.fire({
+					title: "Return to vendor",
+					html: html,
+					showCancelButton: true,
+					confirmButtonText: "Create return",
+					cancelButtonText: "Cancel",
+					focusConfirm: false,
+					preConfirm: function () {
+						const items = [];
+						document.querySelectorAll(".swal-return-qty").forEach(function (input) {
+							const qty = parseInt(input.value || "0", 10);
+							if (qty > 0) items.push({ part_id: input.dataset.partId, quantity: qty });
+						});
+						if (!items.length) {
+							Swal.showValidationMessage("Enter a quantity for at least one item.");
+							return false;
+						}
+						return {
+							items: items,
+							notes: String((document.getElementById("swalReturnNotes") || {}).value || "").trim()
+						};
+					},
+				});
+				if (!result.isConfirmed || !result.value) return;
+
+				try {
+					const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/returns`, {
+						method: "POST",
+						headers: { "Content-Type": "application/json", "Accept": "application/json" },
+						body: JSON.stringify(result.value)
+					});
+					const data = await res.json();
+					if (!res.ok || !data || !data.ok) {
+						appAlert((data && data.error) || "Failed to create return", "error");
+						return;
+					}
+					appAlert(`Return R-${data.order_number} created (credit $${Number(data.credit_total || 0).toFixed(2)}).`, "success");
+					location.reload();
+				} catch (err) {
+					appAlert("Network error while creating return", "error");
 				}
 				return;
 			}
@@ -2266,7 +2573,10 @@
 				const orderId = deleteBtn.getAttribute("data-order-id");
 				if (!orderId) return;
 
-				if (await appConfirm("Delete this order? If received, items will be removed from inventory.")) {
+				const confirmText = deleteBtn.getAttribute("data-is-return")
+					? "Delete this return? Returned items will be added back to inventory."
+					: "Delete this order? If received, items will be removed from inventory.";
+				if (await appConfirm(confirmText)) {
 					try {
 						const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}`, {
 							method: "DELETE"

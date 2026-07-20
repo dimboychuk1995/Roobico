@@ -1,0 +1,206 @@
+{% extends "layouts/app_base.html" %}
+{% from "components/ui.html" import empty_state %}
+
+{% block page_title %}Stocktake ST-{{ stocktake.number }}{% endblock %}
+
+{% block app_content %}
+<div class="page-header">
+  <h1 class="page-header__title">
+    Stocktake ST-{{ stocktake.number }}
+    {% if stocktake.name %}<span class="text-muted fw-normal">— {{ stocktake.name }}</span>{% endif %}
+  </h1>
+  <div class="page-header__actions">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('parts.parts_page', tab='stocktakes') }}">
+      <i class="bi bi-arrow-left me-1"></i> All stocktakes
+    </a>
+    {% if stocktake.status == 'open' %}
+      <button type="button" class="btn btn-outline-danger btn-sm" id="stCancelBtn">Cancel</button>
+      <button type="button" class="btn btn-success btn-sm" id="stCompleteBtn">
+        <i class="bi bi-check2-circle me-1"></i> Complete &amp; apply
+      </button>
+    {% endif %}
+  </div>
+</div>
+
+<div class="card mb-3"
+     id="stocktakePage"
+     data-stocktake-id="{{ stocktake._id }}"
+     data-stocktake-status="{{ stocktake.status }}">
+  <div class="card-body">
+    <div class="d-flex flex-wrap gap-3 align-items-center">
+      <div>
+        {% if stocktake.status == 'open' %}
+          <span class="badge text-bg-info">Open</span>
+        {% elif stocktake.status == 'completed' %}
+          <span class="badge text-bg-success">Completed</span>
+        {% else %}
+          <span class="badge text-bg-secondary">Cancelled</span>
+        {% endif %}
+      </div>
+      <div class="text-muted small">
+        Scope:
+        {% if stocktake.scope.location_path %}Location <strong>{{ stocktake.scope.location_path }}</strong>{% endif %}
+        {% if stocktake.scope.category_name %} Category <strong>{{ stocktake.scope.category_name }}</strong>{% endif %}
+        {% if not stocktake.scope.location_path and not stocktake.scope.category_name %}Whole warehouse{% endif %}
+      </div>
+      <div class="text-muted small">Created: {{ stocktake_created_label }}</div>
+    </div>
+
+    <div class="d-flex flex-wrap gap-2 mt-3">
+      <span class="badge text-bg-light border">Counted: <strong id="stCountedBadge">{{ items_counted }}</strong> / {{ items|length }}</span>
+      <span class="badge text-bg-light border">Discrepancies: <strong id="stDiscrepanciesBadge">{{ items_discrepancies }}</strong></span>
+      <span class="badge {% if variance_value < 0 %}text-bg-danger{% elif variance_value > 0 %}text-bg-success{% else %}text-bg-light border{% endif %}">
+        Variance value: <strong id="stVarianceBadge">${{ "%.2f"|format(variance_value) }}</strong>
+      </span>
+      {% if stocktake.status == 'open' and recount_count %}
+        <span class="badge text-bg-warning">Recount recommended: {{ recount_count }}</span>
+      {% endif %}
+      {% if stocktake.status == 'completed' and stocktake.totals %}
+        <span class="badge text-bg-danger">Shortage: ${{ "%.2f"|format(stocktake.totals.shortage_value or 0) }}</span>
+        <span class="badge text-bg-success">Overage: ${{ "%.2f"|format(stocktake.totals.overage_value or 0) }}</span>
+        <span class="badge text-bg-light border">Adjusted items: {{ stocktake.totals.items_adjusted or 0 }}</span>
+        {% if stocktake.totals.items_zeroed %}
+          <span class="badge text-bg-warning">Zeroed (uncounted): {{ stocktake.totals.items_zeroed }}</span>
+        {% endif %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <div class="row g-2 align-items-center mb-3">
+      <div class="col-12 col-md-5 col-lg-4">
+        <input type="text" id="stSearchInput" class="form-control form-control-sm" placeholder="Filter by part #, description or location...">
+      </div>
+      <div class="col-12 col-md-auto">
+        <div class="btn-group btn-group-sm" role="group" aria-label="Stocktake filter">
+          <input type="radio" class="btn-check" name="stFilter" id="stFilterAll" value="all" checked>
+          <label class="btn btn-outline-secondary" for="stFilterAll">All</label>
+          <input type="radio" class="btn-check" name="stFilter" id="stFilterPending" value="pending">
+          <label class="btn btn-outline-secondary" for="stFilterPending">Pending</label>
+          <input type="radio" class="btn-check" name="stFilter" id="stFilterCounted" value="counted">
+          <label class="btn btn-outline-secondary" for="stFilterCounted">Counted</label>
+          <input type="radio" class="btn-check" name="stFilter" id="stFilterDiscrepancy" value="discrepancy">
+          <label class="btn btn-outline-secondary" for="stFilterDiscrepancy">Discrepancies</label>
+        </div>
+      </div>
+      {% if stocktake.status == 'open' %}
+        <div class="col-12 col-md-auto ms-md-auto">
+          <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="collapse" data-bs-target="#stAddItemForm">
+            <i class="bi bi-plus-lg me-1"></i> Add found part
+          </button>
+        </div>
+      {% endif %}
+    </div>
+
+    {% if stocktake.status == 'open' %}
+      <div class="collapse mb-3" id="stAddItemForm">
+        <div class="border rounded p-2">
+          <div class="row g-2 align-items-end">
+            <div class="col-12 col-md-4 position-relative">
+              <label class="form-label small mb-1">Part</label>
+              <input type="text" id="stAddPartSearch" class="form-control form-control-sm" placeholder="Type part # or description..." autocomplete="off">
+              <input type="hidden" id="stAddPartId" value="">
+              <div id="stAddPartResults" class="list-group position-absolute w-100 d-none" style="z-index: 1056; max-height: 240px; overflow-y: auto;"></div>
+            </div>
+            <div class="col-12 col-md-4">
+              <label class="form-label small mb-1">Location</label>
+              <select id="stAddLocation" class="form-select form-select-sm">
+                <option value="">Unassigned</option>
+                {% for l in stocktake_locations %}
+                  <option value="{{ l.id }}">{{ l.path }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-12 col-md-auto">
+              <button type="button" class="btn btn-primary btn-sm" id="stAddItemBtn">Add to count list</button>
+            </div>
+          </div>
+          <div class="form-text mt-1">For parts found on a shelf that are missing from the list below.</div>
+        </div>
+      </div>
+    {% endif %}
+
+    {% if items and items|length > 0 %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle" id="stItemsTable">
+          <thead>
+            <tr>
+              <th style="min-width: 180px;">Location</th>
+              <th style="min-width: 140px;">Part #</th>
+              <th style="min-width: 200px;">Description</th>
+              <th class="text-end" style="width: 110px;">Expected</th>
+              <th class="text-end" style="width: 170px;">Counted</th>
+              <th class="text-end" style="width: 100px;">Variance</th>
+              <th class="text-end" style="width: 110px;">Value</th>
+              <th style="width: 130px;">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for it in items %}
+              <tr class="st-item-row"
+                  data-item-id="{{ it.id }}"
+                  data-status="{{ it.status }}"
+                  data-variance="{{ it.variance if it.variance is not none else '' }}"
+                  data-search="{{ (it.part_number ~ ' ' ~ (it.description or '') ~ ' ' ~ it.location_path)|lower }}">
+                <td class="text-muted small">{{ it.location_path }}</td>
+                <td class="fw-semibold">{{ it.part_number }}</td>
+                <td class="text-muted">{{ it.description or '-' }}</td>
+                <td class="text-end st-expected">
+                  {% if it.status == 'counted' %}{{ it.expected_at_count }}{% else %}{{ it.expected_initial }}{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if stocktake.status == 'open' %}
+                    <div class="input-group input-group-sm flex-nowrap justify-content-end">
+                      <input type="number" min="0" step="1" class="form-control form-control-sm st-count-input"
+                             style="max-width: 90px;"
+                             value="{{ it.counted_qty if it.counted_qty is not none else '' }}">
+                      <button type="button" class="btn btn-outline-primary st-count-save">Save</button>
+                    </div>
+                  {% else %}
+                    {{ it.counted_qty if it.counted_qty is not none else '-' }}
+                  {% endif %}
+                </td>
+                <td class="text-end st-variance">
+                  {% if it.status == 'counted' %}
+                    {% if it.variance > 0 %}<span class="text-success fw-semibold">+{{ it.variance }}</span>
+                    {% elif it.variance < 0 %}<span class="text-danger fw-semibold">{{ it.variance }}</span>
+                    {% else %}<span class="text-muted">0</span>{% endif %}
+                  {% else %}-{% endif %}
+                </td>
+                <td class="text-end st-variance-value">
+                  {% if it.variance_value is not none %}
+                    {% if it.variance_value < 0 %}<span class="text-danger">-${{ "%.2f"|format(-it.variance_value) }}</span>
+                    {% elif it.variance_value > 0 %}<span class="text-success">+${{ "%.2f"|format(it.variance_value) }}</span>
+                    {% else %}<span class="text-muted">$0.00</span>{% endif %}
+                  {% else %}-{% endif %}
+                </td>
+                <td class="st-status-cell">
+                  {% if it.auto_zeroed %}
+                    <span class="badge text-bg-warning st-status-badge" title="Was not counted — zeroed on completion">Zeroed</span>
+                  {% elif it.status == 'counted' %}
+                    <span class="badge text-bg-success st-status-badge">Counted</span>
+                  {% else %}
+                    <span class="badge text-bg-secondary st-status-badge">Pending</span>
+                  {% endif %}
+                  {% if it.needs_recount %}
+                    <span class="badge text-bg-warning st-recount-badge" title="Stock moved after this line was counted">Recount</span>
+                  {% endif %}
+                  {% if it.applied %}
+                    <span class="badge text-bg-light border">Applied</span>
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      {{ empty_state("No items in this stocktake", "The selected scope has no stock positions.") }}
+    {% endif %}
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/parts/stocktake.js') }}"></script>
+{% endblock %}
