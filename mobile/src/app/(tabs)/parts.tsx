@@ -30,6 +30,11 @@ function PartCard({ item }: { item: PartRow }) {
           {item.description}
         </Text>
       ) : null}
+      {item.cross_refs && item.cross_refs.length > 0 ? (
+        <Text style={[styles.crossRefs, { color: theme.muted }]} numberOfLines={1}>
+          ⇄ {item.cross_refs.map((x) => x.part_number).join(", ")}
+        </Text>
+      ) : null}
       <View style={styles.bottomRow}>
         <Text style={[styles.cost, { color: theme.text }]}>Avg cost {money(item.average_cost)}</Text>
         {item.reference ? (
@@ -231,6 +236,7 @@ const styles = StyleSheet.create({
   number: { fontSize: 15, fontWeight: "700", flexShrink: 1 },
   stock: { fontSize: 15, fontWeight: "800" },
   desc: { fontSize: 13 },
+  crossRefs: { fontSize: 12, marginTop: 2 },
   bottomRow: { flexDirection: "row", justifyContent: "space-between", gap: 8, marginTop: 2 },
   cost: { fontSize: 13, fontWeight: "500" },
   ref: { fontSize: 12, flexShrink: 1 },

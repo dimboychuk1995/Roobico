@@ -23,6 +23,7 @@ import {
   VendorRow,
   createPartsOrder,
   fetchVendors,
+  flattenPartAlternates,
   money,
   parseInvoiceScan,
   searchParts,
@@ -263,8 +264,13 @@ export default function PartsOrderFormScreen() {
         onClose={() => setPartModal(false)}
         title="Add part"
         placeholder="Part number or description…"
-        search={(q) => (q.length >= 2 ? searchParts(q) : Promise.resolve([]))}
-        renderLabel={(p) => `${p.part_number} — ${p.description || ""} (×${p.in_stock})`}
+        search={(q) =>
+          q.length >= 2 ? searchParts(q).then(flattenPartAlternates) : Promise.resolve([])
+        }
+        renderLabel={(p) =>
+          `${p.alt_for ? `⇄ ` : ""}${p.part_number} — ${p.description || ""} (×${p.in_stock})` +
+          (p.alt_for ? ` · fits ${p.alt_for}` : "")
+        }
         onPick={addPart}
       />
     </KeyboardAvoidingView>

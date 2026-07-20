@@ -1,7 +1,8 @@
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -23,6 +24,7 @@ import { useTheme } from "@/lib/theme";
 export default function PartDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const theme = useTheme();
+  const router = useRouter();
 
   const [part, setPart] = useState<PartFull | null>(null);
   const [history, setHistory] = useState<PartHistoryOrder[]>([]);
@@ -107,6 +109,36 @@ export default function PartDetailsScreen() {
           </View>
         ) : null}
       </RowCard>
+
+      {part.cross_refs && part.cross_refs.length > 0 ? (
+        <>
+          <Text style={[styles.sectionTitle, { color: theme.muted }]}>
+            CROSS REFERENCES ({part.cross_refs.length})
+          </Text>
+          {part.cross_refs.map((x) => (
+            <Pressable
+              key={x.id}
+              onPress={() => router.push({ pathname: "/part/[id]", params: { id: x.id } })}
+            >
+              <RowCard>
+                <View style={styles.headerRow}>
+                  <Text style={{ color: theme.text, fontSize: 14, fontWeight: "700" }}>
+                    ⇄ {x.part_number}
+                  </Text>
+                  <Text style={{ color: theme.primary, fontSize: 14, fontWeight: "800" }}>
+                    ×{x.in_stock}
+                  </Text>
+                </View>
+                {x.description ? (
+                  <Text style={{ color: theme.muted, fontSize: 13 }} numberOfLines={1}>
+                    {x.description}
+                  </Text>
+                ) : null}
+              </RowCard>
+            </Pressable>
+          ))}
+        </>
+      ) : null}
 
       <Text style={[styles.sectionTitle, { color: theme.muted }]}>
         ORDER HISTORY ({history.length})

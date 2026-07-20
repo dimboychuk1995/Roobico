@@ -162,6 +162,13 @@ export interface VendorRow {
   is_active: boolean;
 }
 
+export interface PartCrossRef {
+  id: string;
+  part_number: string;
+  description: string;
+  in_stock: number;
+}
+
 export interface PartRow {
   id: string;
   part_number: string;
@@ -170,6 +177,7 @@ export interface PartRow {
   in_stock: number;
   average_cost: number;
   selling_price: number;
+  cross_refs?: PartCrossRef[];
 }
 
 export interface ListResponse<T> {
@@ -592,6 +600,7 @@ export interface PartFull {
   selling_price: number;
   core_has_charge: boolean;
   core_cost: number;
+  cross_refs?: PartCrossRef[];
 }
 
 export function fetchPartFull(id: string) {
@@ -779,12 +788,30 @@ export interface PartSearchItem {
   reference: string;
   average_cost?: number; // отсутствует для механиков
   in_stock: number;
+  alternates?: PartSearchItem[]; // взаимозаменяемые парты (cross references)
+  alt_for?: string; // клиентская метка: номер парта, чьей альтернативой является строка
 }
 
 export function searchParts(q: string) {
   return request<{ items: PartSearchItem[] }>(
     `/work_orders/api/parts/search?q=${encodeURIComponent(q)}`
   ).then((d) => d.items || []);
+}
+
+// Разворачивает alternates в плоский список для пикеров: альтернатива идёт
+// строкой сразу под своим результатом с пометкой alt_for; дубли убираются.
+export function flattenPartAlternates(items: PartSearchItem[]): PartSearchItem[] {
+  const out: PartSearchItem[] = [];
+  const seen = new Set(items.map((i) => i.id));
+  for (const it of items) {
+    out.push(it);
+    for (const alt of it.alternates || []) {
+      if (seen.has(alt.id)) continue;
+      seen.add(alt.id);
+      out.push({ ...alt, alt_for: it.part_number });
+    }
+  }
+  return out;
 }
 
 export function fetchPartPrice(partId: string, customerId: string) {
