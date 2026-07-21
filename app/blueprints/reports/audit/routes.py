@@ -1463,121 +1463,162 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=Non
     # so the two figures still make sense and never become misleading.
     net_revenue_parts_cost = _round2(sales_revenue - sales_parts_cost - labor_cost)
     net_revenue_parts_orders = _round2(sales_revenue - po_total - labor_cost)
+    # Гросс-маржа по заказам: выручка минус себестоимость запчастей, БЕЗ зарплат
+    # (левый хиро-блок в summary).
+    revenue_minus_parts_cost = _round2(sales_revenue - sales_parts_cost)
+
+    # --- Rows: plain-language sections so a non-accountant can follow ---
+    # Each row carries `desc` (what the number means), `kind` (in/out/info/
+    # result — drives +/- signs and colors in web/PDF) and `indent` for
+    # reference sub-lines. `row_type: section` rows are group headers.
+    # NOTE: ASCII "-" in labels/descs — the PDF engine (xhtml2pdf/cp1252)
+    # cannot render U+2212.
+    def _section(title, desc):
+        return {"row_type": "section", "category": title, "amount": None, "desc": desc}
+
+    def _row(category, amount, kind, desc, *, indent=False, emphasis=False, is_hours=False):
+        row = {"category": category, "amount": amount, "kind": kind, "desc": desc}
+        if indent:
+            row["indent"] = True
+        if emphasis:
+            row["emphasis"] = True
+        if is_hours:
+            row["is_hours"] = True
+        return row
+
+    payroll_ok = bool(payroll and payroll.get("available"))
 
     rows = [
-        {
-            "category": "Sales — Labor",
-            "amount": sales_labor,
-        },
-        {
-            "category": "Sales — Parts (Sale Price)",
-            "amount": sales_parts_sale,
-        },
-        {
-            "category": "Sales — Parts (Cost)",
-            "amount": sales_parts_cost,
-        },
-        {
-            "category": "Sales — Parts Profit",
-            "amount": parts_profit,
-        },
-        {
-            "category": "Sales — Core Charges",
-            "amount": sales_core_charges,
-        },
-        {
-            "category": "Sales — Misc Charges",
-            "amount": sales_misc,
-        },
-        {
-            "category": "Sales — Tax",
-            "amount": sales_tax,
-        },
-        {
-            "category": "Sales — Total Revenue",
-            "amount": sales_revenue,
-        },
-        {
-            "category": "Parts Orders — Parts",
-            "amount": po_parts_only,
-        },
-        {
-            "category": "Parts Orders — Cores",
-            "amount": po_cores_total,
-        },
-        {
-            "category": "Parts Orders — Non-Inventory",
-            "amount": po_non_inventory,
-        },
-        {
-            "category": "Parts Orders — Total Spent",
-            "amount": po_total,
-        },
-        {
-            "category": "Parts Orders — Paid",
-            "amount": po_paid,
-        },
-        {
-            "category": "Parts Orders — Balance",
-            "amount": po_balance,
-        },
-        {
-            "category": "Net Revenue (Sales − Parts Orders)",
-            "amount": net_revenue,
-        },
+        _section(
+            "Money In — Sales (Work Orders)",
+            "Everything billed to customers on Work Orders in this period.",
+        ),
+        _row("Labor billed", sales_labor, "in",
+             "Mechanics' work charged to customers."),
+        _row("Parts billed (sale price)", sales_parts_sale, "in",
+             "Parts charged to customers, at the selling price."),
+        _row("Parts cost (reference)", sales_parts_cost, "info",
+             "What those same parts cost the shop. For reference only - not added to revenue.",
+             indent=True),
+        _row("Parts profit (sale - cost)", parts_profit, "info",
+             "Markup earned on parts: sale price minus shop cost.",
+             indent=True),
+        _row("Core charges billed", sales_core_charges, "in",
+             "Refundable deposits charged for old replaced parts (cores)."),
+        _row("Misc charges billed", sales_misc, "in",
+             "Other Work Order charges: shop supplies, fees, etc."),
+        _row("Sales tax collected", sales_tax, "in",
+             "Tax collected from customers (passed on to the state)."),
+        _row("Total Revenue", sales_revenue, "result",
+             "Labor + parts + cores + misc + tax = everything billed in this period.",
+             emphasis=True),
+        _section(
+            "Money Out — Parts Orders (vendor purchases)",
+            "Parts and supplies the shop bought from vendors in this period - real money spent.",
+        ),
+        _row("Parts bought", po_parts_only, "out",
+             "Parts purchased from vendors (quantity x price)."),
+        _row("Cores charged by vendors", po_cores_total, "out",
+             "Core deposits vendors charged the shop."),
+        _row("Non-inventory purchases", po_non_inventory, "out",
+             "Shop supplies, tools, utilities and other non-part spending on parts orders."),
+        _row("Total spent at vendors", po_total, "result",
+             "Parts + cores + non-inventory = the whole vendor bill for the period.",
+             emphasis=True),
+        _row("...of it already paid", po_paid, "info",
+             "Part of the vendor bill that has been paid.", indent=True),
+        _row("...still owed to vendors", po_balance, "info",
+             "Part of the vendor bill not paid yet.", indent=True),
     ]
 
     # --- Labor Payroll section (only when no customer filter is applied) -
-    if payroll and payroll.get("available"):
-        rows.append({"category": "", "amount": None})
-        rows.append({
-            "category": (
-                f"Labor Payroll — Salary "
-                f"(× {payroll['weeks_in_period']:g} weeks)"
-            ),
-            "amount": _round2(payroll["salary_total"]),
-        })
-        rows.append({
-            "category": "Labor Payroll — Hourly (uAttend)",
-            "amount": _round2(payroll["hourly_total"]),
-        })
-        rows.append({
-            "category": "Labor Payroll — Total",
-            "amount": _round2(payroll["labor_total"]),
-        })
+    if payroll_ok:
+        rows.append(_section(
+            "Money Out — Payroll",
+            (f"What employees were paid for this period: weekly salaries x "
+             f"{payroll['weeks_in_period']:g} weeks + hourly pay from the uAttend time clock."),
+        ))
+        rows.append(_row(
+            f"Salaries (x {payroll['weeks_in_period']:g} weeks)",
+            _round2(payroll["salary_total"]), "out",
+            "Employees on a fixed weekly salary.",
+        ))
+        rows.append(_row(
+            "Hourly (uAttend)", _round2(payroll["hourly_total"]), "out",
+            "Hourly employees: clocked hours x their rate.",
+        ))
+        rows.append(_row(
+            "Total payroll", _round2(payroll["labor_total"]), "result",
+            "Salaries + hourly pay for the period.", emphasis=True,
+        ))
         for emp in payroll["employees"]:
             if emp["pay_type"] == "salary":
                 label = (
-                    f"  {emp['name']} — salary "
+                    f"{emp['name']} — salary "
                     f"${emp['rate_or_salary']:,.2f}/wk"
                 )
             else:
                 label = (
-                    f"  {emp['name']} — "
-                    f"{emp['hours']:.2f}h × ${emp['rate_or_salary']:,.2f}/hr"
+                    f"{emp['name']} — "
+                    f"{emp['hours']:.2f}h x ${emp['rate_or_salary']:,.2f}/hr"
                 )
-            rows.append({"category": label, "amount": emp["total"]})
-        rows.append({
-            "category": "Net Revenue (after Labor)",
-            "amount": net_after_labor,
-        })
+            rows.append(_row(label, emp["total"], "info", "", indent=True))
 
-    # --- Headline Net Revenue figures (always shown) ---------------------
-    rows.append({"category": "", "amount": None})
-    rows.append({
-        "category": "Net Revenue — Parts (Cost) basis  [Revenue − Parts Cost − Salaries]",
-        "amount": net_revenue_parts_cost,
-    })
-    rows.append({
-        "category": "Net Revenue — Parts Orders basis  [Revenue − Parts Orders − Salaries]",
-        "amount": net_revenue_parts_orders,
-    })
+    # --- Bottom line: the same numbers as above, laid out as arithmetic --
+    payroll_note = (
+        "" if payroll_ok
+        else " Payroll is unavailable here, so it is counted as $0."
+    )
+    rows.append(_section(
+        "Bottom Line — Cash view (Parts Orders basis)",
+        "What's left if parts are counted as real money spent at vendors this period."
+        + payroll_note,
+    ))
+    rows.append(_row("Total Revenue", sales_revenue, "in",
+                     "Everything billed (from the Money In section above)."))
+    rows.append(_row("- Parts Orders (total spent)", po_total, "out",
+                     "Everything spent at vendors (from the Parts Orders section above)."))
+    rows.append(_row("= Left after vendor purchases", net_revenue, "result",
+                     "Revenue minus vendor spending, before payroll."))
+    if payroll_ok:
+        rows.append(_row("- Payroll (total)", labor_cost, "out",
+                         "Total payroll from the Payroll section above."))
+    rows.append(_row(
+        "= NET REVENUE — Cash view", net_revenue_parts_orders, "result",
+        "What the shop actually kept: Revenue - Parts Orders - Payroll.",
+        emphasis=True,
+    ))
+
+    rows.append(_section(
+        "Bottom Line — Job view (Parts Cost basis)",
+        "What's left if parts are counted at the shop's cost of only those parts "
+        "actually installed on Work Orders." + payroll_note,
+    ))
+    rows.append(_row("Total Revenue", sales_revenue, "in",
+                     "Everything billed (same number as above)."))
+    rows.append(_row("- Parts cost on Work Orders", sales_parts_cost, "out",
+                     "Shop's cost of the parts that went onto Work Orders."))
+    rows.append(_row("= Left after parts cost", revenue_minus_parts_cost, "result",
+                     "Revenue minus parts cost, before payroll."))
+    if payroll_ok:
+        rows.append(_row("- Payroll (total)", labor_cost, "out",
+                         "Total payroll from the Payroll section above."))
+    rows.append(_row(
+        "= NET REVENUE — Job view", net_revenue_parts_cost, "result",
+        "Profit on the work performed: Revenue - Parts Cost - Payroll.",
+        emphasis=True,
+    ))
 
     # --- Mechanic Hours section ---
-    rows.append({"category": "", "amount": None})
-    rows.append({"category": "Mechanic Hours — Total", "amount": total_mech_hours, "is_hours": True})
+    rows.append(_section(
+        "Mechanic Hours",
+        "Billed labor hours from Work Orders, split by mechanic. Hours, not dollars.",
+    ))
+    rows.append(_row("All mechanics — total", total_mech_hours, "result",
+                     "Sum of billed hours across all mechanics for the period.",
+                     emphasis=True, is_hours=True))
     for m in mech_sorted:
-        rows.append({"category": f"  {m['name']}", "amount": m["hours"], "is_hours": True})
+        rows.append(_row(m["name"], m["hours"], "info", "", indent=True, is_hours=True))
 
     labels = _fill_bucket_gaps(time_buckets, chart_bucket)
     chart_data = {
@@ -1610,6 +1651,7 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=Non
             "net_after_labor": net_after_labor,
             "net_revenue_parts_cost": net_revenue_parts_cost,
             "net_revenue_parts_orders": net_revenue_parts_orders,
+            "revenue_minus_parts_cost": revenue_minus_parts_cost,
             "payroll_weeks": (payroll or {}).get("weeks_in_period") if payroll else None,
             "customer_filter_active": customer_filter_active,
         },

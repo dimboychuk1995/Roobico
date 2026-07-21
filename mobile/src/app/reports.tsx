@@ -83,7 +83,12 @@ export default function ReportsScreen() {
   const summaryEntries = Object.entries(summary).filter(
     ([, v]) => typeof v !== "object" || v === null
   );
-  const columns = rows.length ? Object.keys(rows[0]).filter((k) => !k.endsWith("_id") && k !== "id") : [];
+  // Служебные поля строк general_revenue (пояснения/типы для web и PDF) —
+  // не колонки таблицы.
+  const metaKeys = new Set(["id", "desc", "kind", "row_type", "indent", "emphasis", "is_hours"]);
+  const columns = rows.length
+    ? Object.keys(rows[0]).filter((k) => !k.endsWith("_id") && !metaKeys.has(k))
+    : [];
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.bg }}>
@@ -216,8 +221,18 @@ export default function ReportsScreen() {
                         ]}
                       >
                         {columns.map((c) => (
-                          <Text key={c} style={[styles.td, { color: theme.text }]} numberOfLines={1}>
-                            {formatCell(row[c])}
+                          <Text
+                            key={c}
+                            style={[
+                              styles.td,
+                              { color: theme.text },
+                              row.row_type === "section" && { fontWeight: "700" },
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {row.row_type === "section" && c !== "category"
+                              ? ""
+                              : formatCell(row[c])}
                           </Text>
                         ))}
                       </View>

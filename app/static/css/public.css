@@ -973,6 +973,18 @@ span.flatpickr-weekday {
   background-color: #e2e8f0 !important;
 }
 
+/* Section header rows inside data tables (Standard Reports etc.):
+   контрастная полоса-заголовок группы, не реагирует на hover. */
+.table > tbody > tr.table-section-row > td {
+  background-color: #e2e8f0 !important;
+  color: #334155;
+}
+
+.table > tbody > tr.table-section-row:hover > td,
+.table > tbody > tr.table-section-row:focus-within > td {
+  background-color: #e2e8f0 !important;
+}
+
 /* Show row actions only for the hovered/focused row. */
 .table > tbody > tr > td.text-end:has(.btn, button, form, a) .btn,
 .table > tbody > tr > td.text-end:has(.btn, button, form, a) button,

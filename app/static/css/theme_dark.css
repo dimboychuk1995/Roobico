@@ -254,6 +254,17 @@ html[data-theme="dark"] .table > tbody > tr:focus-within > td {
   background-color: #3a3a3a !important;
 }
 
+/* Section header rows (Standard Reports etc.) */
+html[data-theme="dark"] .table > tbody > tr.table-section-row > td {
+  background-color: #1f1f1f !important;
+  color: #cbd5e1;
+}
+
+html[data-theme="dark"] .table > tbody > tr.table-section-row:hover > td,
+html[data-theme="dark"] .table > tbody > tr.table-section-row:focus-within > td {
+  background-color: #1f1f1f !important;
+}
+
 /* tfoot — totals rows */
 html[data-theme="dark"] .table > tfoot > tr > th,
 html[data-theme="dark"] .table > tfoot > tr > td {

@@ -229,7 +229,8 @@
       '</div>';
     }
 
-    // ── Custom layout for General Revenue: hero + money-in/out + activity ─
+    // ── Custom layout for General Revenue: два хиро-блока → формулы →
+    //    вся детализация в таблице ниже ─────────────────────────────────
     if (tab === "general_revenue") {
       var s = summary;
       var html = "";
@@ -238,138 +239,76 @@
       var revenue = Number(s.sales_revenue || 0);
       var partsOrders = Number(s.po_total_spent || 0);
       var partsCost = Number(s.parts_cost || 0);
-      var partsSale = Number(s.parts_sale || 0);
-      var partsProfit = Number(s.parts_profit || 0);
-      var cores = Number(s.core_charges || 0);
-      var laborSale = Number(s.sales_labor || 0);
       var salaries = Number(s.labor_cost || 0);
       var netPO = Number(s.net_revenue_parts_orders || 0);
-      var netCost = Number(s.net_revenue_parts_cost || 0);
+      var grossCost = s.hasOwnProperty("revenue_minus_parts_cost")
+        ? Number(s.revenue_minus_parts_cost || 0)
+        : Math.round((revenue - partsCost) * 100) / 100;
       var weeks = s.payroll_weeks ? (Math.round(Number(s.payroll_weeks) * 100) / 100) : null;
 
       function fmt(v) { return "$" + fmtMoney(v); }
       function signColor(v) { return v >= 0 ? "#198754" : "#dc3545"; }
       function rgba(v, a) { return "rgba(" + (v >= 0 ? "25,135,84" : "220,53,69") + "," + a + ")"; }
 
-      // ── HERO: Net Revenue, two views side-by-side ─────────────────────
-      function netBlock(label, value, formula, accent) {
+      // ── Two headline blocks ───────────────────────────────────────────
+      function heroBlock(title, sub, value, accent) {
         return '<div class="col-md-6">' +
-          '<div class="rounded p-3 h-100" style="background:' + rgba(value, 0.08) + '; border:1px solid ' + rgba(value, 0.35) + '; border-left:5px solid ' + accent + '">' +
-            '<div class="small text-muted text-uppercase" style="letter-spacing:.05em">' + escapeHtml(label) + '</div>' +
-            '<div class="fw-bold" style="font-size:1.75rem; color:' + signColor(value) + '">' + fmt(value) + '</div>' +
-            '<div class="small text-muted">' + escapeHtml(formula) + '</div>' +
+          '<div class="rounded p-3 h-100 text-center" style="background:' + rgba(value, 0.08) + '; border:1px solid ' + rgba(value, 0.35) + '; border-top:4px solid ' + accent + '">' +
+            '<div class="fw-semibold text-uppercase" style="letter-spacing:.05em">' + escapeHtml(title) + '</div>' +
+            '<div class="small text-muted">' + escapeHtml(sub) + '</div>' +
+            '<div class="fw-bold" style="font-size:2rem; color:' + signColor(value) + '">' + fmt(value) + '</div>' +
           '</div>' +
         '</div>';
       }
-      html += '<div class="mb-3"><div class="small fw-semibold text-uppercase text-secondary mb-2" style="letter-spacing:.05em">Net Revenue · two views</div>' +
-        '<div class="row g-2">' +
-          netBlock("Net Revenue — Parts Orders basis", netPO, "Revenue − Parts Orders (vendor spend) − Salaries", "#6f42c1") +
-          netBlock("Net Revenue — Parts (Cost) basis", netCost, "Revenue − Parts (Cost in WO) − Salaries", "#0d6efd") +
-        '</div>' +
-      '</div>';
-
-      // ── Money In vs Money Out ─────────────────────────────────────────
-      function lineRow(label, value, opts) {
-        opts = opts || {};
-        var cls = opts.bold ? ' fw-semibold' : '';
-        var color = opts.color ? ' style="color:' + opts.color + '"' : '';
-        var note = opts.note ? ' <span class="text-muted small">' + escapeHtml(opts.note) + '</span>' : '';
-        return '<div class="d-flex justify-content-between py-1' + (opts.border ? ' border-top' : '') + (opts.muted ? ' text-muted' : '') + '">' +
-          '<span class="small">' + escapeHtml(label) + note + '</span>' +
-          '<span class="' + cls + '"' + color + '>' + escapeHtml(value) + '</span>' +
-        '</div>';
-      }
-
-      // Money In — revenue breakdown
-      var inHtml = "";
-      inHtml += lineRow("Labor", fmt(laborSale));
-      inHtml += lineRow("Parts (sale price)", fmt(partsSale));
-      inHtml += lineRow("Core charges", fmt(cores));
-      inHtml += lineRow("Total Revenue", fmt(revenue), { bold: true, border: true, color: "#198754" });
-      // Sub-info: parts profit only (cost is intentionally omitted here — shown in Money Out)
-      inHtml += '<div class="mt-2 pt-2 border-top">' +
-        '<div class="small text-muted mb-1">Parts margin (informational)</div>' +
-        '<div class="d-flex justify-content-between py-1 align-items-baseline">' +
-          '<span class="small">Parts profit (Sale − Cost)</span>' +
-          '<span class="fw-semibold">' +
-            fmt(partsSale) +
-            ' − <span style="color:#dc3545">' + fmt(partsCost) + '</span>' +
-            ' = <span style="color:' + signColor(partsProfit) + '">' + fmt(partsProfit) + '</span>' +
-          '</span>' +
-        '</div>' +
-      '</div>';
-
-      // Money Out — split into two cards (PO basis + Cost basis), stacked on the right
-      var totalOutPO = partsOrders + salaries;
-      var totalOutCost = partsCost + salaries;
-
-      var outPoHtml = "";
-      outPoHtml += lineRow("Parts Orders (vendor spend)", fmt(partsOrders));
-      if (hasPayroll) {
-        outPoHtml += lineRow(
-          "Salaries (period)",
-          fmt(salaries),
-          { note: weeks ? "(" + weeks + " wks)" : "" }
-        );
-      } else if (s.customer_filter_active) {
-        outPoHtml += lineRow("Salaries", "hidden — customer filter active");
-      } else {
-        outPoHtml += lineRow("Salaries", "—");
-      }
-      outPoHtml += lineRow("Total Costs (PO basis)", fmt(totalOutPO), { bold: true, border: true, color: "#dc3545" });
-
-      var outCostHtml = "";
-      outCostHtml += lineRow("Parts (cost in WO)", fmt(partsCost));
-      if (hasPayroll) {
-        outCostHtml += lineRow(
-          "Salaries (period)",
-          fmt(salaries),
-          { note: weeks ? "(" + weeks + " wks)" : "" }
-        );
-      } else if (s.customer_filter_active) {
-        outCostHtml += lineRow("Salaries", "hidden — customer filter active");
-      } else {
-        outCostHtml += lineRow("Salaries", "—");
-      }
-      outCostHtml += lineRow("Total Costs (Cost basis)", fmt(totalOutCost), { bold: true, border: true, color: "#dc3545" });
 
       html += '<div class="row g-2 mb-3">' +
-        // Left: Money In (full height)
-        '<div class="col-md-6">' +
-          '<div class="border rounded p-3 h-100" style="border-left:4px solid #198754 !important">' +
-            '<div class="d-flex justify-content-between align-items-baseline mb-2">' +
-              '<div class="fw-semibold text-uppercase small text-secondary" style="letter-spacing:.04em">Money In · Revenue</div>' +
-              '<div class="fw-bold" style="color:#198754">' + fmt(revenue) + '</div>' +
-            '</div>' +
-            inHtml +
-          '</div>' +
-        '</div>' +
-        // Right: two stacked Money Out cards
-        '<div class="col-md-6 d-flex flex-column gap-2">' +
-          '<div class="border rounded p-3" style="border-left:4px solid #dc3545 !important">' +
-            '<div class="d-flex justify-content-between align-items-baseline mb-2">' +
-              '<div class="fw-semibold text-uppercase small text-secondary" style="letter-spacing:.04em">Money Out · Costs <span class="text-muted">(PO basis)</span></div>' +
-              '<div class="fw-bold" style="color:#dc3545">' + fmt(totalOutPO) + '</div>' +
-            '</div>' +
-            outPoHtml +
-          '</div>' +
-          '<div class="border rounded p-3" style="border-left:4px solid #fd7e14 !important">' +
-            '<div class="d-flex justify-content-between align-items-baseline mb-2">' +
-              '<div class="fw-semibold text-uppercase small text-secondary" style="letter-spacing:.04em">Money Out · Costs <span class="text-muted">(Cost basis)</span></div>' +
-              '<div class="fw-bold" style="color:#dc3545">' + fmt(totalOutCost) + '</div>' +
-            '</div>' +
-            outCostHtml +
-          '</div>' +
-        '</div>' +
+        heroBlock(
+          "Revenue − Parts Cost",
+          "All income minus the shop's cost of parts used on Work Orders",
+          grossCost, "#0d6efd"
+        ) +
+        heroBlock(
+          "Revenue − Parts Orders − Salaries",
+          "All income minus vendor parts orders minus payroll",
+          netPO, "#6f42c1"
+        ) +
       '</div>';
 
-      // ── Activity strip (compact, single line) ─────────────────────────
+      // ── Formulas with real numbers ────────────────────────────────────
+      function term(v, label, color) {
+        return '<span style="color:' + color + '">' + fmt(v) + '</span>' +
+          ' <span class="text-muted small">' + escapeHtml(label) + '</span>';
+      }
+
+      function formulaRow(title, termsHtml, result) {
+        return '<div class="d-flex flex-wrap justify-content-between align-items-baseline gap-2 py-1">' +
+          '<span class="small fw-semibold text-uppercase text-secondary" style="letter-spacing:.04em">' + escapeHtml(title) + '</span>' +
+          '<span>' + termsHtml + ' = <strong style="color:' + signColor(result) + '">' + fmt(result) + '</strong></span>' +
+        '</div>';
+      }
+
+      var salaryLabel = "salaries" + (hasPayroll && weeks ? " (" + weeks + " wks)" : "");
+      html += '<div class="border rounded p-3 mb-3">' +
+        formulaRow(
+          "Revenue − Parts Cost",
+          term(revenue, "revenue", "#198754") + ' − ' + term(partsCost, "parts cost", "#dc3545"),
+          grossCost
+        ) +
+        formulaRow(
+          "Revenue − Parts Orders − Salaries",
+          term(revenue, "revenue", "#198754") + ' − ' + term(partsOrders, "parts orders", "#dc3545") +
+            ' − ' + term(salaries, salaryLabel, "#dc3545"),
+          netPO
+        ) +
+      '</div>';
+
+      // ── Activity strip (counts for context) ───────────────────────────
       var actParts = [];
-      if (s.hasOwnProperty("wo_count")) actParts.push('<span><strong>' + (s.wo_count || 0) + '</strong> WO</span>');
-      if (s.hasOwnProperty("po_count")) actParts.push('<span><strong>' + (s.po_count || 0) + '</strong> PO</span>');
-      if (s.hasOwnProperty("invoiced_hours")) actParts.push('<span><strong>' + fmtHours(s.invoiced_hours) + '</strong> invoiced hrs</span>');
-      if (s.hasOwnProperty("total_mech_hours")) actParts.push('<span><strong>' + fmtHours(s.total_mech_hours) + '</strong> mech hrs</span>');
-      if (weeks) actParts.push('<span><strong>' + weeks + '</strong> wk period</span>');
+      if (s.hasOwnProperty("wo_count")) actParts.push('<span><strong>' + (s.wo_count || 0) + '</strong> Work Orders</span>');
+      if (s.hasOwnProperty("po_count")) actParts.push('<span><strong>' + (s.po_count || 0) + '</strong> Parts Orders</span>');
+      if (s.hasOwnProperty("invoiced_hours")) actParts.push('<span><strong>' + fmtHours(s.invoiced_hours) + '</strong> hrs billed to customers</span>');
+      if (s.hasOwnProperty("total_mech_hours")) actParts.push('<span><strong>' + fmtHours(s.total_mech_hours) + '</strong> mechanic hrs</span>');
+      if (weeks) actParts.push('<span><strong>' + weeks + '</strong> weeks in period</span>');
       if (actParts.length) {
         html += '<div class="border rounded p-2 mb-3 d-flex flex-wrap gap-3 small text-muted align-items-center">' +
           '<span class="text-uppercase fw-semibold text-secondary" style="letter-spacing:.04em">Activity</span>' +
@@ -377,20 +316,16 @@
         '</div>';
       }
 
-      // ── Disclaimer ────────────────────────────────────────────────────
-      var notes = [];
-      notes.push("Two Net Revenue views differ in how parts cost is counted: <em>Parts Orders basis</em> uses real money spent at vendors in the period; <em>Parts Cost basis</em> uses the cost of parts actually billed on Work Orders.");
-      if (hasPayroll) {
-        notes.push("Salaries = internal weekly salary × " + (weeks || 0) + " weeks + uAttend hourly punches × rate (AI-matched employees counted once).");
-      } else if (s.customer_filter_active) {
-        notes.push("<strong>Customer filter is active</strong> — salaries and parts orders are hidden because they cannot be attributed to specific customers.");
-      } else {
-        notes.push("Salaries unavailable — configure the uAttend integration and per-user pay rates to include payroll.");
+      // ── Warnings only when a number is silently $0 ────────────────────
+      if (s.customer_filter_active) {
+        html += '<div class="alert alert-secondary py-2 small mb-3" style="border:1px solid var(--bs-border-color)">' +
+          '<strong>Customer filter is active</strong> — payroll and parts orders cannot be tied to specific customers and are counted as $0 here.' +
+        '</div>';
+      } else if (!hasPayroll) {
+        html += '<div class="alert alert-secondary py-2 small mb-3" style="border:1px solid var(--bs-border-color)">' +
+          'Payroll unavailable — configure the uAttend integration and per-user pay rates; salaries are counted as $0 here.' +
+        '</div>';
       }
-      notes.push("Full line-by-line breakdown is in the table below.");
-      html += '<div class="alert alert-secondary py-2 small mb-3" style="border:1px solid var(--bs-border-color)">' +
-        '<strong>How to read:</strong> ' + notes.join(" ") +
-      '</div>';
 
       return html;
     }
@@ -440,7 +375,7 @@
       return '<tr class="text-muted"><th>Vendor</th><th class="text-end">Orders</th><th class="text-end">Total</th><th class="text-end">Paid</th><th class="text-end">Outstanding</th></tr>';
     }
     if (tab === "general_revenue") {
-      return '<tr class="text-muted"><th>Category</th><th class="text-end">Amount</th></tr>';
+      return '<tr class="text-muted"><th style="width:30%">Category</th><th>What is this</th><th class="text-end" style="width:16%">Amount</th></tr>';
     }
     if (tab === "mechanic_hours") {
       return '<tr class="text-muted"><th>Mechanic</th><th class="text-end">Billed Hours</th><th class="text-end">Tracked Hours</th><th class="text-end">Work Orders</th><th class="text-end">Labor Entries</th></tr>';
@@ -480,32 +415,48 @@
     }
     if (tab === "general_revenue") {
       var cat = row.category || "";
-      var isBold = cat.indexOf("Total") !== -1 || cat.indexOf("Profit") !== -1 || cat.indexOf("Net") !== -1;
-      var cls = isBold ? ' class="fw-semibold"' : '';
-      var isSep = cat.indexOf("Parts Orders") === 0 && cat.indexOf("Parts Orders \u2014 Parts") === 0;
-      var sep = isSep ? '<tr><td colspan="2" class="border-0 py-1"></td></tr>' : '';
-      // Empty separator row
+      // Section header row: group title + plain-language explanation.
+      if (row.row_type === "section") {
+        return '<tr class="table-section-row"><td colspan="3" class="py-2">' +
+          '<div class="fw-semibold small text-uppercase" style="letter-spacing:.04em">' + escapeHtml(cat) + '</div>' +
+          (row.desc ? '<div class="small" style="opacity:.75">' + escapeHtml(row.desc) + '</div>' : '') +
+          '</td></tr>';
+      }
+      // Empty separator row (legacy safety)
       if (!cat && row.amount == null) {
-        return '<tr><td colspan="2" class="border-0 py-2"></td></tr>';
+        return '<tr><td colspan="3" class="border-0 py-2"></td></tr>';
       }
-      // Section header injection — detect first row of each logical group.
-      var sectionHeader = "";
-      if (cat === "Sales — Labor") {
-        sectionHeader = '<tr class="table-secondary"><td colspan="2" class="fw-semibold small text-uppercase" style="letter-spacing:.04em">Sales (Work Orders)</td></tr>';
-      } else if (cat === "Parts Orders — Parts") {
-        sectionHeader = '<tr class="table-secondary"><td colspan="2" class="fw-semibold small text-uppercase" style="letter-spacing:.04em">Parts Orders</td></tr>';
-      } else if (cat.indexOf("Labor Payroll — Salary") === 0) {
-        sectionHeader = '<tr class="table-secondary"><td colspan="2" class="fw-semibold small text-uppercase" style="letter-spacing:.04em">Labor Payroll (Salary × weeks + uAttend hourly)</td></tr>';
-      } else if (cat === "Mechanic Hours — Total") {
-        sectionHeader = '<tr class="table-secondary"><td colspan="2" class="fw-semibold small text-uppercase" style="letter-spacing:.04em">Mechanic Hours (from Work Orders)</td></tr>';
-      }
-      // Hours rows (mechanic section)
+      var kind = row.kind || "";
+      var isResult = kind === "result";
+      var isEmph = row.emphasis === true;
+      var catClasses = [];
+      if (isEmph) catClasses.push("fw-bold");
+      else if (isResult) catClasses.push("fw-semibold");
+      else if (kind === "info") catClasses.push("text-muted");
+      var catCls = catClasses.length ? ' class="' + catClasses.join(" ") + '"' : '';
+      var indentStyle = row.indent ? ' style="padding-left:1.75rem"' : '';
+
+      var amountHtml;
       if (row.is_hours) {
-        return sectionHeader + sep + '<tr><td' + cls + '>' + escapeHtml(cat) + '</td>' +
-          '<td class="text-end' + (isBold ? ' fw-semibold' : '') + '">' + fmtHours(row.amount) + ' hrs</td></tr>';
+        amountHtml = fmtHours(row.amount) + " hrs";
+      } else {
+        var v = Number(row.amount) || 0;
+        if (kind === "in") {
+          amountHtml = '<span style="color:#198754">+$' + fmtMoney(v) + '</span>';
+        } else if (kind === "out") {
+          amountHtml = '<span style="color:#dc3545">−$' + fmtMoney(v) + '</span>';
+        } else if (isEmph) {
+          amountHtml = '<span style="color:' + (v >= 0 ? "#198754" : "#dc3545") + '">$' + fmtMoney(v) + '</span>';
+        } else {
+          amountHtml = '$' + fmtMoney(v);
+        }
       }
-      return sectionHeader + sep + '<tr><td' + cls + '>' + escapeHtml(cat) + '</td>' +
-        '<td class="text-end' + (isBold ? ' fw-semibold' : '') + '">$' + fmtMoney(row.amount) + '</td></tr>';
+      var amtCls = 'text-end' + (isEmph ? ' fw-bold' : (isResult ? ' fw-semibold' : ''));
+      var rowStyle = isEmph ? ' style="border-top:2px solid var(--border, #dee2e6)"' : '';
+      return '<tr' + rowStyle + '>' +
+        '<td' + catCls + indentStyle + '>' + escapeHtml(cat) + '</td>' +
+        '<td class="small text-muted">' + escapeHtml(row.desc || "") + '</td>' +
+        '<td class="' + amtCls + '">' + amountHtml + '</td></tr>';
     }
     if (tab === "mechanic_hours") {
       return '<tr><td>' + escapeHtml(row.mechanic_name) + '</td>' +

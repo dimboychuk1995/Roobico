@@ -13,6 +13,11 @@
     .data-table th, .data-table td { border: 1px solid #d1d5db; padding: 6px; }
     .data-table th { background: #f3f4f6; text-align: left; }
     .text-end { text-align: right; }
+    /* General Revenue: xhtml2pdf требует явные ширины на каждой ячейке,
+       иначе колонки схлопываются. */
+    .gr-cat { width: 33%; }
+    .gr-desc { width: 47%; }
+    .gr-amt { width: 20%; }
   </style>
 </head>
 <body>
@@ -27,6 +32,32 @@
   </div>
 
   {% if report_data.summary %}
+    {% if selected_tab == 'general_revenue' %}
+    {# Human-readable summary: same numbers, plain-language labels. #}
+    {% set s = report_data.summary %}
+    <table class="summary-table">
+      <tr><td><strong>Money In — Total Revenue</strong> (everything billed to customers)</td><td class="text-end"><strong>${{ "%.2f"|format(s.sales_revenue or 0) }}</strong></td></tr>
+      <tr><td>...of it labor</td><td class="text-end">${{ "%.2f"|format(s.sales_labor or 0) }}</td></tr>
+      <tr><td>...of it parts at sale price</td><td class="text-end">${{ "%.2f"|format(s.parts_sale or 0) }}</td></tr>
+      <tr><td>...of it core charges</td><td class="text-end">${{ "%.2f"|format(s.core_charges or 0) }}</td></tr>
+      <tr><td>Parts cost for the shop (reference)</td><td class="text-end">${{ "%.2f"|format(s.parts_cost or 0) }}</td></tr>
+      <tr><td>Parts profit: sale price - cost (reference)</td><td class="text-end">${{ "%.2f"|format(s.parts_profit or 0) }}</td></tr>
+      <tr><td><strong>Money Out — Parts Orders</strong> (bought from vendors)</td><td class="text-end"><strong>${{ "%.2f"|format(s.po_total_spent or 0) }}</strong></td></tr>
+      <tr><td><strong>Money Out — Payroll</strong>{% if s.payroll_weeks %} ({{ s.payroll_weeks }} weeks){% endif %}</td><td class="text-end"><strong>${{ "%.2f"|format(s.labor_cost or 0) }}</strong></td></tr>
+      <tr><td>Revenue - Parts Orders (before payroll)</td><td class="text-end">${{ "%.2f"|format(s.net_revenue or 0) }}</td></tr>
+      <tr><td>Revenue - Parts Orders - Payroll</td><td class="text-end">${{ "%.2f"|format(s.net_after_labor or 0) }}</td></tr>
+      <tr><td><strong>Revenue - Parts Cost</strong> (before payroll)</td><td class="text-end"><strong>${{ "%.2f"|format(s.revenue_minus_parts_cost or 0) }}</strong></td></tr>
+      <tr><td><strong>NET REVENUE — Cash view</strong> (Revenue - Parts Orders - Payroll)</td><td class="text-end"><strong>${{ "%.2f"|format(s.net_revenue_parts_orders or 0) }}</strong></td></tr>
+      <tr><td><strong>NET REVENUE — Job view</strong> (Revenue - Parts cost on WOs - Payroll)</td><td class="text-end"><strong>${{ "%.2f"|format(s.net_revenue_parts_cost or 0) }}</strong></td></tr>
+      <tr><td>Work Orders in period</td><td class="text-end">{{ s.wo_count or 0 }}</td></tr>
+      <tr><td>Parts Orders in period</td><td class="text-end">{{ s.po_count or 0 }}</td></tr>
+      <tr><td>Hours billed to customers</td><td class="text-end">{{ "%.2f"|format(s.invoiced_hours or 0) }} hrs</td></tr>
+      <tr><td>Mechanic hours on Work Orders</td><td class="text-end">{{ "%.2f"|format(s.total_mech_hours or 0) }} hrs</td></tr>
+      {% if s.customer_filter_active %}
+      <tr><td colspan="2" class="muted">Customer filter is active — payroll and parts orders are hidden because they cannot be tied to specific customers.</td></tr>
+      {% endif %}
+    </table>
+    {% else %}
     <table class="summary-table">
       {% for key, value in report_data.summary.items() %}
       <tr>
@@ -43,6 +74,7 @@
       </tr>
       {% endfor %}
     </table>
+    {% endif %}
   {% endif %}
 
   {% if chart_image %}
@@ -107,6 +139,12 @@
             <th class="text-end">Tracked Hours</th>
             <th class="text-end">Work Orders</th>
             <th class="text-end">Labor Entries</th>
+          </tr>
+        {% elif selected_tab == 'general_revenue' %}
+          <tr>
+            <th class="gr-cat">Category</th>
+            <th class="gr-desc">What is this</th>
+            <th class="text-end gr-amt">Amount</th>
           </tr>
         {% else %}
           <tr>
@@ -173,6 +211,34 @@
               <td class="text-end">{{ row.wo_count or 0 }}</td>
               <td class="text-end">{{ row.labor_entries or 0 }}</td>
             </tr>
+          {% elif selected_tab == 'general_revenue' %}
+            {% if row.row_type == 'section' %}
+            <tr>
+              <td colspan="3" style="background: #e5e7eb;">
+                <strong>{{ row.category }}</strong>
+                {% if row.desc %}<br><span class="muted" style="font-size: 10px;">{{ row.desc }}</span>{% endif %}
+              </td>
+            </tr>
+            {% elif not row.category and row.amount is none %}
+            <tr><td colspan="3" style="border: none; padding: 6px 0;"></td></tr>
+            {% else %}
+            {% set bold = row.emphasis or row.kind == 'result' %}
+            <tr>
+              <td class="gr-cat" style="{% if bold %}font-weight: bold;{% endif %}{% if row.indent %}padding-left: 18px;{% endif %}">{{ row.category }}</td>
+              <td class="muted gr-desc" style="font-size: 10px;">{{ row.desc or '' }}</td>
+              <td class="text-end gr-amt" style="{% if bold %}font-weight: bold;{% endif %}{% if row.kind == 'in' %}color: #198754;{% elif row.kind == 'out' %}color: #dc3545;{% endif %}">
+                {%- if row.is_hours -%}
+                  {{ "%.2f"|format(row.amount or 0) }} hrs
+                {%- elif row.kind == 'in' -%}
+                  +${{ "%.2f"|format(row.amount or 0) }}
+                {%- elif row.kind == 'out' -%}
+                  -${{ "%.2f"|format(row.amount or 0) }}
+                {%- else -%}
+                  ${{ "%.2f"|format(row.amount or 0) }}
+                {%- endif -%}
+              </td>
+            </tr>
+            {% endif %}
           {% else %}
             {% set cat = row.category or '' %}
             {% set is_bold = 'Total' in cat or 'Profit' in cat or 'Net' in cat %}
