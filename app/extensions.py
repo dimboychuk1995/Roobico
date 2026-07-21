@@ -120,6 +120,10 @@ def ensure_master_collections_indexes(master_db):
     # Audit journal for create/edit/delete operations across all routes.
     _safe_create_index(master_db.audit_journal, [("created_at", DESCENDING)], name="idx_audit_journal_created_desc")
     _safe_create_index(master_db.audit_journal, [("tenant_id", ASCENDING), ("created_at", DESCENDING)], name="idx_audit_journal_tenant_created")
+
+    # AI assistant: месячный счётчик токенов и лог вопросов-ответов.
+    _safe_create_index(master_db.assistant_usage, [("tenant_id", ASCENDING), ("month", ASCENDING)], unique=True, name="uniq_assistant_usage_tenant_month")
+    _safe_create_index(master_db.assistant_logs, [("tenant_id", ASCENDING), ("created_at", DESCENDING)], name="idx_assistant_logs_tenant_created")
     _safe_create_index(master_db.audit_journal, [("shop_id", ASCENDING), ("created_at", DESCENDING)], name="idx_audit_journal_shop_created")
     _safe_create_index(master_db.audit_journal, [("endpoint", ASCENDING), ("created_at", DESCENDING)], name="idx_audit_journal_endpoint_created")
     _safe_create_index(master_db.audit_journal, [("method", ASCENDING), ("created_at", DESCENDING)], name="idx_audit_journal_method_created")

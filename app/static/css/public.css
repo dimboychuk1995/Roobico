@@ -973,6 +973,124 @@ span.flatpickr-weekday {
   background-color: #e2e8f0 !important;
 }
 
+/* ── AI assistant widget ─────────────────────────────────────────── */
+.assistant-fab {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 1.25rem;
+  z-index: 1045;
+  width: 48px;
+  height: 48px;
+  border: none;
+  border-radius: 50%;
+  background: #0d6efd;
+  color: #fff;
+  font-size: 1.25rem;
+  box-shadow: 0 6px 18px rgba(13, 110, 253, 0.35);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.assistant-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px rgba(13, 110, 253, 0.45);
+}
+
+.assistant-panel {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 5.25rem;
+  z-index: 1045;
+  width: 380px;
+  max-width: calc(100vw - 2rem);
+  height: 540px;
+  max-height: calc(100vh - 7rem);
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(15, 23, 42, 0.18);
+}
+
+.assistant-panel.d-none {
+  display: none;
+}
+
+.assistant-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+}
+
+.assistant-close {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 1.5rem;
+  line-height: 1;
+  padding: 0 0.25rem;
+  opacity: 0.6;
+}
+
+.assistant-close:hover {
+  opacity: 1;
+}
+
+.assistant-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.assistant-msg {
+  max-width: 88%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  overflow-wrap: break-word;
+}
+
+.assistant-msg-user {
+  align-self: flex-end;
+  background: #0d6efd;
+  color: #fff;
+  border-bottom-right-radius: 0.25rem;
+}
+
+.assistant-msg-assistant {
+  align-self: flex-start;
+  background: #f1f5f9;
+  color: #0f172a;
+  border-bottom-left-radius: 0.25rem;
+}
+
+.assistant-msg-error {
+  background: #fdecec;
+  color: #b42318;
+}
+
+.assistant-typing {
+  opacity: 0.6;
+}
+
+.assistant-input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+  padding: 0.75rem;
+  border-top: 1px solid var(--border, #e2e8f0);
+}
+
+.assistant-input-row textarea {
+  resize: none;
+}
+
 /* Section header rows inside data tables (Standard Reports etc.):
    контрастная полоса-заголовок группы, не реагирует на hover. */
 .table > tbody > tr.table-section-row > td {

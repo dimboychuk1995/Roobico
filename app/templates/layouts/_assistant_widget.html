@@ -1,0 +1,35 @@
+{# AI-помощник: плавающая кнопка + панель чата. Подключается в app_base. #}
+<button
+  type="button"
+  id="assistantToggleBtn"
+  class="assistant-fab"
+  aria-label="AI assistant"
+  title="AI assistant"
+>
+  <i class="bi bi-stars" aria-hidden="true"></i>
+</button>
+
+<div id="assistantPanel" class="assistant-panel d-none" role="dialog" aria-label="AI assistant">
+  <div class="assistant-panel-header">
+    <div>
+      <div class="fw-semibold">Roobico Assistant</div>
+      <div class="small text-muted">Ask how to do something in Roobico</div>
+    </div>
+    <button type="button" class="assistant-close" id="assistantCloseBtn" aria-label="Close">&times;</button>
+  </div>
+  <div class="assistant-messages" id="assistantMessages"></div>
+  <form class="assistant-input-row" id="assistantForm">
+    <textarea
+      id="assistantInput"
+      class="form-control form-control-sm"
+      rows="2"
+      placeholder="e.g. How do I create a work order?"
+      maxlength="2000"
+    ></textarea>
+    <button type="submit" class="btn btn-primary btn-sm" id="assistantSendBtn" aria-label="Send">
+      <i class="bi bi-send" aria-hidden="true"></i>
+    </button>
+  </form>
+</div>
+
+<script src="{{ url_for('static', filename='js/assistant.js') }}"></script>
