@@ -12,6 +12,41 @@
   var history = []; // {role: "user"|"assistant", content}
   var busy = false;
 
+  // Состояние живёт в sessionStorage (в рамках вкладки), чтобы чат
+  // не сбрасывался при переходах между страницами.
+  var STORAGE_KEY = "roobicoAssistantChat";
+  var MAX_SAVED_MESSAGES = 40;
+  var currentUser = "";
+
+  function loadState() {
+    try {
+      var raw = sessionStorage.getItem(STORAGE_KEY);
+      if (!raw) return null;
+      var state = JSON.parse(raw);
+      // Чат другого пользователя (перелогин в той же вкладке) не восстанавливаем.
+      if (!state || state.user !== currentUser) {
+        sessionStorage.removeItem(STORAGE_KEY);
+        return null;
+      }
+      if (!Array.isArray(state.history)) state.history = [];
+      return state;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function saveState() {
+    try {
+      sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
+        user: currentUser,
+        open: !panel.classList.contains("d-none"),
+        history: history.slice(-MAX_SAVED_MESSAGES)
+      }));
+    } catch (e) {
+      /* sessionStorage недоступен (приватный режим) — работаем без сохранения */
+    }
+  }
+
   function escapeHtml(s) {
     return String(s == null ? "" : s)
       .replace(/&/g, "&amp;")
@@ -52,6 +87,7 @@
 
   function send(text) {
     history.push({ role: "user", content: text });
+    saveState();
     renderText(addBubble("user"), text);
 
     var botBubble = addBubble("assistant");
@@ -89,6 +125,7 @@
         return pump().then(function (full) {
           if (full) {
             history.push({ role: "assistant", content: full });
+            saveState();
           } else {
             renderText(botBubble, "I didn't get an answer — please try again.");
           }
@@ -99,6 +136,7 @@
         renderText(botBubble, err && err.message ? err.message : "Assistant failed — please try again.");
         // Неудачный обмен в историю не пишем: последний элемент — вопрос пользователя.
         history.pop();
+        saveState();
       })
       .finally(function () {
         setBusy(false);
@@ -115,15 +153,28 @@
     send(text);
   }
 
-  function togglePanel(open) {
+  function togglePanel(open, skipFocus) {
     var willOpen = open != null ? open : panel.classList.contains("d-none");
     panel.classList.toggle("d-none", !willOpen);
     if (willOpen) {
       if (!messagesEl.childNodes.length) {
         renderText(addBubble("assistant"), GREETING);
       }
-      input.focus();
+      scrollDown();
+      if (!skipFocus) input.focus();
     }
+    saveState();
+  }
+
+  function restoreState() {
+    var state = loadState();
+    if (!state) return;
+    history = state.history;
+    for (var i = 0; i < history.length; i++) {
+      renderText(addBubble(history[i].role), history[i].content);
+    }
+    // Панель была открыта до перехода — открываем снова, но фокус не крадём.
+    if (state.open) togglePanel(true, true);
   }
 
   function init() {
@@ -134,6 +185,9 @@
     input = document.getElementById("assistantInput");
     sendBtn = document.getElementById("assistantSendBtn");
     if (!toggleBtn || !panel || !messagesEl || !form || !input || !sendBtn) return;
+
+    currentUser = panel.getAttribute("data-user") || "";
+    restoreState();
 
     toggleBtn.addEventListener("click", function () { togglePanel(); });
     document.getElementById("assistantCloseBtn").addEventListener("click", function () {

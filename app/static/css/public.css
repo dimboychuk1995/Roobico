@@ -973,37 +973,16 @@ span.flatpickr-weekday {
   background-color: #e2e8f0 !important;
 }
 
-/* ── AI assistant widget ─────────────────────────────────────────── */
-.assistant-fab {
+/* ── AI assistant widget (открывается из сайдбара) ───────────────── */
+.assistant-panel {
   position: fixed;
   right: 1.25rem;
   bottom: 1.25rem;
   z-index: 1045;
-  width: 48px;
-  height: 48px;
-  border: none;
-  border-radius: 50%;
-  background: #0d6efd;
-  color: #fff;
-  font-size: 1.25rem;
-  box-shadow: 0 6px 18px rgba(13, 110, 253, 0.35);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-}
-
-.assistant-fab:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 24px rgba(13, 110, 253, 0.45);
-}
-
-.assistant-panel {
-  position: fixed;
-  right: 1.25rem;
-  bottom: 5.25rem;
-  z-index: 1045;
   width: 380px;
   max-width: calc(100vw - 2rem);
   height: 540px;
-  max-height: calc(100vh - 7rem);
+  max-height: calc(100vh - 2.5rem);
   display: flex;
   flex-direction: column;
   background: #ffffff;

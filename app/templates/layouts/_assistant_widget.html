@@ -1,15 +1,7 @@
-{# AI-помощник: плавающая кнопка + панель чата. Подключается в app_base. #}
-<button
-  type="button"
-  id="assistantToggleBtn"
-  class="assistant-fab"
-  aria-label="AI assistant"
-  title="AI assistant"
->
-  <i class="bi bi-stars" aria-hidden="true"></i>
-</button>
-
-<div id="assistantPanel" class="assistant-panel d-none" role="dialog" aria-label="AI assistant">
+{# AI-помощник: панель чата. Открывается кнопкой «Roobico AI Helper»
+   в сайдбаре (id=assistantToggleBtn в app_base). #}
+<div id="assistantPanel" class="assistant-panel d-none" role="dialog" aria-label="AI assistant"
+     data-user="{{ session.get('user_id') or '' }}">
   <div class="assistant-panel-header">
     <div>
       <div class="fw-semibold">Roobico Assistant</div>
