@@ -93,6 +93,13 @@
 
   <!-- RIGHT — лендинг -->
   <div class="land">
+    {# Фоновое видео: muted+playsinline обязательны для автоплея.
+       При ошибке загрузки остаётся градиент .land. #}
+    <video class="land-bg-video" autoplay muted loop playsinline preload="auto" aria-hidden="true" tabindex="-1">
+      <source src="{{ url_for('static', filename='video/login_bg.mp4') }}" type="video/mp4">
+    </video>
+    <div class="land-bg-shade" aria-hidden="true"></div>
+
     <header class="land-nav">
       <span class="land-brand">ROOBICO<span>.</span></span>
       <div class="land-nav-spacer"></div>

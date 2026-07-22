@@ -84,6 +84,33 @@ body.public-shell {
   z-index: 1;
 }
 
+/* ── Фоновое видео правой части ─────────────────────────────────────── */
+/* Объявлено после `.land > *`, чтобы перебить его z-index: 1. */
+.land-bg-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+  pointer-events: none;
+}
+/* Затемнение поверх видео — белый текст лендинга остаётся читаемым. */
+.land-bg-shade {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(1100px 700px at 80% -10%, rgba(22, 163, 74, 0.16), transparent 60%),
+    linear-gradient(150deg, rgba(11, 18, 32, 0.82) 0%, rgba(16, 27, 48, 0.68) 55%, rgba(11, 18, 32, 0.82) 100%);
+}
+@media (prefers-reduced-motion: reduce) {
+  .land-bg-video {
+    display: none;
+  }
+}
+
 /* ── Навбар ─────────────────────────────────────────────────────────── */
 .land-nav {
   display: flex;
