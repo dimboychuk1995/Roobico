@@ -4,6 +4,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
 import { useColorScheme } from "react-native";
 
+import { KeyboardDismissButton } from "@/components/keyboard-dismiss-button";
 import { AuthProvider, useAuth } from "@/context/auth";
 import { ToastProvider } from "@/context/toast";
 import { palette } from "@/lib/theme";
@@ -66,6 +67,7 @@ export default function RootLayout() {
       <AuthProvider>
         <ToastProvider>
           <RootNavigator />
+          <KeyboardDismissButton />
         </ToastProvider>
       </AuthProvider>
     </ThemeProvider>

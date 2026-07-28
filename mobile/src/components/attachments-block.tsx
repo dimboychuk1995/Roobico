@@ -29,9 +29,14 @@ import { useTheme } from "@/lib/theme";
 export function AttachmentsBlock({
   entityType,
   entityId,
+  parentId,
+  title,
 }: {
   entityType: string;
   entityId: string;
+  /** Для вложений на конкретную работу WO: parent_id = labor_id. */
+  parentId?: string;
+  title?: string;
 }) {
   const theme = useTheme();
   const toast = useToast();
@@ -46,14 +51,14 @@ export function AttachmentsBlock({
       return;
     }
     try {
-      setItems(await fetchAttachments(entityType, entityId));
+      setItems(await fetchAttachments(entityType, entityId, parentId));
     } catch {
       // отсутствие права attachments.view — просто не показываем
       setItems([]);
     } finally {
       setLoading(false);
     }
-  }, [entityType, entityId]);
+  }, [entityType, entityId, parentId]);
 
   useEffect(() => {
     load();
@@ -63,11 +68,16 @@ export function AttachmentsBlock({
     setUploading(true);
     try {
       const name = asset.fileName || `photo_${Date.now()}.jpg`;
-      await uploadAttachment(entityType, entityId, {
-        uri: asset.uri,
-        name,
-        type: asset.mimeType || "image/jpeg",
-      });
+      await uploadAttachment(
+        entityType,
+        entityId,
+        {
+          uri: asset.uri,
+          name,
+          type: asset.mimeType || "image/jpeg",
+        },
+        parentId
+      );
       toast.show("Uploaded.", "success");
       load();
     } catch (e) {
@@ -114,7 +124,7 @@ export function AttachmentsBlock({
     <View>
       <View style={styles.headerRow}>
         <Text style={[styles.title, { color: theme.muted }]}>
-          ATTACHMENTS ({items.length})
+          {(title || "ATTACHMENTS").toUpperCase()} ({items.length})
         </Text>
         <View style={{ flexDirection: "row", gap: 14 }}>
           <Pressable onPress={fromCamera} hitSlop={8} disabled={uploading}>

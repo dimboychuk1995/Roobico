@@ -17,17 +17,22 @@ import {
 
 import * as ImagePicker from "expo-image-picker";
 
+import { AttachmentsBlock } from "@/components/attachments-block";
 import { Field, SubmitButton } from "@/components/form";
+import { LaborTimer } from "@/components/labor-timer";
 import { SearchPickerModal } from "@/components/search-picker";
-import { RowCard } from "@/components/ui";
+import { Badge, RowCard } from "@/components/ui";
+import { WoAuthorizationModal } from "@/components/wo-authorization-modal";
 import { useIsMechanic } from "@/context/auth";
 import { useToast } from "@/context/toast";
 import {
   ApiError,
   CustomerRow,
   LaborRate,
+  MechLaborTime,
   PartSearchItem,
   PresetListItem,
+  TimerResponse,
   WoFormLabor,
   WoFormPart,
   createWorkOrder,
@@ -39,6 +44,8 @@ import {
   fetchPartPrice,
   fetchPresetDetail,
   fetchPresets,
+  fetchWoFormCustomers,
+  fetchWoFormUnits,
   fetchWorkOrderDetails,
   flattenPartAlternates,
   money,
@@ -85,6 +92,25 @@ export default function WorkOrderFormScreen() {
   const [presetModal, setPresetModal] = useState(false);
   const [polishingIdx, setPolishingIdx] = useState<number | null>(null);
   const [scanning, setScanning] = useState(false);
+
+  // ── механик: всегда-edit вид (таймеры, фото, утверждение, автосейв) ──
+  const [woMeta, setWoMeta] = useState<{
+    wo_number: number | string | null;
+    status: string;
+    mechanic_done: boolean;
+    customer_email: string;
+  } | null>(null);
+  const [mileage, setMileage] = useState("");
+  const [laborTimes, setLaborTimes] = useState<Record<string, MechLaborTime>>({});
+  const [serverOffsetMs, setServerOffsetMs] = useState(0);
+  const [authModal, setAuthModal] = useState<{ scope: "work_order" | "labor"; laborIndex?: number; jobLabel?: string } | null>(null);
+  const [autoSaveState, setAutoSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const loadedRef = useRef(false);
+  const editRevision = useRef(0);
+  const savedRevision = useRef(0);
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const isPaid = woMeta?.status === "paid";
 
   // AI: фото бумажного WO → лейборы с запчастями (берём топ-кандидата).
   const scanPaperWo = async () => {
@@ -187,6 +213,20 @@ export default function WorkOrderFormScreen() {
           const wo = await fetchMechanicWoDetails(id);
           setCustomer({ id: wo.customer.id, label: wo.customer.label });
           setUnit({ id: wo.unit.id, label: wo.unit.label });
+          setWoMeta({
+            wo_number: wo.wo_number,
+            status: wo.status,
+            mechanic_done: !!wo.mechanic_done,
+            customer_email: wo.customer_email || "",
+          });
+          setMileage(wo.unit.mileage != null && wo.unit.mileage !== "" ? String(wo.unit.mileage) : "");
+          const times: Record<string, MechLaborTime> = {};
+          wo.labors.forEach((l) => {
+            if (l.labor_id) times[l.labor_id] = l.time;
+          });
+          setLaborTimes(times);
+          const t = Date.parse(wo.server_now);
+          if (Number.isFinite(t)) setServerOffsetMs(t - Date.now());
           if (wo.labors.length) {
             setLabors(
               wo.labors.map((l) => ({
@@ -245,19 +285,32 @@ export default function WorkOrderFormScreen() {
       } catch (e) {
         toast.show(e instanceof ApiError ? e.message : "Failed to load.", "error");
       } finally {
+        // Автосейв включается только после начальной загрузки формы.
+        loadedRef.current = true;
         setLoading(false);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Механик не имеет customers.view — юниты берём из WO-эндпоинта
+  // (work_orders.create), как на веб-странице механика.
+  const loadUnitsForCustomer = useCallback(
+    (customerId: string) =>
+      isMechanic
+        ? fetchWoFormUnits(customerId)
+        : fetchCustomerDetails(customerId).then((d) =>
+            d.units.map((u) => ({ id: u.id, label: u.label }))
+          ),
+    [isMechanic]
+  );
+
   const pickCustomer = async (c: CustomerRow) => {
     setCustomer({ id: c.id, label: c.company_name || c.contact_name || "—" });
     setUnit(null);
     setCustomerModal(false);
     try {
-      const details = await fetchCustomerDetails(c.id);
-      setUnits(details.units.map((u) => ({ id: u.id, label: u.label })));
+      setUnits(await loadUnitsForCustomer(c.id));
     } catch {
       setUnits([]);
     }
@@ -267,9 +320,8 @@ export default function WorkOrderFormScreen() {
   // если появился ровно один новый, выбрать его автоматически.
   const refreshUnitsOnFocus = useCallback(() => {
     if (isEdit || !customer) return;
-    fetchCustomerDetails(customer.id)
-      .then((details) => {
-        const fresh = details.units.map((u) => ({ id: u.id, label: u.label }));
+    loadUnitsForCustomer(customer.id)
+      .then((fresh) => {
         setUnits((prev) => {
           if (!unit && fresh.length && fresh.length === prev.length + 1) {
             const known = new Set(prev.map((u) => u.id));
@@ -281,7 +333,7 @@ export default function WorkOrderFormScreen() {
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customer?.id, isEdit, unit]);
+  }, [customer?.id, isEdit, unit, loadUnitsForCustomer]);
 
   useFocusEffect(refreshUnitsOnFocus);
 
@@ -454,8 +506,95 @@ export default function WorkOrderFormScreen() {
       parts: l.parts.map(({ cost, price, core_charge, misc_charge, ...p }) => p),
     }));
 
+  // ── таймеры работ (механик, edit-вид) ─────────────────────────────
+  const onTimerChanged = useCallback((res: TimerResponse) => {
+    const t = Date.parse(res.server_now);
+    if (Number.isFinite(t)) setServerOffsetMs(t - Date.now());
+    setLaborTimes((prev) => {
+      const next = { ...prev };
+      Object.keys(res.time_summary || {}).forEach((lid) => {
+        next[lid] = res.time_summary[lid];
+      });
+      return next;
+    });
+    // Старт таймера на сервере форсит in_progress и сбрасывает done.
+    setWoMeta((m) => (m ? { ...m, status: "in_progress", mechanic_done: false } : m));
+  }, []);
+
+  // ── автосейв (механик, edit-вид): любое изменение → in_progress ───
+  const doAutosave = useCallback(async () => {
+    if (!isMechanic || !isEdit || !id || isPaid) return;
+    const rev = editRevision.current;
+    const validLabors = stripMoney(
+      labors.filter((l) => l.description.trim() || l.parts.length > 0)
+    );
+    if (!validLabors.length) return;
+
+    setAutoSaveState("saving");
+    try {
+      await editWorkOrder(id, {
+        status: "in_progress",
+        labors: validLabors,
+        mechanic_state: "in_progress",
+        unit_mileage: mileage.trim() || undefined,
+      });
+      savedRevision.current = rev;
+      setAutoSaveState("saved");
+      setWoMeta((m) => (m ? { ...m, status: "in_progress", mechanic_done: false } : m));
+
+      // Новые работы получили labor_id на сервере — подтягиваем его, чтобы
+      // появились таймер и фото. Только если пользователь не редактировал
+      // форму, пока шло сохранение.
+      if (labors.some((l) => !l.labor_id) && editRevision.current === rev) {
+        const fresh = await fetchMechanicWoDetails(id);
+        if (editRevision.current === rev) {
+          setLabors(
+            fresh.labors.map((l) => ({
+              labor_id: l.labor_id,
+              description: l.description,
+              hours: "",
+              rate_code: "",
+              labor_total: null,
+              issue_description: l.issue_description,
+              parts: l.parts.map((p) => ({
+                part_id: p.part_id || "",
+                part_number: p.part_number || "",
+                description: p.description || "",
+                qty: p.qty || 0,
+                one_time_part: !!p.one_time_part,
+              })),
+            }))
+          );
+          const times: Record<string, MechLaborTime> = {};
+          fresh.labors.forEach((l) => {
+            if (l.labor_id) times[l.labor_id] = l.time;
+          });
+          setLaborTimes(times);
+        }
+      }
+    } catch {
+      setAutoSaveState("error");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMechanic, isEdit, id, isPaid, labors, mileage]);
+
+  useEffect(() => {
+    if (!isMechanic || !isEdit || !loadedRef.current || isPaid) return;
+    editRevision.current += 1;
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(() => {
+      doAutosave();
+    }, 1200);
+    return () => {
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [labors, mileage]);
+
   // ── сохранение ────────────────────────────────────────────────────
-  const save = async (status: "open" | "in_progress") => {
+  // mechanicState: работа механика всегда сохраняется как in_progress —
+  // "done" лишь помечает менеджеру, что механик закончил и ждёт проверки.
+  const save = async (status: "open" | "in_progress", mechanicState?: "in_progress" | "done") => {
     if (!isEdit && (!customer || !unit)) {
       toast.show("Select customer and unit.", "error");
       return;
@@ -470,19 +609,25 @@ export default function WorkOrderFormScreen() {
     if (isMechanic) {
       validLabors = stripMoney(validLabors);
       status = "in_progress";
+      // Явное сохранение отменяет запланированный автосейв.
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     }
 
     setBusy(true);
     try {
       let res;
+      const mechanicFields = isMechanic
+        ? { mechanic_state: mechanicState || "in_progress", unit_mileage: mileage.trim() || undefined }
+        : {};
       if (isEdit && id) {
-        res = await editWorkOrder(id, { status, labors: validLabors });
+        res = await editWorkOrder(id, { status, labors: validLabors, ...mechanicFields });
       } else {
         res = await createWorkOrder({
           customer_id: customer!.id,
           unit_id: unit!.id,
           status,
           labors: validLabors,
+          ...mechanicFields,
         });
       }
       (res.inventory_warnings || []).forEach((w) => toast.show(w, "info"));
@@ -490,7 +635,13 @@ export default function WorkOrderFormScreen() {
         isEdit ? "Work order saved." : `Work order #${res.wo_number} created.`,
         "success"
       );
-      router.back();
+      if (!isEdit && isMechanic && res.id) {
+        // Механик после создания сразу попадает в рабочий edit-вид WO —
+        // с таймерами, фото и отправкой на утверждение.
+        router.replace({ pathname: "/work-order-form", params: { id: res.id } });
+      } else {
+        router.back();
+      }
     } catch (e) {
       toast.show(e instanceof ApiError ? e.message : "Save failed.", "error");
     } finally {
@@ -517,8 +668,37 @@ export default function WorkOrderFormScreen() {
       style={{ flex: 1, backgroundColor: theme.bg }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
-      <Stack.Screen options={{ title: isEdit ? "Edit Work Order" : "New Work Order" }} />
+      <Stack.Screen
+        options={{
+          title: isMechanic && isEdit && woMeta?.wo_number
+            ? `WO #${woMeta.wo_number}`
+            : isEdit ? "Edit Work Order" : "New Work Order",
+        }}
+      />
       <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
+        {isMechanic && isEdit && woMeta ? (
+          <View style={styles.mechHeaderRow}>
+            <Text style={{ color: theme.text, fontWeight: "800", fontSize: 16 }}>
+              WO #{woMeta.wo_number ?? ""}
+            </Text>
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              {woMeta.mechanic_done ? <Badge label="Done" tone="success" /> : null}
+              {woMeta.status === "paid" ? (
+                <Badge label="Paid" tone="success" />
+              ) : woMeta.status === "in_progress" ? (
+                <Badge label="In Progress" tone="info" />
+              ) : (
+                <Badge label="Open" tone="warning" />
+              )}
+            </View>
+          </View>
+        ) : null}
+        {isMechanic && isPaid ? (
+          <Text style={{ color: theme.warning, fontSize: 13, marginBottom: 8 }}>
+            This work order is paid and locked — view only.
+          </Text>
+        ) : null}
+
         {/* Клиент и юнит */}
         <Text style={[styles.sectionTitle, { color: theme.muted }]}>CUSTOMER & UNIT</Text>
         <Pressable
@@ -541,6 +721,15 @@ export default function WorkOrderFormScreen() {
           </Text>
           {!isEdit ? <Ionicons name="chevron-down" size={16} color={theme.muted} /> : null}
         </Pressable>
+        {isMechanic ? (
+          <Field
+            label="Unit mileage"
+            value={mileage}
+            onChangeText={setMileage}
+            keyboardType="number-pad"
+            placeholder="e.g. 152300"
+          />
+        ) : null}
 
         {/* Лейборы */}
         <Text style={[styles.sectionTitle, { color: theme.muted }]}>LABORS</Text>
@@ -693,6 +882,45 @@ export default function WorkOrderFormScreen() {
               <Ionicons name="add-circle-outline" size={18} color={theme.primary} />
               <Text style={{ color: theme.primary, fontWeight: "600", fontSize: 13 }}>Add part</Text>
             </Pressable>
+
+            {isMechanic && isEdit && id && labor.labor_id ? (
+              <>
+                {!isPaid ? (
+                  <LaborTimer
+                    woId={id}
+                    laborId={labor.labor_id}
+                    completedSeconds={laborTimes[labor.labor_id]?.completed_seconds || 0}
+                    runningUsers={laborTimes[labor.labor_id]?.running_users || []}
+                    myRunning={!!laborTimes[labor.labor_id]?.my_running}
+                    serverOffsetMs={serverOffsetMs}
+                    onChanged={onTimerChanged}
+                  />
+                ) : null}
+                <AttachmentsBlock
+                  entityType="work_order_labor"
+                  entityId={id}
+                  parentId={labor.labor_id}
+                  title="Job photos"
+                />
+                {!isPaid ? (
+                  <Pressable
+                    style={[styles.jobApprovalBtn, { borderColor: theme.border }]}
+                    onPress={() =>
+                      setAuthModal({
+                        scope: "labor",
+                        laborIndex: idx,
+                        jobLabel: labor.description || `Job ${idx + 1}`,
+                      })
+                    }
+                  >
+                    <Ionicons name="send-outline" size={14} color={theme.primary} />
+                    <Text style={{ color: theme.primary, fontWeight: "600", fontSize: 13 }}>
+                      Send job for approval
+                    </Text>
+                  </Pressable>
+                ) : null}
+              </>
+            ) : null}
           </RowCard>
         ))}
 
@@ -711,20 +939,22 @@ export default function WorkOrderFormScreen() {
             <Ionicons name="flash-outline" size={18} color={theme.primary} />
             <Text style={{ color: theme.primary, fontWeight: "700" }}>From preset</Text>
           </Pressable>
-          <Pressable
-            style={[styles.addLaborBtn, { borderColor: theme.border, backgroundColor: theme.surface, flex: 1 }]}
-            onPress={scanPaperWo}
-            disabled={scanning}
-          >
-            {scanning ? (
-              <ActivityIndicator size="small" color={theme.primary} />
-            ) : (
-              <>
-                <Ionicons name="camera-outline" size={18} color={theme.primary} />
-                <Text style={{ color: theme.primary, fontWeight: "700" }}>AI scan</Text>
-              </>
-            )}
-          </Pressable>
+          {!isMechanic ? (
+            <Pressable
+              style={[styles.addLaborBtn, { borderColor: theme.border, backgroundColor: theme.surface, flex: 1 }]}
+              onPress={scanPaperWo}
+              disabled={scanning}
+            >
+              {scanning ? (
+                <ActivityIndicator size="small" color={theme.primary} />
+              ) : (
+                <>
+                  <Ionicons name="camera-outline" size={18} color={theme.primary} />
+                  <Text style={{ color: theme.primary, fontWeight: "700" }}>AI scan</Text>
+                </>
+              )}
+            </Pressable>
+          ) : null}
         </View>
 
         {/* Итого (механику не показываем) */}
@@ -752,14 +982,67 @@ export default function WorkOrderFormScreen() {
 
         {isMechanic ? (
           <>
-            <SubmitButton
-              title={isEdit ? "Save" : "Create work order"}
-              onPress={() => save("in_progress")}
-              busy={busy}
-            />
-            <Text style={{ color: theme.muted, fontSize: 11, textAlign: "center", marginTop: 6 }}>
-              Saved work orders go to the manager for review.
-            </Text>
+            {isEdit && id ? (
+              <>
+                <AttachmentsBlock entityType="work_order" entityId={id} />
+                {!isPaid ? (
+                  <Pressable
+                    style={[styles.jobApprovalBtn, { borderColor: theme.border, marginTop: 14 }]}
+                    onPress={() => setAuthModal({ scope: "work_order" })}
+                  >
+                    <Ionicons name="send-outline" size={15} color={theme.primary} />
+                    <Text style={{ color: theme.primary, fontWeight: "600" }}>
+                      Send work order for approval
+                    </Text>
+                  </Pressable>
+                ) : null}
+                {!isPaid ? (
+                  <>
+                    <Text style={{ color: theme.muted, fontSize: 11, textAlign: "center", marginTop: 10 }}>
+                      {autoSaveState === "saving"
+                        ? "Saving…"
+                        : autoSaveState === "error"
+                          ? "Autosave failed — check connection."
+                          : "Changes are saved automatically as In Progress."}
+                    </Text>
+                    <Pressable
+                      style={[styles.doneBtn, { borderColor: theme.primary }]}
+                      onPress={() => save("in_progress", "done")}
+                      disabled={busy}
+                    >
+                      <Ionicons name="checkmark-done-outline" size={18} color={theme.primary} />
+                      <Text style={{ color: theme.primary, fontWeight: "700" }}>Done — ready for review</Text>
+                    </Pressable>
+                    <Text style={{ color: theme.muted, fontSize: 11, textAlign: "center", marginTop: 6 }}>
+                      "Done" tells the manager you finished — they still review and complete the WO.
+                    </Text>
+                  </>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <SubmitButton
+                  title="Create work order"
+                  onPress={() => save("in_progress", "in_progress")}
+                  busy={busy}
+                />
+                <Text style={{ color: theme.muted, fontSize: 11, textAlign: "center", marginTop: 6 }}>
+                  The work order is created as In Progress; afterwards changes save automatically.
+                </Text>
+              </>
+            )}
+
+            {isEdit && id ? (
+              <WoAuthorizationModal
+                visible={!!authModal}
+                onClose={() => setAuthModal(null)}
+                woId={id}
+                defaultEmail={woMeta?.customer_email || ""}
+                scope={authModal?.scope || "work_order"}
+                laborIndex={authModal?.laborIndex}
+                jobLabel={authModal?.jobLabel}
+              />
+            ) : null}
           </>
         ) : (
           <>
@@ -811,13 +1094,18 @@ function PickCustomerModal({
   onClose: () => void;
   onPick: (c: CustomerRow) => void;
 }) {
+  // У механика нет customers.view — список клиентов берём из WO-эндпоинта
+  // (work_orders.view), иначе пикер показывал бы 0 клиентов.
+  const isMechanic = useIsMechanic();
+  const search = (q: string) =>
+    isMechanic ? fetchWoFormCustomers(q) : fetchCustomers(q, 1).then((d) => d.items);
   return (
     <SearchPickerModal<CustomerRow>
       visible={visible}
       onClose={onClose}
       title="Select customer"
       placeholder="Search customers…"
-      search={(q) => fetchCustomers(q, 1).then((d) => d.items)}
+      search={search}
       renderLabel={(c) => c.company_name || c.contact_name || "—"}
       onPick={onPick}
     />
@@ -1009,6 +1297,32 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingVertical: 13,
     alignItems: "center",
+    marginTop: 10,
+  },
+  doneBtn: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  mechHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  jobApprovalBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingVertical: 9,
     marginTop: 10,
   },
   modalHeader: {

@@ -13,6 +13,11 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
   Custom Range; default This Month) filtering by the work order date.
 - Columns: WO #, Customer, Date, Unit, Mileage, Labor, Parts, Tax, Total,
   Balance, Paid (status badge), Actions (Pay / Download PDF / Edit / Delete).
+- Under the status badge the list also shows mechanic activity: a green
+  "● <names>" line — mechanics with a running job timer on this WO right
+  now — and a green **"Mechanic done"** badge when the mechanic saved the
+  WO as "Done, ready for review" (the WO stays In Progress until you
+  complete it; the badge clears if a mechanic starts a timer again).
 - Footer totals for the current filter: Labor, Parts, Tax, Total, Unpaid.
 - **Payments** tab — every payment recorded on any WO. **Estimates** tab —
   WOs whose status is an estimate/quote (there is no separate "estimate"

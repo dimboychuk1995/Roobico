@@ -814,3 +814,325 @@ def test_wo_pdf_forbidden_for_mechanic(client, mech_seed):
     data = _create_wo_as_mechanic(client, mech_seed, description="PDF test")
     resp = client.get(f"/work_orders/api/work_orders/{data['id']}/download-pdf")
     assert resp.status_code == 403
+
+
+# ── форма WO: клиенты и юниты доступны механику ─────────────────────
+
+
+def test_mechanic_can_load_wo_form_customers_and_units(client, mech_seed):
+    """Пикеры формы WO ходят в /work_orders/api/* (work_orders.view/create),
+    а не в /api/mobile/customers (customers.view, которого у механика нет)."""
+    login_mechanic(client)
+
+    resp = client.get("/work_orders/api/customers")
+    assert resp.status_code == 200
+    ids = [c["id"] for c in resp.get_json()["customers"]]
+    assert str(mech_seed["customer"]["_id"]) in ids
+
+    resp = client.get(f"/work_orders/api/units?customer_id={mech_seed['customer']['_id']}")
+    assert resp.status_code == 200
+    ids = [u["id"] for u in resp.get_json()["items"]]
+    assert str(mech_seed["unit"]["_id"]) in ids
+
+    # Сам список клиентов (вкладка Customers) механику по-прежнему закрыт.
+    assert client.get("/api/mobile/customers").status_code == 403
+
+
+# ── mechanic_done: In Progress / Done для менеджера ─────────────────
+
+
+def _wo_update_payload(mech_seed, labor_id, description, extra=None):
+    payload = {
+        "labors": [{
+            "labor_id": labor_id,
+            "description": description,
+            "parts": [{"part_id": str(mech_seed["part"]["_id"]), "qty": 2}],
+        }],
+    }
+    payload.update(extra or {})
+    return payload
+
+
+def _deactivate_wos(mongo, *wo_ids):
+    """Убираем созданные WO из списков, чтобы не сдвигать пагинацию других тестов."""
+    mongo[SHOP_A_DB].work_orders.update_many(
+        {"_id": {"$in": [ObjectId(x) for x in wo_ids]}},
+        {"$set": {"is_active": False}},
+    )
+
+
+def test_mechanic_save_done_flag(client, mech_seed, mongo):
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Done flag")
+    shop_db = mongo[SHOP_A_DB]
+
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    assert wo["status"] == "in_progress"
+    assert wo.get("mechanic_done") is False
+
+    labor_id = wo["labors"][0]["labor_id"]
+
+    # «Done»: статус НЕ меняется (менеджер ещё должен утвердить), флаг ставится.
+    resp = _post_json(
+        client,
+        f"/work_orders/api/mechanic/work_orders/{data['id']}",
+        _wo_update_payload(mech_seed, labor_id, "Done flag", {"mechanic_state": "done"}),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    assert wo["status"] == "in_progress"
+    assert wo["mechanic_done"] is True
+    assert wo["mechanic_done_at"] is not None
+    assert wo["mechanic_done_by"] == mech_seed["user"]["_id"]
+
+    # Обычное сохранение сбрасывает флаг — механик снова в работе.
+    resp = _post_json(
+        client,
+        f"/work_orders/api/mechanic/work_orders/{data['id']}",
+        _wo_update_payload(mech_seed, labor_id, "Done flag"),
+    )
+    assert resp.status_code == 200
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    assert wo["mechanic_done"] is False
+    assert wo["mechanic_done_at"] is None
+    _deactivate_wos(mongo, data["id"])
+
+
+def test_mobile_wo_save_sets_done_flag(client, mech_seed, mongo):
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Mobile done")
+    shop_db = mongo[SHOP_A_DB]
+    labor_id = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})["labors"][0]["labor_id"]
+
+    resp = _post_json(
+        client,
+        f"/api/mobile/work_orders/{data['id']}",
+        _wo_update_payload(mech_seed, labor_id, "Mobile done", {"mechanic_state": "done"}),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    assert wo["status"] == "in_progress"
+    assert wo["mechanic_done"] is True
+    _deactivate_wos(mongo, data["id"])
+
+
+def test_timer_start_resets_done_and_forces_in_progress(client, mech_seed, mongo):
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Timer resets done")
+    shop_db = mongo[SHOP_A_DB]
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    labor_id = wo["labors"][0]["labor_id"]
+
+    shop_db.work_orders.update_one(
+        {"_id": wo["_id"]}, {"$set": {"mechanic_done": True, "status": "open"}}
+    )
+
+    resp = _post_json(client, "/work_orders/api/mechanic/timers/start", {
+        "work_order_id": data["id"], "labor_id": labor_id,
+    })
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
+    wo = shop_db.work_orders.find_one({"_id": wo["_id"]})
+    assert wo["status"] == "in_progress"
+    assert wo["mechanic_done"] is False
+
+    _post_json(client, "/work_orders/api/mechanic/timers/stop", {})
+    _deactivate_wos(mongo, data["id"])
+
+
+def test_manager_list_shows_working_now_and_done(client, mech_seed, mongo):
+    login_mechanic(client)
+    d1 = _create_wo_as_mechanic(client, mech_seed, description="List working now")
+    d2 = _create_wo_as_mechanic(client, mech_seed, description="List mechanic done")
+    shop_db = mongo[SHOP_A_DB]
+
+    labor1 = shop_db.work_orders.find_one({"_id": ObjectId(d1["id"])})["labors"][0]["labor_id"]
+    resp = _post_json(client, "/work_orders/api/mechanic/timers/start", {
+        "work_order_id": d1["id"], "labor_id": labor1,
+    })
+    assert resp.status_code == 200
+
+    labor2 = shop_db.work_orders.find_one({"_id": ObjectId(d2["id"])})["labors"][0]["labor_id"]
+    resp = _post_json(
+        client,
+        f"/work_orders/api/mechanic/work_orders/{d2['id']}",
+        _wo_update_payload(mech_seed, labor2, "List mechanic done", {"mechanic_state": "done"}),
+    )
+    assert resp.status_code == 200
+
+    # Менеджер (owner) видит в списке имя работающего и бейдж done.
+    login(client)
+    rows = {r["id"]: r for r in client.get("/api/mobile/work_orders").get_json()["items"]}
+    assert "Mike Wrench" in rows[d1["id"]]["working_now"]
+    assert rows[d1["id"]]["mechanic_done"] is False
+    assert rows[d2["id"]]["mechanic_done"] is True
+    assert rows[d2["id"]]["working_now"] == []
+
+    # cleanup: остановить таймер механика
+    login_mechanic(client)
+    _post_json(client, "/work_orders/api/mechanic/timers/stop", {})
+    _deactivate_wos(mongo, d1["id"], d2["id"])
+
+
+# ── customer_email и mechanic_done в механик-payload ────────────────
+
+
+def test_mechanic_payload_customer_email_and_done(client, mech_seed, mongo):
+    mongo[SHOP_A_DB].customers.update_one(
+        {"_id": mech_seed["customer"]["_id"]},
+        {"$set": {"email": "boss@fleet.local"}},
+    )
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Email payload")
+
+    body = client.get(f"/work_orders/api/mechanic/work_orders/{data['id']}").get_json()
+    assert body["customer_email"] == "boss@fleet.local"
+    assert body["mechanic_done"] is False
+    _deactivate_wos(mongo, data["id"])
+
+
+# ── авторизация клиентом: механик шлёт работу и весь WO ─────────────
+
+
+def test_mechanic_sends_authorization(client, mech_seed, mongo, monkeypatch):
+    import app.blueprints.work_orders.routes as wo_routes
+
+    sent = []
+    monkeypatch.setattr(wo_routes, "send_email", lambda *a, **k: sent.append(a))
+    monkeypatch.setattr(wo_routes, "render_html_to_pdf", lambda html: b"")
+
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Approval job")
+
+    # Отдельная работа (scope=labor)
+    resp = _post_json(client, f"/work_orders/api/work_orders/{data['id']}/send-authorization", {
+        "email": "boss@fleet.local", "scope": "labor", "labor_index": 0,
+    })
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert len(sent) == 1
+
+    # Весь WO (scope=work_order)
+    resp = _post_json(client, f"/work_orders/api/work_orders/{data['id']}/send-authorization", {
+        "email": "boss@fleet.local", "scope": "work_order",
+    })
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert len(sent) == 2
+
+    auth_docs = list(mongo["roobico_test_master"].work_order_authorizations.find(
+        {"work_order_id": ObjectId(data["id"])}
+    ))
+    scopes = {(d["scope"], d.get("labor_index")) for d in auth_docs}
+    assert ("labor", 0) in scopes
+    assert ("work_order", None) in scopes
+    _deactivate_wos(mongo, data["id"])
+
+
+# ── пробег юнита из формы механика ──────────────────────────────────
+
+
+def test_mechanic_save_updates_unit_mileage(client, mech_seed, mongo):
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Mileage job")
+    shop_db = mongo[SHOP_A_DB]
+    labor_id = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})["labors"][0]["labor_id"]
+
+    resp = _post_json(
+        client,
+        f"/api/mobile/work_orders/{data['id']}",
+        _wo_update_payload(mech_seed, labor_id, "Mileage job", {"unit_mileage": "152300"}),
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
+    unit = shop_db.units.find_one({"_id": mech_seed["unit"]["_id"]})
+    assert unit["mileage"] == 152300
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    assert wo["mileage"] == 152300
+
+    # Мусор/пусто пробег не трогают.
+    resp = _post_json(
+        client,
+        f"/api/mobile/work_orders/{data['id']}",
+        _wo_update_payload(mech_seed, labor_id, "Mileage job", {"unit_mileage": ""}),
+    )
+    assert resp.status_code == 200
+    assert mongo[SHOP_A_DB].units.find_one({"_id": mech_seed["unit"]["_id"]})["mileage"] == 152300
+    _deactivate_wos(mongo, data["id"])
+
+
+# ── менеджер видит сумму часов механиков по каждой работе ───────────
+
+
+def test_manager_mobile_details_show_tracked_time(client, mech_seed, mongo):
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Tracked hours job")
+    shop_db = mongo[SHOP_A_DB]
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    labor_id = wo["labors"][0]["labor_id"]
+
+    # Завершённые сессии двух механиков по одной работе.
+    now = _now()
+    shop_db.wo_time_logs.insert_many([
+        {
+            "shop_id": wo["shop_id"], "work_order_id": wo["_id"], "labor_id": labor_id,
+            "user_id": mech_seed["user"]["_id"], "user_name": "Mike Wrench",
+            "started_at": now, "stopped_at": now, "seconds": 3600,
+            "stop_source": "user", "created_at": now, "updated_at": now,
+        },
+        {
+            "shop_id": wo["shop_id"], "work_order_id": wo["_id"], "labor_id": labor_id,
+            "user_id": ObjectId(), "user_name": "Ivan Mechanic",
+            "started_at": now, "stopped_at": now, "seconds": 1800,
+            "stop_source": "user", "created_at": now, "updated_at": now,
+        },
+    ])
+
+    login(client)  # owner
+    body = client.get(f"/api/mobile/work_orders/{data['id']}").get_json()
+    labor = body["labors"][0]
+    assert labor["tracked_seconds"] == 5400
+    assert "1:30" in labor["tracked_label"]          # суммарно полтора часа
+    assert "Mike Wrench" in labor["tracked_label"]   # разбивка по механикам
+    assert "Ivan Mechanic" in labor["tracked_label"]
+    _deactivate_wos(mongo, data["id"])
+
+
+# ── вложения на работу (parent_id = labor_id) ───────────────────────
+
+
+def test_labor_attachments_keyed_by_labor_id(client, mech_seed, mongo):
+    import io
+
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Attach job")
+    shop_db = mongo[SHOP_A_DB]
+    labor_id = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})["labors"][0]["labor_id"]
+
+    token = get_csrf_token(client)
+    resp = client.post(
+        "/attachments/api/upload",
+        data={
+            "csrf_token": token,
+            "entity_type": "work_order_labor",
+            "entity_id": data["id"],
+            "parent_id": labor_id,
+            "files": (io.BytesIO(b"\x89PNG fake image bytes"), "job.png", "image/png"),
+        },
+        content_type="multipart/form-data",
+    )
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    body = resp.get_json()
+    assert body["ok"] is True and body["saved"] and not body["errors"]
+
+    # Фильтр по parent_id отдаёт файл этой работы...
+    items = client.get(
+        f"/attachments/api/list?entity_type=work_order_labor&entity_id={data['id']}&parent_id={labor_id}"
+    ).get_json()["items"]
+    assert [i["filename"] for i in items] == ["job.png"]
+
+    # ...а по чужому labor_id — пусто.
+    other = str(ObjectId())
+    items = client.get(
+        f"/attachments/api/list?entity_type=work_order_labor&entity_id={data['id']}&parent_id={other}"
+    ).get_json()["items"]
+    assert items == []
+    _deactivate_wos(mongo, data["id"])

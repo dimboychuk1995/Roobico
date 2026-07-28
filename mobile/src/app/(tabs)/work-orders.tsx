@@ -38,7 +38,10 @@ function WorkOrderCard({ item }: { item: WorkOrderRow }) {
     <RowCard>
       <View style={styles.topRow}>
         <Text style={[styles.number, { color: theme.text }]}>WO #{item.wo_number ?? "—"}</Text>
-        {statusBadge(item)}
+        <View style={{ flexDirection: "row", gap: 6 }}>
+          {item.mechanic_done ? <Badge label="Done" tone="success" /> : null}
+          {statusBadge(item)}
+        </View>
       </View>
       <Text style={[styles.customer, { color: theme.text }]} numberOfLines={1}>
         {item.customer}
@@ -47,6 +50,11 @@ function WorkOrderCard({ item }: { item: WorkOrderRow }) {
         {item.unit !== "-" ? `${item.unit} · ` : ""}
         {item.date}
       </Text>
+      {item.working_now && item.working_now.length ? (
+        <Text style={[styles.meta, { color: theme.primary }]} numberOfLines={1}>
+          ● {item.working_now.join(", ")}
+        </Text>
+      ) : null}
       {!isMechanic ? (
         <View style={styles.totalsRow}>
           <Text style={[styles.total, { color: theme.text }]}>{money(item.grand_total ?? 0)}</Text>

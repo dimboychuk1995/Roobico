@@ -139,6 +139,8 @@ export interface WorkOrderRow {
   is_paid: boolean;
   is_in_progress: boolean;
   status: string;
+  working_now?: string[];
+  mechanic_done?: boolean;
 }
 
 export interface CustomerRow {
@@ -260,6 +262,38 @@ export function fetchCustomers(q: string, page: number) {
   return request<ListResponse<CustomerRow>>(`/api/mobile/customers?${listQuery(q, page)}`);
 }
 
+/**
+ * Клиенты для формы WO. В отличие от /api/mobile/customers (нужно право
+ * customers.view, которого нет у механика) этот эндпоинт доступен по
+ * work_orders.view — как на веб-странице механика. Поиска на сервере нет,
+ * фильтруем на клиенте.
+ */
+export function fetchWoFormCustomers(q: string) {
+  return request<{ ok: boolean; customers: any[] }>("/work_orders/api/customers").then((d) => {
+    const rows: CustomerRow[] = (d.customers || []).map((c: any) => ({
+      id: String(c.id || ""),
+      company_name: String(c.company_name || c.label || ""),
+      contact_name: String(c.contact_name || ""),
+      phone: String(c.phone || ""),
+      email: String(c.email || ""),
+      address: String(c.address || ""),
+      is_active: true,
+    }));
+    const needle = q.trim().toLowerCase();
+    if (!needle) return rows;
+    return rows.filter((c) =>
+      `${c.company_name} ${c.contact_name}`.toLowerCase().includes(needle)
+    );
+  });
+}
+
+/** Юниты клиента для формы WO — доступно механику (work_orders.create). */
+export function fetchWoFormUnits(customerId: string) {
+  return request<{ items: { id: string; label: string }[] }>(
+    `/work_orders/api/units?customer_id=${encodeURIComponent(customerId)}`
+  ).then((d) => d.items || []);
+}
+
 export function fetchVendors(q: string, page: number) {
   return request<ListResponse<VendorRow>>(`/api/mobile/vendors?${listQuery(q, page)}`);
 }
@@ -295,6 +329,8 @@ export interface WoLaborDetail {
   core_total: number;
   misc_total: number;
   block_total: number;
+  tracked_seconds?: number;
+  tracked_label?: string;
   parts: WoPartDetail[];
   misc_items: { description: string; qty: number; price: number; total: number }[];
 }
@@ -383,6 +419,8 @@ export interface MechWorkOrderDetails {
   wo_number: number | string | null;
   status: string;
   customer: { id: string; label: string };
+  customer_email?: string;
+  mechanic_done?: boolean;
   unit: { id: string; label: string; vin: string; unit_number: string; mileage: number | string | null };
   date: string;
   labors: MechWoLabor[];
@@ -859,6 +897,8 @@ export function createWorkOrder(payload: {
   unit_id: string;
   status: string;
   labors: WoFormLabor[];
+  mechanic_state?: "in_progress" | "done";
+  unit_mileage?: string | number;
 }) {
   return request<WoSaveResult>("/api/mobile/work_orders", {
     method: "POST",
@@ -866,7 +906,15 @@ export function createWorkOrder(payload: {
   });
 }
 
-export function editWorkOrder(id: string, payload: { status?: string; labors: WoFormLabor[] }) {
+export function editWorkOrder(
+  id: string,
+  payload: {
+    status?: string;
+    labors: WoFormLabor[];
+    mechanic_state?: "in_progress" | "done";
+    unit_mileage?: string | number;
+  }
+) {
   return request<WoSaveResult>(`/api/mobile/work_orders/${encodeURIComponent(id)}`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -911,10 +959,17 @@ export function polishIssueText(text: string) {
   );
 }
 
-export function sendWoAuthorization(woId: string, email: string) {
+export function sendWoAuthorization(
+  woId: string,
+  email: string,
+  scope: "work_order" | "labor" = "work_order",
+  laborIndex?: number
+) {
+  const body: Record<string, unknown> = { email, scope };
+  if (scope === "labor") body.labor_index = laborIndex;
   return request<{ ok: boolean }>(
     `/work_orders/api/work_orders/${encodeURIComponent(woId)}/send-authorization`,
-    { method: "POST", body: JSON.stringify({ email, scope: "work_order" }) }
+    { method: "POST", body: JSON.stringify(body) }
   );
 }
 
@@ -1260,8 +1315,9 @@ export interface AttachmentItem {
   is_image?: boolean;
 }
 
-export function fetchAttachments(entityType: string, entityId: string) {
+export function fetchAttachments(entityType: string, entityId: string, parentId?: string) {
   const params = new URLSearchParams({ entity_type: entityType, entity_id: entityId });
+  if (parentId) params.set("parent_id", parentId);
   return request<{ ok: boolean; items: AttachmentItem[] }>(
     `/attachments/api/list?${params.toString()}`
   ).then((d) =>
@@ -1282,11 +1338,13 @@ export function attachmentDownloadUrl(id: string): string {
 export function uploadAttachment(
   entityType: string,
   entityId: string,
-  file: { uri: string; name: string; type: string }
+  file: { uri: string; name: string; type: string },
+  parentId?: string
 ) {
   const form = new FormData();
   form.append("entity_type", entityType);
   form.append("entity_id", entityId);
+  if (parentId) form.append("parent_id", parentId);
   form.append("files", file as unknown as Blob);
   return request<{ ok: boolean }>("/attachments/api/upload", {
     method: "POST",

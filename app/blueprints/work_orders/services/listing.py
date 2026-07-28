@@ -209,6 +209,19 @@ def get_work_orders_list(
         for r in shop_db.work_order_payments.aggregate(pay_pipeline):
             paid_map[r.get("_id")] = float(r.get("paid") or 0)
 
+    # Кто прямо сейчас работает над WO (открытые таймеры механиков).
+    working_map: dict = {}
+    if wo_ids:
+        open_logs = shop_db.wo_time_logs.find(
+            {"shop_id": shop_id, "work_order_id": {"$in": wo_ids}, "stopped_at": None},
+            {"work_order_id": 1, "user_name": 1},
+        )
+        for log in open_logs:
+            name = str(log.get("user_name") or "").strip() or "Mechanic"
+            names = working_map.setdefault(log.get("work_order_id"), [])
+            if name not in names:
+                names.append(name)
+
     items = []
     for x in rows:
         totals = x.get("totals") if isinstance(x.get("totals"), dict) else {}
@@ -239,6 +252,9 @@ def get_work_orders_list(
                 "is_paid": status == "paid",
                 "status": status,
                 "is_in_progress": status == "in_progress",
+                "working_now": working_map.get(x.get("_id")) or [],
+                # Флаг «механик закончил» имеет смысл только пока WO в работе.
+                "mechanic_done": bool(x.get("mechanic_done")) and status == "in_progress",
             }
         )
 

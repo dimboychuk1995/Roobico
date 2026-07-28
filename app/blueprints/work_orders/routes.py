@@ -2912,7 +2912,9 @@ from app.blueprints.work_orders.services.mechanic_view import (
 )
 from app.blueprints.work_orders.services.mechanic_editor import (
     build_mechanic_labors_payload,
+    mechanic_done_fields,
     merge_mechanic_edit,
+    parse_mileage,
 )
 from app.blueprints.work_orders.services import time_tracking
 
@@ -3049,6 +3051,7 @@ def api_mechanic_work_order_create():
         "updated_at": now,
         "created_by": user_id,
         "updated_by": user_id,
+        **mechanic_done_fields(data, user_id, now),
     }
     res = shop_db.work_orders.insert_one(doc)
     core_sync = sync_work_order_cores(shop_db, shop, [], labors, user_id)
@@ -3111,17 +3114,25 @@ def api_mechanic_work_order_update(work_order_id):
     )
     core_sync = sync_work_order_cores(shop_db, shop, old_labors, labors, user_id)
 
-    shop_db.work_orders.update_one(
-        {"_id": wo_id},
-        {"$set": {
-            "labors": labors,
-            "totals": totals,
-            "status": "in_progress",
-            "inventory_adjusted_at": now,
-            "updated_at": now,
-            "updated_by": user_id,
-        }},
-    )
+    set_fields = {
+        "labors": labors,
+        "totals": totals,
+        "status": "in_progress",
+        "inventory_adjusted_at": now,
+        "updated_at": now,
+        "updated_by": user_id,
+        **mechanic_done_fields(data, user_id, now),
+    }
+
+    unit_mileage = parse_mileage(data.get("unit_mileage"))
+    if unit_mileage is not None:
+        set_fields["mileage"] = unit_mileage
+        shop_db.units.update_one(
+            {"_id": wo.get("unit_id"), "shop_id": shop["_id"], "is_active": True},
+            {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
+        )
+
+    shop_db.work_orders.update_one({"_id": wo_id}, {"$set": set_fields})
 
     return jsonify({
         "ok": True,

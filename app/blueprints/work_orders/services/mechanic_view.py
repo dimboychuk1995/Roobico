@@ -70,6 +70,7 @@ def mechanic_wo_payload(shop_db, shop, wo: dict, user_id) -> dict:
     сводкой времени по каждой строке.
     """
     from app.blueprints.work_orders.services.common import format_preferred_date_label
+    from app.utils.contacts import get_main_contact_email
 
     wo = ensure_wo_labor_ids(shop_db, wo)
 
@@ -139,6 +140,9 @@ def mechanic_wo_payload(shop_db, shop, wo: dict, user_id) -> dict:
             "id": str(wo.get("customer_id") or ""),
             "label": customer_label(customer) if customer else "-",
         },
+        # Email клиента нужен механику для «Send for approval» (авторизация).
+        "customer_email": get_main_contact_email(customer, entity_type="customer") if customer else "",
+        "mechanic_done": bool(wo.get("mechanic_done")),
         "unit": {
             "id": str(wo.get("unit_id") or ""),
             "label": unit_label(unit) if unit else "-",

@@ -48,6 +48,47 @@ def test_mobile_session_after_login(client):
     assert data["user"]["email"] == OWNER_EMAIL
 
 
+def test_mobile_session_recomputes_permissions(app, client, seed):
+    """Права в /api/mobile/session пересчитываются на каждый запрос:
+    смена прав роли видна без перелогина (кука не замораживает старые права)."""
+    from werkzeug.security import generate_password_hash
+
+    with app.app_context():
+        from app.extensions import get_master_db, get_mongo_client
+        master = get_master_db()
+        tenant_db = get_mongo_client()[seed["tenant_a"]["db_name"]]
+
+        tenant_db.roles.update_one(
+            {"key": "mech_test"},
+            {"$set": {"name": "Mech Test", "permissions": ["work_orders.view", "work_orders.view_costs"]}},
+            upsert=True,
+        )
+        master.users.insert_one({
+            "_id": ObjectId(),
+            "email": "mobile-mech@test.local",
+            "password_hash": generate_password_hash("password123"),
+            "is_active": True,
+            "tenant_id": seed["tenant_a"]["_id"],
+            "shop_ids": [str(seed["shop_a"]["_id"])],
+            "role": "mech_test",
+        })
+
+    login_data = _mobile_login(client, email="mobile-mech@test.local", password="password123").get_json()
+    assert "work_orders.view_costs" in login_data["permissions"]
+
+    # Урезаем роль после логина — сессия должна отдать свежие права.
+    with app.app_context():
+        from app.extensions import get_mongo_client
+        get_mongo_client()[seed["tenant_a"]["db_name"]].roles.update_one(
+            {"key": "mech_test"},
+            {"$set": {"permissions": ["work_orders.view"]}},
+        )
+
+    data = client.get("/api/mobile/session").get_json()
+    assert "work_orders.view_costs" not in data["permissions"]
+    assert "work_orders.view" in data["permissions"]
+
+
 def test_mobile_logout_requires_csrf_header(client):
     login_data = _mobile_login(client).get_json()
     # Без токена — CSRF должен отбить запрос.

@@ -38,6 +38,12 @@ def api_login_required(view_func):
     return wrapper
 
 
+def _i32_or_none(value):
+    from app.blueprints.work_orders.services.mechanic_editor import parse_mileage
+
+    return parse_mileage(value)
+
+
 def _pagination_payload(pagination) -> dict:
     p = pagination if isinstance(pagination, dict) else {}
     return {
@@ -63,6 +69,12 @@ def _shops_payload(master, tenant_id, allowed_shop_ids: list[str]) -> list[dict]
 
 def _session_payload(master, user: dict, tenant: dict) -> dict:
     allowed = [str(x) for x in (session.get("shop_ids") or [])]
+    # Права пересчитываем на каждый запрос (как веб в permission_required):
+    # роль могли поменять после логина, кука не должна замораживать старые права.
+    from app.blueprints.auth.routes import _compute_effective_permissions
+    perms = _compute_effective_permissions(user, tenant)
+    session["user_permissions"] = perms
+    session.modified = True
     return {
         "ok": True,
         "csrf_token": generate_csrf(),
@@ -74,7 +86,7 @@ def _session_payload(master, user: dict, tenant: dict) -> dict:
         "tenant": {"id": str(tenant["_id"]), "name": tenant.get("name") or ""},
         "shops": _shops_payload(master, tenant["_id"], allowed),
         "active_shop_id": str(session.get(SESSION_SHOP_ID) or ""),
-        "permissions": session.get("user_permissions") or [],
+        "permissions": perms,
     }
 
 
@@ -114,10 +126,7 @@ def mobile_login():
         shop_id=None,
     )
 
-    from app.blueprints.auth.routes import _compute_effective_permissions
-    session["user_permissions"] = _compute_effective_permissions(user, tenant)
-    session.modified = True
-
+    # user_permissions в сессию кладёт _session_payload (пересчёт на каждый запрос)
     return jsonify(_session_payload(master, user, tenant)), 200
 
 
@@ -234,6 +243,35 @@ def mobile_work_order_details(work_order_id):
     ctx = _build_wo_pdf_context(shop_db, shop, wo)
     ctx.pop("pdf_cfg", None)
     ctx.pop("shop_logo_url", None)
+
+    # Трекнутое время механиков по каждой работе: менеджер на ревью видит
+    # сумму часов всех механиков, делавших этот лейбор.
+    from app.blueprints.work_orders.services.time_tracking import summarize_wo_time
+
+    def _fmt_hm(seconds: int) -> str:
+        h, rem = divmod(max(0, int(seconds)), 3600)
+        return f"{h}:{rem // 60:02d}"
+
+    time_summary = summarize_wo_time(shop_db, shop["_id"], wo["_id"])
+    dict_blocks = [b for b in (wo.get("labors") or []) if isinstance(b, dict)]
+    ctx_labors = ctx.get("labors") or []
+    for i, block in enumerate(dict_blocks):
+        if i >= len(ctx_labors):
+            break
+        bucket = time_summary.get(str(block.get("labor_id") or "")) or {}
+        total = int(bucket.get("total_seconds") or 0)
+        ctx_labors[i]["tracked_seconds"] = total
+        users = bucket.get("users") if isinstance(bucket.get("users"), dict) else {}
+        ctx_labors[i]["tracked_label"] = (
+            _fmt_hm(total)
+            + (
+                " — " + ", ".join(
+                    f"{u.get('user_name') or '—'} {_fmt_hm(u.get('seconds') or 0)}"
+                    for u in users.values()
+                )
+                if len(users) > 1 else ""
+            )
+        ) if total else ""
 
     # Сырые лейборы для мобильного редактора: исходные поля + сохранённая
     # labor base из totals (чтобы правка не пересчитала ручные суммы).
@@ -449,7 +487,8 @@ def mobile_work_order_create():
 
     # Механик-режим: клиентские цены/часы игнорируются, сервер автозаполняет
     # цены из каталога/прайсинг-правил (как на веб-странице механика).
-    if not has_permission("work_orders.view_costs"):
+    is_mechanic = not has_permission("work_orders.view_costs")
+    if is_mechanic:
         from app.blueprints.work_orders.services.mechanic_editor import build_mechanic_labors_payload
 
         labors_payload = build_mechanic_labors_payload(shop_db, shop, customer_id, labors_payload)
@@ -491,6 +530,19 @@ def mobile_work_order_create():
         "created_by": user_id,
         "updated_by": user_id,
     }
+    if is_mechanic:
+        from app.blueprints.work_orders.services.mechanic_editor import mechanic_done_fields
+
+        doc.update(mechanic_done_fields(data, user_id, now))
+
+    unit_mileage = _i32_or_none(data.get("unit_mileage"))
+    if unit_mileage is not None:
+        doc["mileage"] = unit_mileage
+        shop_db.units.update_one(
+            {"_id": unit_id, "shop_id": shop["_id"], "is_active": True},
+            {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
+        )
+
     res = shop_db.work_orders.insert_one(doc)
 
     core_sync = sync_work_order_cores(shop_db, shop, [], labors, user_id)
@@ -546,7 +598,8 @@ def mobile_work_order_edit(work_order_id):
 
     # Механик-режим: merge по labor_id — менеджерские hours/rate/цены
     # сохраняются, клиентские деньги игнорируются.
-    if not has_permission("work_orders.view_costs"):
+    is_mechanic = not has_permission("work_orders.view_costs")
+    if is_mechanic:
         from app.blueprints.work_orders.services.mechanic_editor import merge_mechanic_edit
 
         labors_payload = merge_mechanic_edit(shop_db, shop, wo, labors_payload)
@@ -586,6 +639,19 @@ def mobile_work_order_edit(work_order_id):
     save_status = enforce_mechanic_status(str(data.get("status") or "").strip().lower())
     if save_status in ("open", "in_progress"):
         set_fields["status"] = save_status
+    if is_mechanic:
+        from app.blueprints.work_orders.services.mechanic_editor import mechanic_done_fields
+
+        set_fields.update(mechanic_done_fields(data, user_id, now))
+
+    # Обновление пробега юнита из формы WO (как в веб-редакторе).
+    unit_mileage = _i32_or_none(data.get("unit_mileage"))
+    if unit_mileage is not None:
+        set_fields["mileage"] = unit_mileage
+        shop_db.units.update_one(
+            {"_id": wo.get("unit_id"), "shop_id": shop["_id"], "is_active": True},
+            {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
+        )
 
     shop_db.work_orders.update_one({"_id": wo_id}, {"$set": set_fields})
 
