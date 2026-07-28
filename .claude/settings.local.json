@@ -6,17 +6,34 @@
       "Read",
       "Edit",
       "Write",
+      "NotebookEdit",
       "Glob",
       "Grep",
       "WebFetch",
       "WebSearch",
-      "WebFetch(domain:www.vinaudit.com)"
+      "Agent",
+      "Skill",
+      "Workflow",
+      "Artifact",
+      "TodoWrite",
+      "ToolSearch",
+      "Monitor",
+      "CronCreate",
+      "CronDelete",
+      "CronList",
+      "SendMessage",
+      "TaskOutput",
+      "TaskStop",
+      "PushNotification",
+      "RemoteTrigger",
+      "DesignSync",
+      "EnterWorktree",
+      "ExitWorktree",
+      "EnterPlanMode",
+      "ExitPlanMode",
+      "ScheduleWakeup"
     ],
     "ask": [
-      "Bash(git commit*)",
-      "Bash(*git commit*)",
-      "PowerShell(git commit*)",
-      "PowerShell(*git commit*)",
       "Bash(git push*)",
       "Bash(*git push*)",
       "PowerShell(git push*)",
@@ -28,6 +45,7 @@
       "PowerShell(ssh *)",
       "PowerShell(scp *)",
       "PowerShell(sftp *)",
+      "PowerShell(rsync *)",
       "Bash(*deploy_prod.ps1*)",
       "PowerShell(*deploy_prod.ps1*)",
       "Bash(*pull_prod_backup.ps1*)",
@@ -37,6 +55,6 @@
       "Bash(*27018*)",
       "PowerShell(*27018*)"
     ],
-    "defaultMode": "dontAsk"
+    "defaultMode": "default"
   }
 }
