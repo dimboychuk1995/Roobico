@@ -59,7 +59,9 @@ def _id_variants(value):
     out = []
     seen = set()
     for v in variants:
-        key = str(v)
+        # str и ObjectId с одинаковым hex — РАЗНЫЕ значения для Mongo,
+        # поэтому ключ дедупликации обязан учитывать тип.
+        key = (type(v).__name__, str(v))
         if key in seen:
             continue
         seen.add(key)
@@ -394,9 +396,19 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
         flash("Passwords do not match.", "error")
         return redirect(url_for("settings.users_index"))
 
-    if master.users.find_one({"email": email}):
-        flash("User with this email already exists.", "error")
-        return redirect(url_for("settings.users_index"))
+    tenant_id = tenant_oid or _maybe_object_id(current_user.get("tenant_id")) or _maybe_object_id(tenant_id_raw)
+
+    # Занятый email: активный пользователь или пользователь чужого тенанта —
+    # ошибка. Деактивированный пользователь НАШЕГО тенанта — реактивируем его
+    # с новыми данными из формы вместо создания дубликата.
+    existing = master.users.find_one({"email": email})
+    reactivate_target = None
+    if existing is not None:
+        same_tenant = str(existing.get("tenant_id")) == str(tenant_id)
+        if existing.get("is_active", True) or not same_tenant:
+            flash("User with this email already exists.", "error")
+            return redirect(url_for("settings.users_index"))
+        reactivate_target = existing
 
     # Validate role exists in tenant DB
     tdb = _get_tenant_db()
@@ -412,7 +424,6 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
 
     from werkzeug.security import generate_password_hash
 
-    tenant_id = tenant_oid or _maybe_object_id(current_user.get("tenant_id")) or _maybe_object_id(tenant_id_raw)
     creator_id = _maybe_object_id(session.get(SESSION_USER_ID))
 
     # ✅ Чекбоксы шап:
@@ -458,12 +469,18 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
         "must_reset_password": False,
         "allow_permissions": [],
         "deny_permissions": [],
-        "created_at": utcnow(),
         "updated_at": utcnow(),
-        "created_by": creator_id,
     }
 
-    master.users.insert_one(user_doc)
+    if reactivate_target is not None:
+        # Реактивация: полностью перезаписываем профиль новыми данными формы,
+        # created_at/created_by остаются от исходной записи.
+        master.users.update_one({"_id": reactivate_target["_id"]}, {"$set": user_doc})
+        flash("User with this email was deactivated — reactivated with the new data.", "success")
+    else:
+        user_doc["created_at"] = utcnow()
+        user_doc["created_by"] = creator_id
+        master.users.insert_one(user_doc)
+        flash("User created successfully.", "success")
 
-    flash("User created successfully.", "success")
     return redirect(url_for("settings.users_index"))

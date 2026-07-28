@@ -8,7 +8,9 @@
 
   const modalEl = document.getElementById("userPermsModal");
   if (!modalEl) return;
-  const bsModal = new bootstrap.Modal(modalEl);
+  // Лениво: скрипт подключён в app_content и выполняется РАНЬШЕ
+  // bootstrap.bundle из public_base — на момент загрузки bootstrap ещё нет.
+  function getModal() { return bootstrap.Modal.getOrCreateInstance(modalEl); }
 
   const $name = document.getElementById("userPermsName");
   const $role = document.getElementById("userPermsRole");
@@ -172,7 +174,7 @@
     $name.textContent = userName || "user";
     $role.textContent = "—";
     $saveBtn.disabled = true;
-    bsModal.show();
+    getModal().show();
 
     try {
       const data = await api(fmtUrl(E.getTpl, userId));
@@ -221,7 +223,7 @@
         }),
       });
       state.dirty = false;
-      bsModal.hide();
+      getModal().hide();
       if (window.appAlert) window.appAlert("Permissions saved", "success");
     } catch (e) {
       $alert.textContent = "Failed to save: " + e.message;

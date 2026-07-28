@@ -16,6 +16,11 @@ access** checkboxes, Password (min 8).
 
 - **Deactivate** blocks login but keeps history; you cannot deactivate
   yourself.
+- **Re-hiring**: creating a user with the email of a *deactivated* user of
+  your company reactivates that user with the data you enter in the form (a
+  fresh profile — name, role, shops, password are overwritten). If the email
+  belongs to an active user (or a user of another company) you get "User
+  with this email already exists."
 - **"Permissions"** per user — allow/deny overrides on top of the role:
   "the role provides a baseline. Allow grants extra permissions on top, and
   Deny removes them. **Deny always wins.**" Changes apply immediately.
