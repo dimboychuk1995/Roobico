@@ -136,6 +136,7 @@ def mechanic_wo_payload(shop_db, shop, wo: dict, user_id) -> dict:
         "id": str(wo["_id"]),
         "wo_number": wo.get("wo_number"),
         "status": (wo.get("status") or "open").strip().lower(),
+        "manager_confirmed": bool(wo.get("manager_confirmed")),
         "customer": {
             "id": str(wo.get("customer_id") or ""),
             "label": customer_label(customer) if customer else "-",

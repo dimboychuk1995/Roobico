@@ -255,6 +255,7 @@ def get_work_orders_list(
                 "working_now": working_map.get(x.get("_id")) or [],
                 # Флаг «механик закончил» имеет смысл только пока WO в работе.
                 "mechanic_done": bool(x.get("mechanic_done")) and status == "in_progress",
+                "manager_confirmed": bool(x.get("manager_confirmed")),
             }
         )
 

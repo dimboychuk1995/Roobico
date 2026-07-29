@@ -141,6 +141,8 @@ export interface WorkOrderRow {
   status: string;
   working_now?: string[];
   mechanic_done?: boolean;
+  // Менеджер подтвердил работу механика: WO для механика закрыт.
+  manager_confirmed?: boolean;
 }
 
 export interface CustomerRow {
@@ -340,6 +342,7 @@ export interface WorkOrderDetails {
   id: string;
   status: string;
   is_estimate: boolean;
+  manager_confirmed?: boolean;
   customer_id: string;
   unit_id: string;
   wo_number: string;
@@ -418,6 +421,7 @@ export interface MechWorkOrderDetails {
   id: string;
   wo_number: number | string | null;
   status: string;
+  manager_confirmed?: boolean;
   customer: { id: string; label: string };
   customer_email?: string;
   mechanic_done?: boolean;
@@ -985,6 +989,32 @@ export function setWorkOrderStatus(id: string, status: "open" | "in_progress") {
     `/work_orders/api/work_orders/${encodeURIComponent(id)}/status`,
     { method: "POST", body: JSON.stringify({ status }) }
   );
+}
+
+/** Менеджер подтверждает работу механика (или снимает подтверждение). */
+export function setWorkOrderConfirmed(id: string, confirmed: boolean) {
+  return request<{ ok: boolean; manager_confirmed: boolean }>(
+    `/work_orders/api/work_orders/${encodeURIComponent(id)}/confirm`,
+    { method: "POST", body: JSON.stringify({ confirmed }) }
+  );
+}
+
+// ── Глобальный поиск юнитов (для механика в списке WO) ──────────────
+
+export interface UnitSearchRow {
+  id: string;
+  label: string;
+  unit_number: string;
+  vin: string;
+  customer_id: string;
+  customer_label: string;
+}
+
+export function searchUnits(q: string, page = 1) {
+  const params = new URLSearchParams();
+  if (q) params.set("q", q);
+  params.set("page", String(page));
+  return request<ListResponse<UnitSearchRow>>(`/api/mobile/units?${params.toString()}`);
 }
 
 // ── Parts orders ────────────────────────────────────────────────────

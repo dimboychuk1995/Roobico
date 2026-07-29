@@ -65,9 +65,10 @@ function emptyLabor(): WoFormLabor {
 }
 
 export default function WorkOrderFormScreen() {
-  const { id, customerId: presetCustomerId } = useLocalSearchParams<{
+  const { id, customerId: presetCustomerId, unitId: presetUnitId } = useLocalSearchParams<{
     id?: string;
     customerId?: string;
+    unitId?: string;
   }>();
   const isEdit = !!id;
   const theme = useTheme();
@@ -280,7 +281,13 @@ export default function WorkOrderFormScreen() {
         } else if (presetCustomerId) {
           const c = await fetchCustomerDetails(presetCustomerId);
           setCustomer({ id: c.id, label: c.label });
-          setUnits(c.units.map((u) => ({ id: u.id, label: u.label })));
+          const opts = c.units.map((u) => ({ id: u.id, label: u.label }));
+          setUnits(opts);
+          // Переход из общего поиска юнитов: юнит уже выбран.
+          if (presetUnitId) {
+            const preset = opts.find((u) => u.id === presetUnitId);
+            if (preset) setUnit(preset);
+          }
         }
       } catch (e) {
         toast.show(e instanceof ApiError ? e.message : "Failed to load.", "error");
@@ -878,9 +885,12 @@ export default function WorkOrderFormScreen() {
               </View>
             ))}
 
-            <Pressable style={styles.addPartBtn} onPress={() => setPartModalLabor(idx)}>
-              <Ionicons name="add-circle-outline" size={18} color={theme.primary} />
-              <Text style={{ color: theme.primary, fontWeight: "600", fontSize: 13 }}>Add part</Text>
+            <Pressable
+              style={[styles.addPartBtn, { borderColor: theme.primary }]}
+              onPress={() => setPartModalLabor(idx)}
+            >
+              <Ionicons name="add-circle-outline" size={20} color={theme.primary} />
+              <Text style={{ color: theme.primary, fontWeight: "700", fontSize: 15 }}>Add part</Text>
             </Pressable>
 
             {isMechanic && isEdit && id && labor.labor_id ? (
@@ -1263,7 +1273,17 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     fontSize: 14,
   },
-  addPartBtn: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 },
+  addPartBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderRadius: 12,
+    paddingVertical: 13,
+    marginTop: 12,
+  },
   addRow: { flexDirection: "row", gap: 8 },
   issueHeader: {
     flexDirection: "row",

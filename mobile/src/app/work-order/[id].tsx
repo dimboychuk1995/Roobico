@@ -32,6 +32,7 @@ import {
   money,
   recordWoPayment,
   sendWorkOrderEmail,
+  setWorkOrderConfirmed,
   setWorkOrderStatus,
 } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
@@ -134,6 +135,23 @@ function ManagerWoScreen() {
     }
   };
 
+  // Подтверждение работы механика: подтверждённый WO для механика закрыт,
+  // отмена подтверждения снова открывает его для правок.
+  const onToggleConfirmed = async () => {
+    try {
+      const res = await setWorkOrderConfirmed(id!, !wo?.manager_confirmed);
+      toast.show(
+        res.manager_confirmed
+          ? "Work order confirmed — locked for mechanics."
+          : "Confirmation cancelled — mechanics can edit again.",
+        "success"
+      );
+      load();
+    } catch (e) {
+      toast.show(e instanceof ApiError ? e.message : "Failed.", "error");
+    }
+  };
+
   const onDeletePayment = (paymentId: string) => {
     Alert.alert("Delete payment", "Delete this payment? The balance will be restored.", [
       { text: "Cancel", style: "cancel" },
@@ -216,7 +234,10 @@ function ManagerWoScreen() {
       <RowCard>
         <View style={styles.headerRow}>
           <Text style={[styles.woNumber, { color: theme.text }]}>WO #{wo.wo_number}</Text>
-          {statusBadge}
+          <View style={styles.badgeRow}>
+            {wo.manager_confirmed ? <Badge label="Confirmed" tone="success" /> : null}
+            {statusBadge}
+          </View>
         </View>
         <KV label="Customer" value={wo.cust_name} />
         <KV label="Phone" value={wo.customer_phone} />
@@ -346,6 +367,22 @@ function ManagerWoScreen() {
           <Text style={{ color: theme.primary, fontWeight: "600" }}>Send for authorization</Text>
         </Pressable>
       ) : null}
+
+      <Pressable
+        style={[styles.secondaryBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
+        onPress={onToggleConfirmed}
+      >
+        <Ionicons
+          name={wo.manager_confirmed ? "lock-open-outline" : "checkmark-circle-outline"}
+          size={16}
+          color={wo.manager_confirmed ? theme.warning : theme.primary}
+        />
+        <Text
+          style={{ color: wo.manager_confirmed ? theme.warning : theme.primary, fontWeight: "600" }}
+        >
+          {wo.manager_confirmed ? "Cancel confirmation" : "Confirm work order"}
+        </Text>
+      </Pressable>
 
       <Pressable
         style={[styles.secondaryBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
@@ -628,6 +665,7 @@ const styles = StyleSheet.create({
   container: { padding: 12, paddingBottom: 40, gap: 4 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
+  badgeRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   woNumber: { fontSize: 17, fontWeight: "800" },
   sectionTitle: { fontSize: 11, fontWeight: "700", letterSpacing: 1, marginTop: 14, marginBottom: 2 },
   laborTitle: { fontSize: 14, fontWeight: "700", flex: 1 },

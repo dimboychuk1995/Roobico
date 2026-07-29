@@ -186,6 +186,10 @@ def mobile_work_orders():
     paid_status = (request.args.get("paid_status") or "all").strip().lower()
     if paid_status not in ("all", "paid", "unpaid", "in_progress"):
         paid_status = "all"
+    # Механик не видит оплаченные WO и статусы paid/unpaid вообще —
+    # серверно исключаем paid независимо от параметров клиента.
+    if not has_permission("work_orders.view_costs") and paid_status != "in_progress":
+        paid_status = "unpaid"
     page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
 
     items, pagination, totals = get_work_orders_list(
@@ -231,6 +235,14 @@ def mobile_work_order_details(work_order_id):
 
         from app.blueprints.work_orders.services.common import utcnow
         from app.blueprints.work_orders.services.mechanic_view import mechanic_wo_payload
+
+        # Подтверждённый менеджером WO закрыт для механика полностью.
+        if wo.get("manager_confirmed"):
+            return jsonify({
+                "ok": False,
+                "error": "wo_confirmed",
+                "message": "This work order was confirmed by a manager and is locked.",
+            }), 403
 
         payload = mechanic_wo_payload(shop_db, shop, wo, oid(session.get("user_id")))
         payload["server_now"] = utcnow().astimezone(_tz.utc).isoformat().replace("+00:00", "Z")
@@ -306,6 +318,7 @@ def mobile_work_order_details(work_order_id):
         "id": str(wo["_id"]),
         "status": (wo.get("status") or "open").strip().lower(),
         "is_estimate": bool(wo.get("is_estimate")),
+        "manager_confirmed": bool(wo.get("manager_confirmed")),
         "customer_id": str(wo.get("customer_id") or ""),
         "unit_id": str(wo.get("unit_id") or ""),
         "raw_labors": raw_labors,
@@ -589,6 +602,11 @@ def mobile_work_order_edit(work_order_id):
     if (wo.get("status") or "open") == "paid":
         return jsonify({"ok": False, "error": "paid_cannot_edit",
                         "message": "Paid work orders cannot be edited."}), 400
+    # Подтверждённый менеджером WO механик редактировать не может
+    # (менеджер может снять подтверждение — тогда правка снова доступна).
+    if wo.get("manager_confirmed") and not has_permission("work_orders.view_costs"):
+        return jsonify({"ok": False, "error": "wo_confirmed",
+                        "message": "This work order was confirmed by a manager and is locked."}), 403
 
     data = request.get_json(silent=True) or {}
     labors_payload = data.get("labors")
@@ -770,6 +788,56 @@ def mobile_customer_details(customer_id):
         "contacts": contacts,
         "units": units,
     }), 200
+
+
+@mobile_api_bp.get("/api/mobile/units")
+@api_login_required
+@permission_required("work_orders.view")
+def mobile_units_search():
+    """
+    Глобальный поиск юнитов (номер, VIN, make/model) с подписью клиента.
+    Нужен механику в списке WO: найти юнит и увидеть, какому кастомеру
+    он принадлежит, прежде чем создавать work order.
+    """
+    from app.blueprints.work_orders.services.lookups import customer_label, unit_label
+    from app.utils.entity_search import search_unit_ids
+
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    q = (request.args.get("q") or "").strip()
+    page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
+
+    query = {"shop_id": shop["_id"], "is_active": True}
+    if q:
+        # $in по пустому списку корректно вернёт пустую выдачу.
+        query["_id"] = {"$in": search_unit_ids(shop_db.units, q)}
+
+    rows, pagination = paginate_find(
+        shop_db.units,
+        query,
+        [("unit_number", 1), ("created_at", -1)],
+        page,
+        per_page,
+    )
+
+    customer_ids = [u.get("customer_id") for u in rows if u.get("customer_id")]
+    customers_map = {}
+    if customer_ids:
+        for c in shop_db.customers.find({"_id": {"$in": customer_ids}}):
+            customers_map[c["_id"]] = customer_label(c)
+
+    items = [{
+        "id": str(u["_id"]),
+        "label": unit_label(u),
+        "unit_number": str(u.get("unit_number") or ""),
+        "vin": str(u.get("vin") or ""),
+        "customer_id": str(u.get("customer_id") or ""),
+        "customer_label": customers_map.get(u.get("customer_id")) or "-",
+    } for u in rows]
+
+    return jsonify({"ok": True, "items": items, "pagination": _pagination_payload(pagination)}), 200
 
 
 @mobile_api_bp.get("/api/mobile/units/<unit_id>")

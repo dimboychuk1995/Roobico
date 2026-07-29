@@ -28,6 +28,8 @@ interface ListScreenProps<T> {
   emptyTitle: string;
   emptyHint?: string;
   header?: React.ReactNode;
+  /** Дебаунсенное значение поиска — для доп. секций поверх списка (напр., юниты). */
+  onQueryChange?: (q: string) => void;
 }
 
 export function ListScreen<T>({
@@ -38,6 +40,7 @@ export function ListScreen<T>({
   emptyTitle,
   emptyHint,
   header,
+  onQueryChange,
 }: ListScreenProps<T>) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
@@ -99,6 +102,7 @@ export function ListScreen<T>({
     if (debounceTimer.current) clearTimeout(debounceTimer.current);
     debounceTimer.current = setTimeout(() => {
       setLoading(true);
+      onQueryChange?.(text.trim());
       load(text.trim(), 1, "replace");
     }, 300);
   };

@@ -2078,6 +2078,49 @@ def api_work_order_set_status(work_order_id):
 
     return jsonify({"ok": True, "status": status}), 200
 
+
+@work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/confirm")
+@login_required
+@permission_required("work_orders.view_costs")
+def api_work_order_set_confirmed(work_order_id):
+    """
+    Менеджер подтверждает работу механика по WO (или снимает подтверждение,
+    body: {"confirmed": true|false}). Подтверждённый WO для механика закрыт:
+    не открывается и не редактируется, пока менеджер не снимет подтверждение.
+    """
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return jsonify({"ok": False, "error": "invalid_work_order_id"}), 400
+
+    wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True})
+    if not wo:
+        return jsonify({"ok": False, "error": "work_order_not_found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    confirmed = bool(data.get("confirmed"))
+
+    now = utcnow()
+    user_id = current_user_id()
+    shop_db.work_orders.update_one(
+        {"_id": wo_id},
+        {
+            "$set": {
+                "manager_confirmed": confirmed,
+                "manager_confirmed_at": now if confirmed else None,
+                "manager_confirmed_by": user_id if confirmed else None,
+                "updated_at": now,
+                "updated_by": user_id,
+            }
+        },
+    )
+
+    return jsonify({"ok": True, "manager_confirmed": confirmed}), 200
+
+
 @work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/delete")
 @login_required
 @permission_required("work_orders.delete")
@@ -2943,6 +2986,9 @@ def api_mechanic_work_orders():
     q = (request.args.get("q") or "").strip()
     status = (request.args.get("status") or "all").strip().lower()
     paid_status = status if status in ("in_progress",) else ("unpaid" if status == "open" else "all")
+    # Механик не видит оплаченные WO и статусы paid/unpaid вообще.
+    if is_mechanic_mode() and paid_status == "all":
+        paid_status = "unpaid"
     page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
 
     items, pagination, _totals = get_work_orders_list(
@@ -2981,6 +3027,14 @@ def api_mechanic_work_order_details(work_order_id):
     wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True})
     if not wo:
         return jsonify({"ok": False, "error": "work_order_not_found"}), 404
+
+    # Подтверждённый менеджером WO закрыт для механика полностью.
+    if wo.get("manager_confirmed") and is_mechanic_mode():
+        return jsonify({
+            "ok": False,
+            "error": "wo_confirmed",
+            "message": "This work order was confirmed by a manager and is locked.",
+        }), 403
 
     payload = mechanic_wo_payload(shop_db, shop, wo, current_user_id())
     payload["server_now"] = _server_now_iso()
@@ -3085,6 +3139,13 @@ def api_mechanic_work_order_update(work_order_id):
         return jsonify({"ok": False, "error": "work_order_not_found"}), 404
     if (wo.get("status") or "open") == "paid":
         return jsonify({"ok": False, "error": "paid_cannot_edit"}), 400
+    # Подтверждённый менеджером WO механик редактировать не может.
+    if wo.get("manager_confirmed") and is_mechanic_mode():
+        return jsonify({
+            "ok": False,
+            "error": "wo_confirmed",
+            "message": "This work order was confirmed by a manager and is locked.",
+        }), 403
 
     data = request.get_json(silent=True) or {}
     labors_payload = data.get("labors")
@@ -3153,6 +3214,20 @@ def api_mechanic_timer_start():
 
     data = request.get_json(silent=True) or {}
     user_id = current_user_id()
+
+    # По подтверждённому менеджером WO механик время не трекает.
+    if is_mechanic_mode():
+        timer_wo_id = oid(data.get("work_order_id"))
+        timer_wo = (
+            shop_db.work_orders.find_one({"_id": timer_wo_id, "shop_id": shop["_id"], "is_active": True})
+            if timer_wo_id else None
+        )
+        if timer_wo and timer_wo.get("manager_confirmed"):
+            return jsonify({
+                "ok": False,
+                "error": "wo_confirmed",
+                "message": "This work order was confirmed by a manager and is locked.",
+            }), 403
 
     log, stopped_prev, error = time_tracking.start_timer(
         shop_db, shop, user_id, _current_user_display_name(),
