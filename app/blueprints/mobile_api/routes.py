@@ -494,13 +494,15 @@ def mobile_work_order_create():
         return jsonify({"ok": False, "error": "unit_not_found"}), 404
 
     labors_payload = data.get("labors")
-    if not isinstance(labors_payload, list) or not labors_payload:
+    # Механик создаёт WO сразу при выборе клиента и юнита — работы добавляются
+    # потом автосейвом, поэтому пустой список работ для него валиден.
+    is_mechanic = not has_permission("work_orders.view_costs")
+    if not isinstance(labors_payload, list) or (not labors_payload and not is_mechanic):
         return jsonify({"ok": False, "error": "labors_required",
                         "message": "At least one labor is required."}), 400
 
     # Механик-режим: клиентские цены/часы игнорируются, сервер автозаполняет
     # цены из каталога/прайсинг-правил (как на веб-странице механика).
-    is_mechanic = not has_permission("work_orders.view_costs")
     if is_mechanic:
         from app.blueprints.work_orders.services.mechanic_editor import build_mechanic_labors_payload
 

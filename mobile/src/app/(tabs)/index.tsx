@@ -1,3 +1,4 @@
+import { Redirect } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -10,7 +11,7 @@ import {
 } from "react-native";
 
 import { RowCard } from "@/components/ui";
-import { useAuth } from "@/context/auth";
+import { useAuth, useHasPermission, useIsMechanic } from "@/context/auth";
 import { ApiError, DashboardMetrics, fetchDashboardMetrics, money } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
 
@@ -24,6 +25,10 @@ const PRESETS = [
 export default function DashboardScreen() {
   const theme = useTheme();
   const { session } = useAuth();
+  // Механик (и любой без dashboard.view) не должен попадать на Dashboard —
+  // это стартовый роут табов, поэтому редиректим на Work Orders.
+  const isMechanic = useIsMechanic();
+  const canDashboard = useHasPermission("dashboard.view") && !isMechanic;
 
   const [preset, setPreset] = useState("this_month");
   const [metrics, setMetrics] = useState<DashboardMetrics | null>(null);
@@ -45,11 +50,14 @@ export default function DashboardScreen() {
   }, []);
 
   useEffect(() => {
+    if (!canDashboard) return;
     setLoading(true);
     load(preset);
-  }, [preset, load]);
+  }, [preset, load, canDashboard]);
 
   const activeShop = session?.shops.find((s) => s.id === session.active_shop_id);
+
+  if (!canDashboard) return <Redirect href="/work-orders" />;
 
   return (
     <ScrollView

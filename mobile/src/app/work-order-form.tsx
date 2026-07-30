@@ -91,6 +91,8 @@ export default function WorkOrderFormScreen() {
   const [unitModal, setUnitModal] = useState(false);
   const [partModalLabor, setPartModalLabor] = useState<number | null>(null);
   const [presetModal, setPresetModal] = useState(false);
+  // Issue description свёрнуто по умолчанию — раскрывается по кнопке.
+  const [issueOpen, setIssueOpen] = useState<Record<number, boolean>>({});
   const [polishingIdx, setPolishingIdx] = useState<number | null>(null);
   const [scanning, setScanning] = useState(false);
 
@@ -107,6 +109,7 @@ export default function WorkOrderFormScreen() {
   const [authModal, setAuthModal] = useState<{ scope: "work_order" | "labor"; laborIndex?: number; jobLabel?: string } | null>(null);
   const [autoSaveState, setAutoSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const loadedRef = useRef(false);
+  const autoCreateFired = useRef(false);
   const editRevision = useRef(0);
   const savedRevision = useRef(0);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -609,7 +612,9 @@ export default function WorkOrderFormScreen() {
     let validLabors = labors.filter(
       (l) => l.description.trim() || l.parts.length > 0
     );
-    if (!validLabors.length) {
+    // Механик создаёт WO сразу при выборе клиента и юнита — работ ещё нет,
+    // они добавятся автосейвом уже в edit-виде.
+    if (!validLabors.length && !(isMechanic && !isEdit)) {
       toast.show("Add at least one labor with a description.", "error");
       return;
     }
@@ -650,11 +655,21 @@ export default function WorkOrderFormScreen() {
         router.back();
       }
     } catch (e) {
+      // Провал авто-создания: разрешаем повторный триггер по выбору юнита.
+      autoCreateFired.current = false;
       toast.show(e instanceof ApiError ? e.message : "Save failed.", "error");
     } finally {
       setBusy(false);
     }
   };
+
+  // Механик: WO создаётся сам, как только выбраны клиент и юнит.
+  useEffect(() => {
+    if (!isMechanic || isEdit || !customer || !unit || autoCreateFired.current) return;
+    autoCreateFired.current = true;
+    save("in_progress", "in_progress");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [customer, unit]);
 
   if (loading) {
     return (
@@ -784,38 +799,54 @@ export default function WorkOrderFormScreen() {
             ) : null}
 
             <View style={styles.issueHeader}>
-              <Text style={[styles.fieldLabel, { color: theme.muted, marginTop: 0, marginBottom: 0 }]}>
-                ISSUE DESCRIPTION
-              </Text>
               <Pressable
-                onPress={() => polishIssue(idx)}
-                disabled={polishingIdx === idx}
+                onPress={() => setIssueOpen((o) => ({ ...o, [idx]: !o[idx] }))}
                 hitSlop={8}
-                style={styles.aiBtn}
+                style={styles.issueToggle}
               >
-                {polishingIdx === idx ? (
-                  <ActivityIndicator size="small" color={theme.primary} />
-                ) : (
-                  <>
-                    <Ionicons name="sparkles-outline" size={14} color={theme.primary} />
-                    <Text style={{ color: theme.primary, fontSize: 12, fontWeight: "700" }}>
-                      AI edit
-                    </Text>
-                  </>
-                )}
+                <Ionicons
+                  name={issueOpen[idx] ? "chevron-down" : "chevron-forward"}
+                  size={14}
+                  color={theme.muted}
+                />
+                <Text style={[styles.fieldLabel, { color: theme.muted, marginTop: 0, marginBottom: 0 }]}>
+                  ISSUE DESCRIPTION
+                  {(labor.issue_description || "").trim() && !issueOpen[idx] ? " •" : ""}
+                </Text>
               </Pressable>
+              {issueOpen[idx] ? (
+                <Pressable
+                  onPress={() => polishIssue(idx)}
+                  disabled={polishingIdx === idx}
+                  hitSlop={8}
+                  style={styles.aiBtn}
+                >
+                  {polishingIdx === idx ? (
+                    <ActivityIndicator size="small" color={theme.primary} />
+                  ) : (
+                    <>
+                      <Ionicons name="sparkles-outline" size={14} color={theme.primary} />
+                      <Text style={{ color: theme.primary, fontSize: 12, fontWeight: "700" }}>
+                        AI edit
+                      </Text>
+                    </>
+                  )}
+                </Pressable>
+              ) : null}
             </View>
-            <TextInput
-              style={[
-                styles.issueInput,
-                { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text },
-              ]}
-              value={labor.issue_description || ""}
-              onChangeText={(v) => patchLabor(idx, { issue_description: v })}
-              placeholder="Customer-reported issue…"
-              placeholderTextColor={theme.muted}
-              multiline
-            />
+            {issueOpen[idx] ? (
+              <TextInput
+                style={[
+                  styles.issueInput,
+                  { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text },
+                ]}
+                value={labor.issue_description || ""}
+                onChangeText={(v) => patchLabor(idx, { issue_description: v })}
+                placeholder="Customer-reported issue…"
+                placeholderTextColor={theme.muted}
+                multiline
+              />
+            ) : null}
 
             {!isMechanic ? (
               <>
@@ -1030,16 +1061,14 @@ export default function WorkOrderFormScreen() {
                 ) : null}
               </>
             ) : (
-              <>
-                <SubmitButton
-                  title="Create work order"
-                  onPress={() => save("in_progress", "in_progress")}
-                  busy={busy}
-                />
-                <Text style={{ color: theme.muted, fontSize: 11, textAlign: "center", marginTop: 6 }}>
-                  The work order is created as In Progress; afterwards changes save automatically.
+              <View style={{ marginTop: 16, alignItems: "center", gap: 8 }}>
+                {busy ? <ActivityIndicator color={theme.primary} /> : null}
+                <Text style={{ color: theme.muted, fontSize: 12, textAlign: "center" }}>
+                  {busy
+                    ? "Creating work order…"
+                    : "Pick a customer and unit — the work order is created automatically."}
                 </Text>
-              </>
+              </View>
             )}
 
             {isEdit && id ? (
@@ -1136,6 +1165,13 @@ function PickUnitModal({
   onCreateNew?: () => void;
 }) {
   const theme = useTheme();
+  // Поиск как в пикере клиента; юнитов у флита может быть много.
+  const [q, setQ] = useState("");
+  useEffect(() => {
+    if (visible) setQ("");
+  }, [visible]);
+  const query = q.trim().toLowerCase();
+  const filtered = query ? units.filter((u) => u.label.toLowerCase().includes(query)) : units;
   return (
     <Modal visible={visible} animationType="slide" onRequestClose={onClose}>
       <View style={{ flex: 1, backgroundColor: theme.bg, paddingTop: 56 }}>
@@ -1145,8 +1181,19 @@ function PickUnitModal({
             <Ionicons name="close" size={24} color={theme.muted} />
           </Pressable>
         </View>
+        <TextInput
+          style={[
+            styles.modalSearch,
+            { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text },
+          ]}
+          value={q}
+          onChangeText={setQ}
+          placeholder="Search units…"
+          placeholderTextColor={theme.muted}
+          autoFocus
+        />
         <FlatList
-          data={units}
+          data={filtered}
           keyExtractor={(u) => u.id}
           ListHeaderComponent={
             onCreateNew ? (
@@ -1167,9 +1214,10 @@ function PickUnitModal({
               <Text style={{ color: theme.text, fontSize: 15 }}>{item.label}</Text>
             </Pressable>
           )}
+          keyboardShouldPersistTaps="handled"
           ListEmptyComponent={
             <Text style={{ color: theme.muted, textAlign: "center", marginTop: 32 }}>
-              This customer has no units yet.
+              {query ? "No units match your search." : "This customer has no units yet."}
             </Text>
           }
         />
@@ -1292,6 +1340,7 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   aiBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
+  issueToggle: { flexDirection: "row", alignItems: "center", gap: 4 },
   issueInput: {
     borderWidth: 1,
     borderRadius: 10,

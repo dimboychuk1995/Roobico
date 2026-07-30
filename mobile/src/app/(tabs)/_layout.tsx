@@ -28,7 +28,11 @@ export default function TabsLayout() {
       screenOptions={{
         tabBarActiveTintColor: theme.primary,
         tabBarInactiveTintColor: theme.muted,
-        tabBarStyle: { backgroundColor: theme.tabBar, borderTopColor: theme.border },
+        // У механика остаётся единственная вкладка Work Orders — таб-бар
+        // из одной кнопки не нужен, прячем его целиком.
+        tabBarStyle: isMechanic
+          ? { display: "none" }
+          : { backgroundColor: theme.tabBar, borderTopColor: theme.border },
         headerStyle: { backgroundColor: theme.surface },
         headerTintColor: theme.text,
         sceneStyle: { backgroundColor: theme.bg },

@@ -1136,3 +1136,69 @@ def test_labor_attachments_keyed_by_labor_id(client, mech_seed, mongo):
     ).get_json()["items"]
     assert items == []
     _deactivate_wos(mongo, data["id"])
+
+
+# ── авто-создание WO при выборе клиента+юнита (мобилка) ─────────────
+
+
+def test_mechanic_mobile_create_allows_empty_labors(client, mech_seed, mongo):
+    """Механик создаёт WO сразу при выборе клиента и юнита — без работ."""
+    login_mechanic(client)
+    resp = _post_json(client, "/api/mobile/work_orders", {
+        "customer_id": str(mech_seed["customer"]["_id"]),
+        "unit_id": str(mech_seed["unit"]["_id"]),
+        "status": "in_progress",
+        "labors": [],
+        "mechanic_state": "in_progress",
+    })
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    data = resp.get_json()
+    assert data["ok"] is True
+
+    wo = mongo[SHOP_A_DB].work_orders.find_one({"wo_number": data["wo_number"]})
+    assert wo["status"] == "in_progress"
+    assert wo["labors"] == []
+    _deactivate_wos(mongo, data["id"])
+
+
+def test_manager_mobile_create_still_requires_labors(client, mech_seed):
+    login(client)
+    resp = _post_json(client, "/api/mobile/work_orders", {
+        "customer_id": str(mech_seed["customer"]["_id"]),
+        "unit_id": str(mech_seed["unit"]["_id"]),
+        "status": "open",
+        "labors": [],
+    })
+    assert resp.status_code == 400
+    assert resp.get_json()["error"] == "labors_required"
+
+
+# ── таймстемпы таймеров: всегда UTC с явным "Z" ─────────────────────
+
+
+def test_timer_timestamps_are_utc_iso(client, mech_seed, mongo):
+    """Без "Z" мобильный клиент парсит started_at как локальное время и
+    идущий таймер показывает 0 до нажатия Stop."""
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Timer ISO test")
+    wo = mongo[SHOP_A_DB].work_orders.find_one({"wo_number": data["wo_number"]})
+    labor_id = wo["labors"][0]["labor_id"]
+
+    resp = _post_json(client, "/work_orders/api/mechanic/timers/start",
+                      {"work_order_id": data["id"], "labor_id": labor_id})
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert body["timer"]["started_at"].endswith("Z")
+
+    bucket = body["time_summary"][labor_id]
+    assert bucket["my_started_at"].endswith("Z")
+    assert bucket["running_users"]
+    for u in bucket["running_users"]:
+        assert u["started_at"].endswith("Z")
+
+    # /timers/current и общий список активных таймеров — тот же формат.
+    timer = client.get("/work_orders/api/mechanic/timers/current").get_json()["timer"]
+    assert timer["started_at"].endswith("Z")
+
+    _post_json(client, "/work_orders/api/mechanic/timers/stop", {})
+    _deactivate_wos(mongo, data["id"])

@@ -10,6 +10,8 @@ start на другой строке атомарно закрывает пре�
 """
 from __future__ import annotations
 
+from datetime import timezone
+
 from app.blueprints.work_orders.services.common import oid, utcnow
 
 
@@ -17,6 +19,10 @@ def _fmt_iso(dt):
     if not dt:
         return ""
     try:
+        # PyMongo возвращает naive UTC — без явного "Z" мобильный клиент
+        # парсит строку как локальное время и идущий таймер считает нулём.
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
         return dt.isoformat().replace("+00:00", "Z")
     except Exception:
         return ""
