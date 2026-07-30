@@ -113,6 +113,10 @@ export default function WorkOrderFormScreen() {
   const editRevision = useRef(0);
   const savedRevision = useRef(0);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // setLabors из серверного рефетча не должен запускать новый автосейв.
+  const suppressAutosave = useRef(false);
+  // Структурные изменения (пресет, парты) сохраняем сразу, без debounce.
+  const flushAutosave = useRef(false);
 
   const isPaid = woMeta?.status === "paid";
 
@@ -353,6 +357,7 @@ export default function WorkOrderFormScreen() {
   };
 
   const removeLabor = (idx: number) => {
+    flushAutosave.current = true;
     setLabors((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev));
   };
 
@@ -367,6 +372,7 @@ export default function WorkOrderFormScreen() {
   };
 
   const removePart = (laborIdx: number, partIdx: number) => {
+    flushAutosave.current = true;
     setLabors((prev) =>
       prev.map((l, i) =>
         i === laborIdx ? { ...l, parts: l.parts.filter((_, j) => j !== partIdx) } : l
@@ -408,6 +414,7 @@ export default function WorkOrderFormScreen() {
         core_charge: coreCharge,
       };
     }
+    flushAutosave.current = true;
     setLabors((prev) =>
       prev.map((l, i) => (i === laborIdx ? { ...l, parts: [...l.parts, newPart] } : l))
     );
@@ -457,6 +464,7 @@ export default function WorkOrderFormScreen() {
         labor_total: null,
         parts,
       };
+      flushAutosave.current = true;
       setLabors((prev) => {
         // Пустой единственный лейбор заменяем, иначе добавляем новый.
         const only = prev.length === 1 && !prev[0].description && prev[0].parts.length === 0;
@@ -552,14 +560,18 @@ export default function WorkOrderFormScreen() {
       setAutoSaveState("saved");
       setWoMeta((m) => (m ? { ...m, status: "in_progress", mechanic_done: false } : m));
 
-      // Новые работы получили labor_id на сервере — подтягиваем его, чтобы
-      // появились таймер и фото. Только если пользователь не редактировал
-      // форму, пока шло сохранение.
-      if (labors.some((l) => !l.labor_id) && editRevision.current === rev) {
+      // Новые СОХРАНЁННЫЕ работы получили labor_id на сервере — подтягиваем
+      // его, чтобы появились таймер и фото. Пустая строка labor_id не имеет,
+      // но и не сохранялась — рефетч из-за неё не нужен (иначе она пропадёт).
+      const needsIds = labors.some(
+        (l) => !l.labor_id && (l.description.trim() || l.parts.length > 0)
+      );
+      if (needsIds && editRevision.current === rev) {
         const fresh = await fetchMechanicWoDetails(id);
         if (editRevision.current === rev) {
-          setLabors(
-            fresh.labors.map((l) => ({
+          suppressAutosave.current = true;
+          setLabors((prev) => {
+            const mapped = fresh.labors.map((l) => ({
               labor_id: l.labor_id,
               description: l.description,
               hours: "",
@@ -573,8 +585,13 @@ export default function WorkOrderFormScreen() {
                 qty: p.qty || 0,
                 one_time_part: !!p.one_time_part,
               })),
-            }))
-          );
+            }));
+            // Пустые несохранённые строки (только что добавленные) не теряем.
+            const unsavedEmpty = prev.filter(
+              (l) => !l.labor_id && !l.description.trim() && l.parts.length === 0
+            );
+            return unsavedEmpty.length ? [...mapped, ...unsavedEmpty] : mapped;
+          });
           const times: Record<string, MechLaborTime> = {};
           fresh.labors.forEach((l) => {
             if (l.labor_id) times[l.labor_id] = l.time;
@@ -590,11 +607,18 @@ export default function WorkOrderFormScreen() {
 
   useEffect(() => {
     if (!isMechanic || !isEdit || !loadedRef.current || isPaid) return;
+    // Обновление пришло с сервера (рефетч после автосейва) — не пересохраняем.
+    if (suppressAutosave.current) {
+      suppressAutosave.current = false;
+      return;
+    }
     editRevision.current += 1;
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    const delay = flushAutosave.current ? 50 : 1200;
+    flushAutosave.current = false;
     autosaveTimer.current = setTimeout(() => {
       doAutosave();
-    }, 1200);
+    }, delay);
     return () => {
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     };
