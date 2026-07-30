@@ -1506,6 +1506,12 @@ def api_work_order_update(work_order_id):
         }
     )
 
+    # Строки с затреканным временем: assigned = кто фактически работал,
+    # пропорционально времени — ручной ввод их не перетирает.
+    time_tracking.sync_labor_assignments_from_time(
+        shop_db, shop, wo_id, mechanics_by_id=mechanics_by_id
+    )
+
     return jsonify({
         "ok": True,
         "status": set_fields.get("status") or (wo.get("status") or "open"),
@@ -3237,6 +3243,13 @@ def api_mechanic_timer_start():
         code = 404 if error in ("work_order_not_found", "labor_not_found") else 400
         return jsonify({"ok": False, "error": error}), code
 
+    # auto_switch закрыл предыдущую сессию — у того WO обновилось время.
+    if stopped_prev:
+        time_tracking.sync_labor_assignments_from_time(
+            shop_db, shop, stopped_prev.get("work_order_id"),
+            mechanics_by_id={m["id"]: m for m in get_assignable_mechanics(shop)},
+        )
+
     return jsonify({
         "ok": True,
         "timer": time_tracking._log_payload(log),
@@ -3260,6 +3273,12 @@ def api_mechanic_timer_stop():
     log, error = time_tracking.stop_timer(shop_db, shop, user_id)
     if error:
         return jsonify({"ok": False, "error": error}), 400
+
+    # Assigned = кто фактически работал: пересчёт после каждой сессии.
+    time_tracking.sync_labor_assignments_from_time(
+        shop_db, shop, log.get("work_order_id"),
+        mechanics_by_id={m["id"]: m for m in get_assignable_mechanics(shop)},
+    )
 
     return jsonify({
         "ok": True,

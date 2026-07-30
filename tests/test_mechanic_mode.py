@@ -1202,3 +1202,83 @@ def test_timer_timestamps_are_utc_iso(client, mech_seed, mongo):
 
     _post_json(client, "/work_orders/api/mechanic/timers/stop", {})
     _deactivate_wos(mongo, data["id"])
+
+
+# ── assigned_mechanics считаются из фактического времени ────────────
+
+
+def test_timer_stop_syncs_assignment_to_worker(client, mech_seed, mongo):
+    """Один механик работал — Assigned 100% на него после stop job."""
+    from datetime import timedelta
+
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Auto assign test")
+    shop_db = mongo[SHOP_A_DB]
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    labor_id = wo["labors"][0]["labor_id"]
+
+    resp = _post_json(client, "/work_orders/api/mechanic/timers/start",
+                      {"work_order_id": data["id"], "labor_id": labor_id})
+    assert resp.get_json()["ok"] is True
+    # Сдвигаем started_at назад, чтобы завершённая сессия была ненулевой.
+    shop_db.wo_time_logs.update_one(
+        {"work_order_id": wo["_id"], "stopped_at": None},
+        {"$set": {"started_at": _now() - timedelta(minutes=30)}},
+    )
+    resp = _post_json(client, "/work_orders/api/mechanic/timers/stop", {})
+    assert resp.get_json()["ok"] is True
+
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    assigned = wo["labors"][0]["labor"]["assigned_mechanics"]
+    assert len(assigned) == 1
+    assert assigned[0]["user_id"] == mech_seed["user"]["_id"]
+    assert assigned[0]["percent"] == 100.0
+    assert assigned[0]["name"]
+    _deactivate_wos(mongo, data["id"])
+
+
+def test_web_save_keeps_time_based_assignment_proportional(client, mech_seed, mongo):
+    """Несколько механиков: доли пропорциональны времени на строке, и ручное
+    назначение из веб-формы их не перетирает."""
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Proportional test")
+    shop_db = mongo[SHOP_A_DB]
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    labor_id = wo["labors"][0]["labor_id"]
+
+    now = _now()
+    other_id = ObjectId()
+    shop_db.wo_time_logs.insert_many([
+        {
+            "shop_id": wo["shop_id"], "work_order_id": wo["_id"], "labor_id": labor_id,
+            "user_id": mech_seed["user"]["_id"], "user_name": "Mike Wrench",
+            "started_at": now, "stopped_at": now, "seconds": 5400,
+            "stop_source": "user", "created_at": now, "updated_at": now,
+        },
+        {
+            "shop_id": wo["shop_id"], "work_order_id": wo["_id"], "labor_id": labor_id,
+            "user_id": other_id, "user_name": "Ivan Helper",
+            "started_at": now, "stopped_at": now, "seconds": 1800,
+            "stop_source": "user", "created_at": now, "updated_at": now,
+        },
+    ])
+
+    # Менеджер сохраняет WO с пустым ручным назначением — авто-расчёт побеждает.
+    login(client)
+    resp = _post_json(client, f"/work_orders/api/work_orders/{data['id']}/update", {
+        "labors": [{"labor_id": labor_id, "labor_description": "Proportional test",
+                    "labor_hours": 0, "labor_rate_code": "", "labor_full_total": 0,
+                    "assigned_mechanics": [], "issue_description": "", "parts": []}],
+        "totals": {},
+    })
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert resp.get_json()["ok"] is True
+
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    assigned = wo["labors"][0]["labor"]["assigned_mechanics"]
+    by_id = {a["user_id"]: a for a in assigned}
+    assert by_id[mech_seed["user"]["_id"]]["percent"] == 75.0
+    assert by_id[other_id]["percent"] == 25.0
+    # Больше времени — первым в списке.
+    assert assigned[0]["user_id"] == mech_seed["user"]["_id"]
+    _deactivate_wos(mongo, data["id"])

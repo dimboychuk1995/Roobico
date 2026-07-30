@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from datetime import timezone
 
-from app.blueprints.work_orders.services.common import oid, utcnow
+from app.blueprints.work_orders.services.common import oid, round2, utcnow
 
 
 def _fmt_iso(dt):
@@ -224,6 +224,87 @@ def summarize_wo_time(shop_db, shop_id, work_order_id, user_id=None):
         user_bucket["seconds"] += seconds
 
     return summary
+
+
+def time_based_assignments(shop_db, shop_id, work_order_id):
+    """
+    Назначение механиков из фактического времени: {labor_id: [{user_id, name,
+    role, percent}]} по завершённым сессиям таймеров. Один механик — 100%,
+    несколько — пропорционально времени на строке. Строки без завершённого
+    времени в результат не попадают (для них остаётся ручное назначение).
+    """
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return {}
+
+    per_labor: dict[str, dict[str, dict]] = {}
+    cursor = shop_db.wo_time_logs.find(
+        {"shop_id": shop_id, "work_order_id": wo_id, "stopped_at": {"$ne": None}},
+        {"labor_id": 1, "user_id": 1, "user_name": 1, "seconds": 1},
+    )
+    for log in cursor:
+        labor_id = str(log.get("labor_id") or "")
+        user_id = log.get("user_id")
+        seconds = int(log.get("seconds") or 0)
+        if not labor_id or not user_id or seconds <= 0:
+            continue
+        users = per_labor.setdefault(labor_id, {})
+        u = users.setdefault(
+            str(user_id), {"user_id": user_id, "name": "", "seconds": 0}
+        )
+        u["seconds"] += seconds
+        if log.get("user_name"):
+            u["name"] = log["user_name"]
+
+    out: dict[str, list[dict]] = {}
+    for labor_id, users in per_labor.items():
+        total = sum(u["seconds"] for u in users.values())
+        if total <= 0:
+            continue
+        entries = sorted(users.values(), key=lambda u: -u["seconds"])
+        assigned = [
+            {
+                "user_id": u["user_id"],
+                "name": u["name"],
+                "role": "",
+                "percent": round2(u["seconds"] * 100.0 / total),
+            }
+            for u in entries
+        ]
+        # Из-за округления сумма может отличаться от 100 — правим большую долю.
+        drift = round2(100.0 - sum(a["percent"] for a in assigned))
+        if drift:
+            assigned[0]["percent"] = round2(assigned[0]["percent"] + drift)
+        out[labor_id] = assigned
+    return out
+
+
+def sync_labor_assignments_from_time(shop_db, shop, work_order_id, mechanics_by_id=None):
+    """
+    Переписать assigned_mechanics строк WO по фактическому времени таймеров.
+    mechanics_by_id ({user_id_str: {name, role}}) уточняет имя/роль из
+    актуального списка механиков. Возвращает True, если что-то обновлено.
+    """
+    assignments = time_based_assignments(shop_db, shop["_id"], work_order_id)
+    if not assignments:
+        return False
+
+    wo_id = oid(work_order_id)
+    now = utcnow()
+    changed = False
+    for labor_id, assigned in assignments.items():
+        for a in assigned:
+            m = (mechanics_by_id or {}).get(str(a["user_id"]))
+            if m:
+                a["name"] = m.get("name") or a["name"]
+                a["role"] = m.get("role") or ""
+        res = shop_db.work_orders.update_one(
+            {"_id": wo_id, "shop_id": shop["_id"], "labors.labor_id": labor_id},
+            {"$set": {"labors.$[b].labor.assigned_mechanics": assigned, "updated_at": now}},
+            array_filters=[{"b.labor_id": labor_id}],
+        )
+        changed = changed or res.modified_count > 0
+    return changed
 
 
 def active_timers(shop_db, shop, user_id=None):

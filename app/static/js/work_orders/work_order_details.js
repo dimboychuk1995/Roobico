@@ -155,12 +155,56 @@
     }
   }
 
+  // Сводка времени по строкам (wo_time_logs) — заполняется в applyTrackedTime.
+  let woTimeSummaryMap = {};
+
+  function fmtTrackedShort(seconds) {
+    const s = Math.max(0, Math.floor(Number(seconds) || 0));
+    const h = Math.floor(s / 3600);
+    const m = Math.round((s % 3600) / 60);
+    return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  }
+
   function updateLaborAssignSummary(blockEl) {
     const summaryEl = blockEl?.querySelector(".laborAssignSummary");
     if (!summaryEl) return;
+
+    const escText = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => (
+      { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+    ));
+    const assignBtn = blockEl.querySelector(".laborAssignBtn");
+    const laborId = String(blockEl.dataset.laborId || "");
+    const bucket = laborId ? woTimeSummaryMap[laborId] : null;
+    const runningUsers = (bucket && bucket.running_users) || [];
+
+    // Есть фактическое время — механики и их доли определяются временем
+    // (один — 100%, несколько — пропорционально), ручной Assign не нужен.
+    if (bucket && (bucket.total_seconds > 0 || runningUsers.length)) {
+      const users = bucket.users || {};
+      const totalSeconds = Object.keys(users)
+        .reduce((sum, uid) => sum + (Number(users[uid].seconds) || 0), 0);
+      const perUser = Object.keys(users)
+        .sort((a, b) => (users[b].seconds || 0) - (users[a].seconds || 0))
+        .map((uid) => {
+          const u = users[uid];
+          const pct = totalSeconds > 0 ? Math.round(((u.seconds || 0) * 100) / totalSeconds) : 0;
+          return `${escText(u.user_name || "—")} ${fmtTrackedShort(u.seconds)} (${pct}%)`;
+        })
+        .join(", ");
+      const runningNames = runningUsers.map((u) => u.user_name || "—").join(", ");
+      summaryEl.innerHTML =
+        `Mechanics: <strong>${fmtTrackedShort(bucket.total_seconds)}</strong>` +
+        (perUser ? ` — ${perUser}` : "") +
+        (runningNames ? ` <span class="text-danger">&#9679; ${escText(runningNames)} working</span>` : "");
+      if (assignBtn) assignBtn.style.display = "none";
+      return;
+    }
+
+    // Времени нет — ручное назначение через модалку Assign.
+    if (assignBtn) assignBtn.style.display = "";
     const assignments = getLaborAssignments(blockEl);
     if (!assignments.length) {
-      summaryEl.textContent = "Assigned: —";
+      summaryEl.textContent = "Mechanics: —";
       return;
     }
 
@@ -171,7 +215,7 @@
         return `${name} (${pct})`;
       })
       .join(", ");
-    summaryEl.textContent = `Assigned: ${names}`;
+    summaryEl.textContent = `Mechanics: ${names}`;
   }
 
   function setLaborAssignments(blockEl, assignments) {
@@ -1546,7 +1590,7 @@
     delete clone.dataset.issueDescription;
     delete clone.dataset.laborId;
     clone.querySelectorAll(".laborAssignSummary").forEach(el => {
-      el.textContent = "Assigned: —";
+      el.textContent = "Mechanics: —";
     });
     clone.querySelectorAll(".laborAuthBadge").forEach(el => {
       el.innerHTML = "";
@@ -3254,48 +3298,25 @@
     applyAuthorizationBadges();
 
     // ---------- tracked mechanic time (read-only, из wo_time_logs) ----------
-    const woTimeSummary = readJsonScript("woTimeSummary", {});
+    // Время и назначение — одно поле: сводка Mechanics в updateLaborAssignSummary.
     function applyTrackedTime() {
-      const keys = Object.keys(woTimeSummary || {});
-      if (!keys.length) return;
-      const escText = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => (
-        { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
-      ));
-      const fmtTracked = (seconds) => {
-        const s = Math.max(0, Math.floor(Number(seconds) || 0));
-        const h = Math.floor(s / 3600);
-        const m = Math.round((s % 3600) / 60);
-        return h > 0 ? `${h}h ${m}m` : `${m}m`;
-      };
+      woTimeSummaryMap = readJsonScript("woTimeSummary", {}) || {};
+      const keys = Object.keys(woTimeSummaryMap);
       const seenIds = new Set();
       Array.from(blocksContainer.querySelectorAll(".wo-labor")).forEach((blockEl) => {
         const laborId = String(blockEl.dataset.laborId || "");
         if (laborId) seenIds.add(laborId);
-        const bucket = woTimeSummary[laborId];
-        const anchor = blockEl.querySelector(".laborAssignSummary");
-        const runningUsers = (bucket && bucket.running_users) || [];
-        if (!anchor || !bucket || !(bucket.total_seconds > 0 || runningUsers.length)) return;
-        const users = bucket.users || {};
-        const perUser = Object.keys(users)
-          .map((uid) => `${users[uid].user_name || "—"} ${fmtTracked(users[uid].seconds)}`)
-          .join(", ");
-        const runningNames = runningUsers.map((u) => u.user_name || "—").join(", ");
-        const line = document.createElement("div");
-        line.className = "text-muted small mt-1 laborTrackedTime";
-        line.innerHTML =
-          `Tracked: <strong>${fmtTracked(bucket.total_seconds)}</strong>` +
-          (perUser ? ` — ${escText(perUser)}` : "") +
-          (runningNames ? ` <span class="text-danger">&#9679; ${escText(runningNames)} working</span>` : "");
-        anchor.insertAdjacentElement("afterend", line);
+        updateLaborAssignSummary(blockEl);
       });
+      if (!keys.length) return;
       // Логи строк, удалённых из WO: показываем суммарно, чтобы время не «терялось».
       const orphanSeconds = keys
         .filter((k) => !seenIds.has(k))
-        .reduce((sum, k) => sum + (Number(woTimeSummary[k]?.total_seconds) || 0), 0);
+        .reduce((sum, k) => sum + (Number(woTimeSummaryMap[k]?.total_seconds) || 0), 0);
       if (orphanSeconds > 0) {
         const note = document.createElement("div");
         note.className = "text-muted small mt-2";
-        note.textContent = `Tracked on removed labor lines: ${fmtTracked(orphanSeconds)}`;
+        note.textContent = `Tracked on removed labor lines: ${fmtTrackedShort(orphanSeconds)}`;
         blocksContainer.insertAdjacentElement("afterend", note);
       }
     }
@@ -4279,7 +4300,7 @@
         firstBlock.querySelectorAll(".labor-assignments-json").forEach(i => { i.value = "[]"; });
         delete firstBlock.dataset.issueDescription;
         firstBlock.querySelectorAll(".laborAssignSummary").forEach(el => {
-          el.textContent = "Assigned: —";
+          el.textContent = "Mechanics: —";
         });
         const tbody = firstBlock.querySelector(".partsTbody");
         if (tbody) {
