@@ -1,5 +1,5 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useCallback, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
@@ -8,11 +8,9 @@ import { Badge, RowCard } from "@/components/ui";
 import { useIsMechanic } from "@/context/auth";
 import { useToast } from "@/context/toast";
 import {
-  ActiveTimerItem,
   AllPaymentRow,
   UnitSearchRow,
   WorkOrderRow,
-  fetchActiveTimers,
   fetchAllPayments,
   fetchEstimates,
   fetchWorkOrders,
@@ -34,6 +32,8 @@ function statusBadge(item: WorkOrderRow, isMechanic: boolean) {
   // никаких paid/unpaid (paid WO ему сервер вообще не отдаёт).
   if (isMechanic) {
     if (item.manager_confirmed) return <Badge label="Confirmed" tone="success" />;
+    // Механик закончил — для него это уже не «In Progress».
+    if (item.mechanic_done) return <Badge label="Done" tone="success" />;
     if (item.is_in_progress) return <Badge label="In Progress" tone="info" />;
     return <Badge label="Open" tone="muted" />;
   }
@@ -45,12 +45,15 @@ function statusBadge(item: WorkOrderRow, isMechanic: boolean) {
 function WorkOrderCard({ item }: { item: WorkOrderRow }) {
   const theme = useTheme();
   const isMechanic = useIsMechanic();
+  // Сейчас за работой — красным ●; остальные назначенные — обычным списком.
+  const working = new Set(item.working_now || []);
+  const idleMechanics = (item.mechanics || []).filter((m) => !working.has(m));
   return (
     <RowCard>
       <View style={styles.topRow}>
         <Text style={[styles.number, { color: theme.text }]}>WO #{item.wo_number ?? "—"}</Text>
         <View style={styles.badgeRow}>
-          {item.mechanic_done ? <Badge label="Done" tone="success" /> : null}
+          {!isMechanic && item.mechanic_done ? <Badge label="Done" tone="success" /> : null}
           {!isMechanic && item.manager_confirmed ? <Badge label="Confirmed" tone="success" /> : null}
           {statusBadge(item, isMechanic)}
         </View>
@@ -62,9 +65,14 @@ function WorkOrderCard({ item }: { item: WorkOrderRow }) {
         {item.unit !== "-" ? `${item.unit} · ` : ""}
         {item.date}
       </Text>
-      {item.working_now && item.working_now.length ? (
-        <Text style={[styles.meta, { color: theme.primary }]} numberOfLines={1}>
-          ● {item.working_now.join(", ")}
+      {working.size || idleMechanics.length ? (
+        <Text style={[styles.meta, { color: theme.muted }]} numberOfLines={1}>
+          <Ionicons name="construct-outline" size={12} color={theme.muted} />{" "}
+          {item.working_now && item.working_now.length ? (
+            <Text style={{ color: theme.primary }}>● {item.working_now.join(", ")}</Text>
+          ) : null}
+          {item.working_now && item.working_now.length && idleMechanics.length ? ", " : ""}
+          {idleMechanics.join(", ")}
         </Text>
       ) : null}
       {!isMechanic ? (
@@ -78,42 +86,6 @@ function WorkOrderCard({ item }: { item: WorkOrderRow }) {
         </View>
       ) : null}
     </RowCard>
-  );
-}
-
-/** «Сейчас в работе»: идущие таймеры всех механиков магазина. */
-function ActiveNowSection({
-  items,
-  onOpen,
-}: {
-  items: ActiveTimerItem[];
-  onOpen: (woId: string) => void;
-}) {
-  const theme = useTheme();
-  if (!items.length) return null;
-  return (
-    <View style={styles.activeNowWrap}>
-      <Text style={[styles.activeNowTitle, { color: theme.muted }]}>● IN WORK NOW</Text>
-      {items.map((t, idx) => (
-        <Pressable key={`${t.work_order_id}-${t.user_id}-${idx}`} onPress={() => onOpen(t.work_order_id)}>
-          <RowCard>
-            <View style={styles.topRow}>
-              <Text style={[styles.number, { color: theme.text }]}>WO #{t.wo_number ?? "—"}</Text>
-              <Badge label="In Progress" tone="info" />
-            </View>
-            <Text style={[styles.customer, { color: theme.text }]} numberOfLines={1}>
-              {t.customer}
-              {t.labor_description ? ` · ${t.labor_description}` : ""}
-            </Text>
-            <Text style={[styles.meta, { color: theme.danger }]} numberOfLines={1}>
-              ● {t.user_name || "—"}
-              {t.mine ? " (you)" : ""}
-            </Text>
-          </RowCard>
-        </Pressable>
-      ))}
-      <Text style={[styles.activeNowTitle, { color: theme.muted, marginTop: 8 }]}>ALL WORK ORDERS</Text>
-    </View>
   );
 }
 
@@ -143,7 +115,6 @@ export default function WorkOrdersScreen() {
   const toast = useToast();
   const isMechanic = useIsMechanic();
   const [segment, setSegment] = useState<SegmentKey>("work_orders");
-  const [activeTimers, setActiveTimers] = useState<ActiveTimerItem[]>([]);
   const [unitResults, setUnitResults] = useState<UnitSearchRow[]>([]);
 
   const openWo = (woId: string) => {
@@ -173,16 +144,6 @@ export default function WorkOrdersScreen() {
         .catch(() => setUnitResults([]));
     },
     [isMechanic]
-  );
-
-  // Механик видит сверху, какие WO прямо сейчас в работе у других механиков.
-  useFocusEffect(
-    useCallback(() => {
-      if (!isMechanic) return;
-      fetchActiveTimers()
-        .then((d) => setActiveTimers(d.items || []))
-        .catch(() => {});
-    }, [isMechanic])
   );
 
   // Payments и Estimates — денежные разделы, механику не показываем.
@@ -273,9 +234,6 @@ export default function WorkOrdersScreen() {
             })
           }
         />
-      ) : null}
-      {isMechanic && activeTimers.length ? (
-        <ActiveNowSection items={activeTimers} onOpen={openWo} />
       ) : null}
     </>
   );

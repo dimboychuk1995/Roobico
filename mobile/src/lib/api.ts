@@ -140,6 +140,8 @@ export interface WorkOrderRow {
   is_in_progress: boolean;
   status: string;
   working_now?: string[];
+  // Механики WO — из assigned_mechanics всех строк (кто фактически делает).
+  mechanics?: string[];
   mechanic_done?: boolean;
   // Менеджер подтвердил работу механика: WO для механика закрыт.
   manager_confirmed?: boolean;

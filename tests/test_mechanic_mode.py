@@ -1325,3 +1325,31 @@ def test_mechanic_can_delete_labor(client, mech_seed, mongo):
     # Парты удалённой строки вернулись на склад.
     assert shop_db.parts.find_one({"_id": mech_seed["part"]["_id"]})["in_stock"] == stock_before
     _deactivate_wos(mongo, data["id"])
+
+
+def test_wo_list_shows_assigned_mechanics(client, mech_seed, mongo):
+    """Список WO отдаёт имена механиков (assigned_mechanics) по каждой строке."""
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="List mechanics test")
+    shop_db = mongo[SHOP_A_DB]
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    labor_id = wo["labors"][0]["labor_id"]
+
+    now = _now()
+    shop_db.wo_time_logs.insert_one({
+        "shop_id": wo["shop_id"], "work_order_id": wo["_id"], "labor_id": labor_id,
+        "user_id": mech_seed["user"]["_id"], "user_name": "Mike Wrench",
+        "started_at": now, "stopped_at": now, "seconds": 1200,
+        "stop_source": "user", "created_at": now, "updated_at": now,
+    })
+    # Синк назначений — как при сохранении WO менеджером.
+    from app.blueprints.work_orders.services import time_tracking
+    with client.application.app_context():
+        time_tracking.sync_labor_assignments_from_time(
+            shop_db, {"_id": wo["shop_id"]}, data["id"]
+        )
+
+    items = client.get("/api/mobile/work_orders").get_json()["items"]
+    target = next(i for i in items if i["id"] == data["id"])
+    assert "Mike Wrench" in (target.get("mechanics") or [])
+    _deactivate_wos(mongo, data["id"])

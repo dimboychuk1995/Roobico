@@ -738,9 +738,11 @@ export default function WorkOrderFormScreen() {
               WO #{woMeta.wo_number ?? ""}
             </Text>
             <View style={{ flexDirection: "row", gap: 6 }}>
-              {woMeta.mechanic_done ? <Badge label="Done" tone="success" /> : null}
+              {/* Механик закончил — статус для него «Done», а не «In Progress». */}
               {woMeta.status === "paid" ? (
                 <Badge label="Paid" tone="success" />
+              ) : woMeta.mechanic_done ? (
+                <Badge label="Done" tone="success" />
               ) : woMeta.status === "in_progress" ? (
                 <Badge label="In Progress" tone="info" />
               ) : (
@@ -1356,12 +1358,18 @@ function PickPartModal({
   onPick: (p: PartPickItem) => void;
 }) {
   const search = async (q: string): Promise<PartPickItem[]> => {
-    if (q.length < 2) return [];
-    const items: PartPickItem[] = flattenPartAlternates(await searchParts(q));
+    if (q.trim().length < 2) return [];
+    let items: PartPickItem[] = [];
+    try {
+      items = flattenPartAlternates(await searchParts(q));
+    } catch {
+      // Каталожный поиск упал — one-time строка всё равно должна остаться.
+      items = [];
+    }
     // Как на вебе: всегда можно добавить введённое как one-time part.
     items.unshift({
       id: "",
-      part_number: q,
+      part_number: q.trim(),
       description: "",
       reference: "",
       in_stock: 0,

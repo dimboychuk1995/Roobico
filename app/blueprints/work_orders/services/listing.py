@@ -222,6 +222,22 @@ def get_work_orders_list(
             if name not in names:
                 names.append(name)
 
+    def _wo_mechanic_names(wo_doc: dict) -> list[str]:
+        """Механики WO — из assigned_mechanics всех строк (без дублей)."""
+        names: list[str] = []
+        for block in wo_doc.get("labors") or []:
+            if not isinstance(block, dict):
+                continue
+            labor = block.get("labor") if isinstance(block.get("labor"), dict) else {}
+            assigned = labor.get("assigned_mechanics") or block.get("assigned_mechanics") or []
+            for a in assigned:
+                if not isinstance(a, dict):
+                    continue
+                nm = str(a.get("name") or "").strip()
+                if nm and nm not in names:
+                    names.append(nm)
+        return names
+
     items = []
     for x in rows:
         totals = x.get("totals") if isinstance(x.get("totals"), dict) else {}
@@ -253,6 +269,7 @@ def get_work_orders_list(
                 "status": status,
                 "is_in_progress": status == "in_progress",
                 "working_now": working_map.get(x.get("_id")) or [],
+                "mechanics": _wo_mechanic_names(x),
                 # Флаг «механик закончил» имеет смысл только пока WO в работе.
                 "mechanic_done": bool(x.get("mechanic_done")) and status == "in_progress",
                 "manager_confirmed": bool(x.get("manager_confirmed")),
