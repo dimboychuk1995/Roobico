@@ -156,8 +156,10 @@ def merge_mechanic_edit(shop_db, shop, existing_wo: dict, payload_labors) -> lis
 
     Правила: блоки матчатся по labor_id; у совпавших сохраняются hours/rate/
     назначения/менеджерские цены партов (qty и описание обновляются), новые
-    парты автоценятся; блоки без labor_id — новые строки; существующие блоки,
-    отсутствующие в payload, сохраняются (удаление строк — только менеджер).
+    парты автоценятся; блоки без labor_id — новые строки; блоки, отсутствующие
+    в payload, удаляются (клиент всегда шлёт полный список работ, инвентарь
+    возвращает adjust_inventory_for_part_changes, тайм-логи остаются и видны
+    менеджеру как «время на удалённых строках»).
     """
     customer_id = existing_wo.get("customer_id")
     totals_doc = existing_wo.get("totals") if isinstance(existing_wo.get("totals"), dict) else {}
@@ -172,7 +174,6 @@ def merge_mechanic_edit(shop_db, shop, existing_wo: dict, payload_labors) -> lis
         if labor_id:
             existing_by_id[labor_id] = _stored_block_to_payload(block, block_totals)
 
-    seen_ids: set[str] = set()
     out: list[dict] = []
 
     for raw in payload_labors or []:
@@ -186,7 +187,6 @@ def merge_mechanic_edit(shop_db, shop, existing_wo: dict, payload_labors) -> lis
             out.append(build_mechanic_labors_payload(shop_db, shop, customer_id, [raw])[0])
             continue
 
-        seen_ids.add(labor_id)
         existing_parts_by_key = {_stored_part_key(p): p for p in base["parts"]}
 
         merged_parts = []
@@ -217,10 +217,5 @@ def merge_mechanic_edit(shop_db, shop, existing_wo: dict, payload_labors) -> lis
             "issue_description": str(raw.get("issue_description") or "").strip(),
             "parts": merged_parts,
         })
-
-    # Блоки, которые механик не прислал, сохраняем как есть.
-    for labor_id, base in existing_by_id.items():
-        if labor_id not in seen_ids:
-            out.append(base)
 
     return out

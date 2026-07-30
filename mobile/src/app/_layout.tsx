@@ -7,9 +7,11 @@ import { useColorScheme } from "react-native";
 import { KeyboardDismissButton } from "@/components/keyboard-dismiss-button";
 import { AuthProvider, useAuth } from "@/context/auth";
 import { ToastProvider } from "@/context/toast";
-import { palette } from "@/lib/theme";
+import { loadThemePreference, palette } from "@/lib/theme";
 
 SplashScreen.preventAutoHideAsync();
+// Сохранённый выбор темы применяем до первого рендера, насколько возможно.
+loadThemePreference();
 
 function RootNavigator() {
   const { ready, session } = useAuth();

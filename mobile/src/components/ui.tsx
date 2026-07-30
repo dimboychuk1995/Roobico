@@ -3,17 +3,24 @@
  * строка "лейбл-значение".
  */
 import React from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { StyleProp, StyleSheet, Text, View, ViewStyle } from "react-native";
 
 import { useTheme } from "@/lib/theme";
 
-export function RowCard({ children }: { children: React.ReactNode }) {
+export function RowCard({
+  children,
+  style,
+}: {
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+}) {
   const theme = useTheme();
   return (
     <View
       style={[
         styles.card,
         { backgroundColor: theme.surface, borderColor: theme.border },
+        style,
       ]}
     >
       {children}

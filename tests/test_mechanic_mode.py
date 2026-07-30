@@ -1282,3 +1282,46 @@ def test_web_save_keeps_time_based_assignment_proportional(client, mech_seed, mo
     # Больше времени — первым в списке.
     assert assigned[0]["user_id"] == mech_seed["user"]["_id"]
     _deactivate_wos(mongo, data["id"])
+
+
+# ── механик может удалять работы ────────────────────────────────────
+
+
+def test_mechanic_can_delete_labor(client, mech_seed, mongo):
+    """Строка, отсутствующая в payload механика, удаляется, парты
+    возвращаются на склад."""
+    login_mechanic(client)
+    shop_db = mongo[SHOP_A_DB]
+    stock_before = shop_db.parts.find_one({"_id": mech_seed["part"]["_id"]})["in_stock"]
+
+    resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
+        "customer_id": str(mech_seed["customer"]["_id"]),
+        "unit_id": str(mech_seed["unit"]["_id"]),
+        "labors": [
+            {"description": "Keep me", "parts": []},
+            {"description": "Delete me",
+             "parts": [{"part_id": str(mech_seed["part"]["_id"]), "qty": 2}]},
+        ],
+    })
+    data = resp.get_json()
+    assert data["ok"] is True
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    assert len(wo["labors"]) == 2
+    keep_id = wo["labors"][0]["labor_id"]
+    assert shop_db.parts.find_one({"_id": mech_seed["part"]["_id"]})["in_stock"] == stock_before - 2
+
+    # Механик прислал только первую строку — вторая удаляется.
+    resp = _post_json(client, f"/api/mobile/work_orders/{data['id']}", {
+        "status": "in_progress",
+        "labors": [{"labor_id": keep_id, "description": "Keep me",
+                    "hours": "", "rate_code": "", "parts": []}],
+        "mechanic_state": "in_progress",
+    })
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert resp.get_json()["ok"] is True
+
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    assert [b["labor"]["description"] for b in wo["labors"]] == ["Keep me"]
+    # Парты удалённой строки вернулись на склад.
+    assert shop_db.parts.find_one({"_id": mech_seed["part"]["_id"]})["in_stock"] == stock_before
+    _deactivate_wos(mongo, data["id"])

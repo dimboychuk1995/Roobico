@@ -380,13 +380,23 @@ export default function WorkOrderFormScreen() {
     );
   };
 
-  const addPart = async (item: PartSearchItem) => {
+  const addPart = async (item: PartSearchItem & { one_time?: boolean }) => {
     const laborIdx = partModalLabor;
     setPartModalLabor(null);
     if (laborIdx === null) return;
 
     let newPart: WoFormPart;
-    if (isMechanic) {
+    if (item.one_time) {
+      // Нет в каталоге: строка без part_id, цену заполняет менеджер.
+      newPart = {
+        part_id: "",
+        part_number: item.part_number,
+        description: "",
+        qty: 1,
+        one_time_part: true,
+        ...(isMechanic ? {} : { cost: 0, price: 0 }),
+      };
+    } else if (isMechanic) {
       // Цены заполнит сервер при сохранении; part_price для механика закрыт.
       newPart = {
         part_id: item.id,
@@ -780,7 +790,7 @@ export default function WorkOrderFormScreen() {
         {/* Лейборы */}
         <Text style={[styles.sectionTitle, { color: theme.muted }]}>LABORS</Text>
         {labors.map((labor, idx) => (
-          <RowCard key={idx}>
+          <RowCard key={idx} style={{ borderWidth: 1.5, borderColor: theme.borderStrong }}>
             <View style={styles.laborHeader}>
               <Text style={{ color: theme.text, fontWeight: "700" }}>Labor {idx + 1}</Text>
               {labors.length > 1 ? (
@@ -822,54 +832,60 @@ export default function WorkOrderFormScreen() {
               </View>
             ) : null}
 
-            <View style={styles.issueHeader}>
-              <Pressable
-                onPress={() => setIssueOpen((o) => ({ ...o, [idx]: !o[idx] }))}
-                hitSlop={8}
-                style={styles.issueToggle}
-              >
-                <Ionicons
-                  name={issueOpen[idx] ? "chevron-down" : "chevron-forward"}
-                  size={14}
-                  color={theme.muted}
-                />
-                <Text style={[styles.fieldLabel, { color: theme.muted, marginTop: 0, marginBottom: 0 }]}>
-                  ISSUE DESCRIPTION
-                  {(labor.issue_description || "").trim() && !issueOpen[idx] ? " •" : ""}
-                </Text>
-              </Pressable>
-              {issueOpen[idx] ? (
-                <Pressable
-                  onPress={() => polishIssue(idx)}
-                  disabled={polishingIdx === idx}
-                  hitSlop={8}
-                  style={styles.aiBtn}
-                >
-                  {polishingIdx === idx ? (
-                    <ActivityIndicator size="small" color={theme.primary} />
-                  ) : (
-                    <>
-                      <Ionicons name="sparkles-outline" size={14} color={theme.primary} />
-                      <Text style={{ color: theme.primary, fontSize: 12, fontWeight: "700" }}>
-                        AI edit
-                      </Text>
-                    </>
-                  )}
-                </Pressable>
-              ) : null}
-            </View>
-            {issueOpen[idx] ? (
-              <TextInput
-                style={[
-                  styles.issueInput,
-                  { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text },
-                ]}
-                value={labor.issue_description || ""}
-                onChangeText={(v) => patchLabor(idx, { issue_description: v })}
-                placeholder="Customer-reported issue…"
-                placeholderTextColor={theme.muted}
-                multiline
-              />
+            {/* Менеджер: свёрнутый тоггл на месте. Механик пишет описание
+                кнопкой Describe issue рядом с Send for approval (ниже). */}
+            {!isMechanic ? (
+              <>
+                <View style={styles.issueHeader}>
+                  <Pressable
+                    onPress={() => setIssueOpen((o) => ({ ...o, [idx]: !o[idx] }))}
+                    hitSlop={8}
+                    style={styles.issueToggle}
+                  >
+                    <Ionicons
+                      name={issueOpen[idx] ? "chevron-down" : "chevron-forward"}
+                      size={14}
+                      color={theme.muted}
+                    />
+                    <Text style={[styles.fieldLabel, { color: theme.muted, marginTop: 0, marginBottom: 0 }]}>
+                      ISSUE DESCRIPTION
+                      {(labor.issue_description || "").trim() && !issueOpen[idx] ? " •" : ""}
+                    </Text>
+                  </Pressable>
+                  {issueOpen[idx] ? (
+                    <Pressable
+                      onPress={() => polishIssue(idx)}
+                      disabled={polishingIdx === idx}
+                      hitSlop={8}
+                      style={styles.aiBtn}
+                    >
+                      {polishingIdx === idx ? (
+                        <ActivityIndicator size="small" color={theme.primary} />
+                      ) : (
+                        <>
+                          <Ionicons name="sparkles-outline" size={14} color={theme.primary} />
+                          <Text style={{ color: theme.primary, fontSize: 12, fontWeight: "700" }}>
+                            AI edit
+                          </Text>
+                        </>
+                      )}
+                    </Pressable>
+                  ) : null}
+                </View>
+                {issueOpen[idx] ? (
+                  <TextInput
+                    style={[
+                      styles.issueInput,
+                      { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text },
+                    ]}
+                    value={labor.issue_description || ""}
+                    onChangeText={(v) => patchLabor(idx, { issue_description: v })}
+                    placeholder="Customer-reported issue…"
+                    placeholderTextColor={theme.muted}
+                    multiline
+                  />
+                ) : null}
+              </>
             ) : null}
 
             {!isMechanic ? (
@@ -968,21 +984,71 @@ export default function WorkOrderFormScreen() {
                   title="Job photos"
                 />
                 {!isPaid ? (
-                  <Pressable
-                    style={[styles.jobApprovalBtn, { borderColor: theme.border }]}
-                    onPress={() =>
-                      setAuthModal({
-                        scope: "labor",
-                        laborIndex: idx,
-                        jobLabel: labor.description || `Job ${idx + 1}`,
-                      })
-                    }
-                  >
-                    <Ionicons name="send-outline" size={14} color={theme.primary} />
-                    <Text style={{ color: theme.primary, fontWeight: "600", fontSize: 13 }}>
-                      Send job for approval
-                    </Text>
-                  </Pressable>
+                  <View style={{ flexDirection: "row", gap: 8 }}>
+                    <Pressable
+                      style={[styles.jobApprovalBtn, { borderColor: theme.border, flex: 1 }]}
+                      onPress={() => setIssueOpen((o) => ({ ...o, [idx]: !o[idx] }))}
+                    >
+                      <Ionicons name="create-outline" size={14} color={theme.primary} />
+                      <Text style={{ color: theme.primary, fontWeight: "600", fontSize: 13 }}>
+                        Describe issue
+                        {(labor.issue_description || "").trim() ? " •" : ""}
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.jobApprovalBtn, { borderColor: theme.border, flex: 1 }]}
+                      onPress={() =>
+                        setAuthModal({
+                          scope: "labor",
+                          laborIndex: idx,
+                          jobLabel: labor.description || `Job ${idx + 1}`,
+                        })
+                      }
+                    >
+                      <Ionicons name="send-outline" size={14} color={theme.primary} />
+                      <Text style={{ color: theme.primary, fontWeight: "600", fontSize: 13 }}>
+                        Send for approval
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+                {issueOpen[idx] ? (
+                  <>
+                    <View style={styles.issueHeader}>
+                      <Text style={[styles.fieldLabel, { color: theme.muted, marginTop: 0, marginBottom: 0 }]}>
+                        ISSUE DESCRIPTION
+                      </Text>
+                      <Pressable
+                        onPress={() => polishIssue(idx)}
+                        disabled={polishingIdx === idx}
+                        hitSlop={8}
+                        style={styles.aiBtn}
+                      >
+                        {polishingIdx === idx ? (
+                          <ActivityIndicator size="small" color={theme.primary} />
+                        ) : (
+                          <>
+                            <Ionicons name="sparkles-outline" size={14} color={theme.primary} />
+                            <Text style={{ color: theme.primary, fontSize: 12, fontWeight: "700" }}>
+                              AI edit
+                            </Text>
+                          </>
+                        )}
+                      </Pressable>
+                    </View>
+                    <TextInput
+                      style={[
+                        styles.issueInput,
+                        { backgroundColor: theme.surface, borderColor: theme.border, color: theme.text },
+                      ]}
+                      value={labor.issue_description || ""}
+                      onChangeText={(v) => patchLabor(idx, { issue_description: v })}
+                      placeholder="Customer-reported issue…"
+                      placeholderTextColor={theme.muted}
+                      multiline
+                      editable={!isPaid}
+                    />
+                  </>
                 ) : null}
               </>
             ) : null}
@@ -1276,6 +1342,10 @@ function PickPresetModal({
   );
 }
 
+// Синтетическая строка «one-time part»: парта нет в каталоге, номер — из
+// строки поиска, цену заполнит менеджер.
+type PartPickItem = PartSearchItem & { one_time?: boolean };
+
 function PickPartModal({
   visible,
   onClose,
@@ -1283,20 +1353,34 @@ function PickPartModal({
 }: {
   visible: boolean;
   onClose: () => void;
-  onPick: (p: PartSearchItem) => void;
+  onPick: (p: PartPickItem) => void;
 }) {
+  const search = async (q: string): Promise<PartPickItem[]> => {
+    if (q.length < 2) return [];
+    const items: PartPickItem[] = flattenPartAlternates(await searchParts(q));
+    // Как на вебе: всегда можно добавить введённое как one-time part.
+    items.unshift({
+      id: "",
+      part_number: q,
+      description: "",
+      reference: "",
+      in_stock: 0,
+      one_time: true,
+    });
+    return items;
+  };
   return (
-    <SearchPickerModal<PartSearchItem>
+    <SearchPickerModal<PartPickItem>
       visible={visible}
       onClose={onClose}
       title="Add part"
       placeholder="Part number or description…"
-      search={(q) =>
-        q.length >= 2 ? searchParts(q).then(flattenPartAlternates) : Promise.resolve([])
-      }
+      search={search}
       renderLabel={(p) =>
-        `${p.alt_for ? `⇄ ` : ""}${p.part_number} — ${p.description || ""} (×${p.in_stock})` +
-        (p.alt_for ? ` · fits ${p.alt_for}` : "")
+        p.one_time
+          ? `＋ Add "${p.part_number}" as one-time part (not from catalog)`
+          : `${p.alt_for ? `⇄ ` : ""}${p.part_number} — ${p.description || ""} (×${p.in_stock})` +
+            (p.alt_for ? ` · fits ${p.alt_for}` : "")
       }
       onPick={onPick}
     />
