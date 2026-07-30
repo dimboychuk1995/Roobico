@@ -1353,3 +1353,31 @@ def test_wo_list_shows_assigned_mechanics(client, mech_seed, mongo):
     target = next(i for i in items if i["id"] == data["id"])
     assert "Mike Wrench" in (target.get("mechanics") or [])
     _deactivate_wos(mongo, data["id"])
+
+
+def test_manager_details_page_renders_with_assigned_mechanics(client, mech_seed, mongo):
+    """Регрессия: ObjectId в assigned_mechanics ронял |tojson на странице
+    деталей WO (500 у менеджера)."""
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Render assigned test")
+    shop_db = mongo[SHOP_A_DB]
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    labor_id = wo["labors"][0]["labor_id"]
+
+    now = _now()
+    shop_db.wo_time_logs.insert_one({
+        "shop_id": wo["shop_id"], "work_order_id": wo["_id"], "labor_id": labor_id,
+        "user_id": mech_seed["user"]["_id"], "user_name": "Mike Wrench",
+        "started_at": now, "stopped_at": now, "seconds": 900,
+        "stop_source": "user", "created_at": now, "updated_at": now,
+    })
+    from app.blueprints.work_orders.services import time_tracking
+    time_tracking.sync_labor_assignments_from_time(
+        shop_db, {"_id": wo["shop_id"]}, data["id"]
+    )
+
+    login(client)  # менеджер открывает страницу деталей
+    resp = client.get(f"/work_orders/details?work_order_id={data['id']}")
+    assert resp.status_code == 200, resp.get_data(as_text=True)[:500]
+    assert b"Mike Wrench" in resp.data
+    _deactivate_wos(mongo, data["id"])
