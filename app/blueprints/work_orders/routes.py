@@ -3243,9 +3243,12 @@ def api_mechanic_timer_start():
         code = 404 if error in ("work_order_not_found", "labor_not_found") else 400
         return jsonify({"ok": False, "error": error}), code
 
-    # auto_switch закрыл предыдущую сессию — у того WO обновилось время.
+    # auto_switch закрыл предыдущую сессию — у того WO обновились время,
+    # назначения и биллинговые часы.
     if stopped_prev:
-        time_tracking.sync_labor_assignments_from_time(
+        from app.blueprints.work_orders.services.mechanic_editor import refresh_time_derived_fields
+
+        refresh_time_derived_fields(
             shop_db, shop, stopped_prev.get("work_order_id"),
             mechanics_by_id={m["id"]: m for m in get_assignable_mechanics(shop)},
         )
@@ -3274,8 +3277,11 @@ def api_mechanic_timer_stop():
     if error:
         return jsonify({"ok": False, "error": error}), 400
 
-    # Assigned = кто фактически работал: пересчёт после каждой сессии.
-    time_tracking.sync_labor_assignments_from_time(
+    # После каждой сессии: assigned = кто фактически работал, часы работы =
+    # суммарное время механиков (кроме пресетных/ручных), totals пересчитаны.
+    from app.blueprints.work_orders.services.mechanic_editor import refresh_time_derived_fields
+
+    refresh_time_derived_fields(
         shop_db, shop, log.get("work_order_id"),
         mechanics_by_id={m["id"]: m for m in get_assignable_mechanics(shop)},
     )

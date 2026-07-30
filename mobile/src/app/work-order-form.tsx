@@ -472,6 +472,8 @@ export default function WorkOrderFormScreen() {
         hours: isMechanic ? "" : preset.labor_hours != null ? String(preset.labor_hours) : "",
         rate_code: isMechanic ? "" : preset.labor_rate_code || "",
         labor_total: null,
+        // Сервер по preset_id берёт часы/ставку пресета для работы механика.
+        preset_id: item.id,
         parts,
       };
       flushAutosave.current = true;

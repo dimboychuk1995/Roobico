@@ -886,6 +886,9 @@ export interface WoFormLabor {
   rate_code: string;
   labor_total?: number | null;
   issue_description?: string;
+  // Работа добавлена из пресета: сервер берёт часы/ставку из него
+  // (часы механика-таймера тогда на биллинг не влияют).
+  preset_id?: string;
   parts: WoFormPart[];
 }
 

@@ -1381,3 +1381,81 @@ def test_manager_details_page_renders_with_assigned_mechanics(client, mech_seed,
     assert resp.status_code == 200, resp.get_data(as_text=True)[:500]
     assert b"Mike Wrench" in resp.data
     _deactivate_wos(mongo, data["id"])
+
+
+# ── биллинговые часы из тайм-логов и пресетов ───────────────────────
+
+
+def test_hours_from_preset_and_tracked_time(client, mech_seed, mongo):
+    """Часы работы: пресетная строка — из пресета (независимо от таймеров),
+    обычная — сумма завершённого времени всех механиков; ручные часы
+    менеджера не трогаем."""
+    login_mechanic(client)
+    shop_db = mongo[SHOP_A_DB]
+    shop_id = mech_seed["customer"]["shop_id"]
+
+    preset_id = shop_db.wo_presets.insert_one({
+        "shop_id": shop_id, "name": "PM service", "labor_hours": 2,
+        "labor_rate_code": "standard", "parts": [], "is_active": True,
+    }).inserted_id
+
+    resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
+        "customer_id": str(mech_seed["customer"]["_id"]),
+        "unit_id": str(mech_seed["unit"]["_id"]),
+        "labors": [
+            {"description": "PM service", "preset_id": str(preset_id), "parts": []},
+            {"description": "Plain job", "parts": []},
+        ],
+    })
+    data = resp.get_json()
+    assert data["ok"] is True
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    preset_block, plain_block = wo["labors"]
+    assert preset_block["labor"]["hours"] == "2"
+    assert preset_block["labor"]["hours_source"] == "preset"
+    assert preset_block["labor"]["rate_code"] == "standard"
+    assert plain_block["labor"]["hours"] == ""
+
+    # Завершённые сессии: пресетная — 2ч трека, обычная — 1ч + 30м двух механиков.
+    now = _now()
+    def _log(labor_id, user_id, user_name, seconds):
+        return {
+            "shop_id": shop_id, "work_order_id": wo["_id"], "labor_id": labor_id,
+            "user_id": user_id, "user_name": user_name,
+            "started_at": now, "stopped_at": now, "seconds": seconds,
+            "stop_source": "user", "created_at": now, "updated_at": now,
+        }
+    other_id = ObjectId()
+    shop_db.wo_time_logs.insert_many([
+        _log(preset_block["labor_id"], mech_seed["user"]["_id"], "Mike Wrench", 7200),
+        _log(plain_block["labor_id"], mech_seed["user"]["_id"], "Mike Wrench", 3600),
+        _log(plain_block["labor_id"], other_id, "Ivan Helper", 1800),
+    ])
+
+    from app.blueprints.work_orders.services.mechanic_editor import refresh_time_derived_fields
+    assert refresh_time_derived_fields(shop_db, {"_id": shop_id}, data["id"]) is True
+
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    preset_block, plain_block = wo["labors"]
+    # Пресет: часы не тронуты таймером.
+    assert preset_block["labor"]["hours"] == "2"
+    assert preset_block["labor"]["hours_source"] == "preset"
+    # Обычная строка: 3600 + 1800 = 1.5 часа, помечена tracked.
+    assert plain_block["labor"]["hours"] == "1.5"
+    assert plain_block["labor"]["hours_source"] == "tracked"
+    # Назначения проставлены по времени.
+    assert plain_block["labor"]["assigned_mechanics"]
+    assert {a["percent"] for a in plain_block["labor"]["assigned_mechanics"]} == {66.67, 33.33}
+
+    # Менеджер вручную поправил часы (маркер снят) — рефреш их не перетирает.
+    shop_db.work_orders.update_one(
+        {"_id": wo["_id"]},
+        {"$set": {"labors.1.labor.hours": "3", "labors.1.labor.hours_source": ""}},
+    )
+    shop_db.wo_time_logs.insert_one(
+        _log(plain_block["labor_id"], mech_seed["user"]["_id"], "Mike Wrench", 900)
+    )
+    refresh_time_derived_fields(shop_db, {"_id": shop_id}, data["id"])
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    assert wo["labors"][1]["labor"]["hours"] == "3"
+    _deactivate_wos(mongo, data["id"])

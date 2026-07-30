@@ -655,6 +655,8 @@
             labor_id: "",
             description: preset.name || preset.description || "",
             issue_description: "",
+            // Сервер по preset_id берёт часы/ставку пресета для биллинга.
+            preset_id: btn.dataset.presetId || "",
             parts: (preset.parts || []).map(function (p) {
               return {
                 part_id: p.part_id || "",
@@ -805,6 +807,7 @@
             labor_id: l.labor_id,
             description: l.description,
             issue_description: l.issue_description,
+            preset_id: l.preset_id || "",
             parts: l.parts.map(function (p) {
               return {
                 part_id: p.part_id,

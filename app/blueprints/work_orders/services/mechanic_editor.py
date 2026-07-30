@@ -117,9 +117,41 @@ def _stored_block_to_payload(block: dict, block_totals: dict) -> dict:
         # не пересчитал сумму по текущей (возможно изменённой) ставке.
         "labor_total": labor_base if labor_base > 0 else None,
         "issue_description": str(labor_src.get("issue_description") or "").strip(),
+        "hours_source": str(labor_src.get("hours_source") or "").strip(),
         "assigned_mechanics": labor_src.get("assigned_mechanics") or [],
         "parts": [dict(p) for p in (block.get("parts") or []) if isinstance(p, dict)],
     }
+
+
+def _preset_defaults(shop_db, shop_id, preset_id_raw) -> dict:
+    """
+    Часы/ставка пресета для новой работы механика: часы биллинга фиксированы
+    пресетом и не зависят от фактически затреканного времени.
+    """
+    from app.blueprints.work_orders.services.common import oid
+
+    pid = oid(preset_id_raw)
+    if not pid:
+        return {}
+    doc = shop_db.wo_presets.find_one(
+        {"_id": pid, "shop_id": shop_id, "is_active": True},
+        {"labor_hours": 1, "labor_rate_code": 1},
+    )
+    if not doc:
+        return {}
+
+    out: dict = {}
+    try:
+        hours = float(doc.get("labor_hours") or 0)
+    except (TypeError, ValueError):
+        hours = 0.0
+    if hours > 0:
+        out["hours"] = str(doc.get("labor_hours"))
+        out["hours_source"] = "preset"
+    rate_code = str(doc.get("labor_rate_code") or "").strip()
+    if rate_code:
+        out["rate_code"] = rate_code
+    return out
 
 
 def build_mechanic_labors_payload(shop_db, shop, customer_id, payload_labors) -> list[dict]:
@@ -137,13 +169,17 @@ def build_mechanic_labors_payload(shop_db, shop, customer_id, payload_labors) ->
                 or str(p.get("description") or "").strip()
             )
         ]
+        # Работа из пресета: часы и ставка — из пресета (клиентские значения
+        # механика игнорируются, как и остальные денежные поля).
+        preset = _preset_defaults(shop_db, shop["_id"], raw.get("preset_id"))
         out.append({
             "labor_id": str(raw.get("labor_id") or ""),
             "description": str(raw.get("description") or "").strip(),
-            "hours": "",
-            "rate_code": "",
+            "hours": preset.get("hours", ""),
+            "rate_code": preset.get("rate_code", ""),
             "labor_total": None,
             "issue_description": str(raw.get("issue_description") or "").strip(),
+            "hours_source": preset.get("hours_source", ""),
             "assigned_mechanics": [],
             "parts": parts,
         })
@@ -219,3 +255,101 @@ def merge_mechanic_edit(shop_db, shop, existing_wo: dict, payload_labors) -> lis
         })
 
     return out
+
+
+def refresh_time_derived_fields(shop_db, shop, work_order_id, mechanics_by_id=None):
+    """
+    Пересчёт полей WO, производных от тайм-логов (вызывается после остановки
+    таймера, в т.ч. auto_switch):
+      - assigned_mechanics — кто фактически работал, пропорционально времени;
+      - часы работы — сумма завершённого времени всех механиков строки.
+        Исключения: работы из пресета (часы фиксированы пресетом) и часы,
+        введённые менеджером вручную (нет метки hours_source="tracked");
+      - totals — пересчитываются с зафиксированной налоговой ставкой WO.
+    Возвращает True, если WO обновлён.
+    """
+    from app.blueprints.work_orders.services import time_tracking
+    from app.blueprints.work_orders.services.common import oid, utcnow
+    from app.blueprints.work_orders.services.mobile_editor import compute_labors_and_totals
+    from app.blueprints.work_orders.services.totals import (
+        _apply_sales_tax_to_totals,
+        _get_shop_sales_tax_context,
+        _is_customer_taxable,
+        align_totals_with_labors,
+        normalize_totals_payload,
+    )
+
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return False
+    wo = shop_db.work_orders.find_one(
+        {"_id": wo_id, "shop_id": shop["_id"], "is_active": True}
+    )
+    if not wo:
+        return False
+
+    assignments = time_tracking.time_based_assignments(shop_db, shop["_id"], wo_id)
+    summary = time_tracking.summarize_wo_time(shop_db, shop["_id"], wo_id)
+    if not assignments and not summary:
+        return False
+
+    totals_doc = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
+    totals_blocks = totals_doc.get("labors") if isinstance(totals_doc.get("labors"), list) else []
+
+    changed = False
+    payload = []
+    for i, block in enumerate(wo.get("labors") or []):
+        if not isinstance(block, dict):
+            continue
+        block_totals = (
+            totals_blocks[i]
+            if i < len(totals_blocks) and isinstance(totals_blocks[i], dict)
+            else {}
+        )
+        base = _stored_block_to_payload(block, block_totals)
+        labor_id = base["labor_id"]
+
+        assigned = assignments.get(labor_id)
+        if assigned is not None:
+            for a in assigned:
+                m = (mechanics_by_id or {}).get(str(a["user_id"]))
+                if m:
+                    a["name"] = m.get("name") or a["name"]
+                    a["role"] = m.get("role") or ""
+            if assigned != base.get("assigned_mechanics"):
+                base["assigned_mechanics"] = assigned
+                changed = True
+
+        seconds = int((summary.get(labor_id) or {}).get("completed_seconds") or 0)
+        source = base.get("hours_source") or ""
+        if seconds > 0 and source != "preset" and (not base.get("hours") or source == "tracked"):
+            new_hours = str(round2(seconds / 3600.0))
+            if new_hours != base.get("hours"):
+                base["hours"] = new_hours
+                # Сумма должна пересчитаться из новых часов, а не из
+                # зафиксированной прежней labor base.
+                base["labor_total"] = None
+                base["hours_source"] = "tracked"
+                changed = True
+
+        payload.append(base)
+
+    if not changed:
+        return False
+
+    labors, totals_raw = compute_labors_and_totals(shop_db, shop, payload)
+    totals = align_totals_with_labors(normalize_totals_payload(totals_raw), labors)
+
+    locked_tax_rate = totals_doc.get("sales_tax_rate")
+    if locked_tax_rate is None:
+        locked_tax_rate = _get_shop_sales_tax_context(shop, shop_db).get("rate") or 0
+    is_taxable = totals_doc.get("is_taxable")
+    if is_taxable is None:
+        is_taxable = _is_customer_taxable(shop_db, wo.get("customer_id"))
+    totals = _apply_sales_tax_to_totals(totals, locked_tax_rate, bool(is_taxable))
+
+    shop_db.work_orders.update_one(
+        {"_id": wo_id, "shop_id": shop["_id"]},
+        {"$set": {"labors": labors, "totals": totals, "updated_at": utcnow()}},
+    )
+    return True

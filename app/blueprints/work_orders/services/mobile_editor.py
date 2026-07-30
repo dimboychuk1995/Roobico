@@ -140,6 +140,9 @@ def compute_labors_and_totals(shop_db, shop, labors_payload):
                 "labor_full_total": block_full,
                 "assigned_mechanics": assigned if isinstance(assigned, list) else [],
                 "issue_description": issue_description,
+                # Откуда часы: "preset" (фиксированы пресетом) / "tracked"
+                # (из таймеров) / "" (вручную). Управляет автопересчётом.
+                "hours_source": str(raw.get("hours_source") or "").strip(),
             },
             "parts": parts_clean,
         })
