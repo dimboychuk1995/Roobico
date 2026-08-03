@@ -1919,6 +1919,27 @@ def api_get_all_payments():
         page_key="payments_page", per_page_key="payments_per_page",
     )
 
+    # Тоталы по ВСЕЙ выборке (те же фильтры поиска/дат), не только по странице.
+    totals_rows = list(shop_db.work_order_payments.aggregate([
+        {"$match": payments_query},
+        {
+            "$group": {
+                "_id": {"$toLower": {"$ifNull": ["$payment_method", "cash"]}},
+                "amount": {"$sum": {"$ifNull": ["$amount", 0]}},
+                "count": {"$sum": 1},
+            }
+        },
+    ]))
+    totals_by_method = {
+        str(r.get("_id") or "cash"): round2(r.get("amount") or 0)
+        for r in sorted(totals_rows, key=lambda r: -(r.get("amount") or 0))
+    }
+    payments_totals = {
+        "amount_total": round2(sum((r.get("amount") or 0) for r in totals_rows)),
+        "count": sum(int(r.get("count") or 0) for r in totals_rows),
+        "by_method": totals_by_method,
+    }
+
     sort_params = get_sort_params(
         request.args,
         [("payment_date", -1), ("created_at", -1)],
@@ -2005,6 +2026,7 @@ def api_get_all_payments():
         "ok": True,
         "payments": payment_list,
         "pagination": payments_pagination,
+        "totals": payments_totals,
     }), 200
 
 

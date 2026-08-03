@@ -311,27 +311,40 @@
         </div>
       `;
 
-      // Pagination controls
-      if (pg.pages && pg.pages > 1) {
-        const prevDisabled = !pg.has_prev ? " disabled" : "";
-        const nextDisabled = !pg.has_next ? " disabled" : "";
-        html += `
-          <div class="wo-pagination-row mt-3">
-            <div class="small text-muted wo-pagination-meta">
-              Page ${pg.page} of ${pg.pages} &middot; ${pg.total} total
-            </div>
-            <div class="wo-pagination-actions">
-              <div class="btn-group btn-group-sm" role="group" aria-label="Payments pagination">
-                <button type="button" class="btn btn-outline-secondary js-payments-page${prevDisabled}" data-page="${pg.prev_page}"${prevDisabled ? ' tabindex="-1"' : ""}>Prev</button>
-                <button type="button" class="btn btn-outline-secondary js-payments-page${nextDisabled}" data-page="${pg.next_page}"${nextDisabled ? ' tabindex="-1"' : ""}>Next</button>
-              </div>
+      // Totals (по всей отфильтрованной выборке, не только по странице) + pagination
+      const totals = data.totals || {};
+      let totalsHtml = "";
+      if (totals.count) {
+        const byMethod = totals.by_method || {};
+        const methodSpans = Object.keys(byMethod)
+          .map(m => `<span>${m}: <strong>$${(parseFloat(byMethod[m]) || 0).toFixed(2)}</strong></span>`)
+          .join("");
+        totalsHtml = `
+          <div class="wo-totals-center wo-pagination-totals">
+            <div class="wo-totals-box">
+              <span>Payments: <strong>${totals.count}</strong></span>
+              ${methodSpans}
+              <span>Total: <strong>$${(parseFloat(totals.amount_total) || 0).toFixed(2)}</strong></span>
             </div>
           </div>
         `;
-      } else if (pg.total) {
+      }
+
+      if (pg.total) {
+        const prevDisabled = !pg.has_prev ? " disabled" : "";
+        const nextDisabled = !pg.has_next ? " disabled" : "";
+        const pager = (pg.pages && pg.pages > 1) ? `
+              <div class="btn-group btn-group-sm" role="group" aria-label="Payments pagination">
+                <button type="button" class="btn btn-outline-secondary js-payments-page${prevDisabled}" data-page="${pg.prev_page}"${prevDisabled ? ' tabindex="-1"' : ""}>Prev</button>
+                <button type="button" class="btn btn-outline-secondary js-payments-page${nextDisabled}" data-page="${pg.next_page}"${nextDisabled ? ' tabindex="-1"' : ""}>Next</button>
+              </div>` : "";
         html += `
-          <div class="mt-3">
-            <div class="small text-muted">${pg.total} total</div>
+          <div class="wo-pagination-row mt-3">
+            <div class="small text-muted wo-pagination-meta">
+              Page ${pg.page || 1} of ${pg.pages || 1} &middot; ${pg.total} total
+            </div>
+            ${totalsHtml}
+            <div class="wo-pagination-actions">${pager}</div>
           </div>
         `;
       }

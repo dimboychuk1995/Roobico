@@ -116,6 +116,40 @@ def test_invalid_amount_rejected(logged_in, work_order):
         assert data["ok"] is False
 
 
+def test_all_payments_totals_respect_filters(logged_in, work_order):
+    """Тоталы на вкладке Payments считаются по всей отфильтрованной выборке
+    (поиск/даты), а не только по текущей странице."""
+    db = work_order["db"]
+    wo = work_order["wo"]
+
+    def _insert(amount, method, dt):
+        db.work_order_payments.insert_one({
+            "_id": ObjectId(),
+            "shop_id": wo["shop_id"],
+            "work_order_id": wo["_id"],
+            "amount": amount,
+            "payment_method": method,
+            "is_active": True,
+            "payment_date": dt,
+            "created_at": dt,
+        })
+
+    # Диапазон в далёком прошлом, чтобы не пересекаться с платежами других тестов.
+    _insert(100.0, "cash", datetime(2003, 5, 10, tzinfo=timezone.utc))
+    _insert(50.5, "check", datetime(2003, 5, 12, tzinfo=timezone.utc))
+    _insert(999.0, "cash", datetime(2003, 6, 20, tzinfo=timezone.utc))  # вне диапазона
+
+    resp = logged_in.get(
+        "/work_orders/api/work_orders/all-payments"
+        "?date_preset=custom&date_from=2003-05-01&date_to=2003-05-31"
+    )
+    data = resp.get_json()
+    assert data["ok"] is True
+    assert data["totals"]["count"] == 2
+    assert data["totals"]["amount_total"] == 150.5
+    assert data["totals"]["by_method"] == {"cash": 100.0, "check": 50.5}
+
+
 def test_run_atomically_fallback_on_standalone(app):
     from app.extensions import get_mongo_client
     from app.utils.mongo_tx import run_atomically, transactions_supported
