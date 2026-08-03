@@ -896,6 +896,26 @@ span.flatpickr-weekday {
   flex: 0 0 auto;
 }
 
+/* WO list: выделенная группа "In Work" (взяты механиками, done не нажат) */
+.wo-table-group-row td {
+  padding: 0.35rem 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--primary);
+  background-color: rgba(26, 122, 66, 0.08);
+  border-bottom: 0;
+}
+
+.wo-inwork-group > tr > td {
+  background-color: rgba(26, 122, 66, 0.04);
+}
+
+.wo-inwork-group > tr:last-child > td {
+  border-bottom: 2px solid rgba(26, 122, 66, 0.35);
+}
+
 .wo-totals-box {
   display: inline-flex;
   align-items: center;

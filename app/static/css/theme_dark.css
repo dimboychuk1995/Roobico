@@ -399,6 +399,23 @@ html[data-theme="dark"] .wo-filter-form .date-range-group .input-group-text {
   color: #cbd5e1;
 }
 
+html[data-theme="dark"] .wo-table-group-row td {
+  color: #4ade80;
+  background-color: rgba(34, 197, 94, 0.12);
+}
+
+html[data-theme="dark"] .table > tbody > tr.wo-table-group-row:hover > td {
+  background-color: rgba(34, 197, 94, 0.12) !important;
+}
+
+html[data-theme="dark"] .wo-inwork-group > tr > td {
+  background-color: rgba(34, 197, 94, 0.06);
+}
+
+html[data-theme="dark"] .wo-inwork-group > tr:last-child > td {
+  border-bottom-color: rgba(34, 197, 94, 0.4);
+}
+
 html[data-theme="dark"] .wo-totals-box {
   background: linear-gradient(135deg, #232323 0%, #1c1c1c 100%) !important;
   border: 1px solid var(--border) !important;

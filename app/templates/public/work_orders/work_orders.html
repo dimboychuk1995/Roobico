@@ -81,42 +81,6 @@
 <div class="tab-content mt-3">
   <!-- Work Orders Tab -->
   <div class="tab-pane show active" id="content-work-orders" role="tabpanel" aria-labelledby="tab-work-orders">
-    {% if in_work_orders and in_work_orders|length > 0 %}
-      <div class="card mb-3">
-        <div class="card-body">
-          <div class="d-flex align-items-center gap-2 mb-2">
-            <h2 class="h6 mb-0">In Work</h2>
-            <span class="badge text-bg-info">{{ in_work_orders|length }}</span>
-            <span class="small text-muted">taken by mechanics, not marked done yet</span>
-          </div>
-          <div class="table-responsive">
-            <table class="table table-sm align-middle">
-              <thead>
-                <tr>
-                  <th>WO #</th>
-                  <th>Customer</th>
-                  <th>Date</th>
-                  <th>Unit</th>
-                  <th class="text-end">Mileage</th>
-                  <th class="text-end">Labor</th>
-                  <th class="text-end">Parts</th>
-                  <th class="text-end">Tax</th>
-                  <th class="text-end">Total</th>
-                  <th class="text-end">Balance</th>
-                  <th class="text-center">Paid</th>
-                  <th class="text-end">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {% for w in in_work_orders %}
-                  {{ wo_table_row(w) }}
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-    {% endif %}
     <div class="card">
       <div class="card-body">
         <form method="get" class="row g-2 align-items-center mb-3 wo-filter-form">
@@ -165,7 +129,8 @@
           </div>
         </form>
 
-        {% if work_orders and work_orders|length > 0 %}
+        {% set has_in_work = in_work_orders and in_work_orders|length > 0 %}
+        {% if has_in_work or (work_orders and work_orders|length > 0) %}
           <div class="table-responsive">
             <table class="table table-sm align-middle sortable">
               <thead>
@@ -184,6 +149,18 @@
                   <th class="text-end no-sort">Actions</th>
                 </tr>
               </thead>
+              {% if has_in_work %}
+                {# Взятые механиками в работу (done ещё не нажат) — выделенная
+                   группа сверху; из основного списка ниже они исключены. #}
+                <tbody class="wo-inwork-group">
+                  <tr class="wo-table-group-row">
+                    <td colspan="12">In Work · taken by mechanics, not marked done yet</td>
+                  </tr>
+                  {% for w in in_work_orders %}
+                    {{ wo_table_row(w) }}
+                  {% endfor %}
+                </tbody>
+              {% endif %}
               <tbody>
                 {% for w in work_orders %}
                   {{ wo_table_row(w) }}

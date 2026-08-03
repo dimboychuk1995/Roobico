@@ -398,11 +398,22 @@ def work_orders_page():
     created_to_exclusive = date_filters["created_to_exclusive"]
 
     page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
+    # In-work WO (механик взял, done не нажал) выносятся в выделенную группу
+    # сверху таблицы и исключаются из основного списка — без дублей.
     work_orders, pagination, work_orders_totals = get_work_orders_list(
         shop_db,
         shop["_id"],
         page,
         per_page,
+        q=q,
+        paid_status=paid_status,
+        created_from=created_from,
+        created_to_exclusive=created_to_exclusive,
+        exclude_in_work=True,
+    )
+    in_work_orders = get_in_work_orders(
+        shop_db,
+        shop["_id"],
         q=q,
         paid_status=paid_status,
         created_from=created_from,
@@ -413,7 +424,7 @@ def work_orders_page():
         "public/work_orders/work_orders.html",
         active_page="work_orders",
         work_orders=work_orders,
-        in_work_orders=get_in_work_orders(shop_db, shop["_id"]),
+        in_work_orders=in_work_orders,
         pagination=pagination,
         work_orders_totals=work_orders_totals,
         q=q,

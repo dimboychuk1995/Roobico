@@ -103,18 +103,20 @@ def get_work_orders_totals(shop_db, query: dict):
     }
 
 
-def get_work_orders_list(
+# WO «взят механиком в работу и не отмечен done» — условие группы In Work.
+IN_WORK_FILTER = {"status": "in_progress", "mechanic_done": {"$ne": True}}
+
+
+def _build_work_orders_query(
     shop_db,
     shop_id: ObjectId,
-    page: int,
-    per_page: int,
     q: str = "",
     paid_status: str = "all",
     created_from=None,
     created_to_exclusive=None,
     customer_id: ObjectId | None = None,
     unit_id: ObjectId | None = None,
-):
+) -> dict:
     query = {"shop_id": shop_id, "is_active": True}
     if customer_id:
         query["customer_id"] = customer_id
@@ -158,7 +160,39 @@ def get_work_orders_list(
     if created_at_filter:
         query = append_and_filter(query, created_at_filter)
 
+    return query
+
+
+def get_work_orders_list(
+    shop_db,
+    shop_id: ObjectId,
+    page: int,
+    per_page: int,
+    q: str = "",
+    paid_status: str = "all",
+    created_from=None,
+    created_to_exclusive=None,
+    customer_id: ObjectId | None = None,
+    unit_id: ObjectId | None = None,
+    exclude_in_work: bool = False,
+):
+    query = _build_work_orders_query(
+        shop_db,
+        shop_id,
+        q=q,
+        paid_status=paid_status,
+        created_from=created_from,
+        created_to_exclusive=created_to_exclusive,
+        customer_id=customer_id,
+        unit_id=unit_id,
+    )
+
+    # Тоталы считаем ДО исключения in-work строк: сводка за период должна
+    # включать и те WO, что вынесены в закреплённую группу сверху.
     totals_summary = get_work_orders_totals(shop_db, query)
+
+    if exclude_in_work:
+        query = {"$and": [query, {"$nor": [IN_WORK_FILTER]}]}
 
     sort_params = get_sort_params(
         request.args,
@@ -189,21 +223,30 @@ def get_work_orders_list(
     return items, pagination, totals_summary
 
 
-def get_in_work_orders(shop_db, shop_id: ObjectId):
+def get_in_work_orders(
+    shop_db,
+    shop_id: ObjectId,
+    q: str = "",
+    paid_status: str = "all",
+    created_from=None,
+    created_to_exclusive=None,
+):
     """
-    WO, которые механики взяли в работу и ещё не отметили «done» — для
-    закреплённого блока сверху списка. Без фильтров и пагинации: блок
-    показывает текущую работу цеха независимо от выбранного периода.
+    WO, которые механики взяли в работу и ещё не отметили «done» — верхняя
+    выделенная группа списка. Уважает те же фильтры (поиск/даты/статус),
+    что и основной список; без пагинации — таких WO единицы.
     """
+    base_query = _build_work_orders_query(
+        shop_db,
+        shop_id,
+        q=q,
+        paid_status=paid_status,
+        created_from=created_from,
+        created_to_exclusive=created_to_exclusive,
+    )
     rows = list(
-        shop_db.work_orders.find(
-            {
-                "shop_id": shop_id,
-                "is_active": True,
-                "status": "in_progress",
-                "mechanic_done": {"$ne": True},
-            }
-        ).sort([("work_order_date", -1), ("created_at", -1)])
+        shop_db.work_orders.find({"$and": [base_query, IN_WORK_FILTER]})
+        .sort([("work_order_date", -1), ("created_at", -1)])
     )
     return _build_work_order_items(shop_db, shop_id, rows)
 

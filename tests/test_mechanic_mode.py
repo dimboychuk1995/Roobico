@@ -1021,11 +1021,15 @@ def test_in_work_block_only_taken_not_done(client, mech_seed, mongo):
     assert d1["id"] in ids
     assert d2["id"] not in ids
 
-    # Страница менеджера рендерит блок «In Work».
+    # Страница менеджера рендерит группу «In Work», WO из неё
+    # не дублируется в основном списке ниже.
     login(client)
     resp = client.get("/work_orders")
     assert resp.status_code == 200
-    assert "taken by mechanics, not marked done yet" in resp.get_data(as_text=True)
+    html = resp.get_data(as_text=True)
+    assert "taken by mechanics, not marked done yet" in html
+    d1_number = shop_db.work_orders.find_one({"_id": ObjectId(d1["id"])})["wo_number"]
+    assert html.count(f'>{d1_number}</span>') == 1
 
     _deactivate_wos(mongo, d1["id"], d2["id"])
 
