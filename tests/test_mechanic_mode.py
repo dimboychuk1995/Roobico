@@ -974,6 +974,62 @@ def test_manager_list_shows_working_now_and_done(client, mech_seed, mongo):
     _deactivate_wos(mongo, d1["id"], d2["id"])
 
 
+def test_details_page_flags_mechanic_done_for_confirm_mode(client, mech_seed, mongo):
+    """Детали WO у менеджера: done-WO открывается с mechanic_done=true в JSON
+    (фронт сразу включает режим правки с кнопкой Confirm), обычный — false."""
+    login_mechanic(client)
+    d1 = _create_wo_as_mechanic(client, mech_seed, description="Confirm mode done")
+    d2 = _create_wo_as_mechanic(client, mech_seed, description="Confirm mode plain")
+    shop_db = mongo[SHOP_A_DB]
+
+    labor1 = shop_db.work_orders.find_one({"_id": ObjectId(d1["id"])})["labors"][0]["labor_id"]
+    resp = _post_json(
+        client,
+        f"/work_orders/api/mechanic/work_orders/{d1['id']}",
+        _wo_update_payload(mech_seed, labor1, "Confirm mode done", {"mechanic_state": "done"}),
+    )
+    assert resp.status_code == 200
+
+    login(client)
+    html = client.get(f"/work_orders/details?work_order_id={d1['id']}").get_data(as_text=True)
+    assert '"mechanic_done": true' in html
+
+    html = client.get(f"/work_orders/details?work_order_id={d2['id']}").get_data(as_text=True)
+    assert '"mechanic_done": false' in html
+
+    _deactivate_wos(mongo, d1["id"], d2["id"])
+
+
+def test_in_work_block_only_taken_not_done(client, mech_seed, mongo):
+    """Закреплённый блок «In Work»: WO в работе попадает, done-WO — нет."""
+    from app.blueprints.work_orders.services.listing import get_in_work_orders
+
+    login_mechanic(client)
+    d1 = _create_wo_as_mechanic(client, mech_seed, description="In work block")
+    d2 = _create_wo_as_mechanic(client, mech_seed, description="In work block done")
+    shop_db = mongo[SHOP_A_DB]
+
+    labor2 = shop_db.work_orders.find_one({"_id": ObjectId(d2["id"])})["labors"][0]["labor_id"]
+    resp = _post_json(
+        client,
+        f"/work_orders/api/mechanic/work_orders/{d2['id']}",
+        _wo_update_payload(mech_seed, labor2, "In work block done", {"mechanic_state": "done"}),
+    )
+    assert resp.status_code == 200
+
+    ids = {r["id"] for r in get_in_work_orders(shop_db, mech_seed["customer"]["shop_id"])}
+    assert d1["id"] in ids
+    assert d2["id"] not in ids
+
+    # Страница менеджера рендерит блок «In Work».
+    login(client)
+    resp = client.get("/work_orders")
+    assert resp.status_code == 200
+    assert "taken by mechanics, not marked done yet" in resp.get_data(as_text=True)
+
+    _deactivate_wos(mongo, d1["id"], d2["id"])
+
+
 # ── customer_email и mechanic_done в механик-payload ────────────────
 
 

@@ -184,6 +184,49 @@ def get_work_orders_list(
             per_page,
         )
 
+    items = _build_work_order_items(shop_db, shop_id, rows)
+
+    return items, pagination, totals_summary
+
+
+def get_in_work_orders(shop_db, shop_id: ObjectId):
+    """
+    WO, которые механики взяли в работу и ещё не отметили «done» — для
+    закреплённого блока сверху списка. Без фильтров и пагинации: блок
+    показывает текущую работу цеха независимо от выбранного периода.
+    """
+    rows = list(
+        shop_db.work_orders.find(
+            {
+                "shop_id": shop_id,
+                "is_active": True,
+                "status": "in_progress",
+                "mechanic_done": {"$ne": True},
+            }
+        ).sort([("work_order_date", -1), ("created_at", -1)])
+    )
+    return _build_work_order_items(shop_db, shop_id, rows)
+
+
+def _wo_mechanic_names(wo_doc: dict) -> list[str]:
+    """Механики WO — из assigned_mechanics всех строк (без дублей)."""
+    names: list[str] = []
+    for block in wo_doc.get("labors") or []:
+        if not isinstance(block, dict):
+            continue
+        labor = block.get("labor") if isinstance(block.get("labor"), dict) else {}
+        assigned = labor.get("assigned_mechanics") or block.get("assigned_mechanics") or []
+        for a in assigned:
+            if not isinstance(a, dict):
+                continue
+            nm = str(a.get("name") or "").strip()
+            if nm and nm not in names:
+                names.append(nm)
+    return names
+
+
+def _build_work_order_items(shop_db, shop_id: ObjectId, rows: list) -> list:
+    """Строки таблицы WO из raw-документов: лейблы, суммы, оплаты, таймеры."""
     customer_ids = [x.get("customer_id") for x in rows if x.get("customer_id")]
     unit_ids = [x.get("unit_id") for x in rows if x.get("unit_id")]
     wo_ids = [x.get("_id") for x in rows if x.get("_id")]
@@ -221,22 +264,6 @@ def get_work_orders_list(
             names = working_map.setdefault(log.get("work_order_id"), [])
             if name not in names:
                 names.append(name)
-
-    def _wo_mechanic_names(wo_doc: dict) -> list[str]:
-        """Механики WO — из assigned_mechanics всех строк (без дублей)."""
-        names: list[str] = []
-        for block in wo_doc.get("labors") or []:
-            if not isinstance(block, dict):
-                continue
-            labor = block.get("labor") if isinstance(block.get("labor"), dict) else {}
-            assigned = labor.get("assigned_mechanics") or block.get("assigned_mechanics") or []
-            for a in assigned:
-                if not isinstance(a, dict):
-                    continue
-                nm = str(a.get("name") or "").strip()
-                if nm and nm not in names:
-                    names.append(nm)
-        return names
 
     items = []
     for x in rows:
@@ -276,7 +303,7 @@ def get_work_orders_list(
             }
         )
 
-    return items, pagination, totals_summary
+    return items
 
 
 def get_estimates_list(

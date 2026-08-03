@@ -57,12 +57,20 @@
 
 {# Статус work order — ЕДИНЫЕ цвета на всех страницах (список WO, карточка
    клиента, карточка юнита). paid=зелёный, in progress=синий, остальное=жёлтый. #}
-{% macro wo_status_badge(status) -%}
+{# working: true — механик работает прямо сейчас (зелёный), false — WO взят,
+   но простаивает (серый), None — контекст неизвестен (нейтральный info). #}
+{% macro wo_status_badge(status, working=None) -%}
   {%- set s = (status or '') | lower | replace('_', ' ') | trim -%}
   {%- if s == 'paid' -%}
     <span class="badge text-bg-success">Paid</span>
   {%- elif s == 'in progress' -%}
-    <span class="badge text-bg-info">In Progress</span>
+    {%- if working is sameas true -%}
+      <span class="badge text-bg-success" title="A mechanic is working on it right now">In Progress</span>
+    {%- elif working is sameas false -%}
+      <span class="badge text-bg-secondary" title="Taken by a mechanic, idle right now">In Progress</span>
+    {%- else -%}
+      <span class="badge text-bg-info">In Progress</span>
+    {%- endif -%}
   {%- else -%}
     <span class="badge text-bg-warning">{{ s | title if s else 'Open' }}</span>
   {%- endif -%}

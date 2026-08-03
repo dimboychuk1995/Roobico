@@ -30,6 +30,7 @@ from app.blueprints.work_orders.services.pdf_contexts import (
 from app.blueprints.work_orders.services.listing import (
     _paginate_by_customer,
     get_estimates_list,
+    get_in_work_orders,
     get_work_orders_list,
     get_work_orders_totals,
 )
@@ -346,6 +347,7 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
         "time_summary": (form_state or {}).get("time_summary") or {},
         "initial_totals": normalize_totals_payload((form_state or {}).get("initial_totals") or {}),
         "work_order_status": (form_state or {}).get("work_order_status") or "open",
+        "mechanic_done": bool((form_state or {}).get("mechanic_done")),
         "pending_attachment_id": pending_attachment_id,
         "initial_authorizations": (form_state or {}).get("authorizations") or [],
     }
@@ -385,7 +387,7 @@ def work_orders_page():
 
     q = (request.args.get("q") or "").strip()
     paid_status = (request.args.get("paid_status") or "all").strip().lower()
-    if paid_status not in ("all", "paid", "unpaid"):
+    if paid_status not in ("all", "paid", "unpaid", "in_progress"):
         paid_status = "all"
 
     date_filters = get_date_range_filters(request.args)
@@ -411,6 +413,7 @@ def work_orders_page():
         "public/work_orders/work_orders.html",
         active_page="work_orders",
         work_orders=work_orders,
+        in_work_orders=get_in_work_orders(shop_db, shop["_id"]),
         pagination=pagination,
         work_orders_totals=work_orders_totals,
         q=q,
@@ -544,6 +547,10 @@ def work_order_details_page():
                     "labors": [],
                 },
                 "work_order_status": work_order_status,
+                # Механик нажал done — менеджер открывает WO сразу в режиме
+                # правки с кнопкой Confirm вместо Edit→Save.
+                "mechanic_done": bool(wo.get("mechanic_done"))
+                and (wo.get("status") or "").strip().lower() == "in_progress",
                 "authorizations": list(wo.get("authorizations") or []),
                 "time_summary": time_summary,
             },

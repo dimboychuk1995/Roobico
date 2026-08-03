@@ -162,17 +162,38 @@
     var chips = $("mechStatusChips");
 
     function cardHtml(item) {
+      var workingNow = item.working_now || [];
       var badge;
       if (item.status === "paid") {
         badge = '<span class="badge text-bg-success">Paid</span>';
+      } else if (item.mechanic_done) {
+        badge = '<span class="badge text-bg-success">Done</span>';
       } else if (item.is_in_progress) {
-        badge = '<span class="badge text-bg-info">In Progress</span>';
+        // Единая логика с менеджером: зелёный — работают прямо сейчас,
+        // серый — взят в работу, но в данный момент простаивает.
+        badge = workingNow.length
+          ? '<span class="badge text-bg-success">In Progress</span>'
+          : '<span class="badge text-bg-secondary">In Progress</span>';
       } else {
         badge = '<span class="badge text-bg-warning">Open</span>';
       }
       var running = item.my_timer_running
         ? '<span class="mech-wo-running"><span class="mech-timer-dot"></span>My timer running</span>'
         : "";
+      var idleMechanics = (item.mechanics || []).filter(function (m) {
+        return workingNow.indexOf(m) === -1;
+      });
+      var mechanicsLine = "";
+      if (workingNow.length || idleMechanics.length) {
+        mechanicsLine =
+          '<div class="mech-wo-meta">' +
+            "<span>" +
+            (workingNow.length ? '<span class="text-success">&#9679; ' + esc(workingNow.join(", ")) + "</span>" : "") +
+            (workingNow.length && idleMechanics.length ? ", " : "") +
+            (idleMechanics.length ? '<span class="text-muted">' + esc(idleMechanics.join(", ")) + "</span>" : "") +
+            "</span>" +
+          "</div>";
+      }
       return (
         '<a class="mech-wo-card" href="/mechanic/work_orders/' + encodeURIComponent(item.id) + '">' +
           '<div class="mech-wo-card-top">' +
@@ -181,7 +202,7 @@
           '<div class="mech-wo-meta">' +
             "<span>" + esc(item.customer || "-") + "</span>" +
             "<span>" + esc(item.unit || "-") + (item.date ? " · " + esc(item.date) : "") + "</span>" +
-          "</div>" + running +
+          "</div>" + mechanicsLine + running +
         "</a>"
       );
     }

@@ -4,6 +4,55 @@
 
 {% block page_title %}Work Orders{% endblock %}
 
+{# Строка таблицы WO — общая для закреплённого блока «In Work» и основного списка. #}
+{% macro wo_table_row(w) %}
+  <tr>
+    <td><span class="badge text-bg-secondary">{{ w.wo_number or '-' }}</span></td>
+    <td>{{ w.customer }}</td>
+    <td>{{ w.date }}</td>
+    <td>{{ w.unit }}</td>
+    <td class="text-end text-nowrap">{% if w.mileage %}{{ "{:,}".format(w.mileage|int) }}{% else %}-{% endif %}</td>
+    <td class="text-end">${{ "%.2f"|format(w.labor_total) }}</td>
+    <td class="text-end">${{ "%.2f"|format(w.parts_total) }}</td>
+    <td class="text-end">${{ "%.2f"|format(w.sales_tax_total or 0) }}</td>
+    <td class="text-end fw-semibold">${{ "%.2f"|format(w.grand_total) }}</td>
+    <td class="text-end">${{ "%.2f"|format(w.balance or 0) }}</td>
+    <td class="text-center">
+      {% if w.mechanic_done %}
+        <span class="badge text-bg-success" title="The mechanic finished this job and it awaits your review">Mechanic done</span>
+      {% elif w.is_in_progress %}
+        {{ wo_status_badge('in progress', working=(w.working_now | length > 0)) }}
+      {% else %}
+        {{ wo_status_badge('paid' if w.is_paid else 'unpaid') }}
+      {% endif %}
+      {% if w.working_now %}
+        <div class="small text-success text-nowrap mt-1" title="Working on it right now">&#9679; {{ w.working_now | join(', ') }}</div>
+      {% elif w.is_in_progress and not w.mechanic_done and w.mechanics %}
+        <div class="small text-muted text-nowrap mt-1" title="Assigned mechanics — idle right now">&#9679; {{ w.mechanics | join(', ') }}</div>
+      {% endif %}
+    </td>
+    <td class="text-end text-nowrap">
+      {% if not w.is_paid %}
+        <button type="button"
+                class="btn btn-outline-success btn-sm me-1 js-mark-paid"
+                data-work-order-id="{{ w.id }}"
+                title="Record payment">
+          <i class="bi bi-cash-coin me-1"></i>Pay
+        </button>
+      {% endif %}
+      <a class="btn btn-outline-secondary btn-sm me-1" href="{{ url_for('work_orders.api_download_work_order_pdf', work_order_id=w.id) }}" target="_blank" rel="noopener noreferrer" title="Download PDF" aria-label="Download PDF">
+        <i class="bi bi-file-earmark-pdf"></i>
+      </a>
+      <a class="btn btn-outline-primary btn-sm me-1" href="{{ url_for('work_orders.work_order_details_page', work_order_id=w.id) }}" target="_blank" rel="noopener noreferrer">
+        Edit
+      </a>
+      <button type="button" class="btn btn-outline-danger btn-sm js-delete-work-order" data-work-order-id="{{ w.id }}" title="Delete work order">
+        Delete
+      </button>
+    </td>
+  </tr>
+{% endmacro %}
+
 {% block app_content %}
 <div class="page-header">
   <h1 class="page-header__title">Work Orders</h1>
@@ -32,6 +81,42 @@
 <div class="tab-content mt-3">
   <!-- Work Orders Tab -->
   <div class="tab-pane show active" id="content-work-orders" role="tabpanel" aria-labelledby="tab-work-orders">
+    {% if in_work_orders and in_work_orders|length > 0 %}
+      <div class="card mb-3">
+        <div class="card-body">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <h2 class="h6 mb-0">In Work</h2>
+            <span class="badge text-bg-info">{{ in_work_orders|length }}</span>
+            <span class="small text-muted">taken by mechanics, not marked done yet</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th>WO #</th>
+                  <th>Customer</th>
+                  <th>Date</th>
+                  <th>Unit</th>
+                  <th class="text-end">Mileage</th>
+                  <th class="text-end">Labor</th>
+                  <th class="text-end">Parts</th>
+                  <th class="text-end">Tax</th>
+                  <th class="text-end">Total</th>
+                  <th class="text-end">Balance</th>
+                  <th class="text-center">Paid</th>
+                  <th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for w in in_work_orders %}
+                  {{ wo_table_row(w) }}
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    {% endif %}
     <div class="card">
       <div class="card-body">
         <form method="get" class="row g-2 align-items-center mb-3 wo-filter-form">
@@ -101,46 +186,7 @@
               </thead>
               <tbody>
                 {% for w in work_orders %}
-                  <tr>
-                    <td><span class="badge text-bg-secondary">{{ w.wo_number or '-' }}</span></td>
-                    <td>{{ w.customer }}</td>
-                    <td>{{ w.date }}</td>
-                    <td>{{ w.unit }}</td>
-                    <td class="text-end text-nowrap">{% if w.mileage %}{{ "{:,}".format(w.mileage|int) }}{% else %}-{% endif %}</td>
-                    <td class="text-end">${{ "%.2f"|format(w.labor_total) }}</td>
-                    <td class="text-end">${{ "%.2f"|format(w.parts_total) }}</td>
-                    <td class="text-end">${{ "%.2f"|format(w.sales_tax_total or 0) }}</td>
-                    <td class="text-end fw-semibold">${{ "%.2f"|format(w.grand_total) }}</td>
-                    <td class="text-end">${{ "%.2f"|format(w.balance or 0) }}</td>
-                    <td class="text-center">
-                      {{ wo_status_badge('paid' if w.is_paid else ('in progress' if w.is_in_progress else 'unpaid')) }}
-                      {% if w.mechanic_done %}
-                        <div class="mt-1"><span class="badge text-bg-success" title="The mechanic finished this job and it awaits your review">Mechanic done</span></div>
-                      {% endif %}
-                      {% if w.working_now %}
-                        <div class="small text-success text-nowrap mt-1" title="Working on it right now">&#9679; {{ w.working_now | join(', ') }}</div>
-                      {% endif %}
-                    </td>
-                    <td class="text-end text-nowrap">
-                      {% if not w.is_paid %}
-                        <button type="button"
-                                class="btn btn-outline-success btn-sm me-1 js-mark-paid"
-                                data-work-order-id="{{ w.id }}"
-                                title="Record payment">
-                          <i class="bi bi-cash-coin me-1"></i>Pay
-                        </button>
-                      {% endif %}
-                      <a class="btn btn-outline-secondary btn-sm me-1" href="{{ url_for('work_orders.api_download_work_order_pdf', work_order_id=w.id) }}" target="_blank" rel="noopener noreferrer" title="Download PDF" aria-label="Download PDF">
-                        <i class="bi bi-file-earmark-pdf"></i>
-                      </a>
-                      <a class="btn btn-outline-primary btn-sm me-1" href="{{ url_for('work_orders.work_order_details_page', work_order_id=w.id) }}" target="_blank" rel="noopener noreferrer">
-                        Edit
-                      </a>
-                      <button type="button" class="btn btn-outline-danger btn-sm js-delete-work-order" data-work-order-id="{{ w.id }}" title="Delete work order">
-                        Delete
-                      </button>
-                    </td>
-                  </tr>
+                  {{ wo_table_row(w) }}
                 {% endfor %}
               </tbody>
             </table>

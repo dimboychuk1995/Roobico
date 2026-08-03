@@ -28,24 +28,28 @@ const SEGMENTS = [
 type SegmentKey = (typeof SEGMENTS)[number]["key"];
 
 function statusBadge(item: WorkOrderRow, isMechanic: boolean) {
-  // Механик видит только «свои» статусы (open/in_progress) и подтверждение —
-  // никаких paid/unpaid (paid WO ему сервер вообще не отдаёт).
+  // Единая логика для механика и менеджера: done — зелёный «Done»;
+  // взят в работу и работают прямо сейчас — зелёный «In Progress»;
+  // взят, но простаивает — серый «In Progress».
+  const inProgressBadge = (
+    <Badge label="In Progress" tone={(item.working_now || []).length ? "success" : "muted"} />
+  );
   if (isMechanic) {
     if (item.manager_confirmed) return <Badge label="Confirmed" tone="success" />;
-    // Механик закончил — для него это уже не «In Progress».
     if (item.mechanic_done) return <Badge label="Done" tone="success" />;
-    if (item.is_in_progress) return <Badge label="In Progress" tone="info" />;
+    if (item.is_in_progress) return inProgressBadge;
     return <Badge label="Open" tone="muted" />;
   }
   if (item.is_paid) return <Badge label="Paid" tone="success" />;
-  if (item.is_in_progress) return <Badge label="In Progress" tone="info" />;
+  if (item.mechanic_done) return <Badge label="Done" tone="success" />;
+  if (item.is_in_progress) return inProgressBadge;
   return <Badge label="Unpaid" tone="warning" />;
 }
 
 function WorkOrderCard({ item }: { item: WorkOrderRow }) {
   const theme = useTheme();
   const isMechanic = useIsMechanic();
-  // Сейчас за работой — красным ●; остальные назначенные — обычным списком.
+  // Сейчас за работой — зелёным ●; взятые, но простаивающие — серым.
   const working = new Set(item.working_now || []);
   const idleMechanics = (item.mechanics || []).filter((m) => !working.has(m));
   return (
@@ -53,7 +57,6 @@ function WorkOrderCard({ item }: { item: WorkOrderRow }) {
       <View style={styles.topRow}>
         <Text style={[styles.number, { color: theme.text }]}>WO #{item.wo_number ?? "—"}</Text>
         <View style={styles.badgeRow}>
-          {!isMechanic && item.mechanic_done ? <Badge label="Done" tone="success" /> : null}
           {!isMechanic && item.manager_confirmed ? <Badge label="Confirmed" tone="success" /> : null}
           {statusBadge(item, isMechanic)}
         </View>

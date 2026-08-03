@@ -4491,12 +4491,15 @@
     let workOrderStatus = "open"; // "open" | "paid"
     let isCreated = false;
     let customerEmail = "";
+    // Механик нажал done: страница сразу в режиме правки, Save подписан Confirm.
+    let mechanicDone = false;
 
     const createdInfo = readJsonScript("workOrderCreatedData", { created: false, id: "", status: "open" });
     if (createdInfo && createdInfo.created && createdInfo.id) {
       isCreated = true;
       workOrderId = String(createdInfo.id);
       workOrderStatus = String(createdInfo.status || "open").trim().toLowerCase();
+      mechanicDone = !!createdInfo.mechanic_done;
       // If a recognized handwritten WO was waiting for the create to finish,
       // attach it now to this freshly-created work order.
       try { flushPendingRecognizedUpload(); } catch {}
@@ -4527,6 +4530,12 @@
       if (workOrderStatus === "paid") {
         setEditingMode(false, els);
         setButtonsState("paid", els);
+      } else if (mechanicDone) {
+        // Механик закончил — менеджеру не нужен лишний клик Edit:
+        // поля сразу редактируемы, Confirm сохраняет и закрывает ревью.
+        setEditingMode(true, els);
+        setButtonsState("editing_open", els);
+        if (saveBtn) saveBtn.textContent = "Confirm";
       } else {
         setEditingMode(false, els);
         setButtonsState("created_locked_open", els);
@@ -4582,10 +4591,15 @@
           workOrderStatus = payload.save_status;
         }
 
-        // после сохранения снова лочим
-        setEditingMode(false, els);
-        setButtonsState("created_locked_open", els);
-        toast(workOrderStatus === "in_progress" ? "Saved as In Progress." : "Saved.");
+        // после сохранения снова лочим; «Save In Progress» оставляет WO
+        // в ревью механика — режим Confirm сохраняется до полного сохранения.
+        const wasConfirm = mechanicDone && workOrderStatus !== "in_progress";
+        if (wasConfirm) {
+          mechanicDone = false;
+          if (saveBtn) saveBtn.textContent = "Save";
+        }
+        applyStateFromStatus();
+        toast(workOrderStatus === "in_progress" ? "Saved as In Progress." : (wasConfirm ? "Confirmed." : "Saved."));
       } catch (e) {
         toast(e.message || "Save failed.");
       }
