@@ -166,6 +166,7 @@ def test_hours_chart_actual_and_invoiced_series(client, hours_seed):
     assert summary["uattend_total"] is None
     assert summary["efficiency_percent"] == 333.33
     assert summary["utilization_percent"] is None
+    assert summary["invoiced_vs_uattend_percent"] is None
 
     rows = {r["name"]: r for r in chart["rows"]}
     # Имя из списка механиков магазина (master.users), не из WO
@@ -228,6 +229,7 @@ def test_hours_chart_uattend_series_when_connected(client, hours_seed, mongo, mo
     summary = chart["summary"]
     assert summary["uattend_total"] == 8.0
     assert summary["utilization_percent"] == 18.75  # 1.5 / 8.0
+    assert summary["invoiced_vs_uattend_percent"] == 62.5  # 5.0 / 8.0
 
     rows = {r["name"]: r for r in chart["rows"]}
     # Незаматченный сотрудник uAttend — отдельной строкой

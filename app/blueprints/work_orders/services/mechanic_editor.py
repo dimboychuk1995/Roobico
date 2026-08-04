@@ -10,6 +10,8 @@ WO блоки матчатся по стабильному labor_id, чтобы 
 """
 from __future__ import annotations
 
+import json
+
 from app.blueprints.work_orders.services.common import i32, round2
 from app.blueprints.work_orders.services.mobile_editor import suggest_part_price
 
@@ -55,6 +57,73 @@ def _resolve_part_doc(shop_db, shop_id, part_id_raw, part_number):
     return None
 
 
+def _catalog_misc_items(part_doc: dict) -> list[dict]:
+    """Misc-чарджи запчасти из каталога — в формате misc-items JSON WO."""
+    if not part_doc.get("misc_has_charge"):
+        return []
+    items = []
+    for ch in part_doc.get("misc_charges") or []:
+        if not isinstance(ch, dict):
+            continue
+        description = str(ch.get("description") or "").strip()
+        price = round2(ch.get("price") or 0)
+        if not description or price <= 0:
+            continue
+        items.append({
+            "description": description,
+            "price": price,
+            "taxable": ch.get("taxable") is not False,
+        })
+    return items
+
+
+def _attach_catalog_misc_items(parts: list[dict]) -> None:
+    """
+    Misc-чарджи каталога с новых строк механика → JSON-список на ПЕРВОЙ
+    строке партов блока — тот же формат и место, куда пишет веб-автозаполнение
+    менеджера (quantity = qty строки, partIndex — индекс строки-источника).
+    Уже сохранённые в JSON позиции (ручные и от других строк) не трогаем.
+    """
+    new_items = []
+    for idx, p in enumerate(parts):
+        items = p.pop("_catalog_misc_items", None) or []
+        qty = i32(p.get("qty")) or 0
+        if qty <= 0:
+            continue
+        for it in items:
+            new_items.append({**it, "quantity": qty, "partIndex": idx})
+
+    if not parts or not new_items:
+        return
+
+    existing = []
+    raw = str(parts[0].get("misc_charge_description") or "").strip()
+    if raw:
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, list):
+                existing = parsed
+        except ValueError:
+            existing = []
+    parts[0]["misc_charge_description"] = json.dumps(existing + new_items)
+
+
+def _default_rate_code(shop_db, shop_id) -> str:
+    """
+    Ставка для работ механика без пресета: "standard", если есть, иначе
+    первая активная ставка магазина. Без ставки labor total был бы $0.
+    """
+    from app.blueprints.work_orders.services.lookups import get_labor_rates
+
+    rates = get_labor_rates(shop_db, shop_id)
+    if not rates:
+        return ""
+    for r in rates:
+        if str(r.get("code") or "").strip().lower() == "standard":
+            return str(r.get("code") or "")
+    return str(rates[0].get("code") or "")
+
+
 def _autofill_part(shop_db, shop_id, customer_id, raw_part: dict) -> dict:
     """Новая строка запчасти от механика: qty от клиента, деньги — с сервера."""
     qty = i32(raw_part.get("qty")) or 0
@@ -81,6 +150,9 @@ def _autofill_part(shop_db, shop_id, customer_id, raw_part: dict) -> dict:
             "misc_charge": 0,
             "misc_charge_description": "",
             "one_time_part": False,
+            # Временный ключ: misc-чарджи каталога, забирает
+            # _attach_catalog_misc_items при сборке блока.
+            "_catalog_misc_items": _catalog_misc_items(part_doc),
         }
     # Не нашли в каталоге — ручная строка без цен, менеджер заполнит.
     return {
@@ -156,6 +228,7 @@ def _preset_defaults(shop_db, shop_id, preset_id_raw) -> dict:
 
 def build_mechanic_labors_payload(shop_db, shop, customer_id, payload_labors) -> list[dict]:
     """Создание WO механиком: все парты автозаполняются сервером."""
+    default_rate_code = _default_rate_code(shop_db, shop["_id"])
     out = []
     for raw in payload_labors or []:
         if not isinstance(raw, dict):
@@ -169,14 +242,17 @@ def build_mechanic_labors_payload(shop_db, shop, customer_id, payload_labors) ->
                 or str(p.get("description") or "").strip()
             )
         ]
+        _attach_catalog_misc_items(parts)
         # Работа из пресета: часы и ставка — из пресета (клиентские значения
-        # механика игнорируются, как и остальные денежные поля).
+        # механика игнорируются, как и остальные денежные поля). Без пресета
+        # ставка — дефолтная ставка магазина, чтобы затреканные часы
+        # биллинговались, а не давали $0.
         preset = _preset_defaults(shop_db, shop["_id"], raw.get("preset_id"))
         out.append({
             "labor_id": str(raw.get("labor_id") or ""),
             "description": str(raw.get("description") or "").strip(),
             "hours": preset.get("hours", ""),
-            "rate_code": preset.get("rate_code", ""),
+            "rate_code": preset.get("rate_code") or default_rate_code,
             "labor_total": None,
             "issue_description": str(raw.get("issue_description") or "").strip(),
             "hours_source": preset.get("hours_source", ""),
@@ -246,6 +322,9 @@ def merge_mechanic_edit(shop_db, shop, existing_wo: dict, payload_labors) -> lis
                 merged_parts.append(merged)
             else:
                 merged_parts.append(_autofill_part(shop_db, shop["_id"], customer_id, p))
+
+        # Misc-чарджи каталога с новых строк — в JSON первой строки блока.
+        _attach_catalog_misc_items(merged_parts)
 
         out.append({
             **base,

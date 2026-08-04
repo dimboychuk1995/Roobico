@@ -1443,6 +1443,94 @@ def test_manager_details_page_renders_with_assigned_mechanics(client, mech_seed,
     _deactivate_wos(mongo, data["id"])
 
 
+# ── дефолтная ставка и core/misc charges от механика ────────────────
+
+
+def test_mechanic_custom_labor_gets_default_rate(client, mech_seed, mongo):
+    """Работа без пресета получает дефолтную ставку магазина — затреканные
+    часы биллингуются, а не дают $0."""
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Custom labor rate")
+    shop_db = mongo[SHOP_A_DB]
+
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    block = wo["labors"][0]
+    assert block["labor"]["rate_code"] == "standard"
+    assert block["labor"]["hours"] == ""  # часы придут из трекинга
+
+    # Час затреканного времени → labor base = 1 × $100 (ставка standard).
+    now = _now()
+    shop_db.wo_time_logs.insert_one({
+        "shop_id": wo["shop_id"], "work_order_id": wo["_id"],
+        "labor_id": block["labor_id"],
+        "user_id": mech_seed["user"]["_id"], "user_name": "Mike Wrench",
+        "started_at": now, "stopped_at": now, "seconds": 3600,
+        "stop_source": "user", "created_at": now, "updated_at": now,
+    })
+    from app.blueprints.work_orders.services.mechanic_editor import refresh_time_derived_fields
+    assert refresh_time_derived_fields(shop_db, {"_id": wo["shop_id"]}, data["id"]) is True
+
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    assert wo["labors"][0]["labor"]["hours"] == "1.0"
+    # Labor base блока = 1 ч × $100 (в totals.labor_total может добавляться shop supply).
+    assert wo["totals"]["labors"][0]["labor"] == pytest.approx(100.0)
+    assert wo["totals"]["labor_total"] >= 100.0
+    _deactivate_wos(mongo, data["id"])
+
+
+def test_mechanic_part_brings_core_and_misc_charges(client, mech_seed, mongo):
+    """Запчасть с core/misc charge из каталога: чарджи попадают в WO механика
+    (misc — JSON-списком на первой строке, как в веб-автозаполнении)."""
+    import json as _json
+
+    shop_db = mongo[SHOP_A_DB]
+    shop_id = mech_seed["customer"]["shop_id"]
+    part = {
+        "_id": ObjectId(),
+        "shop_id": shop_id,
+        "part_number": "MECH-CORE-MISC-01",
+        "description": "Battery with charges",
+        "average_cost": 50.0,
+        "has_selling_price": True,
+        "selling_price": 120.0,
+        "core_has_charge": True,
+        "core_cost": 15.0,
+        "misc_has_charge": True,
+        "misc_charges": [{"description": "EPA fee", "price": 3.5, "taxable": False}],
+        "in_stock": 10,
+        "is_active": True,
+        "created_at": _now(),
+    }
+    shop_db.parts.insert_one(part)
+
+    login_mechanic(client)
+    resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
+        "customer_id": str(mech_seed["customer"]["_id"]),
+        "unit_id": str(mech_seed["unit"]["_id"]),
+        "labors": [{
+            "description": "Replace battery",
+            "parts": [{"part_id": str(part["_id"]), "qty": 2}],
+        }],
+    })
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    data = resp.get_json()
+
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    p = wo["labors"][0]["parts"][0]
+    assert float(p["core_charge"]) == 15.0
+    misc_items = _json.loads(p["misc_charge_description"])
+    assert misc_items == [{
+        "description": "EPA fee", "price": 3.5, "taxable": False,
+        "quantity": 2, "partIndex": 0,
+    }]
+
+    totals = wo["totals"]
+    assert totals["core_total"] == pytest.approx(30.0)   # 15 × 2
+    assert totals["misc_total"] == pytest.approx(7.0)    # 3.5 × 2
+    assert totals["misc_taxable_total"] == pytest.approx(0.0)
+    _deactivate_wos(mongo, data["id"])
+
+
 # ── биллинговые часы из тайм-логов и пресетов ───────────────────────
 
 

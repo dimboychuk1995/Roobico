@@ -643,6 +643,12 @@ def _compute_mechanic_hours_metrics(shop_db, shop, created_from, created_to_excl
             if uattend_connected and uattend_total > 0
             else None
         ),
+        # Invoiced vs uAttend: сколько продано часов на час смены по табелю.
+        "invoiced_vs_uattend_percent": (
+            _round2(invoiced_total / uattend_total * 100.0)
+            if uattend_connected and uattend_total > 0
+            else None
+        ),
     }
 
     return {

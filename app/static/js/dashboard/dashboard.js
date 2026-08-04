@@ -357,13 +357,13 @@
     if (chart.uattend_connected && summary.uattend_total !== null && summary.uattend_total !== undefined) {
       addPill('uAttend', hoursText(summary.uattend_total), 'Hours from the uAttend time clock');
     }
-    if (summary.efficiency_percent !== null && summary.efficiency_percent !== undefined) {
-      addPill('Invoiced ÷ Actual', percent1(summary.efficiency_percent),
-        'Billed hours per hour of tracked work. Above 100% — you bill more than the time spent.');
-    }
     if (summary.utilization_percent !== null && summary.utilization_percent !== undefined) {
       addPill('Actual ÷ uAttend', percent1(summary.utilization_percent),
         'Share of clocked shift time spent working on work orders.');
+    }
+    if (summary.invoiced_vs_uattend_percent !== null && summary.invoiced_vs_uattend_percent !== undefined) {
+      addPill('Invoiced ÷ uAttend', percent1(summary.invoiced_vs_uattend_percent),
+        'Billed labor hours per clocked shift hour. Above 100% — you bill more than the shift time.');
     }
 
     const rows = Array.isArray(chart.rows) ? chart.rows : [];
