@@ -6,7 +6,13 @@
 
 {% block app_content %}
 <div class="page-header">
-  <h1 class="page-header__title">{{ unit.label }}</h1>
+  <h1 class="page-header__title">
+    {{ unit.label }}
+    <span class="small text-muted fw-normal ms-2">{{ customer_label }}</span>
+    {% if customer_inactive %}
+      <span class="badge text-bg-secondary ms-1" title="This customer is deactivated">Customer inactive</span>
+    {% endif %}
+  </h1>
   <ul class="nav page-header__tabs" role="tablist">
     <li class="nav-item" role="presentation">
       <a class="nav-link {% if active_tab == 'work_orders' %}active{% endif %}" href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=unit.id, tab='work_orders', q=q) }}">Work Orders</a>

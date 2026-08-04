@@ -249,10 +249,12 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
     from bson import ObjectId as _ObjId
     mechanics = get_assignable_mechanics(shop)
 
-    # Only load the selected customer for initial render; full list loaded via JS
+    # Only load the selected customer for initial render; full list loaded via JS.
+    # Без фильтра is_active: WO деактивированного клиента должен открываться,
+    # клиент помечается "(inactive)" в лейбле.
     selected_customer = None
     if customer_id:
-        c = shop_db.customers.find_one({"_id": customer_id, "is_active": True})
+        c = shop_db.customers.find_one({"_id": customer_id})
         if c:
             rate_rows = list(shop_db.labor_rates.find({"is_active": True}, {"_id": 1, "code": 1}))
             rates_by_id = {r.get("_id"): str(r.get("code") or "").strip() for r in rate_rows if r.get("_id")}
@@ -263,9 +265,11 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
                 if legacy == "standart":
                     return "standard"
                 return legacy
+            _inactive = c.get("is_active") is False
             selected_customer = {
                 "id": str(c["_id"]),
-                "label": customer_label(c),
+                "label": customer_label(c) + (" (inactive)" if _inactive else ""),
+                "is_active": not _inactive,
                 "default_labor_rate": _resolve_rate(c.get("default_labor_rate")),
                 "taxable": bool(c.get("taxable", False)),
                 "company_name": (c.get("company_name") or "").strip(),
@@ -1984,17 +1988,20 @@ def api_get_all_payments():
                 customer_ids.append(customer_id)
 
     customers_map = {}
+    inactive_customer_ids = set()
     if customer_ids:
         customers = list(
             shop_db.customers.find(
                 {"_id": {"$in": customer_ids}},
-                {"company_name": 1, "first_name": 1, "last_name": 1, "contacts": 1},
+                {"company_name": 1, "first_name": 1, "last_name": 1, "contacts": 1, "is_active": 1},
             )
         )
         for c in customers:
             c_id = c.get("_id")
             if c_id:
                 customers_map[c_id] = customer_label(c)
+                if c.get("is_active") is False:
+                    inactive_customer_ids.add(c_id)
 
     # Batch-fetch attachment counts for all payments on this page.
     payment_ids = [p["_id"] for p in payments if p.get("_id")]
@@ -2012,6 +2019,7 @@ def api_get_all_payments():
             "work_order_id": str(p.get("work_order_id")) if p.get("work_order_id") else "",
             "wo_number": (work_orders_map.get(p.get("work_order_id")) or {}).get("wo_number") or "-",
             "customer": customers_map.get((work_orders_map.get(p.get("work_order_id")) or {}).get("customer_id")) or "-",
+            "customer_inactive": (work_orders_map.get(p.get("work_order_id")) or {}).get("customer_id") in inactive_customer_ids,
             "amount": round2(p.get("amount") or 0),
             "payment_method": p.get("payment_method") or "cash",
             "notes": p.get("notes") or "",

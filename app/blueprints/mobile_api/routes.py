@@ -204,6 +204,12 @@ def mobile_work_orders():
         items = [strip_wo_list_item(i) for i in items]
         totals = {}
 
+    # Пометка деактивированного клиента прямо в имени — видна и в текущих
+    # сборках мобильного приложения без его обновления.
+    for i in items:
+        if i.get("customer_inactive") and i.get("customer") and i["customer"] != "-":
+            i["customer"] = f"{i['customer']} (inactive)"
+
     return jsonify({
         "ok": True,
         "items": items,
@@ -826,9 +832,16 @@ def mobile_units_search():
 
     customer_ids = [u.get("customer_id") for u in rows if u.get("customer_id")]
     customers_map = {}
+    inactive_customer_ids = set()
     if customer_ids:
         for c in shop_db.customers.find({"_id": {"$in": customer_ids}}):
-            customers_map[c["_id"]] = customer_label(c)
+            # Деактивированный клиент помечается прямо в лейбле — это видно
+            # и в текущих сборках мобильного приложения.
+            label = customer_label(c)
+            if c.get("is_active") is False:
+                label += " (inactive)"
+                inactive_customer_ids.add(c["_id"])
+            customers_map[c["_id"]] = label
 
     items = [{
         "id": str(u["_id"]),
@@ -837,6 +850,7 @@ def mobile_units_search():
         "vin": str(u.get("vin") or ""),
         "customer_id": str(u.get("customer_id") or ""),
         "customer_label": customers_map.get(u.get("customer_id")) or "-",
+        "customer_inactive": u.get("customer_id") in inactive_customer_ids,
     } for u in rows]
 
     return jsonify({"ok": True, "items": items, "pagination": _pagination_payload(pagination)}), 200
@@ -867,12 +881,17 @@ def mobile_unit_details(unit_id):
         sort=[("created_at", -1)],
     )
 
+    customer_lbl = customer_label(customer) if customer else ""
+    if customer and customer.get("is_active") is False:
+        customer_lbl += " (inactive)"
+
     return jsonify({
         "ok": True,
         "id": str(u["_id"]),
         "label": unit_label(u),
         "customer_id": str(u.get("customer_id") or ""),
-        "customer_label": customer_label(customer) if customer else "",
+        "customer_label": customer_lbl,
+        "customer_inactive": bool(customer) and customer.get("is_active") is False,
         "unit_number": str(u.get("unit_number") or ""),
         "vin": str(u.get("vin") or ""),
         "year": str(u.get("year") or ""),

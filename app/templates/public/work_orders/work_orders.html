@@ -8,7 +8,12 @@
 {% macro wo_table_row(w) %}
   <tr>
     <td><span class="badge text-bg-secondary">{{ w.wo_number or '-' }}</span></td>
-    <td>{{ w.customer }}</td>
+    <td>
+      {{ w.customer }}
+      {% if w.customer_inactive %}
+        <span class="badge text-bg-secondary ms-1" title="This customer is deactivated">Inactive</span>
+      {% endif %}
+    </td>
     <td>{{ w.date }}</td>
     <td>{{ w.unit }}</td>
     <td class="text-end text-nowrap">{% if w.mileage %}{{ "{:,}".format(w.mileage|int) }}{% else %}-{% endif %}</td>

@@ -201,7 +201,9 @@
             '<span class="mech-wo-number">WO #' + esc(item.wo_number) + "</span>" + badge +
           "</div>" +
           '<div class="mech-wo-meta">' +
-            "<span>" + esc(item.customer || "-") + "</span>" +
+            "<span>" + esc(item.customer || "-") +
+              (item.customer_inactive ? ' <span class="badge text-bg-secondary">Inactive</span>' : "") +
+            "</span>" +
             "<span>" + esc(item.unit || "-") + (item.date ? " · " + esc(item.date) : "") + "</span>" +
           "</div>" + mechanicsLine + running +
         "</a>"

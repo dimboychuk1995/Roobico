@@ -275,9 +275,12 @@ def _build_work_order_items(shop_db, shop_id: ObjectId, rows: list) -> list:
     wo_ids = [x.get("_id") for x in rows if x.get("_id")]
 
     customers_map = {}
+    inactive_customer_ids: set = set()
     if customer_ids:
         for c in shop_db.customers.find({"_id": {"$in": customer_ids}}):
             customers_map[c.get("_id")] = customer_label(c)
+            if c.get("is_active") is False:
+                inactive_customer_ids.add(c.get("_id"))
 
     units_map = {}
     units_mileage_map = {}
@@ -326,6 +329,7 @@ def _build_work_order_items(shop_db, shop_id: ObjectId, rows: list) -> list:
                 "id": str(x.get("_id")),
                 "wo_number": x.get("wo_number"),
                 "customer": customers_map.get(x.get("customer_id")) or "-",
+                "customer_inactive": x.get("customer_id") in inactive_customer_ids,
                 "date": format_preferred_date_label(x.get("work_order_date"), x.get("created_at")),
                 "unit": units_map.get(x.get("unit_id")) or "-",
                 "mileage": x.get("mileage") or units_mileage_map.get(x.get("unit_id")),
@@ -419,9 +423,12 @@ def get_estimates_list(
     unit_ids = [x.get("unit_id") for x in rows if x.get("unit_id")]
 
     customers_map = {}
+    inactive_customer_ids: set = set()
     if customer_ids:
         for c in shop_db.customers.find({"_id": {"$in": customer_ids}}):
             customers_map[c.get("_id")] = customer_label(c)
+            if c.get("is_active") is False:
+                inactive_customer_ids.add(c.get("_id"))
 
     units_map = {}
     units_mileage_map = {}
@@ -446,6 +453,7 @@ def get_estimates_list(
                 "id": str(x.get("_id")),
                 "wo_number": x.get("wo_number"),
                 "customer": customers_map.get(x.get("customer_id")) or "-",
+                "customer_inactive": x.get("customer_id") in inactive_customer_ids,
                 "date": format_preferred_date_label(x.get("work_order_date"), x.get("created_at")),
                 "unit": units_map.get(x.get("unit_id")) or "-",
                 "mileage": x.get("mileage"),

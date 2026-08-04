@@ -73,6 +73,22 @@
         {% endif %}
       </div>
     </div>
+    {% if "customers.deactivate" in user_permissions %}
+      <div class="ms-auto">
+        {% if customer.is_active %}
+          <form method="post" action="{{ url_for('customers.customers_deactivate', customer_id=customer_id) }}" class="d-inline"
+                onsubmit="return appConfirmSubmit(this, 'Deactivate this customer? All history stays and you can activate them back anytime, but they will be marked as inactive everywhere.');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline-danger btn-sm">Deactivate Customer</button>
+          </form>
+        {% else %}
+          <form method="post" action="{{ url_for('customers.customers_activate', customer_id=customer_id) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="btn btn-outline-success btn-sm">Activate Customer</button>
+          </form>
+        {% endif %}
+      </div>
+    {% endif %}
   </div>
 </div>
 

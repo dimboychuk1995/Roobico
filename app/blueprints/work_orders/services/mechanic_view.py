@@ -74,7 +74,9 @@ def mechanic_wo_payload(shop_db, shop, wo: dict, user_id) -> dict:
 
     wo = ensure_wo_labor_ids(shop_db, wo)
 
-    customer = shop_db.customers.find_one({"_id": wo.get("customer_id"), "is_active": True})
+    # Без фильтра is_active: WO деактивированного клиента должен открываться,
+    # клиент помечается "(inactive)" в лейбле.
+    customer = shop_db.customers.find_one({"_id": wo.get("customer_id")})
     unit = shop_db.units.find_one({"_id": wo.get("unit_id"), "is_active": True})
 
     time_summary = summarize_wo_time(shop_db, shop["_id"], wo["_id"], user_id=user_id)
@@ -139,7 +141,11 @@ def mechanic_wo_payload(shop_db, shop, wo: dict, user_id) -> dict:
         "manager_confirmed": bool(wo.get("manager_confirmed")),
         "customer": {
             "id": str(wo.get("customer_id") or ""),
-            "label": customer_label(customer) if customer else "-",
+            "label": (
+                customer_label(customer)
+                + (" (inactive)" if customer.get("is_active") is False else "")
+            ) if customer else "-",
+            "inactive": bool(customer) and customer.get("is_active") is False,
         },
         # Email клиента нужен механику для «Send for approval» (авторизация).
         "customer_email": get_main_contact_email(customer, entity_type="customer") if customer else "",

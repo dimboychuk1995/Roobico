@@ -1165,6 +1165,7 @@ def customer_unit_details_page(customer_id, unit_id):
         active_page="customers",
         customer_id=str(cid),
         customer_label=_customer_label(customer),
+        customer_inactive=customer.get("is_active") is False,
         unit=unit_view,
         annual_inspection=annual_inspection,
         active_tab=tab,
@@ -1444,8 +1445,46 @@ def customers_deactivate(customer_id):
         }},
     )
 
-    flash("Customer deactivated.", "success")
-    return redirect(url_for("customers.customers_page"))
+    flash("Customer deactivated. History is kept; you can activate them back anytime.", "success")
+    return redirect(url_for("customers.customer_details_page", customer_id=str(cid)))
+
+
+@customers_bp.post("/customers/<customer_id>/activate")
+@login_required
+@permission_required("customers.deactivate")
+def customers_activate(customer_id):
+    coll, shop, master = _customers_collection()
+    if coll is None or shop is None:
+        flash("Shop database not configured for this shop.", "error")
+        return redirect(url_for("customers.customers_page"))
+
+    cid = _oid(customer_id)
+    if not cid:
+        flash("Invalid customer id.", "error")
+        return redirect(url_for("customers.customers_page"))
+
+    existing = coll.find_one({"_id": cid, "shop_id": shop["_id"]})
+    if not existing:
+        flash("Customer not found.", "error")
+        return redirect(url_for("customers.customers_page"))
+
+    if existing.get("is_active") is not False:
+        flash("Customer is already active.", "info")
+        return redirect(url_for("customers.customer_details_page", customer_id=str(cid)))
+
+    coll.update_one(
+        {"_id": cid},
+        {"$set": {
+            "is_active": True,
+            "updated_at": utcnow(),
+            "updated_by": _oid(session.get(SESSION_USER_ID)),
+            "deactivated_at": None,
+            "deactivated_by": None,
+        }},
+    )
+
+    flash("Customer activated.", "success")
+    return redirect(url_for("customers.customer_details_page", customer_id=str(cid)))
 
 
 @customers_bp.post("/customers/<customer_id>/update")

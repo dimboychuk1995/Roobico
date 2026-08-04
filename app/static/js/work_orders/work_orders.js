@@ -284,6 +284,9 @@
 
           const woNumber = String(payment.wo_number || "").trim() || "—";
           const customer = String(payment.customer || "").trim() || "—";
+      const customerBadge = payment.customer_inactive
+        ? ' <span class="badge text-bg-secondary" title="This customer is deactivated">Inactive</span>'
+        : "";
           const amount = parseFloat(payment.amount) || 0;
           const method = String(payment.payment_method || "cash").toLowerCase();
           const notes = String(payment.notes || "").trim();
@@ -292,7 +295,7 @@
           html += `
             <tr>
               <td><span class="badge bg-secondary">${woNumber}</span></td>
-              <td>${customer}</td>
+              <td>${customer}${customerBadge}</td>
               <td class="fw-semibold">$${amount.toFixed(2)}</td>
               <td><span class="badge bg-secondary">${method}</span></td>
               <td><small>${createdAt}</small></td>
@@ -933,7 +936,9 @@
           var tr = document.createElement("tr");
           tr.innerHTML =
             '<td><span class="badge bg-secondary">' + _esc(e.wo_number || "-") + '</span></td>' +
-            '<td>' + _esc(e.customer) + '</td>' +
+            '<td>' + _esc(e.customer) +
+              (e.customer_inactive ? ' <span class="badge text-bg-secondary" title="This customer is deactivated">Inactive</span>' : '') +
+            '</td>' +
             '<td>' + _esc(e.date) + '</td>' +
             '<td>' + _esc(e.unit) + '</td>' +
             '<td><span class="badge bg-info text-dark">' + _esc((e.status || "estimate").charAt(0).toUpperCase() + (e.status || "estimate").slice(1)) + '</span></td>' +
