@@ -11,7 +11,7 @@ from bson import ObjectId
 from pymongo import MongoClient
 from werkzeug.security import generate_password_hash
 
-from tests.conftest import SHOP_A_DB, TENANT_A_DB, TEST_MONGO_URI, get_csrf_token, login
+from tests.conftest import SHOP_A_DB, SHOP_B_DB, TENANT_A_DB, TEST_MONGO_URI, get_csrf_token, login
 
 MECHANIC_EMAIL = "mechanic@test.local"
 MECHANIC_PASSWORD = "password123"
@@ -1519,3 +1519,99 @@ def test_hours_from_preset_and_tracked_time(client, mech_seed, mongo):
     wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
     assert wo["labors"][1]["labor"]["hours"] == "3"
     _deactivate_wos(mongo, data["id"])
+
+
+# ── история юнита в механик-режиме (без цен) ────────────────────────
+
+
+def test_mechanic_unit_history_no_money_and_excludes_current(client, mech_seed, mongo):
+    login_mechanic(client)
+    unit_id = str(mech_seed["unit"]["_id"])
+
+    first = _create_wo_as_mechanic(client, mech_seed, description="Replace brakes")
+    second = _create_wo_as_mechanic(client, mech_seed, description="Fix lights")
+
+    try:
+        resp = client.get(
+            f"/work_orders/api/mechanic/units/{unit_id}/history?exclude={second['id']}"
+        )
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["ok"] is True
+        assert mech_seed["unit"]["unit_number"] in data["unit_label"]
+
+        ids = [item["id"] for item in data["items"]]
+        assert first["id"] in ids
+        assert second["id"] not in ids  # текущий WO исключён
+
+        item = next(x for x in data["items"] if x["id"] == first["id"])
+        # Строго безденежная форма: никаких тоталов/цен на всех уровнях.
+        assert set(item.keys()) == {"id", "wo_number", "status", "date", "labors"}
+        labor = item["labors"][0]
+        assert set(labor.keys()) == {"description", "parts"}
+        assert labor["description"] == "Replace brakes"
+        part = labor["parts"][0]
+        assert set(part.keys()) == {"part_number", "description", "qty"}
+        assert part["qty"] == 2
+    finally:
+        _deactivate_wos(mongo, first["id"], second["id"])
+
+
+def test_mechanic_unit_history_masks_paid_status(client, mech_seed, mongo):
+    login_mechanic(client)
+    shop_db = mongo[SHOP_A_DB]
+    unit_id = mech_seed["unit"]["_id"]
+
+    wo_id = ObjectId()
+    shop_db.work_orders.insert_one({
+        "_id": wo_id,
+        "shop_id": mech_seed["customer"]["shop_id"],
+        "customer_id": mech_seed["customer"]["_id"],
+        "unit_id": unit_id,
+        "is_active": True,
+        "status": "paid",
+        "created_at": _now(),
+        "labors": [{
+            "labor_id": "L1",
+            "labor": {
+                "description": "Oil change",
+                "hours": 2,
+                "rate": 100,
+                "labor_full_total": 200.0,
+            },
+            "parts": [{
+                "part_number": "P-1",
+                "description": "Filter",
+                "qty": 1,
+                "price": 9.99,
+            }],
+        }],
+        "grand_total": 209.99,
+    })
+    try:
+        resp = client.get(f"/work_orders/api/mechanic/units/{unit_id}/history")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        item = next(x for x in data["items"] if x["id"] == str(wo_id))
+        # paid механик не видит — маскируется как completed, цены вычищены
+        assert item["status"] == "completed"
+        assert "price" not in item["labors"][0]["parts"][0]
+        assert "labor_full_total" not in item["labors"][0]
+    finally:
+        shop_db.work_orders.delete_one({"_id": wo_id})
+
+
+def test_mechanic_unit_history_foreign_unit_not_found(client, mech_seed, mongo):
+    login_mechanic(client)
+    foreign_unit_id = ObjectId()
+    mongo[SHOP_B_DB].units.insert_one({
+        "_id": foreign_unit_id,
+        "shop_id": ObjectId(),
+        "unit_number": "B-1",
+        "is_active": True,
+    })
+    try:
+        resp = client.get(f"/work_orders/api/mechanic/units/{foreign_unit_id}/history")
+        assert resp.status_code == 404
+    finally:
+        mongo[SHOP_B_DB].units.delete_one({"_id": foreign_unit_id})

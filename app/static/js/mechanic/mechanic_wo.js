@@ -15,6 +15,7 @@
     customers: "/work_orders/api/customers",
     units: "/work_orders/api/units",
     unitCreate: "/api/mobile/units",
+    unitHistory: function (id) { return "/work_orders/api/mechanic/units/" + encodeURIComponent(id) + "/history"; },
     partsSearch: "/work_orders/api/parts/search",
     presets: "/work_orders/api/presets",
     presetDetail: function (id) { return "/work_orders/api/presets/" + encodeURIComponent(id); },
@@ -489,6 +490,13 @@
         $("mechInfoUnit").textContent = (data.unit && data.unit.label) || "—";
         $("mechInfoDate").textContent = data.date || "—";
 
+        var historyBtn = $("mechUnitHistoryBtn");
+        if (historyBtn) {
+          var historyUnitId = (data.unit && data.unit.id) || "";
+          historyBtn.style.display = historyUnitId ? "" : "none";
+          historyBtn.dataset.unitId = historyUnitId;
+        }
+
         state.labors = (data.labors || []).map(function (l) {
           return {
             labor_id: l.labor_id || "",
@@ -549,10 +557,16 @@
       } catch (e) {
         toast(e.message || "Failed to load customers", "error");
       }
+      var historyCreateBtn = $("mechUnitHistoryCreateBtn");
+      unitSel.addEventListener("change", function () {
+        if (historyCreateBtn) historyCreateBtn.disabled = !unitSel.value;
+      });
+
       custSel.addEventListener("change", async function () {
         unitSel.innerHTML = '<option value="">Select unit...</option>';
         unitSel.disabled = !custSel.value;
         if (newUnitBtn) newUnitBtn.disabled = !custSel.value;
+        if (historyCreateBtn) historyCreateBtn.disabled = true;
         if (!custSel.value) return;
         try {
           var data = await getJson(API.units + "?customer_id=" + encodeURIComponent(custSel.value));
@@ -612,6 +626,7 @@
           opt.textContent = data.label;
           unitSel.appendChild(opt);
           unitSel.value = data.id;
+          unitSel.dispatchEvent(new Event("change"));
           if (modal) modal.hide();
           toast("Unit created", "success");
         } catch (e) {
@@ -620,6 +635,88 @@
           btn.disabled = false;
         }
       });
+    }
+
+    // ---------- unit history (без цен) ----------
+    var unitHistoryModalEl = $("mechUnitHistoryModal");
+    var unitHistoryModal = null;
+    var unitHistoryCache = {};
+
+    function historyStatusBadge(status) {
+      var s = String(status || "open");
+      var cls = s === "completed" ? "text-bg-success" : (s === "in_progress" ? "text-bg-info" : "text-bg-warning");
+      var label = s === "in_progress" ? "In Progress" : s.charAt(0).toUpperCase() + s.slice(1);
+      return '<span class="badge ' + cls + '">' + esc(label) + "</span>";
+    }
+
+    function renderUnitHistory(data) {
+      var box = $("mechUnitHistoryBody");
+      var labelEl = $("mechUnitHistoryUnitLabel");
+      if (labelEl) labelEl.textContent = data.unit_label || "";
+      var items = data.items || [];
+      if (!items.length) {
+        box.innerHTML = '<div class="text-muted small">No previous work orders for this unit.</div>';
+        return;
+      }
+      box.innerHTML = items.map(function (wo) {
+        var jobs = (wo.labors || []).map(function (l) {
+          var parts = (l.parts || []).map(function (p) {
+            var label = [p.part_number, p.description].filter(Boolean).join(" — ");
+            return '<div class="mech-history-part">' + esc(label || "Part") +
+              ' <span class="mech-history-qty">×' + (p.qty || 0) + "</span></div>";
+          }).join("");
+          return '<div class="mech-history-job">' +
+            (l.description ? '<div class="mech-history-job-desc">' + esc(l.description) + "</div>" : "") +
+            parts +
+          "</div>";
+        }).join("");
+        return '<div class="mech-history-item">' +
+          '<div class="mech-history-head">' +
+            '<span class="mech-history-wo">WO #' + esc(wo.wo_number == null ? "" : wo.wo_number) + "</span>" +
+            historyStatusBadge(wo.status) +
+            '<span class="mech-history-date">' + esc(wo.date || "") + "</span>" +
+          "</div>" +
+          (jobs || '<div class="text-muted small">No jobs recorded.</div>') +
+        "</div>";
+      }).join("");
+    }
+
+    async function openUnitHistory(unitId) {
+      if (!unitId || !unitHistoryModalEl) return;
+      if (!unitHistoryModal && window.bootstrap) unitHistoryModal = new window.bootstrap.Modal(unitHistoryModalEl);
+      if (unitHistoryModal) unitHistoryModal.show();
+
+      var box = $("mechUnitHistoryBody");
+      var cacheKey = unitId + "|" + (woId || "");
+      if (unitHistoryCache[cacheKey]) {
+        renderUnitHistory(unitHistoryCache[cacheKey]);
+        return;
+      }
+      box.innerHTML = '<div class="text-muted small">Loading...</div>';
+      try {
+        var url = API.unitHistory(unitId) + (woId ? "?exclude=" + encodeURIComponent(woId) : "");
+        var data = await getJson(url);
+        unitHistoryCache[cacheKey] = data;
+        renderUnitHistory(data);
+      } catch (e) {
+        box.innerHTML = '<div class="text-danger small">' + esc(e.message || "Failed to load history") + "</div>";
+      }
+    }
+
+    function bindUnitHistory() {
+      var infoBtn = $("mechUnitHistoryBtn");
+      if (infoBtn) {
+        infoBtn.addEventListener("click", function () {
+          openUnitHistory(infoBtn.dataset.unitId || "");
+        });
+      }
+      var createBtn = $("mechUnitHistoryCreateBtn");
+      if (createBtn) {
+        createBtn.addEventListener("click", function () {
+          var unitSel = $("mechUnitSelect");
+          openUnitHistory(unitSel ? unitSel.value : "");
+        });
+      }
     }
 
     // ---------- preset picker ----------
@@ -947,6 +1044,7 @@
 
     bindPartPicker();
     bindPresetPicker();
+    bindUnitHistory();
     bindTimerBarStop(function () {
       if (mode === "edit") loadDetails();
     });

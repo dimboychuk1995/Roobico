@@ -100,10 +100,36 @@ Widgets:
   (amount), Items / Non-inventory / Spend.
 - **Goals Progress** — three rings (Labor, Parts Sales, Total) against
   monthly goals set via **"Edit Goals"**; other periods prorate the monthly
-  target by days.
+  target by days. Below the rings, the same card shows **Labor Hours —
+  Cumulative** — a line chart with up to three lines so you can see how they
+  diverge:
+  - **Actual** — time mechanics really spent, from job timers (start/stop on
+    a WO labor line; covers both jobs assigned by the office and jobs
+    mechanics picked up themselves). Only users with a mechanic /
+    senior mechanic role count — a manager starting a timer is ignored;
+  - **Invoiced** — labor hours billed on work orders (by WO date);
+  - **uAttend** — hours from the uAttend time clock; the line appears only
+    when the uAttend integration is connected in Settings → Integrations.
+    Mechanics only here too: a uAttend employee matched to an internal user
+    without a mechanic role (a manager, an owner) is excluded; unmatched
+    uAttend employees still count — they are shop-floor mechanics without
+    a system account.
+  The lines are running totals: each day adds that day's hours, so every
+  line starts at zero and only goes up — the gap between lines is the
+  accumulated difference. Points are daily; All Time shows the last
+  12 months. Hover a day to see the totals so far and that day's hours
+  (the "+x.xx" value).
+  The summary below gives totals, **Invoiced ÷ Actual** (billed hours per
+  hour of tracked work — above 100% you bill more than the time spent) and
+  **Actual ÷ uAttend** (share of the clocked shift spent on WO jobs), plus a
+  per-mechanic table: Actual / Invoiced / uAttend hours side by side ("—"
+  means no data of that kind). Hours with no assigned mechanic show as the
+  "Unassigned labor" row, so the table always adds up to the chart totals.
+  uAttend employees are merged into a mechanic's row using the same
+  AI matching as the Timecard / Salary report (once that report has been
+  opened at least once); before that they appear as separate uAttend rows.
 - **Outstanding Balance (All Time)** — total customers owe; ignores the date
   filter on purpose.
-- **Labor Hours By Mechanic** for the period.
 - Quick actions: Create WO, Create PO, New Customer, New Vendor.
 
 ## Calendar

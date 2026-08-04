@@ -476,3 +476,67 @@
     max-width: 360px;
   }
 }
+
+/* ── История юнита (модалка, без цен) ─────────────────────────────── */
+.mech-info-row .mech-history-btn {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+.mech-history-unit-label {
+  font-size: 0.85rem;
+  font-weight: 400;
+  margin-left: 6px;
+}
+
+.mech-history-item {
+  border: 1px solid var(--border);
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+
+.mech-history-item + .mech-history-item {
+  margin-top: 10px;
+}
+
+.mech-history-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.mech-history-wo {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.mech-history-date {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.mech-history-job {
+  padding: 6px 0 2px;
+  border-top: 1px dashed var(--border);
+}
+
+.mech-history-job-desc {
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.mech-history-part {
+  color: var(--muted);
+  font-size: 0.82rem;
+  padding-left: 12px;
+}
+
+.mech-history-qty {
+  color: var(--text);
+  font-weight: 600;
+}

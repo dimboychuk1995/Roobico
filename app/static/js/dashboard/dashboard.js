@@ -94,37 +94,326 @@
     return qs ? `?${qs}` : '';
   }
 
-  function renderMechanicHours(rows) {
-    const tableWrap = document.getElementById('dashMechanicHoursTableWrap');
-    const body = document.getElementById('dashMechanicHoursBody');
-    const empty = document.getElementById('dashMechanicHoursEmpty');
-    if (!tableWrap || !body || !empty) return;
+  // ── Labor hours trend: Actual / Invoiced / uAttend ───────────────────
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  let lastHoursChart = null;
+  let hoursResizeBound = false;
 
-    body.innerHTML = '';
-    if (!Array.isArray(rows) || rows.length === 0) {
-      tableWrap.style.display = 'none';
+  function svgEl(name, attrs) {
+    const el = document.createElementNS(SVG_NS, name);
+    Object.keys(attrs || {}).forEach((key) => el.setAttribute(key, String(attrs[key])));
+    return el;
+  }
+
+  function hoursText(value) {
+    return `${asNumber(value).toFixed(2)} h`;
+  }
+
+  function bucketLabel(iso) {
+    const d = new Date(`${iso}T00:00:00Z`);
+    return Number.isNaN(d.getTime())
+      ? String(iso)
+      : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  }
+
+  function niceStep(raw) {
+    if (!(raw > 0)) return 1;
+    const pow = Math.pow(10, Math.floor(Math.log10(raw)));
+    const base = raw / pow;
+    let mult = 10;
+    if (base <= 1) mult = 1;
+    else if (base <= 2) mult = 2;
+    else if (base <= 2.5) mult = 2.5;
+    else if (base <= 5) mult = 5;
+    return mult * pow;
+  }
+
+  function cumulativeSum(values) {
+    let acc = 0;
+    return values.map((v) => {
+      acc += asNumber(v);
+      return acc;
+    });
+  }
+
+  // API отдаёт часы по дням; график накопительный — рисуем нарастающий
+  // итог, дневная прибавка остаётся в тултипе.
+  function hoursChartSeries(chart) {
+    const series = [
+      { key: 'actual', name: 'Actual', daily: chart.actual || [] },
+      { key: 'invoiced', name: 'Invoiced', daily: chart.invoiced || [] },
+    ];
+    if (chart.uattend_connected && Array.isArray(chart.uattend)) {
+      series.push({ key: 'uattend', name: 'uAttend', daily: chart.uattend });
+    }
+    series.forEach((s) => { s.values = cumulativeSum(s.daily); });
+    return series;
+  }
+
+  function renderHoursChart(chart) {
+    const wrap = document.getElementById('dashHoursChartWrap');
+    const svg = document.getElementById('dashHoursChart');
+    const tooltip = document.getElementById('dashHoursTooltip');
+    const legend = document.getElementById('dashHoursLegend');
+    const legendUattend = document.getElementById('dashHoursLegendUattend');
+    const empty = document.getElementById('dashHoursEmpty');
+    if (!wrap || !svg || !tooltip || !empty) return;
+
+    const labels = (chart && chart.labels) || [];
+    const series = chart ? hoursChartSeries(chart) : [];
+    const hasData = labels.length > 0 && series.some((s) => s.daily.some((v) => asNumber(v) > 0));
+
+    if (!hasData) {
+      wrap.style.display = 'none';
+      if (legend) legend.style.display = 'none';
       empty.style.display = '';
       return;
     }
 
+    wrap.style.display = '';
+    empty.style.display = 'none';
+    if (legend) legend.style.display = '';
+    if (legendUattend) {
+      legendUattend.style.display = chart.uattend_connected ? '' : 'none';
+    }
+
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    tooltip.hidden = true;
+
+    const width = Math.max(320, wrap.clientWidth || 640);
+    const height = 240;
+    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.setAttribute('width', String(width));
+    svg.setAttribute('height', String(height));
+
+    const margin = { top: 12, right: 16, bottom: 26, left: 46 };
+    const plotW = width - margin.left - margin.right;
+    const plotH = height - margin.top - margin.bottom;
+    const n = labels.length;
+
+    let rawMax = 0;
+    series.forEach((s) => s.values.forEach((v) => { rawMax = Math.max(rawMax, asNumber(v)); }));
+    const step = niceStep(rawMax / 4);
+    const yMax = Math.max(step, Math.ceil(rawMax / step) * step);
+
+    // Слот 0 — нулевая стартовая точка (линии выходят из нуля),
+    // данные занимают слоты 1..n.
+    const xAtSlot = (s) => margin.left + (plotW * s) / n;
+    const xAt = (i) => xAtSlot(i + 1);
+    const yAt = (v) => margin.top + plotH - (plotH * Math.max(0, asNumber(v))) / yMax;
+
+    // Y gridlines + ticks
+    for (let t = 0; t <= yMax + 1e-9; t += step) {
+      const y = yAt(t);
+      svg.appendChild(svgEl('line', {
+        x1: margin.left, x2: width - margin.right, y1: y, y2: y,
+        class: t === 0 ? 'dashboard-hours-axis' : 'dashboard-hours-grid',
+      }));
+      const tick = svgEl('text', {
+        x: margin.left - 8, y: y + 3, 'text-anchor': 'end', class: 'dashboard-hours-tick',
+      });
+      tick.textContent = Number.isInteger(t) ? String(t) : t.toFixed(1);
+      svg.appendChild(tick);
+    }
+
+    // X ticks (~6, always the last one)
+    const xStepCount = Math.max(1, Math.ceil(n / 6));
+    for (let i = 0; i < n; i += 1) {
+      const isLast = i === n - 1;
+      if (i % xStepCount !== 0 && !isLast) continue;
+      if (!isLast && n - 1 - i < xStepCount / 2) continue;
+      const tick = svgEl('text', {
+        x: xAt(i), y: height - 8, 'text-anchor': 'middle', class: 'dashboard-hours-tick',
+      });
+      tick.textContent = bucketLabel(labels[i]);
+      svg.appendChild(tick);
+    }
+
+    // Lines + point markers (первая вершина — нулевая стартовая точка)
+    series.forEach((s) => {
+      const points = [`${xAtSlot(0).toFixed(1)},${yAt(0).toFixed(1)}`]
+        .concat(s.values.map((v, i) => `${xAt(i).toFixed(1)},${yAt(v).toFixed(1)}`))
+        .join(' ');
+      svg.appendChild(svgEl('polyline', {
+        points, class: `dashboard-hours-line dashboard-hours-line-${s.key}`,
+      }));
+      if (n <= 45) {
+        s.values.forEach((v, i) => {
+          svg.appendChild(svgEl('circle', {
+            cx: xAt(i), cy: yAt(v), r: 4,
+            class: `dashboard-hours-dot dashboard-hours-dot-${s.key}`,
+          }));
+        });
+      }
+    });
+
+    // Hover: crosshair + snap dots + tooltip listing every series
+    const crosshair = svgEl('line', {
+      y1: margin.top, y2: margin.top + plotH, class: 'dashboard-hours-crosshair',
+    });
+    crosshair.style.display = 'none';
+    svg.appendChild(crosshair);
+
+    const hoverDots = series.map((s) => {
+      const dot = svgEl('circle', { r: 4.5, class: `dashboard-hours-dot dashboard-hours-dot-${s.key}` });
+      dot.style.display = 'none';
+      svg.appendChild(dot);
+      return dot;
+    });
+
+    const overlay = svgEl('rect', {
+      x: margin.left, y: margin.top, width: plotW, height: plotH,
+      fill: 'transparent',
+    });
+    svg.appendChild(overlay);
+
+    function showTooltip(index, pointerX) {
+      crosshair.setAttribute('x1', xAt(index));
+      crosshair.setAttribute('x2', xAt(index));
+      crosshair.style.display = '';
+      series.forEach((s, si) => {
+        hoverDots[si].setAttribute('cx', xAt(index));
+        hoverDots[si].setAttribute('cy', yAt(s.values[index]));
+        hoverDots[si].style.display = '';
+      });
+
+      while (tooltip.firstChild) tooltip.removeChild(tooltip.firstChild);
+      const head = document.createElement('div');
+      head.className = 'dashboard-hours-tooltip-head';
+      head.textContent = bucketLabel(labels[index]);
+      tooltip.appendChild(head);
+      series.forEach((s) => {
+        const row = document.createElement('div');
+        row.className = 'dashboard-hours-tooltip-row';
+        const key = document.createElement('span');
+        key.className = `dashboard-hours-tooltip-key dashboard-hours-tooltip-key-${s.key}`;
+        const name = document.createElement('span');
+        name.className = 'dashboard-hours-tooltip-name';
+        name.textContent = s.name;
+        const delta = document.createElement('span');
+        delta.className = 'dashboard-hours-tooltip-delta';
+        delta.textContent = `+${asNumber(s.daily[index]).toFixed(2)}`;
+        const value = document.createElement('strong');
+        value.textContent = hoursText(s.values[index]);
+        row.appendChild(key);
+        row.appendChild(name);
+        row.appendChild(delta);
+        row.appendChild(value);
+        tooltip.appendChild(row);
+      });
+
+      tooltip.hidden = false;
+      const wrapRect = wrap.getBoundingClientRect();
+      const tipW = tooltip.offsetWidth || 140;
+      let left = pointerX + 14;
+      if (left + tipW > wrapRect.width - 6) left = pointerX - tipW - 14;
+      tooltip.style.left = `${Math.max(6, left)}px`;
+      tooltip.style.top = '10px';
+    }
+
+    function hideTooltip() {
+      crosshair.style.display = 'none';
+      hoverDots.forEach((dot) => { dot.style.display = 'none'; });
+      tooltip.hidden = true;
+    }
+
+    overlay.addEventListener('pointermove', (ev) => {
+      const rect = svg.getBoundingClientRect();
+      const x = ev.clientX - rect.left;
+      const rel = (x - margin.left) / (plotW / n) - 1;
+      const index = Math.min(n - 1, Math.max(0, Math.round(rel)));
+      showTooltip(index, x);
+    });
+    overlay.addEventListener('pointerleave', hideTooltip);
+  }
+
+  function renderHoursSummary(chart) {
+    const summaryWrap = document.getElementById('dashHoursSummary');
+    const totalsBox = document.getElementById('dashHoursTotalsBox');
+    const rowsWrap = document.getElementById('dashHoursRowsWrap');
+    const rowsBody = document.getElementById('dashHoursRowsBody');
+    if (!summaryWrap || !totalsBox || !rowsWrap || !rowsBody) return;
+
+    const summary = (chart && chart.summary) || null;
+    if (!summary) {
+      summaryWrap.style.display = 'none';
+      return;
+    }
+    summaryWrap.style.display = '';
+
+    while (totalsBox.firstChild) totalsBox.removeChild(totalsBox.firstChild);
+    const addPill = (label, valueText, titleText) => {
+      const span = document.createElement('span');
+      if (titleText) span.title = titleText;
+      span.appendChild(document.createTextNode(`${label}: `));
+      const strong = document.createElement('strong');
+      strong.textContent = valueText;
+      span.appendChild(strong);
+      totalsBox.appendChild(span);
+    };
+
+    addPill('Actual', hoursText(summary.actual_total), 'Time mechanics tracked with job timers');
+    addPill('Invoiced', hoursText(summary.invoiced_total), 'Labor hours billed on work orders');
+    if (chart.uattend_connected && summary.uattend_total !== null && summary.uattend_total !== undefined) {
+      addPill('uAttend', hoursText(summary.uattend_total), 'Hours from the uAttend time clock');
+    }
+    if (summary.efficiency_percent !== null && summary.efficiency_percent !== undefined) {
+      addPill('Invoiced ÷ Actual', percent1(summary.efficiency_percent),
+        'Billed hours per hour of tracked work. Above 100% — you bill more than the time spent.');
+    }
+    if (summary.utilization_percent !== null && summary.utilization_percent !== undefined) {
+      addPill('Actual ÷ uAttend', percent1(summary.utilization_percent),
+        'Share of clocked shift time spent working on work orders.');
+    }
+
+    const rows = Array.isArray(chart.rows) ? chart.rows : [];
+    const showUattendCol = Boolean(chart.uattend_connected);
+    const table = rowsWrap.querySelector('table');
+    if (table) {
+      table.querySelectorAll('.dashboard-hours-uattend-col').forEach((el) => {
+        el.style.display = showUattendCol ? '' : 'none';
+      });
+    }
+
+    rowsBody.innerHTML = '';
+    if (!rows.length) {
+      rowsWrap.style.display = 'none';
+      return;
+    }
     rows.forEach((row) => {
       const tr = document.createElement('tr');
       const tdName = document.createElement('td');
-      const tdHours = document.createElement('td');
       tdName.textContent = row && row.name ? String(row.name) : 'Unknown mechanic';
-      tdHours.className = 'text-end';
-      tdHours.textContent = `${asNumber(row && row.hours).toFixed(2)} h`;
       tr.appendChild(tdName);
-      tr.appendChild(tdHours);
-      body.appendChild(tr);
+      ['actual', 'invoiced'].concat(showUattendCol ? ['uattend'] : []).forEach((key) => {
+        const td = document.createElement('td');
+        td.className = 'text-end';
+        if (key === 'uattend') td.classList.add('dashboard-hours-uattend-col');
+        const value = row ? row[key] : null;
+        td.textContent = value === null || value === undefined ? '—' : asNumber(value).toFixed(2);
+        tr.appendChild(td);
+      });
+      rowsBody.appendChild(tr);
     });
+    rowsWrap.style.display = '';
 
-    tableWrap.style.display = '';
-    empty.style.display = 'none';
+    if (table && window.TableSort) window.TableSort.refresh(table);
+  }
 
-    // Re-init sorting for refreshed table
-    var tbl = tableWrap.querySelector("table");
-    if (tbl && window.TableSort) window.TableSort.refresh(tbl);
+  function renderHoursNote(chart) {
+    const note = document.getElementById('dashHoursNote');
+    if (!note) return;
+    const parts = [];
+    if (chart && chart.window_note) parts.push(String(chart.window_note));
+    if (chart && chart.uattend_connected) {
+      if (chart.uattend_error) {
+        parts.push(`uAttend: ${chart.uattend_error}`);
+      } else if (!Array.isArray(chart.uattend) && asNumber(chart.summary && chart.summary.uattend_total) > 0) {
+        parts.push('uAttend hours are shown in totals only (no daily breakdown available).');
+      }
+    }
+    note.textContent = parts.join(' ');
+    note.style.display = parts.length ? '' : 'none';
   }
 
   function renderWoMoney(data) {
@@ -258,7 +547,25 @@
   }
 
   function renderMechanicHoursBlock(data) {
-    renderMechanicHours(data.mechanic_hours_rows);
+    const chart = data && data.hours_chart ? data.hours_chart : null;
+    lastHoursChart = chart;
+    renderHoursChart(chart);
+    renderHoursSummary(chart);
+    renderHoursNote(chart);
+
+    if (!hoursResizeBound) {
+      hoursResizeBound = true;
+      let resizeTimer = null;
+      window.addEventListener('resize', () => {
+        if (resizeTimer) window.clearTimeout(resizeTimer);
+        resizeTimer = window.setTimeout(() => {
+          const wrap = document.getElementById('dashHoursChartWrap');
+          if (lastHoursChart && wrap && wrap.isConnected) {
+            renderHoursChart(lastHoursChart);
+          }
+        }, 150);
+      });
+    }
   }
 
   const blockRenderers = {

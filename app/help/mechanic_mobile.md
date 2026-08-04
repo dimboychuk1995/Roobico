@@ -34,6 +34,12 @@ What a mechanic sees and can do:
   records the mileage on the unit itself and on the WO.
 - Prices/hours/rates that the office already entered are preserved when a
   mechanic edits; mechanics cannot delete existing jobs (manager-only).
+- **Unit history right inside the WO** (web): the **History** button next to
+  the unit (on an open WO, and next to the unit picker when creating one)
+  opens the unit's past work orders — WO #, date, status, jobs and parts
+  with quantities. Money-free like everything else here, and a paid WO
+  simply shows as **Completed**. The current WO is not listed. Up to 30
+  most recent WOs are shown.
 
 ### Job timers
 

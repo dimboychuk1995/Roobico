@@ -111,27 +111,44 @@
     var html = "";
     for (var i = 0; i < labors.length; i++) {
       var lb = labors[i];
-      html += '<div class="mb-2">';
-      html += '<div class="fw-semibold small">';
-      html += _esc(lb.description || "Labor " + (i + 1));
-      if (lb.hours) html += ' <span class="text-muted">(' + _esc(lb.hours) + ' hrs)</span>';
-      html += ' <span class="text-muted">— $' + _money(lb.labor_total) + '</span>';
+      var parts = lb.parts || [];
+
+      html += '<div class="wo-labors-item">';
+      html += '<div class="wo-labors-item-head">';
+      html += '<span class="wo-labors-item-icon"><i class="bi bi-tools"></i></span>';
+      html += '<span class="wo-labors-item-title">' + _esc(lb.description || "Labor " + (i + 1)) + '</span>';
+      if (lb.hours) {
+        html += '<span class="wo-labors-hours-badge">' + _esc(lb.hours) + ' hrs</span>';
+      }
+      html += '<span class="wo-labors-item-total">Labor: <strong>$' + _money(lb.labor_total) + '</strong></span>';
       html += '</div>';
 
-      var parts = lb.parts || [];
       if (parts.length) {
-        html += '<table class="table table-sm table-borderless mb-0 ms-3" style="max-width:600px;">';
-        html += '<thead><tr class="small text-muted"><th>Part #</th><th>Description</th><th class="text-end">Qty</th><th class="text-end">Price</th></tr></thead><tbody>';
+        var partsSubtotal = 0;
+        html += '<div class="table-responsive">';
+        html += '<table class="table table-sm mb-0 wo-labors-parts-table">';
+        html += '<thead><tr><th>Part #</th><th>Description</th><th class="text-end">Qty</th><th class="text-end">Price</th><th class="text-end">Total</th></tr></thead><tbody>';
         for (var j = 0; j < parts.length; j++) {
           var p = parts[j];
-          html += '<tr class="small">';
-          html += '<td>' + _esc(p.part_number || "-") + '</td>';
+          var qty = Number(p.qty || 0);
+          var lineTotal = qty * Number(p.price || 0);
+          partsSubtotal += lineTotal;
+          html += '<tr>';
+          html += '<td class="wo-labors-part-number">' + _esc(p.part_number || "-") + '</td>';
           html += '<td>' + _esc(p.description || "-") + '</td>';
-          html += '<td class="text-end">' + (p.qty || 0) + '</td>';
+          html += '<td class="text-end">' + qty + '</td>';
           html += '<td class="text-end">$' + _money(p.price) + '</td>';
+          html += '<td class="text-end">$' + _money(lineTotal) + '</td>';
           html += '</tr>';
         }
-        html += '</tbody></table>';
+        html += '</tbody>';
+        html += '<tfoot><tr>';
+        html += '<td colspan="4" class="text-end text-muted">Parts subtotal</td>';
+        html += '<td class="text-end fw-semibold">$' + _money(partsSubtotal) + '</td>';
+        html += '</tr></tfoot>';
+        html += '</table></div>';
+      } else {
+        html += '<div class="wo-labors-noparts text-muted">No parts on this job.</div>';
       }
       html += '</div>';
     }

@@ -1473,3 +1473,92 @@ a:hover {
 .vin-checking { border-color: #0d6efd !important; background-color: #e7f1ff !important; }
 .vin-valid    { border-color: #198754 !important; }
 .vin-invalid  { border-color: #dc3545 !important; }
+
+/* ── Раскрытые работы WO (история юнита): карточка на работу ───────── */
+.wo-labors-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.85rem 1rem;
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+}
+
+.wo-labors-item {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.wo-labors-item-head {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.8rem;
+  flex-wrap: wrap;
+}
+
+.wo-labors-item-icon {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(26, 122, 66, 0.12);
+  color: #1a7a42;
+  font-size: 0.8rem;
+}
+
+.wo-labors-item-title {
+  font-weight: 600;
+  font-size: 0.85rem;
+  color: #0f172a;
+}
+
+.wo-labors-hours-badge {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(79, 70, 229, 0.12);
+  color: #4f46e5;
+  white-space: nowrap;
+}
+
+.wo-labors-item-total {
+  margin-left: auto;
+  font-size: 0.78rem;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.wo-labors-item-total strong {
+  color: #0f172a;
+}
+
+.wo-labors-parts-table {
+  font-size: 0.8rem;
+}
+
+.wo-labors-parts-table td,
+.wo-labors-parts-table th {
+  padding: 0.35rem 0.8rem;
+}
+
+.wo-labors-parts-table td.text-end,
+.wo-labors-parts-table th.text-end {
+  font-variant-numeric: tabular-nums;
+}
+
+.wo-labors-part-number {
+  font-weight: 600;
+}
+
+.wo-labors-noparts {
+  font-size: 0.78rem;
+  padding: 0 0.8rem 0.6rem;
+}

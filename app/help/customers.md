@@ -51,9 +51,11 @@ Header buttons: **"Back"**, **"Portal Link"**, **"Create Work Order"**.
 - Fields: **Unit Number**, **VIN** (typing a 17-character VIN auto-fills
   Year, Make, Model, Type via the national VIN decoder), Year, Make, Model,
   Type, Mileage. License plates are not stored.
-- Unit page tabs: **Work Orders** (full service history with expandable
-  labor details and totals) and **Details** (edit, **Deactivate Unit** /
-  **Activate Unit**, attachments, **Create Work Order**).
+- Unit page tabs: **Work Orders** (full service history; "Show labor
+  details" expands a card per job — description, hours badge, labor total,
+  and a parts table with qty, price, per-line totals and a parts subtotal)
+  and **Details** (edit, **Deactivate Unit** / **Activate Unit**,
+  attachments, **Create Work Order**).
 - **Recalls** button — checks NHTSA safety recalls for the unit (needs
   Year+Make+Model or a valid VIN). New recalls show a "NEW" badge; a nightly
   job also emails customers a recall digest automatically.

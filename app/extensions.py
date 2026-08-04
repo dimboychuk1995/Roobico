@@ -206,6 +206,10 @@ def ensure_shop_collections_indexes(shop_db):
     _safe_create_index(shop_db.work_order_payments, [("work_order_id", ASCENDING), ("is_active", ASCENDING)], name="idx_work_order_payments_order_active")
     _safe_create_index(shop_db.work_order_payments, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_work_order_payments_shop_active_created_desc")
 
+    # Кэш ответов uAttend /reports/punch для дашборда (короткоживущий)
+    _safe_create_index(shop_db.uattend_punch_cache, [("shop_id", ASCENDING), ("key", ASCENDING)], name="idx_uattend_punch_cache_shop_key")
+    _safe_create_index(shop_db.uattend_punch_cache, [("fetched_at", ASCENDING)], name="ttl_uattend_punch_cache_fetched", expireAfterSeconds=900)
+
     # Логи времени механиков (start/stop на labor-строках WO)
     _safe_create_index(shop_db.wo_time_logs, [("shop_id", ASCENDING), ("user_id", ASCENDING), ("stopped_at", ASCENDING)], name="idx_wo_time_logs_shop_user_open")
     _safe_create_index(shop_db.wo_time_logs, [("shop_id", ASCENDING), ("work_order_id", ASCENDING), ("labor_id", ASCENDING)], name="idx_wo_time_logs_shop_wo_labor")

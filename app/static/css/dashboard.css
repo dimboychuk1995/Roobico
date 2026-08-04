@@ -708,3 +708,135 @@
     0 2px 6px rgba(15, 23, 42, 0.08);
   color: #0f5132;
 }
+
+/* ---------------------------------------------------------------------
+   Labor hours trend — line chart in the Goals Progress card.
+   Series colors are theme tokens; dark values live in theme_dark.css.
+   --------------------------------------------------------------------- */
+:root {
+  --rb-hours-actual: #2a78d6;
+  --rb-hours-invoiced: #eb6834;
+  --rb-hours-uattend: #1baf7a;
+  --rb-hours-grid: #eef2f7;
+  --rb-hours-axis: #cbd5e1;
+  --rb-hours-surface: #ffffff;
+}
+
+.dashboard-hours-section {
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e6eae7;
+}
+
+.dashboard-hours-chart-wrap {
+  position: relative;
+}
+
+.dashboard-hours-chart {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.dashboard-hours-grid {
+  stroke: var(--rb-hours-grid);
+  stroke-width: 1;
+}
+
+.dashboard-hours-axis {
+  stroke: var(--rb-hours-axis);
+  stroke-width: 1;
+}
+
+.dashboard-hours-tick {
+  fill: #64748b;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-hours-line {
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.dashboard-hours-line-actual   { stroke: var(--rb-hours-actual); }
+.dashboard-hours-line-invoiced { stroke: var(--rb-hours-invoiced); }
+.dashboard-hours-line-uattend  { stroke: var(--rb-hours-uattend); }
+
+/* Точки носят «кольцо» цвета поверхности, чтобы читаться на пересечениях */
+.dashboard-hours-dot {
+  stroke: var(--rb-hours-surface);
+  stroke-width: 2;
+}
+.dashboard-hours-dot-actual   { fill: var(--rb-hours-actual); }
+.dashboard-hours-dot-invoiced { fill: var(--rb-hours-invoiced); }
+.dashboard-hours-dot-uattend  { fill: var(--rb-hours-uattend); }
+
+.dashboard-hours-crosshair {
+  stroke: #94a3b8;
+  stroke-width: 1;
+}
+
+.dashboard-dot-hours-actual   { background: var(--rb-hours-actual); }
+.dashboard-dot-hours-invoiced { background: var(--rb-hours-invoiced); }
+.dashboard-dot-hours-uattend  { background: var(--rb-hours-uattend); }
+
+.dashboard-hours-tooltip {
+  position: absolute;
+  min-width: 140px;
+  padding: 0.5rem 0.65rem;
+  background: rgba(255, 255, 255, 0.97);
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.12);
+  font-size: 0.78rem;
+  pointer-events: none;
+  z-index: 6;
+}
+
+.dashboard-hours-tooltip-head {
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 0.25rem;
+}
+
+.dashboard-hours-tooltip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.15rem;
+}
+
+.dashboard-hours-tooltip-row strong {
+  margin-left: auto;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-hours-tooltip-name {
+  color: #64748b;
+}
+
+/* Дневная прибавка: значение на линии — нарастающий итог, "+x.xx" — за день */
+.dashboard-hours-tooltip-delta {
+  margin-left: auto;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-hours-tooltip-delta + strong {
+  margin-left: 0.4rem;
+}
+
+.dashboard-hours-tooltip-key {
+  display: inline-block;
+  width: 14px;
+  height: 0;
+  border-top: 2px solid;
+  border-radius: 2px;
+}
+.dashboard-hours-tooltip-key-actual   { border-top-color: var(--rb-hours-actual); }
+.dashboard-hours-tooltip-key-invoiced { border-top-color: var(--rb-hours-invoiced); }
+.dashboard-hours-tooltip-key-uattend  { border-top-color: var(--rb-hours-uattend); }

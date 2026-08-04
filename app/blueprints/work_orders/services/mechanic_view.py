@@ -155,3 +155,62 @@ def mechanic_wo_payload(shop_db, shop, wo: dict, user_id) -> dict:
         "labors": labors_out,
         "my_running_timer": my_running_timer,
     }
+
+
+def mechanic_unit_history(shop_db, shop, unit: dict, exclude_wo_id=None, limit: int = 30) -> dict:
+    """История юнита без денег: прошлые WO с работами и запчастями.
+
+    Статус paid наружу не отдаём — для механика оплаченный WO выглядит
+    как завершённый (completed); цен/тоталов в ответе нет вообще.
+    """
+    from app.blueprints.work_orders.services.common import format_preferred_date_label
+
+    query = {"shop_id": shop["_id"], "unit_id": unit["_id"], "is_active": True}
+    if exclude_wo_id:
+        query["_id"] = {"$ne": exclude_wo_id}
+
+    rows = (
+        shop_db.work_orders.find(
+            query,
+            {"wo_number": 1, "status": 1, "work_order_date": 1, "created_at": 1, "labors": 1},
+        )
+        .sort([("created_at", -1)])
+        .limit(limit)
+    )
+
+    items = []
+    for wo in rows:
+        labors_out = []
+        for block in wo.get("labors") or []:
+            if not isinstance(block, dict):
+                continue
+            labor_src = block.get("labor") if isinstance(block.get("labor"), dict) else {}
+
+            parts_out = []
+            for p in block.get("parts") or []:
+                if not isinstance(p, dict):
+                    continue
+                parts_out.append({
+                    "part_number": str(p.get("part_number") or "").strip(),
+                    "description": str(p.get("description") or "").strip(),
+                    "qty": i32(p.get("qty")) or 0,
+                })
+
+            description = str(labor_src.get("description") or "").strip()
+            if not description and not parts_out:
+                continue
+            labors_out.append({"description": description, "parts": parts_out})
+
+        status = str(wo.get("status") or "open").strip().lower()
+        if status == "paid":
+            status = "completed"
+
+        items.append({
+            "id": str(wo["_id"]),
+            "wo_number": wo.get("wo_number"),
+            "status": status,
+            "date": format_preferred_date_label(wo.get("work_order_date"), wo.get("created_at")),
+            "labors": labors_out,
+        })
+
+    return {"unit_label": unit_label(unit), "items": items}

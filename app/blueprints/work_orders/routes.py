@@ -2995,6 +2995,7 @@ def api_preset_detail(preset_id):
 # services/mechanic_editor.py и services/time_tracking.py.
 
 from app.blueprints.work_orders.services.mechanic_view import (
+    mechanic_unit_history,
     mechanic_wo_payload,
     strip_part_search_item,
     strip_wo_list_item,
@@ -3085,6 +3086,28 @@ def api_mechanic_work_order_details(work_order_id):
     payload = mechanic_wo_payload(shop_db, shop, wo, current_user_id())
     payload["server_now"] = _server_now_iso()
     return jsonify(payload), 200
+
+
+@work_orders_bp.get("/work_orders/api/mechanic/units/<unit_id>/history")
+@login_required
+@permission_required("work_orders.view")
+def api_mechanic_unit_history(unit_id):
+    """История юнита для механика: прошлые WO без цен (работы + запчасти)."""
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    uid = oid(unit_id)
+    if not uid:
+        return jsonify({"ok": False, "error": "invalid_unit_id"}), 400
+
+    unit = shop_db.units.find_one({"_id": uid, "shop_id": shop["_id"]})
+    if not unit:
+        return jsonify({"ok": False, "error": "unit_not_found"}), 404
+
+    exclude_wo_id = oid((request.args.get("exclude") or "").strip())
+    payload = mechanic_unit_history(shop_db, shop, unit, exclude_wo_id=exclude_wo_id)
+    return jsonify({"ok": True, **payload}), 200
 
 
 @work_orders_bp.post("/work_orders/api/mechanic/work_orders")

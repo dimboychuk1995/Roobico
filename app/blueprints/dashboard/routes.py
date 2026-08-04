@@ -337,23 +337,108 @@ def _compute_wo_money_metrics(shop_db, shop, created_from, created_to_exclusive)
     }
 
 
+# All Time не рисуем бесконечно — ограничиваем окно графика последним годом.
+_HOURS_CHART_MAX_WINDOW_DAYS = 366
+
+
+def _shop_tzinfo():
+    from app.utils.date_filters import _safe_tzinfo
+    from app.utils.display_datetime import get_active_shop_timezone_name
+
+    return _safe_tzinfo(get_active_shop_timezone_name())
+
+
+def _to_local_date(value, tzinfo):
+    if not value:
+        return None
+    try:
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.astimezone(tzinfo).date()
+    except Exception:
+        return None
+
+
+def _local_day_start_utc(day, tzinfo):
+    return datetime.combine(day, datetime.min.time(), tzinfo=tzinfo).astimezone(timezone.utc)
+
+
+def _resolve_hours_chart_window(shop_db, shop, created_from, created_to_exclusive, tzinfo):
+    """Локальные даты (start, end, note) для оси графика часов.
+
+    Для выбранного периода — сам период. Для All Time — от первых данных
+    (WO или таймер-лог), но не глубже года: note объясняет обрезку.
+    """
+    today_local = datetime.now(tzinfo).date()
+    if created_from and created_to_exclusive:
+        start = _to_local_date(created_from, tzinfo)
+        end = _to_local_date(created_to_exclusive - timedelta(seconds=1), tzinfo)
+        return start, max(start, end), None
+
+    first_dates = []
+    wo = shop_db.work_orders.find_one(
+        {"shop_id": shop["_id"], "is_active": True},
+        {"work_order_date": 1, "created_at": 1},
+        sort=[("created_at", 1)],
+    )
+    if wo:
+        first_dates.append(_to_local_date(wo.get("work_order_date") or wo.get("created_at"), tzinfo))
+    log = shop_db.wo_time_logs.find_one(
+        {"shop_id": shop["_id"]},
+        {"started_at": 1},
+        sort=[("started_at", 1)],
+    )
+    if log:
+        first_dates.append(_to_local_date(log.get("started_at"), tzinfo))
+
+    first_dates = [d for d in first_dates if d]
+    start = min(first_dates) if first_dates else today_local
+    note = None
+    floor = today_local - timedelta(days=_HOURS_CHART_MAX_WINDOW_DAYS - 1)
+    if start < floor:
+        start = floor
+        note = "Showing the last 12 months."
+    return start, today_local, note
+
+
 def _compute_mechanic_hours_metrics(shop_db, shop, created_from, created_to_exclusive):
+    tzinfo = _shop_tzinfo()
+    window_start, window_end, window_note = _resolve_hours_chart_window(
+        shop_db, shop, created_from, created_to_exclusive, tzinfo
+    )
+
+    window_from_utc = _local_day_start_utc(window_start, tzinfo)
+    window_to_utc_exclusive = _local_day_start_utc(window_end + timedelta(days=1), tzinfo)
+    # Для All Time окно обрезано годом — тоталы считаем по тому же окну,
+    # чтобы линии и summary не расходились между собой.
+    effective_from = created_from or window_from_utc
+    effective_to_exclusive = created_to_exclusive or window_to_utc_exclusive
+
+    # ── Invoiced hours: labor-часы всех WO периода (по дате WO) ─────────
     period_wo_rows = _load_period_work_orders(
         shop_db,
         shop,
-        created_from,
-        created_to_exclusive,
+        effective_from,
+        effective_to_exclusive,
         {
             "labors": 1,
             "blocks": 1,
+            "work_order_date": 1,
+            "created_at": 1,
         },
     )
 
-    mechanic_hours_map = {}
+    invoiced_total = 0.0
+    invoiced_by_bucket = {}
+    assigned_hours_map = {}   # legacy-строки + колонка Invoiced в summary
+    assigned_hours_sum = 0.0
+
     for wo in period_wo_rows:
         labor_blocks = wo.get("labors") if isinstance(wo.get("labors"), list) else []
         if not labor_blocks and isinstance(wo.get("blocks"), list):
             labor_blocks = wo.get("blocks")
+
+        wo_day = _to_local_date(wo.get("work_order_date") or wo.get("created_at"), tzinfo)
 
         for block in labor_blocks:
             if not isinstance(block, dict):
@@ -363,6 +448,10 @@ def _compute_mechanic_hours_metrics(shop_db, shop, created_from, created_to_excl
             hours_value = max(0.0, _to_float(hours_raw))
             if hours_value <= 0:
                 continue
+
+            invoiced_total += hours_value
+            if wo_day and window_start <= wo_day <= window_end:
+                invoiced_by_bucket[wo_day] = invoiced_by_bucket.get(wo_day, 0.0) + hours_value
 
             assigned = labor_doc.get("assigned_mechanics")
             if not isinstance(assigned, list):
@@ -384,19 +473,228 @@ def _compute_mechanic_hours_metrics(shop_db, shop, created_from, created_to_excl
                     mechanic_name = "Unknown mechanic"
 
                 mechanic_key = mechanic_id or mechanic_name.lower()
-                row = mechanic_hours_map.get(mechanic_key)
+                row = assigned_hours_map.get(mechanic_key)
                 if row is None:
                     row = {"user_id": mechanic_id, "name": mechanic_name, "hours": 0.0}
-                    mechanic_hours_map[mechanic_key] = row
+                    assigned_hours_map[mechanic_key] = row
 
                 row["hours"] = _round2(row["hours"] + share_hours)
+                assigned_hours_sum += share_hours
 
     mechanic_hours_rows = sorted(
-        mechanic_hours_map.values(),
+        assigned_hours_map.values(),
         key=lambda x: _to_float(x.get("hours")),
         reverse=True,
     )
-    return {"mechanic_hours_rows": mechanic_hours_rows}
+
+    # ── Actual hours: завершённые таймер-сессии — только механиков ──────
+    # Таймер может запустить и менеджер/владелец; в метрику часов идут
+    # только пользователи из списка назначаемых механиков магазина.
+    from app.blueprints.work_orders.services.lookups import get_assignable_mechanics
+
+    mechanic_names = {m["id"]: m["name"] for m in get_assignable_mechanics(shop)}
+    mechanic_user_variants = []
+    for mechanic_id in mechanic_names:
+        mechanic_user_variants.append(mechanic_id)
+        as_oid = _maybe_object_id(mechanic_id)
+        if as_oid != mechanic_id:
+            mechanic_user_variants.append(as_oid)
+
+    actual_total = 0.0
+    actual_by_bucket = {}
+    actual_by_user = {}
+    log_cursor = shop_db.wo_time_logs.find(
+        {
+            "shop_id": shop["_id"],
+            "user_id": {"$in": mechanic_user_variants},
+            "stopped_at": {"$ne": None},
+            "started_at": {"$gte": effective_from, "$lt": effective_to_exclusive},
+        },
+        {"started_at": 1, "seconds": 1, "user_id": 1, "user_name": 1},
+    )
+    for log in log_cursor:
+        hours_value = max(0, int(log.get("seconds") or 0)) / 3600.0
+        if hours_value <= 0:
+            continue
+        actual_total += hours_value
+        log_day = _to_local_date(log.get("started_at"), tzinfo)
+        if log_day and window_start <= log_day <= window_end:
+            actual_by_bucket[log_day] = actual_by_bucket.get(log_day, 0.0) + hours_value
+
+        uid = str(log.get("user_id") or "")
+        user_row = actual_by_user.setdefault(
+            uid,
+            {"name": mechanic_names.get(uid) or log.get("user_name") or "", "hours": 0.0},
+        )
+        user_row["hours"] += hours_value
+        if not user_row["name"] and log.get("user_name"):
+            user_row["name"] = log["user_name"]
+
+    # ── uAttend hours: только при подключённой интеграции ───────────────
+    # Считаем тоже только механиков: сотрудник uAttend, заматченный на
+    # внутреннего пользователя БЕЗ роли механика (менеджер, владелец),
+    # исключается из запроса. Непривязанные сотрудники остаются — это
+    # механики без аккаунта в системе.
+    from app.utils.integrations.uattend_hours import load_uattend_period_hours
+
+    match_map = _cached_uattend_match_map(shop_db, shop["_id"])
+    non_mechanic_uids = {
+        uatt_uid
+        for uatt_uid, match in match_map.items()
+        if str(match.get("internal_id") or "")
+        and str(match.get("internal_id")) not in mechanic_names
+    }
+
+    uattend = load_uattend_period_hours(
+        shop_db,
+        shop["_id"],
+        window_start.isoformat(),
+        window_end.isoformat(),
+        exclude_uids=non_mechanic_uids,
+    )
+    uattend_connected = bool(uattend.get("connected"))
+    uattend_by_bucket = {}
+    uattend_total = 0.0
+    if uattend_connected:
+        for day_iso, hours_value in (uattend.get("by_day") or {}).items():
+            day = _parse_iso_date_utc(day_iso)
+            day = day.date() if day else None
+            hours_value = max(0.0, _to_float(hours_value))
+            if hours_value <= 0:
+                continue
+            if day and window_start <= day <= window_end:
+                uattend_by_bucket[day] = uattend_by_bucket.get(day, 0.0) + hours_value
+        uattend_total = sum((uattend.get("by_uid") or {}).values())
+
+    # ── Ось и ряды: шаг всегда один день ────────────────────────────────
+    bucket_keys = []
+    cursor_day = window_start
+    while cursor_day <= window_end:
+        bucket_keys.append(cursor_day)
+        cursor_day += timedelta(days=1)
+
+    labels = [d.isoformat() for d in bucket_keys]
+    actual_series = [_round2(actual_by_bucket.get(d, 0.0)) for d in bucket_keys]
+    invoiced_series = [_round2(invoiced_by_bucket.get(d, 0.0)) for d in bucket_keys]
+    uattend_series = None
+    if uattend_connected and uattend_by_bucket:
+        uattend_series = [_round2(uattend_by_bucket.get(d, 0.0)) for d in bucket_keys]
+
+    # ── Summary по механикам: actual / invoiced / uAttend в одной строке ─
+    summary_rows_map = {}
+
+    def _summary_row(key, name):
+        row = summary_rows_map.get(key)
+        if row is None:
+            row = {"name": name, "actual": None, "invoiced": None, "uattend": None}
+            summary_rows_map[key] = row
+        elif name and (row["name"] in ("", "Unknown mechanic")):
+            row["name"] = name
+        return row
+
+    for uid, data in actual_by_user.items():
+        row = _summary_row(uid or data["name"].lower(), data["name"] or "Unknown mechanic")
+        row["actual"] = _round2((row["actual"] or 0.0) + data["hours"])
+
+    for mech in mechanic_hours_rows:
+        key = mech.get("user_id") or str(mech.get("name") or "").lower()
+        row = _summary_row(key, mech.get("name") or "Unknown mechanic")
+        row["invoiced"] = _round2((row["invoiced"] or 0.0) + _to_float(mech.get("hours")))
+
+    if uattend_connected and uattend.get("by_uid"):
+        emp_names = _uattend_employee_names(shop_db, shop["_id"])
+        for uatt_uid, hours_value in uattend["by_uid"].items():
+            hours_value = _to_float(hours_value)
+            if hours_value <= 0:
+                continue
+            if uatt_uid in non_mechanic_uids:
+                continue
+            match = match_map.get(uatt_uid)
+            if match and match.get("internal_id"):
+                row = _summary_row(str(match["internal_id"]), str(match.get("internal_name") or ""))
+            else:
+                row = _summary_row(f"uattend:{uatt_uid}", emp_names.get(uatt_uid) or f"uAttend #{uatt_uid}")
+            row["uattend"] = _round2((row["uattend"] or 0.0) + hours_value)
+
+    unassigned_hours = _round2(max(0.0, invoiced_total - assigned_hours_sum))
+    if unassigned_hours > 0.01:
+        row = _summary_row("__unassigned__", "Unassigned labor")
+        row["invoiced"] = unassigned_hours
+
+    summary_rows = sorted(
+        summary_rows_map.values(),
+        key=lambda r: (r["actual"] or 0.0) + (r["invoiced"] or 0.0) + (r["uattend"] or 0.0),
+        reverse=True,
+    )
+
+    actual_total = _round2(actual_total)
+    invoiced_total = _round2(invoiced_total)
+    uattend_total = _round2(uattend_total)
+
+    summary = {
+        "actual_total": actual_total,
+        "invoiced_total": invoiced_total,
+        "uattend_total": uattend_total if uattend_connected else None,
+        # Invoiced vs Actual: сколько проданных часов на час фактической работы.
+        "efficiency_percent": _round2(invoiced_total / actual_total * 100.0) if actual_total > 0 else None,
+        # Actual vs uAttend: какая доля смены ушла в работу по WO.
+        "utilization_percent": (
+            _round2(actual_total / uattend_total * 100.0)
+            if uattend_connected and uattend_total > 0
+            else None
+        ),
+    }
+
+    return {
+        "mechanic_hours_rows": mechanic_hours_rows,
+        "hours_chart": {
+            "bucket": "day",
+            "labels": labels,
+            "actual": actual_series,
+            "invoiced": invoiced_series,
+            "uattend": uattend_series,
+            "uattend_connected": uattend_connected,
+            "uattend_error": uattend.get("error"),
+            "window_note": window_note,
+            "summary": summary,
+            "rows": summary_rows,
+        },
+    }
+
+
+def _cached_uattend_match_map(shop_db, shop_id):
+    """AI-матчинг uAttend↔внутренние юзеры из кэша отчёта Timecard.
+
+    Дашборд сам матчинг не запускает (не дёргает OpenAI) — если кэша нет,
+    строки uAttend показываются отдельными записями без склейки.
+    """
+    doc = shop_db.uattend_match_cache.find_one({"shop_id": shop_id}, sort=[("_id", -1)])
+    if not doc or not isinstance(doc.get("matches"), dict):
+        return {}
+    out = {}
+    for key, value in doc["matches"].items():
+        if not isinstance(value, dict):
+            continue
+        try:
+            out[int(key)] = value
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _uattend_employee_names(shop_db, shop_id):
+    out = {}
+    for emp in shop_db.uattend_employees.find(
+        {"shop_id": shop_id, "is_active": True},
+        {"uattend_user_id": 1, "first_name": 1, "last_name": 1, "email": 1},
+    ):
+        try:
+            uid = int(emp.get("uattend_user_id"))
+        except (TypeError, ValueError):
+            continue
+        name = f"{emp.get('first_name') or ''} {emp.get('last_name') or ''}".strip()
+        out[uid] = name or (emp.get("email") or "")
+    return out
 
 
 def _compute_parts_orders_metrics(shop_db, shop, created_from, created_to_exclusive):
@@ -634,8 +932,6 @@ def dashboard():
     date_from = date_filters["date_from"]
     date_to = date_filters["date_to"]
     date_preset = date_filters["date_preset"]
-    created_from = date_filters["created_from"]
-    created_to_exclusive = date_filters["created_to_exclusive"]
 
     monthly_goals = _get_dashboard_goals(shop)
 
