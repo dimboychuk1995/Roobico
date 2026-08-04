@@ -50,6 +50,9 @@ Roobico — мультитенантный SaaS для автосервисов 
   `python -m app.scripts.backfill_search_terms`.
 - Включение транзакций Mongo на сервере: `deploy/enable_replica_set.md`.
   Gunicorn-конфиг: `deploy/gunicorn.conf.py` (systemd-юнит должен запускать с `-c`).
+- Мобильное приложение (TestFlight): из `mobile/` —
+  `npx eas-cli build --platform ios --profile production --auto-submit`.
+  Интерактивная (логины Expo/Apple) — запускать руками в терминале, не из агента.
 
 ## Бэкапы прода
 
@@ -93,7 +96,13 @@ Roobico — мультитенантный SaaS для автосервисов 
     способ получить shop-базу** (проверяет принадлежность магазина тенанту);
   - `mongo_tx.py` — `run_atomically` для связанных записей (платёж + статус WO);
   - `entity_search.py` — поиск через `search_terms`;
-  - `rate_limit.py`, `permissions.py`, `display_datetime.py`, `contacts.py`.
+  - `rate_limit.py`, `permissions.py`, `display_datetime.py`, `contacts.py`;
+  - `integrations/` — сторонние интеграции (uAttend): API-ключи шифруются
+    Fernet (`storage.py`), часы из `/reports/punch` парсит `uattend_hours.py`.
+    Кэши в shop-базе: `uattend_punch_cache` (ответы API, TTL 15 мин) и
+    `uattend_match_cache` (AI-матчинг сотрудников uAttend с внутренними юзерами).
+- Мобильное приложение ходит в `/api/mobile/*` (`app/blueprints/mobile_api`);
+  план и статус — `mobile/PLAN.md`.
 
 ## Инварианты (не ломать)
 
@@ -113,6 +122,19 @@ Roobico — мультитенантный SaaS для автосервисов 
   `current_app.logger.exception(...)`. Глобальные обработчики 404/500 уже есть.
 - **Индексы**: новые паттерны запросов сопровождать индексами в
   `app/extensions.py` (`ensure_*_indexes`, через `_safe_create_index`).
+- **Механик-режим — без денег**: механик = активный пользователь с ролью
+  `mechanic`/`senior_mechanic` (список — `get_assignable_mechanics`); метрики
+  «часов механиков» считают только эти роли. Всё, что отдаётся через
+  `/work_orders/api/mechanic/*` и механикские мобильные эндпоинты, вычищается
+  от цен/ставок/тоталов (`work_orders/services/mechanic_view.py`); статус
+  `paid` механику не отдаём (в истории юнита маскируется как `completed`),
+  оплаченные WO для механика заблокированы.
+
+## Справка пользователя
+
+- `app/help/*.md` — встроенная справка; её же использует AI-ассистент как базу
+  знаний. **Обновлять при каждой новой фиче**: писать глубоко и понятно
+  неподготовленному, с рецептами «как сделать X», а не одной строкой.
 
 ## Тесты
 
