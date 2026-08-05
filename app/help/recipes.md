@@ -140,12 +140,18 @@ data; grant users access via their Shop access checkboxes; switch shops in
 the top bar.
 
 **Move data from the old system.** Import / Export → import Customers,
-Vendors, Parts, Units from CSV/Excel with column mapping. Notes: units
-import unlinked to customers (attach manually); duplicates (same
-name / part number as an existing record, or a repeat inside the file) are
-skipped and reported in the import errors, so re-running a file will not
-create copies; customers need at least one labor rate to exist. Export is
-not available yet.
+Vendors, Parts, Units and historical Work Orders from CSV/Excel with column
+mapping. Recommended order: Customers → Units (map the Customer Name column
+to link them) → Vendors → Parts → Work Orders (matched to customers by name
+and to units by Unit Number/VIN; paid WOs also record the payment).
+Duplicates (same name / part number / VIN-per-customer as an existing
+record, or a repeat inside the file) are skipped and reported with reasons,
+so re-running a file will not create copies. Customers need at least one
+labor rate to exist.
+
+**Back up or move data out.** Import / Export → any tab → "Download CSV" /
+"Download Excel" exports all records of that entity. The columns match the
+import fields, so the file can be imported into another shop as-is.
 
 **Why can't I create a part / customer / vendor?** Roobico blocks exact
 duplicates: a part number, customer name or vendor name that already

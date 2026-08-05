@@ -1,228 +1,220 @@
+// Import / Export page: двухшаговый импорт (заголовки → маппинг → импорт).
+// Экспорт — обычные ссылки на /import-export/export/<entity>, JS не нужен.
 (function () {
   "use strict";
-
-  if (document.body.dataset.importExportBound === "1") return;
+  if (document.body.dataset.importExportBound) return;
   document.body.dataset.importExportBound = "1";
 
-  const entityType = window.__importEntityType;
-  const entityFields = window.__importEntityFields || [];
+  var entityType = window.__importEntityType || "";
+  var entityFields = Array.isArray(window.__importEntityFields) ? window.__importEntityFields : [];
 
-  const fileInput = document.getElementById("importFile");
-  const uploadBtn = document.getElementById("importUploadBtn");
-  const fileError = document.getElementById("importFileError");
+  var els = {
+    step1: document.getElementById("importStep1"),
+    step2: document.getElementById("importStep2"),
+    step3: document.getElementById("importStep3"),
+    file: document.getElementById("importFile"),
+    uploadBtn: document.getElementById("importUploadBtn"),
+    fileError: document.getElementById("importFileError"),
+    mappingBody: document.getElementById("importMappingBody"),
+    runBtn: document.getElementById("importRunBtn"),
+    backBtn: document.getElementById("importBackBtn"),
+    resultContent: document.getElementById("importResultContent"),
+    resetBtn: document.getElementById("importResetBtn"),
+    spinner: document.getElementById("importSpinner"),
+  };
+  // Секция импорта может быть скрыта правами — тогда просто ничего не делаем.
+  if (!els.step1 || !els.file || !els.uploadBtn) return;
 
-  const step1 = document.getElementById("importStep1");
-  const step2 = document.getElementById("importStep2");
-  const step3 = document.getElementById("importStep3");
-  const spinner = document.getElementById("importSpinner");
+  var alertFn = window.appAlert || function (msg) { window.alert(msg); };
 
-  const mappingBody = document.getElementById("importMappingBody");
-  const runBtn = document.getElementById("importRunBtn");
-  const backBtn = document.getElementById("importBackBtn");
-  const resetBtn = document.getElementById("importResetBtn");
-  const resultContent = document.getElementById("importResultContent");
-
-  let fileHeaders = [];
-
-  // ── helpers ──
-
-  function showStep(n) {
-    step1.style.display = n === 1 ? "" : "none";
-    step2.style.display = n === 2 ? "" : "none";
-    step3.style.display = n === 3 ? "" : "none";
-  }
+  function show(el, on) { if (el) el.style.display = on ? "" : "none"; }
 
   function showError(msg) {
-    fileError.textContent = msg;
-    fileError.style.display = msg ? "" : "none";
+    if (!els.fileError) return alertFn(msg, "error");
+    els.fileError.textContent = msg;
+    show(els.fileError, true);
   }
 
-  function setSpinner(on) {
-    spinner.style.display = on ? "" : "none";
+  function setBusy(on) {
+    show(els.spinner, on);
+    els.uploadBtn.disabled = on || !els.file.files.length;
+    if (els.runBtn) els.runBtn.disabled = on;
   }
 
-  function buildSelect(fileHeader) {
-    const sel = document.createElement("select");
-    sel.className = "form-select form-select-sm";
-    sel.dataset.fileHeader = fileHeader;
-
-    const skip = document.createElement("option");
-    skip.value = "";
-    skip.textContent = "— Skip —";
-    sel.appendChild(skip);
-
-    const headerLower = fileHeader.toLowerCase().replace(/[^a-z0-9]/g, "");
-
-    let bestMatch = "";
-
-    entityFields.forEach(function (f) {
-      const opt = document.createElement("option");
-      opt.value = f.key;
-      opt.textContent = f.label;
-      sel.appendChild(opt);
-
-      // Auto-match by fuzzy comparison
-      const labelLower = f.label.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const keyLower = f.key.toLowerCase().replace(/[^a-z0-9]/g, "");
-      if (headerLower === labelLower || headerLower === keyLower) {
-        bestMatch = f.key;
-      }
+  // fetch + JSON: любой не-JSON ответ (500, HTML-редирект от «Access denied»)
+  // превращается в понятную ошибку, а не «Unexpected token <».
+  function fetchJson(url, options) {
+    return fetch(url, options).then(function (res) {
+      return res.text().then(function (text) {
+        var data = null;
+        try { data = JSON.parse(text); } catch (e) { /* not JSON */ }
+        if (data === null) {
+          throw new Error(res.ok
+            ? "Unexpected server response."
+            : "Request failed (" + res.status + "). You may not have permission for this action.");
+        }
+        return data;
+      });
     });
-
-    if (bestMatch) {
-      sel.value = bestMatch;
-    }
-
-    sel.addEventListener("change", validateMapping);
-    return sel;
   }
 
-  function validateMapping() {
-    const selects = mappingBody.querySelectorAll("select");
-    let hasMapped = false;
-    for (const s of selects) {
-      if (s.value) {
-        hasMapped = true;
-        break;
-      }
+  // ── Step 1: read headers ─────────────────────────────────────────
+  els.file.addEventListener("change", function () {
+    els.uploadBtn.disabled = !els.file.files.length;
+    show(els.fileError, false);
+  });
+
+  els.uploadBtn.addEventListener("click", function () {
+    if (!els.file.files.length) return;
+    show(els.fileError, false);
+    setBusy(true);
+
+    var fd = new FormData();
+    fd.append("file", els.file.files[0]);
+
+    fetchJson("/import-export/upload-headers", { method: "POST", body: fd })
+      .then(function (data) {
+        if (!data.ok) { showError(data.error || "Could not read the file."); return; }
+        buildMapping(data.headers || []);
+        show(els.step1, false);
+        show(els.step2, true);
+      })
+      .catch(function (e) { showError(e.message || "Network error."); })
+      .finally(function () { setBusy(false); });
+  });
+
+  // ── Step 2: mapping ──────────────────────────────────────────────
+  function normalize(s) {
+    return String(s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
+  function autoMatch(header) {
+    var n = normalize(header);
+    if (!n) return "";
+    for (var i = 0; i < entityFields.length; i++) {
+      var f = entityFields[i];
+      if (normalize(f.label) === n || normalize(f.key) === n) return f.key;
     }
-    runBtn.disabled = !hasMapped;
+    return "";
+  }
+
+  function buildMapping(headers) {
+    els.mappingBody.textContent = "";
+    headers.forEach(function (header) {
+      var tr = document.createElement("tr");
+
+      var tdName = document.createElement("td");
+      tdName.className = "fw-medium";
+      tdName.textContent = header;
+      tr.appendChild(tdName);
+
+      var tdSel = document.createElement("td");
+      var sel = document.createElement("select");
+      sel.className = "form-select form-select-sm";
+      sel.dataset.fileHeader = header;
+
+      var skip = document.createElement("option");
+      skip.value = "";
+      skip.textContent = "— Skip —";
+      sel.appendChild(skip);
+
+      entityFields.forEach(function (f) {
+        var opt = document.createElement("option");
+        opt.value = f.key;
+        opt.textContent = f.label;
+        sel.appendChild(opt);
+      });
+      sel.value = autoMatch(header);
+      sel.addEventListener("change", validateMapping);
+
+      tdSel.appendChild(sel);
+      tr.appendChild(tdSel);
+      els.mappingBody.appendChild(tr);
+    });
+    validateMapping();
   }
 
   function getMapping() {
-    const selects = mappingBody.querySelectorAll("select");
-    const mapping = {};
-    selects.forEach(function (s) {
-      if (s.value) {
-        mapping[s.dataset.fileHeader] = s.value;
-      }
+    var mapping = {};
+    els.mappingBody.querySelectorAll("select").forEach(function (sel) {
+      if (sel.value) mapping[sel.dataset.fileHeader] = sel.value;
     });
     return mapping;
   }
 
-  // ── Step 1: Upload ──
+  function validateMapping() {
+    if (els.runBtn) els.runBtn.disabled = !Object.keys(getMapping()).length;
+  }
 
-  fileInput.addEventListener("change", function () {
-    uploadBtn.disabled = !fileInput.files.length;
-    showError("");
-  });
+  if (els.backBtn) {
+    els.backBtn.addEventListener("click", function () {
+      show(els.step2, false);
+      show(els.step1, true);
+    });
+  }
 
-  uploadBtn.addEventListener("click", function () {
-    if (!fileInput.files.length) return;
-    showError("");
-    setSpinner(true);
-    uploadBtn.disabled = true;
+  // ── Step 3: run import + result ──────────────────────────────────
+  if (els.runBtn) {
+    els.runBtn.addEventListener("click", function () {
+      if (!els.file.files.length) return;
+      setBusy(true);
 
-    const fd = new FormData();
-    fd.append("file", fileInput.files[0]);
+      var fd = new FormData();
+      fd.append("file", els.file.files[0]);
+      fd.append("entity_type", entityType);
+      fd.append("mapping", JSON.stringify(getMapping()));
 
-    fetch("/import-export/upload-headers", { method: "POST", body: fd })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        setSpinner(false);
-        if (!data.ok) {
-          showError(data.error || "Failed to read file.");
-          uploadBtn.disabled = false;
-          return;
-        }
+      fetchJson("/import-export/import", { method: "POST", body: fd })
+        .then(function (data) {
+          if (!data.ok) { showResult(null, data.error || "Import failed."); return; }
+          showResult(data, null);
+        })
+        .catch(function (e) { showResult(null, e.message || "Network error."); })
+        .finally(function () { setBusy(false); });
+    });
+  }
 
-        fileHeaders = data.headers;
-        mappingBody.innerHTML = "";
+  function showResult(data, errorMsg) {
+    els.resultContent.textContent = "";
 
-        fileHeaders.forEach(function (h) {
-          const tr = document.createElement("tr");
+    var box = document.createElement("div");
+    if (errorMsg) {
+      box.className = "alert alert-danger mb-0";
+      box.textContent = errorMsg;
+      els.resultContent.appendChild(box);
+    } else {
+      box.className = data.skipped ? "alert alert-warning" : "alert alert-success";
+      box.textContent = data.imported + " imported, " + data.skipped +
+        " skipped out of " + data.total + " rows.";
+      els.resultContent.appendChild(box);
 
-          const td1 = document.createElement("td");
-          td1.className = "fw-semibold";
-          td1.textContent = h;
-          tr.appendChild(td1);
+      if (Array.isArray(data.errors) && data.errors.length) {
+        var title = document.createElement("div");
+        title.className = "text-muted small mb-1";
+        title.textContent = "Skipped rows:";
+        els.resultContent.appendChild(title);
 
-          const td2 = document.createElement("td");
-          td2.appendChild(buildSelect(h));
-          tr.appendChild(td2);
-
-          mappingBody.appendChild(tr);
+        var list = document.createElement("ul");
+        list.className = "small mb-0";
+        data.errors.forEach(function (msg) {
+          var li = document.createElement("li");
+          li.textContent = msg;
+          list.appendChild(li);
         });
+        els.resultContent.appendChild(list);
+      }
+    }
 
-        validateMapping();
-        showStep(2);
-      })
-      .catch(function (err) {
-        setSpinner(false);
-        showError("Network error: " + err.message);
-        uploadBtn.disabled = false;
-      });
-  });
+    show(els.step2, false);
+    show(els.step3, true);
+  }
 
-  // ── Step 2: Map & Import ──
-
-  backBtn.addEventListener("click", function () {
-    showStep(1);
-    uploadBtn.disabled = !fileInput.files.length;
-  });
-
-  runBtn.addEventListener("click", function () {
-    if (!fileInput.files.length) return;
-    const mapping = getMapping();
-    if (!Object.keys(mapping).length) return;
-
-    setSpinner(true);
-    runBtn.disabled = true;
-
-    const fd = new FormData();
-    fd.append("file", fileInput.files[0]);
-    fd.append("entity_type", entityType);
-    fd.append("mapping", JSON.stringify(mapping));
-
-    fetch("/import-export/import", { method: "POST", body: fd })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        setSpinner(false);
-
-        if (!data.ok) {
-          resultContent.innerHTML =
-            '<div class="alert alert-danger py-2">' +
-            '<strong>Error:</strong> ' + (data.error || "Import failed.") +
-            "</div>";
-        } else {
-          let html =
-            '<div class="alert alert-success py-2">' +
-            "<strong>Import complete.</strong> " +
-            data.imported + " imported, " +
-            data.skipped + " skipped out of " +
-            data.total + " rows." +
-            "</div>";
-
-          if (data.errors && data.errors.length) {
-            html += '<div class="alert alert-warning py-2 mt-2"><strong>Warnings:</strong><ul class="mb-0 small">';
-            data.errors.forEach(function (e) {
-              html += "<li>" + e.replace(/</g, "&lt;") + "</li>";
-            });
-            html += "</ul></div>";
-          }
-
-          resultContent.innerHTML = html;
-        }
-
-        showStep(3);
-      })
-      .catch(function (err) {
-        setSpinner(false);
-        resultContent.innerHTML =
-          '<div class="alert alert-danger py-2">Network error: ' + err.message + "</div>";
-        showStep(3);
-      });
-  });
-
-  // ── Step 3: Reset ──
-
-  resetBtn.addEventListener("click", function () {
-    fileInput.value = "";
-    uploadBtn.disabled = true;
-    mappingBody.innerHTML = "";
-    resultContent.innerHTML = "";
-    runBtn.disabled = true;
-    showStep(1);
-    showError("");
-  });
+  if (els.resetBtn) {
+    els.resetBtn.addEventListener("click", function () {
+      els.file.value = "";
+      els.uploadBtn.disabled = true;
+      show(els.step3, false);
+      show(els.step1, true);
+    });
+  }
 })();

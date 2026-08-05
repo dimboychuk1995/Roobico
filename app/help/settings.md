@@ -108,23 +108,43 @@ renewed.
 
 ## Import / Export
 
-Sidebar → **Import / Export**. Currently **import only** (no export yet).
-Entities: **Customers**, **Units**, **Vendors**, **Parts**. Upload a CSV or
-Excel (.xlsx) with a header row → "Read Headers" → map columns to fields
-(or "— Skip —") → Import. Result shows imported/skipped counts and row
-errors.
+Sidebar → **Import / Export**. Entities: **Customers**, **Units**,
+**Vendors**, **Parts**, **Work Orders**. Access is controlled by the
+Import / Export permissions (view / import / export) in role settings.
+
+**Export.** Each tab has "Download CSV" and "Download Excel" buttons — they
+download ALL records of that entity for the current shop. Export columns
+match the import fields, so a file exported from one shop can be imported
+into another with automatic column mapping. Work Orders export additionally
+includes Grand Total, Paid Amount and Balance.
+
+**Import.** Upload a CSV or Excel (.xlsx; legacy .xls is not supported —
+re-save as .xlsx) with a header row → "Read Headers" → map columns to
+fields (or "— Skip —") → Import. The result shows imported/skipped counts,
+and every skipped row is listed with the reason.
 
 - Customers: Company Name, First/Last Name, Phone, Email, Address, Pricing
   Scale Name. Requires at least one labor rate to exist in the shop.
-- Units: Unit Number, VIN, Year, Make, Model, Type, Mileage — imported
-  WITHOUT a customer link (attach units to customers manually afterwards).
+- Units: **Customer Name** (links the unit to an existing customer — import
+  customers first), Unit Number, VIN, Year, Make, Model, Type, Mileage.
+  A row needs at least a Unit Number or a VIN; a VIN that already exists
+  for that customer is skipped as a duplicate.
 - Vendors: Vendor Name (+contact, phone, email, website, address, notes).
 - Parts: Part Number, Description, Reference, In Stock, Average Cost,
-  Selling Price.
-- Rows missing the identity field (name / part number) are skipped.
+  Selling Price. Starting stock is recorded properly: the part gets a
+  location row and an "initial" stock movement, same as manual creation.
+- Work Orders (historical records from a previous system): **Date** and
+  **Customer Name** are required; the unit is matched by Unit Number or VIN
+  within that customer; Status is open / in_progress / completed / paid
+  (default completed). Labor Total (or Hours), Parts Total and Sales Tax
+  build the totals with the same math the app uses; a **paid** row also
+  records a payment for the full amount (or the Paid Amount column), so
+  Outstanding Balance stays correct. A WO Number that already exists is
+  skipped; leave WO Number empty to auto-number.
+- Rows missing the identity field (name / part number / unit identity) are
+  skipped with a reason.
 - Duplicates are rejected: a customer, vendor or part that already exists in
   the shop (same name / part number, case-insensitive) is skipped and listed
   in the import errors — including repeats inside the file itself. If the
   existing record is deactivated, the error says so: reactivate it instead
-  of importing a copy. Units are imported without a customer link, so the
-  per-customer VIN check does not apply to imports.
+  of importing a copy.
