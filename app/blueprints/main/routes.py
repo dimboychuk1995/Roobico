@@ -211,6 +211,91 @@ def _render_app_page(template_name: str, active_page: str, **ctx):
     return render_template(template_name, **payload)
 
 
+# user_table_prefs_json инжектится глобально context_processor'ом
+# (app/__init__.py, inject_table_prefs) — покрывает и render_internal_page.
+
+_TABLE_KEY_RE = re.compile(r"^[A-Za-z0-9:_|-]{1,200}$")
+
+
+def _validate_table_prefs(prefs):
+    """Санитизация prefs c клиента. Возвращает чистый dict или None (ошибка)."""
+    if not isinstance(prefs, dict):
+        return None
+    out = {}
+    hidden = prefs.get("hidden")
+    if hidden is not None:
+        if not isinstance(hidden, list) or len(hidden) > 50:
+            return None
+        cleaned = [str(h)[:80] for h in hidden if isinstance(h, str) and h]
+        if cleaned:
+            out["hidden"] = cleaned
+    widths = prefs.get("widths")
+    if widths is not None:
+        if not isinstance(widths, dict) or len(widths) > 50:
+            return None
+        w_out = {}
+        for k, v in widths.items():
+            if not isinstance(k, str) or not k or "." in k or "$" in k:
+                return None
+            try:
+                w_out[k[:80]] = max(40, min(2000, int(v)))
+            except (TypeError, ValueError):
+                return None
+        if w_out:
+            out["widths"] = w_out
+    sort = prefs.get("sort")
+    if sort is not None:
+        if (not isinstance(sort, dict) or not isinstance(sort.get("col"), str)
+                or sort.get("dir") not in ("asc", "desc")):
+            return None
+        out["sort"] = {"col": sort["col"][:80], "dir": sort["dir"]}
+    return out
+
+
+@main_bp.post("/api/table-prefs")
+@login_required
+def save_table_prefs():
+    """Сохранить настройки одной таблицы текущего юзера (или null — сброс)."""
+    user_id = None
+    try:
+        user_id = ObjectId(str(session.get(SESSION_USER_ID)))
+    except Exception:
+        pass
+    if not user_id:
+        return jsonify({"ok": False, "error": "no_session"}), 401
+
+    data = request.get_json(silent=True) or {}
+    key = str(data.get("key") or "")
+    if not _TABLE_KEY_RE.match(key):
+        return jsonify({"ok": False, "error": "bad_key"}), 400
+
+    master = get_master_db()
+    if data.get("prefs") is None:
+        master.user_table_prefs.update_one(
+            {"user_id": user_id}, {"$unset": {f"tables.{key}": ""}})
+        return jsonify({"ok": True})
+
+    prefs = _validate_table_prefs(data.get("prefs"))
+    if prefs is None:
+        return jsonify({"ok": False, "error": "bad_prefs"}), 400
+
+    # Потолок на размер документа: не больше 300 таблиц на юзера.
+    existing = master.user_table_prefs.find_one({"user_id": user_id}, {"tables": 1})
+    tables = (existing or {}).get("tables") or {}
+    if key not in tables and len(tables) >= 300:
+        return jsonify({"ok": False, "error": "too_many_tables"}), 400
+
+    from datetime import datetime, timezone as _tz
+
+    master.user_table_prefs.update_one(
+        {"user_id": user_id},
+        {"$set": {f"tables.{key}": prefs,
+                  "updated_at": datetime.now(_tz.utc)}},
+        upsert=True,
+    )
+    return jsonify({"ok": True})
+
+
 @main_bp.post("/session/active-shop")
 @login_required
 def set_active_shop():

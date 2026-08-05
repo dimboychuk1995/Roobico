@@ -6,10 +6,58 @@
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>Roobico Admin — base</title>
   <script src="{{ url_for('static', filename='js/csrf.js') }}"></script>
+  {# flex_tables: скрытие/ресайз колонок. Сервер сюда prefs не инжектит —
+     admin-сессия не app-юзер, настройки живут в localStorage. #}
+  <script src="{{ url_for('static', filename='js/flex_tables.js') }}" defer></script>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/logo-circle.svg') }}">
   <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='images/favicon.ico') }}" sizes="16x16 32x32 48x48">
   <style>
     *,*::before,*::after { box-sizing: border-box; }
+    /* flex_tables (js/flex_tables.js): admin panel не грузит public.css */
+    .ft-host { position: relative; }
+    .ft-gear {
+      position: absolute; top: 3px; right: 3px; z-index: 6;
+      border: none; background: transparent; color: #64748b;
+      padding: 1px 6px; border-radius: 6px; font-size: .8rem;
+      opacity: .4; cursor: pointer;
+    }
+    .ft-host:hover .ft-gear, .ft-gear:focus { opacity: 1; }
+    .ft-gear:hover { background: rgba(255,255,255,.08); color: #cbd5e1; }
+    .ft-menu {
+      display: none; position: absolute; top: 26px; right: 3px; z-index: 40;
+      min-width: 210px; max-height: 340px; overflow-y: auto;
+      background: #111a2c; border: 1px solid #1f2937; border-radius: 10px;
+      box-shadow: 0 12px 30px rgba(0,0,0,.5); padding: 4px 0 2px;
+    }
+    .ft-menu.show { display: block; }
+    .ft-menu__title {
+      font-size: .7rem; font-weight: 600; text-transform: uppercase;
+      letter-spacing: .04em; color: #64748b; padding: 6px 12px 4px;
+    }
+    .ft-menu__item {
+      display: flex; align-items: center; gap: 8px; padding: 4px 12px;
+      font-size: .85rem; cursor: pointer; white-space: nowrap; margin: 0;
+      color: #cbd5e1;
+    }
+    .ft-menu__item:hover { background: rgba(96,165,250,.1); }
+    .ft-menu__reset {
+      display: block; width: calc(100% - 24px); margin: 6px 12px 8px;
+      padding: 3px 8px; font-size: .8rem; border: 1px solid #1f2937;
+      border-radius: 8px; background: transparent; color: #94a3b8; cursor: pointer;
+    }
+    .ft-menu__reset:hover { background: rgba(255,255,255,.06); color: #cbd5e1; }
+    .ft-resize-handle {
+      position: absolute; top: 0; right: -4px; width: 8px; height: 100%;
+      cursor: col-resize; z-index: 5; user-select: none;
+    }
+    .ft-resize-handle::after {
+      content: ""; position: absolute; top: 20%; bottom: 20%; left: 3px;
+      width: 2px; border-radius: 2px; background: transparent;
+    }
+    .ft-resize-handle:hover::after,
+    body.ft-resizing .ft-resize-handle::after { background: rgba(96,165,250,.55); }
+    body.ft-resizing { cursor: col-resize; user-select: none; }
+    .ft-host thead tr:first-child > *:last-child { padding-right: 26px; }
     body {
       margin: 0;
       min-height: 100vh;

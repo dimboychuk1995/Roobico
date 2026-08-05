@@ -118,6 +118,9 @@ def ensure_master_collections_indexes(master_db):
     _safe_create_index(master_db.zip_sales_tax_rates, [("updated_at", DESCENDING)], name="idx_zip_sales_tax_rates_updated_desc")
 
     # Audit journal for create/edit/delete operations across all routes.
+    # Настройки таблиц (flex tables): один документ на юзера
+    _safe_create_index(master_db.user_table_prefs, [("user_id", ASCENDING)], name="uniq_user_table_prefs_user", unique=True)
+
     _safe_create_index(master_db.audit_journal, [("created_at", DESCENDING)], name="idx_audit_journal_created_desc")
     _safe_create_index(master_db.audit_journal, [("tenant_id", ASCENDING), ("created_at", DESCENDING)], name="idx_audit_journal_tenant_created")
 

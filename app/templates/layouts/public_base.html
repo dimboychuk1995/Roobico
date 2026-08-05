@@ -60,6 +60,13 @@
   <script>window.MAPBOX_ACCESS_TOKEN = {{ (mapbox_access_token or '')|tojson }};</script>
   <script src="{{ url_for('static', filename='js/address_autocomplete.js') }}" defer></script>
 
+  {# Flex tables: настройки таблиц юзера (context_processor inject_table_prefs)
+     + модуль сортировки/скрытия/ресайза колонок #}
+  {% if user_table_prefs_json %}
+  <script>window.__tablePrefs = {{ user_table_prefs_json | safe }};</script>
+  {% endif %}
+  <script src="{{ url_for('static', filename='js/flex_tables.js') }}" defer></script>
+
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>

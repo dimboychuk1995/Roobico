@@ -153,6 +153,18 @@ labor rate to exist.
 "Download Excel" exports all records of that entity. The columns match the
 import fields, so the file can be imported into another shop as-is.
 
+**Customize any table.** Every table in Roobico is adjustable per user:
+- **Hide / show columns** — hover the table and click the small ⚙ button in
+  its top-right corner, then tick the columns you need. At least one column
+  always stays visible.
+- **Resize columns** — drag the thin divider on the right edge of a column
+  header.
+- **Sort** — click a column header (arrows show the direction). Paginated
+  lists sort on the server across all pages; smaller tables sort in place.
+- Your layout (hidden columns, widths, sort) is saved automatically to your
+  account and applies on any device you log in from. It never affects other
+  users. To go back to defaults, open ⚙ → **Reset table**.
+
 **Why can't I create a part / customer / vendor?** Roobico blocks exact
 duplicates: a part number, customer name or vendor name that already
 exists in the shop (case-insensitive), or a unit VIN that already exists

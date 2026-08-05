@@ -141,6 +141,36 @@ def create_app():
             "mapbox_access_token": app.config.get("MAPBOX_ACCESS_TOKEN", ""),
         }
 
+    # Настройки таблиц юзера (flex_tables.js) — на все страницы всех
+    # рендер-путей (_render_app_page, render_internal_page, механик).
+    # Без сессии (анонимные страницы, портал) — пусто: фронт уходит в
+    # localStorage-fallback.
+    @app.context_processor
+    def inject_table_prefs():
+        import json as _json
+
+        from flask import g as _g, session as _session
+
+        cached = getattr(_g, "_table_prefs_json", None)
+        if cached is None:
+            cached = ""
+            try:
+                user_id = _session.get("user_id")
+                if user_id:
+                    from bson import ObjectId as _OID
+
+                    from app.extensions import get_master_db as _gm
+
+                    doc = _gm().user_table_prefs.find_one(
+                        {"user_id": _OID(str(user_id))}, {"tables": 1})
+                    tables = (doc or {}).get("tables")
+                    cached = _json.dumps(tables if isinstance(tables, dict) else {})
+            except Exception:  # noqa: BLE001 — страница важнее настроек таблиц
+                app.logger.exception("table prefs load failed")
+                cached = ""
+            _g._table_prefs_json = cached
+        return {"user_table_prefs_json": cached}
+
     # каждый запрос: если есть сессия — поднимем g.user и g.tenant
     @app.before_request
     def enforce_host_split():
