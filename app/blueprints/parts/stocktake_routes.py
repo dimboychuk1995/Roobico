@@ -104,6 +104,29 @@ def stocktake_detail(stocktake_id: str):
         for item in flatten_location_tree(load_shop_locations(shop_db, shop["_id"]))
     ]
 
+    # «Что изменилось» для завершённой инвентаризации: было → стало,
+    # тремя группами — изменившиеся, обнулившиеся, найденные (не было → есть).
+    stocktake_changes = None
+    if stocktake.get("status") == "completed":
+        changed, zeroed, added = [], [], []
+        for it in items:
+            if it.get("status") != "counted" or int(it.get("variance") or 0) == 0:
+                continue
+            was = int(it.get("expected_at_count") or 0)
+            became = int(it.get("counted_qty") or 0)
+            if was > 0 and became == 0:
+                zeroed.append(it)
+            elif was == 0 and became > 0:
+                added.append(it)
+            else:
+                changed.append(it)
+        stocktake_changes = {
+            "changed": changed,
+            "zeroed": zeroed,
+            "added": added,
+            "total": len(changed) + len(zeroed) + len(added),
+        }
+
     return _render_app_page(
         "public/parts_stocktake_detail.html",
         active_page="parts",
@@ -115,6 +138,7 @@ def stocktake_detail(stocktake_id: str):
         variance_value=variance_value,
         recount_count=len(recount_flags),
         stocktake_locations=stocktake_locations,
+        stocktake_changes=stocktake_changes,
     )
 
 

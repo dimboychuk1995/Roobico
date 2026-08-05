@@ -3084,8 +3084,9 @@
       const totals = serializeTotals(blocksContainer);
       upsertHiddenJsonInput(woForm, "totals_json", totals);
 
-      // ✅ optional create status (e.g. "in_progress")
-      const desiredStatus = String(status || "").toLowerCase() === "in_progress" ? "in_progress" : "";
+      // ✅ optional create status: "in_progress" | "estimate" (смета — без списания склада)
+      const rawStatus = String(status || "").toLowerCase();
+      const desiredStatus = (rawStatus === "in_progress" || rawStatus === "estimate") ? rawStatus : "";
       let statusInput = woForm.querySelector('input[name="create_status"]');
       if (!statusInput) {
         statusInput = document.createElement("input");
@@ -3109,6 +3110,7 @@
     // create still uses normal form POST
     createBtn?.addEventListener("click", () => submitCreate());
     document.getElementById("createInProgressWorkOrderBtn")?.addEventListener("click", () => submitCreate("in_progress"));
+    document.getElementById("createEstimateBtn")?.addEventListener("click", () => submitCreate("estimate"));
 
     // ---------- Annual Vehicle Inspection ----------
     const annualInspectionModalEl = $("annualInspectionModal");
@@ -4575,9 +4577,10 @@
           unit_mileage: unit_mileage ? unit_mileage : undefined,
           work_order_date: workOrderDateInput ? String(workOrderDateInput.value || "").trim() : undefined,
         };
-        // "open" = saved as completed (default), "in_progress" = still in progress
+        // "open" = saved as completed (default), "in_progress" = still in
+        // progress, "estimate" = смета остаётся сметой (склад не трогается)
         const desired = String(saveStatus || "open").toLowerCase();
-        payload.save_status = desired === "in_progress" ? "in_progress" : "open";
+        payload.save_status = (desired === "in_progress" || desired === "estimate") ? desired : "open";
 
         const resp = await apiPostJson(
           `/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/update`,
@@ -4599,14 +4602,42 @@
           if (saveBtn) saveBtn.textContent = "Save";
         }
         applyStateFromStatus();
-        toast(workOrderStatus === "in_progress" ? "Saved as In Progress." : (wasConfirm ? "Confirmed." : "Saved."));
+        applyEstimateUi();
+        toast(workOrderStatus === "in_progress" ? "Saved as In Progress."
+          : workOrderStatus === "estimate" ? "Estimate saved."
+          : (wasConfirm ? "Confirmed." : "Saved."));
       } catch (e) {
         toast(e.message || "Save failed.");
       }
     }
 
-    saveBtn?.addEventListener("click", () => saveWorkOrderEdits("open"));
+    // Обычный Save сметы оставляет её сметой; конверсия — только явной кнопкой.
+    saveBtn?.addEventListener("click", () => saveWorkOrderEdits(workOrderStatus === "estimate" ? "estimate" : "open"));
     document.getElementById("saveInProgressWorkOrderBtn")?.addEventListener("click", () => saveWorkOrderEdits("in_progress"));
+
+    // ── Estimate mode: бейдж, скрытый Paid, пункт «Convert to Work Order» ──
+    function applyEstimateUi() {
+      const isEst = workOrderStatus === "estimate";
+      const badge = document.getElementById("woEstimateBadge");
+      if (badge) badge.classList.toggle("d-none", !isEst);
+      const convItem = document.getElementById("convertEstimateItem");
+      if (convItem) convItem.classList.toggle("d-none", !isEst);
+      if (isEst && paidBtn) paidBtn.classList.add("d-none");
+    }
+    applyEstimateUi();
+
+    document.getElementById("convertEstimateBtn")?.addEventListener("click", async () => {
+      const confirmFn = window.appConfirm
+        ? (m, o) => window.appConfirm(m, o)
+        : (m) => Promise.resolve(window.confirm(m));
+      const ok = await confirmFn(
+        "Convert this estimate to a work order? Parts will be deducted from inventory.",
+        { confirmText: "Convert", icon: "question" }
+      );
+      if (!ok) return;
+      await saveWorkOrderEdits("open");
+      if (workOrderStatus !== "estimate") window.location.reload();
+    });
 
     // paid -> open payment modal
     paidBtn?.addEventListener("click", async function () {

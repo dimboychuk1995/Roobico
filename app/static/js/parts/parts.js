@@ -3136,6 +3136,42 @@
 		credit.textContent = money(qty * coreCost);
 	}
 
+	// Ручная правка количества коров на руках (не возврат: кредит не создаётся)
+	document.addEventListener("click", function (event) {
+		var qtySaveBtn = event.target.closest(".js-core-qty-save");
+		if (!qtySaveBtn) return;
+		var group = qtySaveBtn.closest(".input-group");
+		var input = group ? group.querySelector(".js-core-qty-input") : null;
+		if (!input) return;
+		var qty = parseInt(input.value, 10);
+		if (isNaN(qty) || qty < 0) {
+			if (window.appAlert) window.appAlert("Quantity must be zero or a positive number.", "warning");
+			return;
+		}
+		qtySaveBtn.disabled = true;
+		fetch("/parts/api/cores/" + encodeURIComponent(qtySaveBtn.dataset.coreId) + "/quantity", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ quantity: qty }),
+		})
+			.then(function (r) { return r.json().then(function (j) { return { ok: r.ok, body: j }; }); })
+			.then(function (res) {
+				if (!res.ok || !res.body.ok) {
+					if (window.appAlert) window.appAlert((res.body && res.body.error) || "Failed to update quantity", "error");
+					return;
+				}
+				input.value = res.body.quantity;
+				var row = qtySaveBtn.closest("tr");
+				var returnBtn = row ? row.querySelector(".js-core-return-btn") : null;
+				if (returnBtn) returnBtn.dataset.maxQty = String(res.body.quantity);
+				if (window.appAlert) window.appAlert("Core quantity updated.", "success");
+			})
+			.catch(function () {
+				if (window.appAlert) window.appAlert("Network error while updating core quantity", "error");
+			})
+			.finally(function () { qtySaveBtn.disabled = false; });
+	});
+
 	document.addEventListener("click", function (event) {
 		var openBtn = event.target.closest(".js-core-return-btn");
 		if (openBtn) {

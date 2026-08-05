@@ -618,6 +618,11 @@ def mobile_work_order_edit(work_order_id):
     if (wo.get("status") or "open") == "paid":
         return jsonify({"ok": False, "error": "paid_cannot_edit",
                         "message": "Paid work orders cannot be edited."}), 400
+    # Сметы редактируются в веб-интерфейсе: мобильный save форсит
+    # open/in_progress и молча конвертировал бы смету со списанием склада.
+    if (wo.get("status") or "open") == "estimate":
+        return jsonify({"ok": False, "error": "estimate_web_only",
+                        "message": "Estimates are edited in the web interface."}), 400
     # Подтверждённый менеджером WO механик редактировать не может
     # (менеджер может снять подтверждение — тогда правка снова доступна).
     if wo.get("manager_confirmed") and not has_permission("work_orders.view_costs"):

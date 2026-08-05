@@ -567,7 +567,7 @@ def parts_page():
     q = (request.args.get("q") or "").strip()
 
     paid_status = (request.args.get("paid_status") or "all").strip().lower()
-    if paid_status not in ("all", "paid", "unpaid"):
+    if paid_status not in ("all", "paid", "unpaid", "returns"):
         paid_status = "all"
 
     date_filters = _get_date_range_filters(request.args)
@@ -832,6 +832,9 @@ def parts_page():
             # Возвраты — кредит вендора, а не долг: в Unpaid им не место.
             orders_query["payment_status"] = {"$ne": "paid"}
             orders_query["is_return"] = {"$ne": True}
+        elif paid_status == "returns":
+            # Только возвраты вендору (кредиты).
+            orders_query["is_return"] = True
 
         created_filter = _build_preferred_date_filter(
             "order_date",
@@ -881,6 +884,8 @@ def parts_page():
                 "is_return": 1,
                 "return_for_order_number": 1,
                 "notes": 1,
+                "work_order_id": 1,
+                "work_order_number": 1,
             },
         )
         
@@ -962,12 +967,16 @@ def parts_page():
                 "is_return": is_return_row,
                 "return_for_order_number": order.get("return_for_order_number"),
                 "notes": str(order.get("notes") or ""),
+                "work_order_id": str(order.get("work_order_id")) if order.get("work_order_id") else "",
+                "work_order_number": order.get("work_order_number"),
             })
 
     # Payments tab list
     payments_list = []
     payments_pagination = None
     payments_totals = {"payments_total": 0.0, "payments_count": 0}
+    vendor_credits = []
+    credits_totals = {"credits_count": 0, "credits_total": 0.0}
     if payments_coll is not None and orders_coll is not None and active_tab == "payments":
         payments_query = {"shop_id": shop["_id"], "is_active": True}
 
@@ -1071,6 +1080,91 @@ def parts_page():
                     "created_at": _fmt_preferred_dt_label(pay.get("payment_date"), pay.get("created_at")),
                 }
             )
+
+        # ── Кредиты вендоров: возвраты запчастей и коров. Деньги, которые
+        # должны вернуться нам. Только отображение: в Payments Total и в
+        # балансы вендоров не входят (баланс не должен уходить в минус).
+        from datetime import datetime as _dt
+
+        credit_epoch = _dt(1970, 1, 1)
+
+        ret_query = {"shop_id": shop["_id"], "is_return": True, "is_active": {"$ne": False}}
+        ret_date_filter = _build_preferred_date_filter(
+            "order_date", date_filters["created_from"], date_filters["created_to_exclusive"])
+        if ret_date_filter:
+            ret_query = {"$and": [ret_query, ret_date_filter]}
+        ret_search = build_regex_search_filter(
+            q,
+            text_fields=["vendor_bill", "notes"],
+            numeric_fields=["order_number", "return_for_order_number", "credit_total"],
+            object_id_fields=["_id", "vendor_id"],
+        )
+        if q and vendor_ids_by_name:
+            ors = [{"vendor_id": {"$in": vendor_ids_by_name}}]
+            if ret_search:
+                ors.append(ret_search)
+            ret_query = {"$and": [ret_query, {"$or": ors}]}
+        elif ret_search:
+            ret_query = {"$and": [ret_query, ret_search]}
+
+        parts_return_rows = list(
+            orders_coll.find(ret_query).sort([("order_date", -1), ("created_at", -1)]).limit(300)
+        )
+        ret_vendor_names = {}
+        ret_vendor_ids = [r["vendor_id"] for r in parts_return_rows if r.get("vendor_id")]
+        if ret_vendor_ids and vendors_coll is not None:
+            for row in vendors_coll.find({"_id": {"$in": ret_vendor_ids}}):
+                ret_vendor_names[row["_id"]] = _name_from_doc(row)
+
+        for r in parts_return_rows:
+            ref = f"R-{r.get('order_number') or '-'}"
+            if r.get("return_for_order_number"):
+                ref += f" (order #{r['return_for_order_number']})"
+            vendor_credits.append({
+                "kind": "parts_return",
+                "label": "Parts return",
+                "ref": ref,
+                "vendor": ret_vendor_names.get(r.get("vendor_id")) or "-",
+                "amount": float(r.get("credit_total") or 0),
+                "notes": str(r.get("notes") or ""),
+                "date_label": _fmt_preferred_dt_label(r.get("order_date"), r.get("created_at")),
+                "_sort": r.get("order_date") or r.get("created_at") or credit_epoch,
+            })
+
+        core_returns_coll = parts_coll.database.core_returns
+        core_ret_query = {"shop_id": shop["_id"], "is_active": {"$ne": False}}
+        core_date_filter = _build_preferred_date_filter(
+            "returned_at", date_filters["created_from"], date_filters["created_to_exclusive"])
+        if core_date_filter:
+            core_ret_query = {"$and": [core_ret_query, core_date_filter]}
+        core_search = build_regex_search_filter(
+            q,
+            text_fields=["part_number", "description", "vendor_name", "notes"],
+            numeric_fields=["quantity", "core_cost", "credit_total"],
+            object_id_fields=["_id", "part_id", "core_id", "vendor_id"],
+        )
+        if core_search:
+            core_ret_query = {"$and": [core_ret_query, core_search]}
+
+        for r in core_returns_coll.find(core_ret_query).sort(
+            [("returned_at", -1), ("created_at", -1)]
+        ).limit(300):
+            vendor_credits.append({
+                "kind": "core_return",
+                "label": "Core return",
+                "ref": f"{r.get('part_number') or '-'} × {int(r.get('quantity') or 0)}",
+                "vendor": str(r.get("vendor_name") or "") or "-",
+                "amount": float(r.get("credit_total") or 0),
+                "notes": str(r.get("notes") or ""),
+                "date_label": _fmt_preferred_dt_label(r.get("returned_at"), r.get("created_at")),
+                "_sort": r.get("returned_at") or r.get("created_at") or credit_epoch,
+            })
+
+        vendor_credits.sort(key=lambda x: x["_sort"], reverse=True)
+        credits_totals = {
+            "credits_count": len(vendor_credits),
+            "credits_total": round(sum(c["amount"] for c in vendor_credits), 2),
+        }
 
     # Get cores list for Cores tab
     cores_list = []
@@ -1244,6 +1338,8 @@ def parts_page():
         payments=payments_list,
         payments_pagination=payments_pagination,
         payments_totals=payments_totals,
+        vendor_credits=vendor_credits,
+        credits_totals=credits_totals,
         stocktakes=stocktakes_list,
         stocktakes_pagination=stocktakes_pagination,
         date_preset=date_preset,
@@ -1894,6 +1990,20 @@ def parts_api_orders_create():
     if not items and not non_inventory_amounts:
         return jsonify({"ok": False, "error": "No valid items in order."}), 400
 
+    # Опциональная привязка заказа к work order (создание из страницы WO).
+    work_order_oid = None
+    work_order_number = None
+    wo_raw = str(data.get("work_order_id") or "").strip()
+    if wo_raw:
+        work_order_oid = _oid(wo_raw)
+        wo_doc = orders_coll.database.work_orders.find_one(
+            {"_id": work_order_oid, "shop_id": shop["_id"], "is_active": {"$ne": False}},
+            {"wo_number": 1},
+        ) if work_order_oid else None
+        if not wo_doc:
+            return jsonify({"ok": False, "error": "Work order not found."}), 400
+        work_order_number = wo_doc.get("wo_number")
+
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
     order_date = shop_local_date_to_utc(data.get("order_date"), default_today=True)
@@ -1903,6 +2013,8 @@ def parts_api_orders_create():
     order_number = _get_next_order_number(shop_db, shop["_id"])
 
     order_doc = {
+        "work_order_id": work_order_oid,
+        "work_order_number": work_order_number,
         "vendor_id": vendor_oid,
         "order_number": order_number,
         "vendor_bill": "",
@@ -2467,6 +2579,48 @@ def parts_api_core_return(core_id: str):
         "remaining_quantity": int(core_doc.get("quantity") or 0),
         "credit_total": round2(qty * float(core_doc.get("core_cost") or 0)),
     })
+
+
+@parts_bp.post("/api/cores/<core_id>/quantity")
+@login_required
+@permission_required("parts.edit")
+def parts_api_core_set_quantity(core_id: str):
+    """Ручная правка количества коров на руках (повредили, потеряли, нашли).
+
+    Это НЕ возврат вендору: кредит не создаётся, в Cores Returns не попадает —
+    просто корректировка остатка коров.
+    """
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or shop is None:
+        return jsonify({"ok": False, "error": "Shop database not configured for this shop."}), 400
+
+    core_oid = _oid(core_id)
+    if not core_oid:
+        return jsonify({"ok": False, "error": "Invalid core id."}), 400
+
+    data = request.get_json(silent=True) or {}
+    try:
+        quantity = int(data.get("quantity"))
+    except (TypeError, ValueError):
+        return jsonify({"ok": False, "error": "Quantity must be a whole number."}), 400
+    if quantity < 0:
+        return jsonify({"ok": False, "error": "Quantity cannot be negative."}), 400
+
+    from pymongo import ReturnDocument
+
+    core_doc = parts_coll.database.cores.find_one_and_update(
+        {"_id": core_oid, "shop_id": shop["_id"], "is_active": {"$ne": False}},
+        {"$set": {
+            "quantity": quantity,
+            "updated_at": utcnow(),
+            "updated_by": _oid(str(session.get(SESSION_USER_ID) or "")),
+        }},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not core_doc:
+        return jsonify({"ok": False, "error": "Core not found."}), 404
+
+    return jsonify({"ok": True, "quantity": int(core_doc.get("quantity") or 0)})
 
 
 @parts_bp.post("/api/orders/<order_id>/receive")

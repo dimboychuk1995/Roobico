@@ -34,6 +34,14 @@ What a mechanic sees and can do:
   records the mileage on the unit itself and on the WO.
 - Prices/hours/rates that the office already entered are preserved when a
   mechanic edits; mechanics cannot delete existing jobs (manager-only).
+- Jobs a mechanic adds without a preset automatically get the shop's
+  **"standard" labor rate** (or the first active rate) on the server — so
+  the office never sees a $0 labor line; the office can change the rate
+  later as usual.
+- Once a manager **confirms** the WO (mobile: "Confirm work order" after
+  the "Mechanic done" badge), the WO is closed for mechanics — it cannot
+  be opened or edited, and a job timer cannot be started on it — until the
+  manager cancels the confirmation.
 - **Unit history right inside the WO** (web): the **History** button next to
   the unit (on an open WO, and next to the unit picker when creating one)
   opens the unit's past work orders — WO #, date, status, jobs and parts

@@ -242,3 +242,56 @@ def test_paid_not_received_order_returns_without_stock(logged_in, env, app):
              "items.part_id": env["part"]["_id"]},
         )
     assert totals["total"] == 10.0, "заказ $20 минус возврат-кредит $10"
+
+
+def test_returns_filter_and_attachments_button(logged_in, env):
+    """Фильтр Returns на Parts Orders показывает только возвраты; у строки
+    возврата есть кнопка вложений (кредит-инвойс вендора), привязанная к
+    самому возврату — на оригинальном заказе этих файлов нет."""
+    now = datetime.now(timezone.utc)
+    order = _insert_order(env)
+    env["db"].parts_orders.update_one(
+        {"_id": order["_id"]}, {"$set": {"vendor_bill": "BILL-ORIG-77"}})
+
+    ret = {
+        "_id": ObjectId(),
+        "shop_id": env["shop_id"],
+        "order_number": 98002,
+        "is_return": True,
+        "return_for_order_id": order["_id"],
+        "return_for_order_number": order["order_number"],
+        "vendor_id": None,
+        "vendor_bill": "CREDIT-RET-77",
+        "status": "returned",
+        "payment_status": "credit",
+        "items": [{
+            "part_id": env["part"]["_id"],
+            "part_number": env["part"]["part_number"],
+            "description": "returned",
+            "quantity": 2,
+            "price": 4.0,
+        }],
+        "credit_total": 8.0,
+        "non_inventory_amounts": [],
+        "order_date": now,
+        "is_active": True,
+        "created_at": now,
+    }
+    env["db"].parts_orders.insert_one(ret)
+
+    # Фильтр Returns: только возврат, без оригинала
+    page = logged_in.get("/parts/?tab=orders&paid_status=returns").get_data(as_text=True)
+    assert "CREDIT-RET-77" in page
+    assert "BILL-ORIG-77" not in page
+    # Кнопка вложений на строке возврата, entity = сам возврат
+    assert f'data-entity-id="{ret["_id"]}"' in page
+
+    # All: видны оба; у оригинального заказа кнопки файлов нет
+    page_all = logged_in.get("/parts/?tab=orders").get_data(as_text=True)
+    assert "BILL-ORIG-77" in page_all
+    assert "CREDIT-RET-77" in page_all
+    assert f'data-entity-id="{order["_id"]}"' not in page_all
+
+    # Unpaid по-прежнему без возвратов
+    page_unpaid = logged_in.get("/parts/?tab=orders&paid_status=unpaid").get_data(as_text=True)
+    assert "CREDIT-RET-77" not in page_unpaid

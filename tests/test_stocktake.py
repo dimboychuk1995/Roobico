@@ -300,3 +300,67 @@ def test_stocktake_add_found_item(logged_in, env):
         env["db"].parts.delete_one({"_id": found["_id"]})
         env["db"].part_location_stock.delete_many({"part_id": found["_id"]})
         env["db"].inventory_movements.delete_many({"part_id": found["_id"]})
+
+
+def test_completed_stocktake_changes_view(logged_in, env):
+    """Карточка «What changed»: было→стало тремя группами — изменившиеся,
+    обнулённые (непосчитанные при zero_uncounted), найденные (было 0)."""
+    from datetime import datetime, timezone
+
+    db, shop_id, loc = env["db"], env["shop_id"], env["loc"]
+    now = datetime.now(timezone.utc)
+    part_zero = {
+        "_id": ObjectId(), "shop_id": shop_id, "part_number": "ST-PART-2",
+        "description": "Will be zeroed", "in_stock": 5, "average_cost": 1.0,
+        "location_id": loc["_id"], "is_active": True, "created_at": now,
+    }
+    part_found = {
+        "_id": ObjectId(), "shop_id": shop_id, "part_number": "ST-PART-3",
+        "description": "Found on shelf", "in_stock": 0, "average_cost": 4.0,
+        "location_id": loc["_id"], "is_active": True, "created_at": now,
+    }
+    db.parts.insert_many([part_zero, part_found])
+    try:
+        st = _create_stocktake(logged_in, env, location_id=str(loc["_id"]))
+        items = {it["part_number"]: it for it in
+                 db.stocktake_items.find({"stocktake_id": st["_id"]})}
+        token = get_csrf_token(logged_in)
+
+        # ST-PART-1: 10 → 6 (changed); ST-PART-3: 0 → 4 (found); ST-PART-2 не считаем
+        for pn, qty in (("ST-PART-1", 6), ("ST-PART-3", 4)):
+            resp = logged_in.post(
+                f"/parts/stocktakes/{st['_id']}/count",
+                json={"item_id": str(items[pn]["_id"]), "counted_qty": qty},
+                headers={"X-CSRFToken": token},
+            )
+            assert resp.get_json().get("ok"), resp.get_data(as_text=True)
+
+        resp = logged_in.post(
+            f"/parts/stocktakes/{st['_id']}/complete",
+            json={"zero_uncounted": True},
+            headers={"X-CSRFToken": token},
+        )
+        assert resp.get_json().get("ok")
+
+        # Остатки: 6 / 0 / 4
+        assert db.parts.find_one({"_id": env["part"]["_id"]})["in_stock"] == 6
+        assert db.parts.find_one({"_id": part_zero["_id"]})["in_stock"] == 0
+        assert db.parts.find_one({"_id": part_found["_id"]})["in_stock"] == 4
+
+        page = logged_in.get(f"/parts/stocktakes/{st['_id']}").get_data(as_text=True)
+        assert "What changed" in page
+        assert "Quantity changed" in page
+        assert "Went to zero" in page
+        assert "Found during count" in page
+        # обнулённая строка несёт было=5, стало=0
+        zero_item = db.stocktake_items.find_one(
+            {"stocktake_id": st["_id"], "part_id": part_zero["_id"]})
+        assert zero_item["expected_at_count"] == 5
+        assert zero_item["counted_qty"] == 0
+        assert zero_item["auto_zeroed"] is True
+    finally:
+        db.parts.delete_many({"_id": {"$in": [part_zero["_id"], part_found["_id"]]}})
+        db.part_location_stock.delete_many(
+            {"part_id": {"$in": [part_zero["_id"], part_found["_id"]]}})
+        db.inventory_movements.delete_many(
+            {"part_id": {"$in": [part_zero["_id"], part_found["_id"]]}})

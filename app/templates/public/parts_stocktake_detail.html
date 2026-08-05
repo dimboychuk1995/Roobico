@@ -67,6 +67,68 @@
   </div>
 </div>
 
+{% if stocktake.status == 'completed' and stocktake_changes %}
+<div class="card mb-3">
+  <div class="card-body">
+    <h5 class="card-title mb-1">What changed</h5>
+    {% if stocktake_changes.total == 0 %}
+      <p class="text-muted small mb-0">No stock changes — every counted line matched the system quantity.</p>
+    {% else %}
+      <p class="text-muted small mb-3">
+        Was → became for every line this stocktake adjusted. Uncounted lines
+        that were zeroed and parts found during the count are listed separately.
+      </p>
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0">
+          <thead>
+            <tr class="text-muted">
+              <th style="min-width: 180px;">Location</th>
+              <th style="min-width: 140px;">Part #</th>
+              <th style="min-width: 200px;">Description</th>
+              <th class="text-end" style="width: 90px;">Was</th>
+              <th class="text-end" style="width: 90px;">Became</th>
+              <th class="text-end" style="width: 110px;">Difference</th>
+              <th class="text-end" style="width: 110px;">Value</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% macro change_row(it) %}
+              <tr>
+                <td class="text-muted small">{{ it.location_path }}</td>
+                <td class="fw-semibold">{{ it.part_number }}</td>
+                <td class="text-muted">{{ it.description or '-' }}</td>
+                <td class="text-end">{{ it.expected_at_count }}</td>
+                <td class="text-end fw-semibold">{{ it.counted_qty }}</td>
+                <td class="text-end">
+                  {% if it.variance > 0 %}<span class="text-success fw-semibold">+{{ it.variance }}</span>
+                  {% else %}<span class="text-danger fw-semibold">{{ it.variance }}</span>{% endif %}
+                </td>
+                <td class="text-end">
+                  {% if it.variance_value < 0 %}<span class="text-danger">-${{ "%.2f"|format(-it.variance_value) }}</span>
+                  {% else %}<span class="text-success">+${{ "%.2f"|format(it.variance_value) }}</span>{% endif %}
+                </td>
+              </tr>
+            {% endmacro %}
+            {% if stocktake_changes.changed %}
+              <tr class="table-section-row"><td colspan="7">Quantity changed · {{ stocktake_changes.changed|length }}</td></tr>
+              {% for it in stocktake_changes.changed %}{{ change_row(it) }}{% endfor %}
+            {% endif %}
+            {% if stocktake_changes.zeroed %}
+              <tr class="table-section-row"><td colspan="7">Went to zero · {{ stocktake_changes.zeroed|length }}</td></tr>
+              {% for it in stocktake_changes.zeroed %}{{ change_row(it) }}{% endfor %}
+            {% endif %}
+            {% if stocktake_changes.added %}
+              <tr class="table-section-row"><td colspan="7">Found during count (was 0) · {{ stocktake_changes.added|length }}</td></tr>
+              {% for it in stocktake_changes.added %}{{ change_row(it) }}{% endfor %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
 <div class="card">
   <div class="card-body">
     <div class="row g-2 align-items-center mb-3">

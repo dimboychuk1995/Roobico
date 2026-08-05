@@ -88,18 +88,38 @@ apply as deltas on completion.
   Columns: Location, Part #, Description, Expected, Counted (+Save),
   Variance, Value, Status. If stock moves after a line was counted it's
   flagged **"Recount"**.
-- **"Complete & apply"** applies variances. For a full inventory you can
-  zero the uncounted lines; for a cycle count leave them untouched.
+- **"Complete & apply"** applies variances. For a full inventory tick
+  **"Set uncounted lines to zero"** in the confirmation — everything you did
+  not count in the scope is treated as not found and zeroed; for a cycle
+  count leave the box unticked and uncounted lines stay untouched.
   **"Cancel"** discards. Stocktakes are numbered ST-1, ST-2, ...
+- **"What changed"** — a completed stocktake shows a was → became table of
+  every adjusted line, split into three groups: **Quantity changed**,
+  **Went to zero** (counted as 0 or auto-zeroed as uncounted) and
+  **Found during count** (system had 0, counting found stock — including
+  parts added via "Add found part"). Each row shows Was, Became, the ±
+  difference and its value at average cost; the header badges give the
+  shortage/overage totals. Lines whose count matched the system are not
+  listed — the full line-by-line record stays in the items table below.
 
 ## Cores and Cores Returns
 
 - A part with a core charge either bills the deposit to the customer (Core
   toggle on the WO line) or — if not billed — the old core is kept by the
   shop and tracked on the **"Cores"** tab (quantity per part).
+- **Adjusting the quantity by hand**: the Quantity column on the Cores tab
+  is editable — type the real number of cores on hand and press **Save**
+  (a core got damaged, lost, or found). This is a plain correction: it does
+  NOT create a vendor credit or a Cores Returns entry. Setting it to 0
+  removes the row from the list.
 - **"Return"** on a core → "Return cores to vendor": quantity, live Credit
   amount (qty × core cost), optional vendor and notes (RMA #). The
   **"Cores Returns"** tab is the ledger of returned cores and credit totals.
+- **Where the credit money shows up**: the **Parts Orders Payments** tab has
+  a **Vendor credits** section listing every parts return and core return
+  with its credit amount — the money vendors owe you back. It is
+  informational: credits do not reduce the Payments Total and never push a
+  vendor's balance negative (vendor balance only counts unpaid orders).
 
 ## Pricing scales (margin / markup)
 

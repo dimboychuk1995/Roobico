@@ -226,6 +226,7 @@
               <option value="all" {% if (paid_status or 'all') == 'all' %}selected{% endif %}>All</option>
               <option value="paid" {% if paid_status == 'paid' %}selected{% endif %}>Paid</option>
               <option value="unpaid" {% if paid_status == 'unpaid' %}selected{% endif %}>Unpaid</option>
+              <option value="returns" {% if paid_status == 'returns' %}selected{% endif %}>Returns</option>
             </select>
           </div>
           <div class="col-12">
@@ -289,6 +290,13 @@
                           Return · #{{ o.return_for_order_number or '-' }}
                         </span>
                       {% endif %}
+                      {% if o.work_order_number %}
+                        <a class="badge text-bg-info text-decoration-none"
+                           href="{{ url_for('work_orders.work_order_details_page', work_order_id=o.work_order_id) }}"
+                           title="Ordered for Work Order #{{ o.work_order_number }}">
+                          WO #{{ o.work_order_number }}
+                        </a>
+                      {% endif %}
                     </td>
                     <td>{{ o.vendor_bill or '-' }}</td>
                     <td>{{ o.vendor }}</td>
@@ -347,6 +355,12 @@
                                 data-bs-toggle="modal" data-bs-target="#orderModal">
                           <i class="bi bi-pencil me-1"></i> Edit
                         </button>
+                      {% endif %}
+                      {% if o.is_return %}
+                        {# Кредит-инвойсы вендора цепляются к самому возврату
+                           (entity_id = id возврата) — на оригинальном заказе
+                           эти файлы не показываются. #}
+                        {{ attachments_btn(entity_type="parts_order", entity_id=o.id, label="Files") }}
                       {% endif %}
                       <button type="button" class="btn btn-sm btn-outline-danger deleteOrderBtn"
                               data-order-id="{{ o.id }}"
@@ -502,6 +516,48 @@
         {% else %}
           {{ empty_state("No payments recorded yet", "Payments for parts orders will appear here.") }}
         {% endif %}
+
+        {% if vendor_credits and vendor_credits|length > 0 %}
+          <hr class="my-4">
+          <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+            <h6 class="mb-0">Vendor credits</h6>
+            <span class="badge text-bg-light border">Count: {{ credits_totals.credits_count }}</span>
+            <span class="badge text-bg-success">Credit total: ${{ "%.2f"|format(credits_totals.credits_total or 0) }}</span>
+            <span class="text-muted small">money owed back to you from parts and core returns — informational, vendor balances are not reduced</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr class="text-muted">
+                  <th style="width: 130px;">Type</th>
+                  <th style="min-width: 170px;">Reference</th>
+                  <th style="min-width: 150px;">Vendor</th>
+                  <th class="text-end" style="width: 120px;">Credit</th>
+                  <th>Notes</th>
+                  <th style="width: 140px;">Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% for cr in vendor_credits %}
+                  <tr>
+                    <td>
+                      {% if cr.kind == 'core_return' %}
+                        <span class="badge text-bg-info">Core return</span>
+                      {% else %}
+                        <span class="badge text-bg-warning">Parts return</span>
+                      {% endif %}
+                    </td>
+                    <td class="fw-semibold">{{ cr.ref }}</td>
+                    <td>{{ cr.vendor }}</td>
+                    <td class="text-end fw-semibold text-success">+${{ "%.2f"|format(cr.amount or 0) }}</td>
+                    <td class="text-muted small">{{ cr.notes or '-' }}</td>
+                    <td>{{ cr.date_label }}</td>
+                  </tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -542,7 +598,16 @@
                     <td class="fw-semibold">{{ c.part_number }}</td>
                     <td class="text-muted">{{ c.description if c.description else '-' }}</td>
                     <td class="text-end">${{ "%.2f"|format(c.core_cost or 0) }}</td>
-                    <td class="text-end fw-semibold">{{ c.quantity or 0 }}</td>
+                    <td class="text-end">
+                      <div class="input-group input-group-sm flex-nowrap justify-content-end">
+                        <input type="number" min="0" step="1"
+                               class="form-control form-control-sm js-core-qty-input"
+                               style="max-width: 90px;" value="{{ c.quantity or 0 }}"
+                               aria-label="Cores on hand">
+                        <button type="button" class="btn btn-outline-primary js-core-qty-save"
+                                data-core-id="{{ c.id }}" title="Save adjusted quantity">Save</button>
+                      </div>
+                    </td>
                     <td>{{ c.updated_at }}</td>
                     <td class="text-end">{{ attachments_btn(entity_type="core", entity_id=c.id|string if c.id is defined else c._id|string) }}</td>
                     <td class="text-end">

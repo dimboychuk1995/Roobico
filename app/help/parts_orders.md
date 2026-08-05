@@ -106,6 +106,23 @@ an optional note (reason, RMA number).
 - If the source order was received, the returned parts are deducted from
   stock (from the same locations); deleting the return puts them back.
 - Returns subtract from purchase totals in the orders tab and reports.
+- **Finding returns**: the status filter on the Parts Orders tab has a
+  **Returns** option — it shows only return documents, and the footer totals
+  then sum just the returns (as negative amounts). Search and the date
+  filter work as usual.
+- **Return paperwork**: every return row has a **Files** button — attach the
+  vendor's credit invoice / RMA paperwork there (images or PDF). These files
+  belong to the return itself and are NOT shown on the original parts
+  order — the original keeps only its own attachments.
+
+## Orders linked to a work order
+
+A parts order can be created straight from a work order page (the
+**Parts orders** button in the Customer & Unit section). Such orders live in
+the normal Parts Orders list like any other order and carry a **WO #** badge
+linking to the work order. Inside the work order the same orders are shown
+with statuses, Receive/Pay actions and a check of which ordered items are
+actually used on that WO. See the Work Orders help for details.
 
 ## Access
 

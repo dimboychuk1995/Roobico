@@ -15,6 +15,11 @@ with the hamburger button; the theme toggle (light/dark) is at its bottom.
 - **Active shop** — organizations can have several shops; switch with the
   "Active shop" dropdown in the top bar. Every page shows only the active
   shop's data. Users only see shops they were granted access to.
+- **Every table is personal** — use the small **Columns** button above any
+  table to hide/show columns, drag the dividers between column headers to
+  resize, click a header to sort. Your layout is saved to your account and
+  follows you to any device; "Reset table" in the Columns menu restores
+  defaults. Other users are not affected.
 
 ## Users, roles, permissions
 

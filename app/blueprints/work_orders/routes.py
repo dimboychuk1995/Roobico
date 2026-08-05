@@ -527,7 +527,7 @@ def work_order_details_page():
         customer_id = wo.get("customer_id")
         unit_id = wo.get("unit_id")
         work_order_status = (wo.get("status") or "open").strip().lower()
-        if work_order_status not in ("open", "paid"):
+        if work_order_status not in ("open", "paid", "estimate"):
             work_order_status = "open"
 
         from app.blueprints.work_orders.services.time_tracking import summarize_wo_time
@@ -778,14 +778,25 @@ def create_work_order():
     now = utcnow()
     user_id = current_user_id()
 
+    # Статус: open (дефолт) / in_progress / estimate. Механик всегда получает
+    # in_progress (enforce_mechanic_status), т.е. estimate — офисная фича.
+    raw_create_status = enforce_mechanic_status(
+        (request.form.get("create_status") or "").strip().lower()
+    )
+    create_status = raw_create_status if raw_create_status in ("in_progress", "estimate") else "open"
+
     # Номер WO нужен до списания — он уходит в ref журнала движений склада.
     wo_number = get_next_wo_number(shop_db, shop["_id"])
 
-    # ✅ Deduct parts from inventory before creating work order
-    inventory_result = deduct_parts_from_inventory(
-        shop_db, labors, user_id,
-        ref={"kind": "work_order", "label": str(wo_number)},
-    )
+    # ✅ Deduct parts from inventory before creating work order.
+    # Estimate — смета: склад не трогаем, спишем при конверсии в реальный WO.
+    if create_status == "estimate":
+        inventory_result = {"success": True, "deducted": [], "errors": []}
+    else:
+        inventory_result = deduct_parts_from_inventory(
+            shop_db, labors, user_id,
+            ref={"kind": "work_order", "label": str(wo_number)},
+        )
     if not inventory_result["success"] and inventory_result["errors"]:
         for error in inventory_result["errors"]:
             flash(f"Inventory error: {error}", "warning")
@@ -816,7 +827,7 @@ def create_work_order():
         "wo_number": wo_number,
         "customer_id": customer_id,
         "unit_id": unit_id,
-        "status": "in_progress" if enforce_mechanic_status((request.form.get("create_status") or "").strip().lower()) == "in_progress" else "open",
+        "status": create_status,
         "labors": labors,
         "work_order_date": work_order_date,
 
@@ -846,9 +857,13 @@ def create_work_order():
         )
 
     # Sync cores collection using unpaid-core logic from this work order.
-    core_sync = sync_work_order_cores(shop_db, shop, [], labors, user_id)
+    # Для estimate физического движения партов нет — cores не создаём.
+    if create_status == "estimate":
+        core_sync = {"changes": []}
+    else:
+        core_sync = sync_work_order_cores(shop_db, shop, [], labors, user_id)
 
-    flash("Work order created.", "success")
+    flash("Estimate created." if create_status == "estimate" else "Work order created.", "success")
 
     if inventory_result["deducted"]:
         deducted_info = ", ".join([f"{d['part_number']} (qty: {d['qty_used']})" for d in inventory_result["deducted"]])
@@ -1465,9 +1480,23 @@ def api_work_order_update(work_order_id):
     # (опционально) можно запретить редактирование, если paid
     if (wo.get("status") or "open") == "paid":
         return jsonify({"ok": False, "error": "paid_cannot_edit"}), 200
+    # Сметы — офисный документ: механик их не редактирует (его автосейв
+    # форсит in_progress и молча конвертировал бы смету в рабочий WO).
+    if (wo.get("status") or "open") == "estimate" and is_mechanic_mode():
+        return jsonify({"ok": False, "error": "estimate_locked_for_mechanics"}), 200
 
     now = utcnow()
     user_id = current_user_id()
+
+    # Статусный контекст: estimate живёт без движения склада. Смета остаётся
+    # сметой, пока явно не конвертирована (save_status open/in_progress);
+    # обратной конверсии WO → estimate нет.
+    was_estimate = (wo.get("status") or "open") == "estimate"
+    save_status = enforce_mechanic_status((data.get("save_status") or "").strip().lower())
+    if save_status == "estimate" and not was_estimate:
+        save_status = ""  # обычный WO нельзя превратить в смету
+    converting_estimate = was_estimate and save_status in ("open", "in_progress")
+    stays_estimate = was_estimate and not converting_estimate
 
     # ✅ Adjust inventory for part changes
     # Treat inventory issues (e.g. unknown part numbers, missing inventory rows)
@@ -1475,10 +1504,26 @@ def api_work_order_update(work_order_id):
     # blocking the save here prevents users from editing WOs that contain
     # one-off / legacy / preset parts not present in the inventory catalog.
     old_labors = wo.get("labors") or []
-    inventory_adjustment = adjust_inventory_for_part_changes(
-        shop_db, old_labors, labors, user_id,
-        ref={"kind": "work_order", "id": wo["_id"], "label": str(wo.get("wo_number") or "")},
-    )
+    if stays_estimate:
+        # Смета: склад не трогался и не трогается.
+        inventory_adjustment = {"adjusted": [], "errors": []}
+    elif converting_estimate:
+        # Конверсия сметы в рабочий WO: списываем ВСЕ парты (раньше ничего
+        # не списывалось), как при создании обычного WO.
+        inventory_adjustment = deduct_parts_from_inventory(
+            shop_db, labors, user_id,
+            ref={"kind": "work_order", "label": str(wo.get("wo_number") or "")},
+        )
+        inventory_adjustment = {
+            "adjusted": inventory_adjustment.get("deducted") or [],
+            "errors": inventory_adjustment.get("errors") or [],
+            "deducted": inventory_adjustment.get("deducted") or [],
+        }
+    else:
+        inventory_adjustment = adjust_inventory_for_part_changes(
+            shop_db, old_labors, labors, user_id,
+            ref={"kind": "work_order", "id": wo["_id"], "label": str(wo.get("wo_number") or "")},
+        )
     inventory_warnings = list(inventory_adjustment.get("errors") or [])
 
     # ✅ Update unit mileage if provided
@@ -1499,7 +1544,12 @@ def api_work_order_update(work_order_id):
             except Exception:
                 pass  # Silently ignore mileage update errors
 
-    core_sync = sync_work_order_cores(shop_db, shop, old_labors, labors, user_id)
+    if stays_estimate:
+        core_sync = {"changes": []}
+    elif converting_estimate:
+        core_sync = sync_work_order_cores(shop_db, shop, [], labors, user_id)
+    else:
+        core_sync = sync_work_order_cores(shop_db, shop, old_labors, labors, user_id)
 
     set_fields = {
         "labors": labors,
@@ -1515,10 +1565,13 @@ def api_work_order_update(work_order_id):
         set_fields["customer_id"] = new_customer_id
     if new_unit_id:
         set_fields["unit_id"] = new_unit_id
+    if converting_estimate:
+        set_fields["inventory_deducted"] = len(inventory_adjustment.get("deducted") or []) > 0
+        set_fields["inventory_deductions"] = inventory_adjustment.get("deducted") or []
 
-    # ✅ Optional explicit status transition: "open" (completed) or "in_progress"
+    # ✅ Optional explicit status transition: "open" (completed) / "in_progress";
+    # смета может остаться сметой (save_status="estimate" при was_estimate).
     # В механик-режиме статус форсится в in_progress независимо от клиента.
-    save_status = enforce_mechanic_status((data.get("save_status") or "").strip().lower())
     if save_status in ("open", "in_progress"):
         set_fields["status"] = save_status
 
@@ -1577,6 +1630,10 @@ def api_work_order_payment(work_order_id):
     wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True})
     if not wo:
         return jsonify({"ok": False, "error": "work_order_not_found"}), 200
+
+    if (wo.get("status") or "open") in ("estimate", "estimated", "quote", "quoted"):
+        return jsonify({"ok": False, "error": "estimate_cannot_receive_payments",
+                        "message": "This is an estimate — convert it to a work order first."}), 200
 
     data = request.get_json(silent=True) or {}
     amount = f64(data.get("amount"))
@@ -2180,6 +2237,52 @@ def api_work_order_set_confirmed(work_order_id):
     )
 
     return jsonify({"ok": True, "manager_confirmed": confirmed}), 200
+
+
+@work_orders_bp.get("/work_orders/api/work_orders/<work_order_id>/parts_orders")
+@login_required
+@permission_required("work_orders.view_costs")
+def api_work_order_parts_orders(work_order_id):
+    """Привязанные к WO парт-ордера: статусы + сверка использования позиций.
+
+    Права view_costs: блок показывает цены/балансы, механику недоступен.
+    """
+    from app.blueprints.work_orders.services.parts_orders_link import (
+        linked_parts_orders_payload,
+    )
+    from app.utils.display_datetime import format_date_mmddyyyy
+
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return jsonify({"ok": False, "error": "invalid_work_order_id"}), 400
+    wo = shop_db.work_orders.find_one(
+        {"_id": wo_id, "shop_id": shop["_id"], "is_active": {"$ne": False}}
+    )
+    if not wo:
+        return jsonify({"ok": False, "error": "work_order_not_found"}), 404
+
+    orders = linked_parts_orders_payload(shop_db, shop, wo, fmt_date=format_date_mmddyyyy)
+    return jsonify({"ok": True, "orders": orders}), 200
+
+
+@work_orders_bp.get("/work_orders/api/vendors-lookup")
+@login_required
+@permission_required("work_orders.view_costs")
+def api_vendors_lookup():
+    """Активные вендоры магазина — для формы заказа внутри WO."""
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+    rows = shop_db.vendors.find(
+        {"shop_id": shop["_id"], "is_active": {"$ne": False}}, {"name": 1}
+    ).sort("name", 1)
+    return jsonify({"ok": True, "vendors": [
+        {"id": str(r["_id"]), "name": str(r.get("name") or "-")} for r in rows
+    ]}), 200
 
 
 @work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/delete")
@@ -3090,6 +3193,10 @@ def api_mechanic_work_order_details(work_order_id):
     if not wo:
         return jsonify({"ok": False, "error": "work_order_not_found"}), 404
 
+    # Сметы механик не редактирует (иначе автосейв конвертировал бы их в WO).
+    if (wo.get("status") or "open") == "estimate" and is_mechanic_mode():
+        return jsonify({"ok": False, "error": "estimate_locked_for_mechanics"}), 400
+
     # Подтверждённый менеджером WO закрыт для механика полностью.
     if wo.get("manager_confirmed") and is_mechanic_mode():
         return jsonify({
@@ -3223,6 +3330,9 @@ def api_mechanic_work_order_update(work_order_id):
         return jsonify({"ok": False, "error": "work_order_not_found"}), 404
     if (wo.get("status") or "open") == "paid":
         return jsonify({"ok": False, "error": "paid_cannot_edit"}), 400
+    # Сметы механик не редактирует.
+    if (wo.get("status") or "open") == "estimate" and is_mechanic_mode():
+        return jsonify({"ok": False, "error": "estimate_locked_for_mechanics"}), 400
     # Подтверждённый менеджером WO механик редактировать не может.
     if wo.get("manager_confirmed") and is_mechanic_mode():
         return jsonify({

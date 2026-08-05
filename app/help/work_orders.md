@@ -18,10 +18,24 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
   now — and a green **"Mechanic done"** badge when the mechanic saved the
   WO as "Done, ready for review" (the WO stays In Progress until you
   complete it; the badge clears if a mechanic starts a timer again).
+- **"In Work" group** — WOs that mechanics have taken but not marked done
+  yet are grouped at the top of the table under an "In Work · taken by
+  mechanics, not marked done yet" header, highlighted with the in-progress
+  color, so the shop floor status is visible at a glance. They are not
+  duplicated below — each WO appears once.
+- **Confirming a mechanic's work**: when a WO shows "Mechanic done", a
+  manager can confirm it from the mobile app WO page ("Confirm work
+  order"). A confirmed WO gets a **Confirmed** badge and is **locked for
+  mechanics** — they cannot open or edit it until the manager cancels the
+  confirmation ("Cancel confirmation"). Confirming does not change the WO
+  status — complete it and collect payment as usual.
 - Footer totals for the current filter: Labor, Parts, Tax, Total, Unpaid.
-- **Payments** tab — every payment recorded on any WO. **Estimates** tab —
-  WOs whose status is an estimate/quote (there is no separate "estimate"
-  object; it's a status filter).
+  Estimates are excluded from the main tab and its totals — they live on
+  their own tab.
+- **Payments** tab — every payment recorded on any WO, with its own search
+  and date filter; the totals row at the bottom sums exactly the filtered
+  payments. **Estimates** tab — all quotes (WOs saved as estimates); Edit
+  opens the estimate page. See "Estimate" in Statuses below.
 - Header buttons: **"Create Work Order"** and **"Bulk Payment"**.
 
 ## Creating a work order
@@ -43,11 +57,44 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
 - **Open (Unpaid)** — default after creation.
 - **In Progress** — set by "Save In Progress", by mechanics, or automatically
   when a mechanic starts a job timer.
+- **Estimate** — a quote: created via the Create dropdown → **"Save as
+  Estimate"**. Estimates live on the **Estimates** tab of the WO list (they
+  are hidden from the main Work Orders tab and its totals), take **no parts
+  from inventory**, cannot receive payments, and are edited only in the
+  office web interface (locked for mechanics and the mobile editor). An
+  open estimate shows an **Estimate** badge on its page; a plain Save keeps
+  it an estimate. **Convert to Work Order** (Save dropdown) turns it into a
+  normal open WO — at that moment all its parts are deducted from stock and
+  core tracking starts. There is no reverse conversion.
+- **Estimates can be sent for customer approval** exactly like a WO: the
+  same "Send for approval" flow, the same email with the PDF, and the same
+  green **✓ Authorized** badge when the customer approves — approval does
+  not change the status or touch inventory, it is the customer's sign-off
+  on the quote.
 - **Paid** — set automatically when the remaining balance reaches $0.
 - **Paid WOs are locked** — they cannot be edited until made unpaid.
 - **Careful:** switching a WO back to Unpaid/In Progress **deletes all its
   payment records**. The delete-WO confirmation also warns about this.
 - Deleting a WO returns its parts to inventory and removes payments.
+
+## Parts orders for a work order
+
+On an already-created WO (office interface only — requires the "View part
+costs inside WO" permission), the Customer & Unit section has a discreet
+**Parts orders** button under the unit row. It expands a block where you can:
+
+- **Create parts order** — vendor, order date and items (search by part # or
+  description; price prefills from average cost). The order is linked to
+  this WO and ALSO appears on Parts → Parts Orders like any other order,
+  marked with a **WO #** badge that links back to the work order.
+- See every linked order with its **status** (ordered / received) and
+  **payment status** (unpaid / partial / paid), total and balance, and act
+  right there: **Receive** (updates stock) and **Pay** (records a payment).
+- **Usage check**: each order item is shown as a chip — green when the WO
+  actually uses that many of the part, yellow when only part of the ordered
+  quantity is on the WO (e.g. "2/3"), red when the part is not on the WO at
+  all. A warning box lists everything ordered for this WO but not used in
+  it, so nothing bought for a job gets forgotten on a shelf.
 
 ## Labor blocks (jobs)
 
@@ -56,6 +103,12 @@ the shop's rates, shown as "Name ($X/hr)"; preselected from the customer's
 Default Labor Rate), and an editable **Labor Total** override. If you type a
 manual Labor Total it wins; otherwise labor = hours × rate. The hourly rate is
 snapshotted on save, so changing a rate later never changes old WOs.
+
+For jobs that mechanics created themselves, **Hours auto-fill from the
+mechanics' tracked timer time** and keep following it until someone edits
+Hours manually; jobs applied from a preset keep the preset's hours instead.
+You can always type your own Hours or Labor Total — a manual value stops the
+auto-fill for that job.
 
 - **Assign** button → "Assign Mechanics" modal: pick one or several
   mechanics. One mechanic = 100%; several = percentages auto-split evenly and

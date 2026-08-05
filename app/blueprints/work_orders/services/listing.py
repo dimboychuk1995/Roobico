@@ -117,6 +117,9 @@ def _build_work_orders_query(
     customer_id: ObjectId | None = None,
     unit_id: ObjectId | None = None,
 ) -> dict:
+    # Сметы живут на своей вкладке Estimates — из основного списка и его
+    # тоталов исключаются (тот же список статусов, что в bulk_payments).
+    estimate_statuses = ["estimate", "estimated", "quote", "quoted"]
     query = {"shop_id": shop_id, "is_active": True}
     if customer_id:
         query["customer_id"] = customer_id
@@ -126,9 +129,11 @@ def _build_work_orders_query(
     if paid_status == "paid":
         query["status"] = "paid"
     elif paid_status == "unpaid":
-        query["status"] = {"$ne": "paid"}
+        query["status"] = {"$ne": "paid", "$nin": estimate_statuses}
     elif paid_status == "in_progress":
         query["status"] = "in_progress"
+    else:
+        query["status"] = {"$nin": estimate_statuses}
 
     search_filter = build_regex_search_filter(
         q,
