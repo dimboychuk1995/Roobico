@@ -16,6 +16,7 @@ from app.utils.auth import (
 from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
 from app.utils.permissions import permission_required
 from app.utils.mongo_search import build_regex_search_filter
+from app.utils.duplicates import duplicate_message, find_duplicate_vendor
 from app.utils.display_datetime import format_date_mmddyyyy
 from app.utils.date_filters import build_date_range_filters
 from app.utils.contacts import (
@@ -193,6 +194,11 @@ def vendors_create():
         flash("Vendor name is required.", "error")
         return redirect(url_for("vendors.vendors_page"))
 
+    existing = find_duplicate_vendor(coll.database, shop["_id"], name)
+    if existing:
+        flash(duplicate_message("Vendor", existing.get("name"), existing), "error")
+        return redirect(url_for("vendors.vendors_page"))
+
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
 
@@ -244,6 +250,13 @@ def vendors_api_create():
     name = str(data.get("name") or "").strip()
     if not name:
         return jsonify(ok=False, error="Vendor name is required."), 400
+
+    existing = find_duplicate_vendor(coll.database, shop["_id"], name)
+    if existing:
+        return jsonify(
+            ok=False,
+            error=duplicate_message("Vendor", existing.get("name"), existing),
+        ), 409
 
     website = str(data.get("website") or "").strip()
     address = str(data.get("address") or "").strip()
@@ -574,6 +587,13 @@ def vendors_api_update(vendor_id):
     name = (data.get("name") or "").strip()
     if not name:
         return jsonify({"ok": False, "error": "Vendor name is required"}), 400
+
+    existing = find_duplicate_vendor(coll.database, shop["_id"], name, exclude_id=vid)
+    if existing:
+        return jsonify({
+            "ok": False,
+            "error": duplicate_message("Vendor", existing.get("name"), existing),
+        }), 409
 
     website = (data.get("website") or "").strip()
     address = (data.get("address") or "").strip()

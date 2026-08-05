@@ -16,6 +16,13 @@ from app.utils.auth import (
 from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
 from app.utils.mongo_search import build_regex_search_filter
 from app.utils.entity_search import build_customer_search_terms, build_unit_search_terms
+from app.utils.duplicates import (
+    customer_display_name,
+    duplicate_message,
+    find_duplicate_customer,
+    find_duplicate_unit,
+    unit_duplicate_message,
+)
 from app.utils.permissions import permission_required
 from app.utils.display_datetime import format_date_mmddyyyy, format_preferred_shop_date
 from app.utils.date_filters import build_date_range_filters
@@ -1221,6 +1228,13 @@ def customer_unit_update(customer_id, unit_id):
         except (ValueError, TypeError):
             return None
 
+    existing_dup = find_duplicate_unit(
+        shop_db, shop["_id"], cid, _strip("vin"), exclude_id=uid
+    )
+    if existing_dup:
+        flash(unit_duplicate_message(existing_dup), "error")
+        return redirect(url_for("customers.customer_unit_details_page", customer_id=str(cid), unit_id=str(uid), tab="details"))
+
     update_fields = {
         "unit_number": _strip("unit_number"),
         "vin": _strip("vin"),
@@ -1356,6 +1370,14 @@ def customers_create():
 
     if len(address) < 5:
         flash("Customer address is required.", "error")
+        return redirect(url_for("customers.customers_page"))
+
+    existing = find_duplicate_customer(coll.database, shop["_id"], company_name, contacts)
+    if existing:
+        flash(
+            duplicate_message("Customer", customer_display_name(existing), existing),
+            "error",
+        )
         return redirect(url_for("customers.customers_page"))
 
     now = utcnow()
@@ -1540,6 +1562,16 @@ def customer_details_update(customer_id):
         flash("Customer address is required.", "error")
         return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="details"))
 
+    existing = find_duplicate_customer(
+        coll.database, shop["_id"], company_name, contacts, exclude_id=cid
+    )
+    if existing:
+        flash(
+            duplicate_message("Customer", customer_display_name(existing), existing),
+            "error",
+        )
+        return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="details"))
+
     pricing_rule_id, pricing_err = _validate_customer_pricing_rule_id(
         coll.database, shop["_id"], request.form.get("pricing_rule_id")
     )
@@ -1637,6 +1669,15 @@ def customers_api_update(customer_id):
 
     if len(address) < 5:
         return jsonify({"ok": False, "error": "Customer address is required."}), 400
+
+    existing = find_duplicate_customer(
+        coll.database, shop["_id"], company_name, contacts, exclude_id=cid
+    )
+    if existing:
+        return jsonify({
+            "ok": False,
+            "error": duplicate_message("Customer", customer_display_name(existing), existing),
+        }), 409
 
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))

@@ -477,6 +477,23 @@ def run_import():
             if nm:
                 pricing_rule_lookup[nm] = s["_id"]
 
+    # Дубли: против базы + внутри самого файла (второе вхождение тоже дубль)
+    from app.utils.duplicates import (
+        customer_display_name,
+        find_duplicate_customer,
+        find_duplicate_part,
+        find_duplicate_vendor,
+        _norm as _dup_norm,
+    )
+    seen_in_file: set[str] = set()
+
+    def _dup_error(i, kind, display, existing):
+        nonlocal skipped
+        skipped += 1
+        if len(errors) < 10:
+            note = " (deactivated)" if existing and existing.get("is_active") is False else ""
+            errors.append(f'Row {i + 2}: {kind} "{display}" already exists{note}.')
+
     for i, row in enumerate(rows):
         # Map file headers to our field keys
         mapped_row = {}
@@ -495,6 +512,14 @@ def run_import():
                 if doc is None:
                     skipped += 1
                     continue
+                label = customer_display_name(doc)
+                existing = find_duplicate_customer(
+                    shop_db, shop["_id"], doc.get("company_name"), doc.get("contacts")
+                )
+                if existing or _dup_norm(label) in seen_in_file:
+                    _dup_error(i, "Customer", label, existing)
+                    continue
+                seen_in_file.add(_dup_norm(label))
                 shop_db.customers.insert_one(doc)
                 imported += 1
 
@@ -510,6 +535,11 @@ def run_import():
                 if doc is None:
                     skipped += 1
                     continue
+                existing = find_duplicate_vendor(shop_db, shop["_id"], doc.get("name"))
+                if existing or _dup_norm(doc.get("name")) in seen_in_file:
+                    _dup_error(i, "Vendor", doc.get("name"), existing)
+                    continue
+                seen_in_file.add(_dup_norm(doc.get("name")))
                 shop_db.vendors.insert_one(doc)
                 imported += 1
 
@@ -518,6 +548,11 @@ def run_import():
                 if doc is None:
                     skipped += 1
                     continue
+                existing = find_duplicate_part(shop_db, shop["_id"], doc.get("part_number"))
+                if existing or _dup_norm(doc.get("part_number")) in seen_in_file:
+                    _dup_error(i, "Part", doc.get("part_number"), existing)
+                    continue
+                seen_in_file.add(_dup_norm(doc.get("part_number")))
                 shop_db.parts.insert_one(doc)
                 imported += 1
 

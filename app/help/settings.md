@@ -121,5 +121,10 @@ errors.
 - Vendors: Vendor Name (+contact, phone, email, website, address, notes).
 - Parts: Part Number, Description, Reference, In Stock, Average Cost,
   Selling Price.
-- Rows missing the identity field (name / part number) are skipped; there is
-  no duplicate detection — importing twice creates duplicates.
+- Rows missing the identity field (name / part number) are skipped.
+- Duplicates are rejected: a customer, vendor or part that already exists in
+  the shop (same name / part number, case-insensitive) is skipped and listed
+  in the import errors — including repeats inside the file itself. If the
+  existing record is deactivated, the error says so: reactivate it instead
+  of importing a copy. Units are imported without a customer link, so the
+  per-customer VIN check does not apply to imports.

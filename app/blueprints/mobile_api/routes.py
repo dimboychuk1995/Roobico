@@ -17,6 +17,14 @@ from app.blueprints.mobile_api import mobile_api_bp
 from app.blueprints.work_orders.services.listing import get_work_orders_list
 from app.extensions import csrf, get_master_db
 from app.utils.auth import SESSION_SHOP_ID, is_logged_in, login_user, logout_user
+from app.utils.duplicates import (
+    customer_display_name,
+    duplicate_message,
+    find_duplicate_customer,
+    find_duplicate_unit,
+    find_duplicate_vendor,
+    unit_duplicate_message,
+)
 from app.utils.mongo_search import build_regex_search_filter
 from app.utils.pagination import get_pagination_params, paginate_find
 from app.utils.permissions import enforce_mechanic_status, has_permission, permission_required
@@ -945,6 +953,11 @@ def mobile_customer_create():
         return jsonify({"ok": False, "error": "address_required",
                         "message": "Customer address is required."}), 400
 
+    existing = find_duplicate_customer(shop_db, shop["_id"], company_name, contacts)
+    if existing:
+        msg = duplicate_message("Customer", customer_display_name(existing), existing)
+        return jsonify({"ok": False, "error": msg, "message": msg}), 409
+
     default_rate_id = _resolve_default_labor_rate_id(shop_db, shop["_id"])
     if not default_rate_id:
         return jsonify({"ok": False, "error": "no_labor_rates",
@@ -1011,6 +1024,11 @@ def mobile_unit_create():
         return jsonify({"ok": False, "error": "unit_identity_required",
                         "message": "Unit number or VIN is required."}), 400
 
+    existing = find_duplicate_unit(shop_db, shop["_id"], customer_id, _s("vin"))
+    if existing:
+        msg = unit_duplicate_message(existing)
+        return jsonify({"ok": False, "error": msg, "message": msg}), 409
+
     now = utcnow()
     user_id = oid(session.get("user_id"))
     doc = {
@@ -1060,6 +1078,13 @@ def mobile_unit_update(unit_id):
     def _s(key):
         return str(data.get(key) or "").strip() or None
 
+    existing_dup = find_duplicate_unit(
+        shop_db, shop["_id"], existing.get("customer_id"), _s("vin"), exclude_id=u_id
+    )
+    if existing_dup:
+        msg = unit_duplicate_message(existing_dup)
+        return jsonify({"ok": False, "error": msg, "message": msg}), 409
+
     update = {
         "vin": _s("vin"),
         "unit_number": _s("unit_number"),
@@ -1096,6 +1121,11 @@ def mobile_vendor_create():
     name = str(data.get("name") or "").strip()
     if not name:
         return jsonify({"ok": False, "error": "name_required", "message": "Vendor name is required."}), 400
+
+    existing = find_duplicate_vendor(shop_db, shop["_id"], name)
+    if existing:
+        msg = duplicate_message("Vendor", existing.get("name"), existing)
+        return jsonify({"ok": False, "error": msg, "message": msg}), 409
 
     contacts = build_contacts_from_payload(data)
     now = utcnow()

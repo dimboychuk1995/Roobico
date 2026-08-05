@@ -16,6 +16,7 @@ from app.utils.mongo_search import build_regex_search_filter
 from app.utils.parts_search import build_query_tokens, part_matches_query
 from app.utils.parts_interchange import attach_alternates
 from app.utils.entity_search import build_unit_search_terms, search_customer_ids, search_unit_ids
+from app.utils.duplicates import find_duplicate_unit, unit_duplicate_message
 from app.utils.mongo_tx import run_atomically
 from app.blueprints.work_orders.services.authorizations import (
     _authorizations_collection,
@@ -592,6 +593,12 @@ def create_unit():
     if not customer:
         flash("Customer not found.", "error")
         return redirect(url_for("work_orders.work_order_details_page"))
+
+    vin = (request.form.get("vin") or "").strip()
+    existing = find_duplicate_unit(shop_db, shop["_id"], customer_id, vin)
+    if existing:
+        flash(unit_duplicate_message(existing), "error")
+        return redirect(url_for("work_orders.work_order_details_page", customer_id=str(customer_id)))
 
     now = utcnow()
     user_id = current_user_id()

@@ -24,7 +24,11 @@ Categories, storage locations and pricing scales are configured on
 ## Part fields
 
 - **Part number** (the only required field), **Reference** (alternative/OEM
-  number), **Description**.
+  number), **Description**. Part numbers are unique within the shop
+  (case-insensitive): creating or renaming a part to an existing number is
+  blocked with "already exists". If the message says the existing part is
+  deactivated, reactivate it (its stock history comes back with it) instead
+  of creating a copy.
 - **In stock** — starting quantity; afterwards stock changes only through
   orders, work orders, transfers, stocktakes and manual adjustments.
 - **Average cost** — weighted average, recalculated on every receiving:

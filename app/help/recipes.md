@@ -141,6 +141,15 @@ the top bar.
 
 **Move data from the old system.** Import / Export → import Customers,
 Vendors, Parts, Units from CSV/Excel with column mapping. Notes: units
-import unlinked to customers (attach manually); no duplicate detection —
-don't run the same file twice; customers need at least one labor rate to
-exist. Export is not available yet.
+import unlinked to customers (attach manually); duplicates (same
+name / part number as an existing record, or a repeat inside the file) are
+skipped and reported in the import errors, so re-running a file will not
+create copies; customers need at least one labor rate to exist. Export is
+not available yet.
+
+**Why can't I create a part / customer / vendor?** Roobico blocks exact
+duplicates: a part number, customer name or vendor name that already
+exists in the shop (case-insensitive), or a unit VIN that already exists
+for the same customer. If the message says the existing record is
+deactivated, open the list with inactive records shown and reactivate it —
+its history comes back with it — instead of creating a copy.

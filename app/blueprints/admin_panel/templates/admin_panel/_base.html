@@ -6,7 +6,8 @@
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>Roobico Admin — base</title>
   <script src="{{ url_for('static', filename='js/csrf.js') }}"></script>
-  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='images/favicon.ico') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/logo-circle.svg') }}">
+  <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='images/favicon.ico') }}" sizes="16x16 32x32 48x48">
   <style>
     *,*::before,*::after { box-sizing: border-box; }
     body {

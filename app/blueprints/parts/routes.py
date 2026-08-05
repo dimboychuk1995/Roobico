@@ -11,6 +11,7 @@ from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import login_required, SESSION_TENANT_ID, SESSION_USER_ID
 from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
 from app.utils.mongo_search import build_regex_search_filter
+from app.utils.duplicates import duplicate_message, find_duplicate_part
 from app.utils.parts_search import build_parts_search_terms, build_query_tokens, part_matches_query
 from app.utils.parts_interchange import (
     attach_alternates,
@@ -1303,6 +1304,11 @@ def parts_create():
         flash("Part number is required.", "error")
         return redirect(url_for("parts.parts_page"))
 
+    existing = find_duplicate_part(parts_coll.database, shop["_id"], part_number)
+    if existing:
+        flash(duplicate_message("Part", existing.get("part_number"), existing), "error")
+        return redirect(url_for("parts.parts_page"))
+
     in_stock = _parse_int(in_stock_raw, default=0)
 
     average_cost = _parse_float(avg_cost_raw, default=0.0)
@@ -1475,6 +1481,13 @@ def parts_api_create():
     part_number = str(data.get("part_number") or "").strip()
     if not part_number:
         return jsonify({"ok": False, "error": "Part number is required."}), 400
+
+    existing = find_duplicate_part(parts_coll.database, shop["_id"], part_number)
+    if existing:
+        return jsonify({
+            "ok": False,
+            "error": duplicate_message("Part", existing.get("part_number"), existing),
+        }), 409
 
     description = str(data.get("description") or "").strip()
     reference = str(data.get("reference") or "").strip()
@@ -3465,6 +3478,15 @@ def parts_api_update(part_id: str):
     part_number = (data.get("part_number") or "").strip()
     if not part_number:
         return jsonify({"ok": False, "error": "Part number is required"}), 400
+
+    existing = find_duplicate_part(
+        parts_coll.database, shop["_id"], part_number, exclude_id=pid
+    )
+    if existing:
+        return jsonify({
+            "ok": False,
+            "error": duplicate_message("Part", existing.get("part_number"), existing),
+        }), 409
 
     description = (data.get("description") or "").strip()
     reference = (data.get("reference") or "").strip()
