@@ -126,8 +126,12 @@ Widgets:
   means no data of that kind). Hours with no assigned mechanic show as the
   "Unassigned labor" row, so the table always adds up to the chart totals.
   uAttend employees are merged into a mechanic's row using the same
-  AI matching as the Timecard / Salary report (once that report has been
-  opened at least once); before that they appear as separate uAttend rows.
+  AI matching as the Timecard / Salary report. Matching refreshes itself
+  whenever the roster changes on either side (a user or uAttend employee is
+  added, renamed, deactivated or (de)selected for sync) — no manual step
+  needed. An employee that stays on a separate row simply could not be
+  matched confidently: give them the same name or email in both systems
+  and the rows merge on the next dashboard load.
 - **Outstanding Balance (All Time)** — total customers owe; ignores the date
   filter on purpose.
 - Quick actions: Create WO, Create PO, New Customer, New Vendor.

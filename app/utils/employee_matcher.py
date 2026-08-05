@@ -20,7 +20,7 @@ import logging
 import os
 import re
 import unicodedata
-from typing import Any, Iterable
+from typing import Iterable
 
 logger = logging.getLogger(__name__)
 
@@ -169,7 +169,9 @@ def match_employees(
     }
 
     try:
-        client = OpenAI(api_key=api_key)
+        # Матчинг зовётся и из синхронных страниц (дашборд): короткий
+        # таймаут вместо дефолтных 10 минут SDK, при ошибке — deterministic.
+        client = OpenAI(api_key=api_key, timeout=15.0, max_retries=1)
         resp = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[

@@ -3,12 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from bson import ObjectId
-from flask import request, redirect, url_for, flash, session, jsonify
+from flask import request, redirect, url_for, flash, jsonify
 
 from app.blueprints.dashboard import dashboard_bp
 from app.blueprints.main.routes import _render_app_page
-from app.extensions import get_master_db, get_mongo_client
-from app.utils.auth import login_required, SESSION_TENANT_ID
+from app.extensions import get_master_db
+from app.utils.auth import login_required
 from app.utils.date_filters import build_date_range_filters
 from app.utils.permissions import permission_required
 
@@ -535,9 +535,15 @@ def _compute_mechanic_hours_metrics(shop_db, shop, created_from, created_to_excl
     # внутреннего пользователя БЕЗ роли механика (менеджер, владелец),
     # исключается из запроса. Непривязанные сотрудники остаются — это
     # механики без аккаунта в системе.
+    # Матчи ищутся по отпечатку текущего состава: любое изменение юзеров
+    # или uAttend-сотрудников автоматически ведёт к пересчёту (OpenAI
+    # зовётся максимум один раз на состав, дальше — кэш).
     from app.utils.integrations.uattend_hours import load_uattend_period_hours
+    from app.utils.integrations.uattend_match import current_match_map
 
-    match_map = _cached_uattend_match_map(shop_db, shop["_id"])
+    match_map = current_match_map(
+        shop_db, shop["_id"], get_master_db(), _tenant_id_variants()
+    )
     non_mechanic_uids = {
         uatt_uid
         for uatt_uid, match in match_map.items()
@@ -666,26 +672,6 @@ def _compute_mechanic_hours_metrics(shop_db, shop, created_from, created_to_excl
             "rows": summary_rows,
         },
     }
-
-
-def _cached_uattend_match_map(shop_db, shop_id):
-    """AI-матчинг uAttend↔внутренние юзеры из кэша отчёта Timecard.
-
-    Дашборд сам матчинг не запускает (не дёргает OpenAI) — если кэша нет,
-    строки uAttend показываются отдельными записями без склейки.
-    """
-    doc = shop_db.uattend_match_cache.find_one({"shop_id": shop_id}, sort=[("_id", -1)])
-    if not doc or not isinstance(doc.get("matches"), dict):
-        return {}
-    out = {}
-    for key, value in doc["matches"].items():
-        if not isinstance(value, dict):
-            continue
-        try:
-            out[int(key)] = value
-        except (TypeError, ValueError):
-            continue
-    return out
 
 
 def _uattend_employee_names(shop_db, shop_id):

@@ -183,21 +183,44 @@ def test_hours_chart_actual_and_invoiced_series(client, hours_seed):
     assert legacy == {"Alice": 2.5, "Bob": 1.25}
 
 
-def test_hours_chart_uattend_series_when_connected(client, hours_seed, mongo, monkeypatch):
+def test_hours_chart_uattend_series_when_connected(client, hours_seed, seed, mongo, monkeypatch):
+    """Дашборд матчит по ТЕКУЩЕМУ составу (deterministic, без OPENAI_API_KEY):
+    uid 88 «Greg Manager» — менеджер (исключается из запроса часов),
+    uid 99 «Alice Wrench» — механик (часы вливаются в её строку),
+    uid 77 «Random Person» — без внутреннего аккаунта (отдельная строка).
+    Протухший кэш-документ чужого состава игнорируется, свежий матч
+    пишется в кэш автоматически."""
     import app.utils.integrations.uattend_hours as uattend_hours
 
-    # Матч-кэш: uid 88 — менеджер (не механик, должен быть исключён),
-    # uid 99 — Alice (механик, часы вливаются в её строку).
     shop_db = mongo[SHOP_A_DB]
-    manager_id = ObjectId()
-    cache_doc_id = shop_db.uattend_match_cache.insert_one({
-        "shop_id": hours_seed["wo"]["shop_id"],
-        "key": "test-key",
-        "matches": {
-            "88": {"internal_id": str(manager_id), "internal_name": "Greg Manager"},
-            "99": {"internal_id": str(ALICE_ID), "internal_name": "Alice Wrench"},
-        },
-    }).inserted_id
+    master = mongo["roobico_test_master"]
+    shop_id = hours_seed["wo"]["shop_id"]
+
+    greg_id = ObjectId()
+    master.users.insert_one({
+        "_id": greg_id,
+        "email": "greg.manager@test.local",
+        "first_name": "Greg",
+        "last_name": "Manager",
+        "is_active": True,
+        "tenant_id": seed["tenant_a"]["_id"],
+        "role": "general_manager",
+    })
+    shop_db.uattend_employees.insert_many([
+        {"shop_id": shop_id, "uattend_user_id": 88, "first_name": "Greg",
+         "last_name": "Manager", "email": "", "is_active": True, "selected": True},
+        {"shop_id": shop_id, "uattend_user_id": 99, "first_name": "Alice",
+         "last_name": "Wrench", "email": "", "is_active": True, "selected": True},
+        {"shop_id": shop_id, "uattend_user_id": 77, "first_name": "Random",
+         "last_name": "Person", "email": "", "is_active": True, "selected": True},
+    ])
+    # Протухший документ другого состава — раньше дашборд читал «последний
+    # по _id» и вечно жил на таких; теперь он должен игнорироваться.
+    shop_db.uattend_match_cache.insert_one({
+        "shop_id": shop_id,
+        "key": "stale-key",
+        "matches": {"77": {"internal_id": str(ObjectId()), "internal_name": "Ghost"}},
+    })
 
     def fake_load(shop_db, shop_id, date_from, date_to, exclude_uids=None):
         assert date_from == "2020-03-02"
@@ -218,8 +241,19 @@ def test_hours_chart_uattend_series_when_connected(client, hours_seed, mongo, mo
         data = _fetch_block(
             client, "?date_preset=custom&date_from=2020-03-02&date_to=2020-03-08"
         )
+
+        # Свежий матч закэширован под ключом текущего состава
+        fresh = shop_db.uattend_match_cache.find_one(
+            {"shop_id": shop_id, "key": {"$ne": "stale-key"}}
+        )
+        assert fresh is not None
+        assert fresh["matches"]["88"]["internal_id"] == str(greg_id)
+        assert fresh["matches"]["99"]["internal_id"] == str(ALICE_ID)
+        assert "77" not in fresh["matches"]
     finally:
-        shop_db.uattend_match_cache.delete_one({"_id": cache_doc_id})
+        shop_db.uattend_match_cache.delete_many({"shop_id": shop_id})
+        shop_db.uattend_employees.delete_many({"shop_id": shop_id})
+        master.users.delete_one({"_id": greg_id})
 
     chart = data["hours_chart"]
     assert chart["uattend_connected"] is True
@@ -232,9 +266,9 @@ def test_hours_chart_uattend_series_when_connected(client, hours_seed, mongo, mo
     assert summary["invoiced_vs_uattend_percent"] == 62.5  # 5.0 / 8.0
 
     rows = {r["name"]: r for r in chart["rows"]}
-    # Незаматченный сотрудник uAttend — отдельной строкой
-    assert rows["uAttend #77"]["uattend"] == 5.0
-    assert rows["uAttend #77"]["actual"] is None
+    # Незаматченный сотрудник uAttend — отдельной строкой (имя из синка)
+    assert rows["Random Person"]["uattend"] == 5.0
+    assert rows["Random Person"]["actual"] is None
     # Заматченный на механика — часы в строке механика
     assert rows["Alice Wrench"]["uattend"] == 3.0
     assert rows["Alice Wrench"]["actual"] == 1.0

@@ -1140,11 +1140,11 @@ def _compute_payroll_totals(shop_db, shop_id, date_from: str, date_to: str) -> d
                 except (UAttendError, Exception):  # noqa: BLE001
                     hours_by_uid = {}
 
-            # AI match to avoid double counting.
+            # AI match to avoid double counting. Кэш — по отпечатку
+            # состава: изменение юзеров/сотрудников ведёт к пересчёту.
             try:
-                from app.utils.employee_matcher import (
-                    match_employees, cache_key,
-                )
+                from app.utils.integrations.uattend_match import get_match_map
+
                 internal_for_ai = [
                     {
                         "internal_id": str(u.get("_id")),
@@ -1168,32 +1168,11 @@ def _compute_payroll_totals(shop_db, shop_id, date_from: str, date_to: str) -> d
                     }
                     for r in emp_rows
                 ]
-                ck = cache_key(internal_for_ai, uattend_for_ai)
-                cached = shop_db.uattend_match_cache.find_one(
-                    {"shop_id": shop_id, "key": ck}
+                ai_match_map = get_match_map(
+                    shop_db, shop_id, internal_for_ai, uattend_for_ai
                 )
-                if cached and isinstance(cached.get("matches"), dict):
-                    ai_match_map = {
-                        int(k): v for k, v in cached["matches"].items()
-                        if isinstance(v, dict)
-                    }
-                else:
-                    ai_match_map = match_employees(internal_for_ai, uattend_for_ai)
-                    try:
-                        shop_db.uattend_match_cache.update_one(
-                            {"shop_id": shop_id, "key": ck},
-                            {"$set": {
-                                "shop_id": shop_id,
-                                "key": ck,
-                                "matches": {
-                                    str(k): v for k, v in ai_match_map.items()
-                                },
-                            }},
-                            upsert=True,
-                        )
-                    except Exception:  # noqa: BLE001
-                        pass
             except Exception:  # noqa: BLE001
+                current_app.logger.exception("uAttend employee match failed")
                 ai_match_map = {}
 
     matched_uattend_uids = {int(k) for k in ai_match_map.keys()}
@@ -2162,9 +2141,11 @@ def timecard_salary_page():
                                 pass
 
                     # ── AI match: internal users ↔ uAttend employees ───
+                    # Кэш — по отпечатку состава: изменение юзеров или
+                    # uAttend-сотрудников автоматически даёт пересчёт.
                     try:
-                        from app.utils.employee_matcher import (
-                            match_employees, cache_key,
+                        from app.utils.integrations.uattend_match import (
+                            get_match_map,
                         )
 
                         internal_for_ai = []
@@ -2191,34 +2172,9 @@ def timecard_salary_page():
                                 "email": r.get("email") or "",
                             })
 
-                        ck = cache_key(internal_for_ai, uattend_for_ai)
-                        cached = shop_db.uattend_match_cache.find_one(
-                            {"shop_id": shop_oid, "key": ck}
+                        ai_match_map = get_match_map(
+                            shop_db, shop_oid, internal_for_ai, uattend_for_ai
                         )
-                        if cached and isinstance(cached.get("matches"), dict):
-                            ai_match_map = {
-                                int(k): v for k, v in cached["matches"].items()
-                                if isinstance(v, dict)
-                            }
-                        else:
-                            ai_match_map = match_employees(
-                                internal_for_ai, uattend_for_ai
-                            )
-                            try:
-                                shop_db.uattend_match_cache.update_one(
-                                    {"shop_id": shop_oid, "key": ck},
-                                    {"$set": {
-                                        "shop_id": shop_oid,
-                                        "key": ck,
-                                        "matches": {
-                                            str(k): v
-                                            for k, v in ai_match_map.items()
-                                        },
-                                    }},
-                                    upsert=True,
-                                )
-                            except Exception:  # noqa: BLE001
-                                pass
                     except Exception as exc:  # noqa: BLE001
                         current_app.logger.warning(
                             "Employee AI match failed: %s", exc
