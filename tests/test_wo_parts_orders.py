@@ -146,3 +146,50 @@ def test_vendors_lookup(client, wo_env):
     assert resp.status_code == 200
     names = [v["name"] for v in resp.get_json()["vendors"]]
     assert "WO Link Vendor" in names
+
+
+def test_pending_order_links_on_wo_create(client, wo_env, mongo):
+    """Заказ, созданный ДО сохранения WO, висит на pending-id и при создании
+    WO перепривязывается на настоящий id с номером."""
+    login(client)
+    db = wo_env["db"]
+    pending_id = ObjectId()
+
+    token = get_csrf_token(client)
+    resp = client.post("/parts/api/orders/create", json={
+        "vendor_id": str(wo_env["vendor_id"]),
+        "pending_work_order_id": str(pending_id),
+        "items": [{"part_id": str(wo_env["parts"]["a"]["_id"]), "quantity": 1, "price": 10.0}],
+    }, headers={"X-CSRFToken": token})
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    order_id = ObjectId(resp.get_json()["order_id"])
+
+    order = db.parts_orders.find_one({"_id": order_id})
+    assert order["work_order_id"] == pending_id
+    assert order.get("work_order_number") is None
+
+    # Блок на странице создания видит заказ по pending-id (сверка пустая)
+    api = client.get(f"/work_orders/api/work_orders/{pending_id}/parts_orders").get_json()
+    assert api["ok"] is True
+    assert len(api["orders"]) == 1
+    assert api["orders"][0]["items"][0]["usage"] == "unused"
+
+    # Создаём WO с этим pending_attachment_id — заказ перепривязывается
+    token = get_csrf_token(client)
+    resp = client.post("/work_orders/create", data={
+        "csrf_token": token,
+        "customer_id": str(ObjectId()),
+        "unit_id": str(ObjectId()),
+        "pending_attachment_id": str(pending_id),
+        "labors[0][labor_description]": "Linked job",
+        "labors[0][labor_full_total]": "50",
+    })
+    assert resp.status_code in (200, 302)
+
+    fresh = db.parts_orders.find_one({"_id": order_id})
+    new_wo = db.work_orders.find_one({"_id": fresh["work_order_id"]})
+    assert new_wo is not None, "заказ перепривязан на настоящий WO"
+    assert fresh["work_order_number"] == new_wo["wo_number"]
+
+    db.work_orders.delete_one({"_id": new_wo["_id"]})
+    db.parts_orders.delete_one({"_id": order_id})

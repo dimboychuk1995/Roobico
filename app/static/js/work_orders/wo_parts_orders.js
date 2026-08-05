@@ -15,7 +15,10 @@
   }
   var createdInfo = readJson("workOrderCreatedData", {}) || {};
   var workOrderId = String(createdInfo.id || "");
-  if (!workOrderId) return;
+  // До сохранения WO заказы висят на pending-id (перепривяжутся при создании)
+  var pendingWoId = String(toggleBtn.getAttribute("data-pending-wo-id") || "");
+  var linkId = workOrderId || pendingWoId;
+  if (!linkId) return;
 
   var alertFn = window.appAlert || function (m) { window.alert(m); };
   function money(v) { return "$" + (Math.round((v || 0) * 100) / 100).toFixed(2); }
@@ -164,7 +167,7 @@
   }
 
   function reload() {
-    fetchJson("/work_orders/api/work_orders/" + encodeURIComponent(workOrderId) + "/parts_orders")
+    fetchJson("/work_orders/api/work_orders/" + encodeURIComponent(linkId) + "/parts_orders")
       .then(function (data) {
         if (data.ok) render(data.orders || []);
       })
@@ -349,6 +352,76 @@
     });
   }
 
+  // ── скан инвойса вендора (тот же AI-парсер, что на странице Parts) ──
+  var scanInput = document.getElementById("woPoScanInput");
+  if (scanInput) {
+    scanInput.addEventListener("change", function () {
+      var file = scanInput.files && scanInput.files[0];
+      if (!file) return;
+      var status = document.getElementById("woPoScanStatus");
+      var warn = document.getElementById("woPoScanWarn");
+      if (warn) warn.classList.add("d-none");
+      if (status) status.textContent = "Scanning invoice…";
+
+      var fd = new FormData();
+      fd.append("invoice", file);
+      fetchJson("/parts/api/orders/parse-invoice", { method: "POST", body: fd })
+        .then(function (data) {
+          if (!data.ok) {
+            if (status) status.textContent = "";
+            alertFn(data.error || "Failed to scan the invoice", "error");
+            return;
+          }
+          // Вендор: подставляем, если распознан и есть в базе
+          var sel = document.getElementById("woPoVendor");
+          if (data.vendor_match && sel) {
+            var vid = data.vendor_match.vendor_id;
+            if (!sel.querySelector('option[value="' + vid + '"]')) {
+              var opt = document.createElement("option");
+              opt.value = vid;
+              opt.textContent = data.vendor_match.vendor_name || "Vendor";
+              sel.appendChild(opt);
+            }
+            sel.value = vid;
+          }
+          // Позиции: совпавшие с каталогом — в заказ, остальные — в предупреждение
+          var unmatched = [];
+          (data.items || []).forEach(function (item) {
+            var m = item.matched_part;
+            if (m && m.part_id) {
+              orderItems.push({
+                part_id: m.part_id,
+                part_number: m.part_number || item.part_number || "-",
+                description: m.description || item.description || "",
+                quantity: Math.max(1, parseInt(item.quantity, 10) || 1),
+                price: (item.price != null && item.price !== "")
+                  ? (parseFloat(item.price) || 0)
+                  : (parseFloat(m.average_cost) || 0),
+              });
+            } else if (item.part_number || item.description) {
+              unmatched.push(item.part_number || item.description);
+            }
+          });
+          renderOrderItems();
+          if (status) {
+            status.textContent = data.vendor_match
+              ? "Scanned — vendor and items filled in."
+              : "Scanned — pick the vendor manually.";
+          }
+          if (unmatched.length && warn) {
+            warn.textContent = "Not in the parts catalog (add them on the Parts page first): "
+              + unmatched.join(", ");
+            warn.classList.remove("d-none");
+          }
+        })
+        .catch(function (e) {
+          if (status) status.textContent = "";
+          alertFn(e.message || "Failed to scan the invoice", "error");
+        })
+        .finally(function () { scanInput.value = ""; });
+    });
+  }
+
   var poSubmit = document.getElementById("woPoSubmit");
   if (poSubmit) {
     poSubmit.addEventListener("click", function () {
@@ -356,17 +429,19 @@
       if (!vendorId) { alertFn("Select a vendor.", "warning"); return; }
       if (!orderItems.length) { alertFn("Add at least one item.", "warning"); return; }
       poSubmit.disabled = true;
+      var payload = {
+        vendor_id: vendorId,
+        order_date: document.getElementById("woPoDate").value || "",
+        items: orderItems.map(function (i) {
+          return { part_id: i.part_id, quantity: i.quantity, price: i.price };
+        }),
+      };
+      if (workOrderId) payload.work_order_id = workOrderId;
+      else payload.pending_work_order_id = pendingWoId;
       fetchJson("/parts/api/orders/create", {
         method: "POST",
         headers: { "Content-Type": "application/json", "Accept": "application/json" },
-        body: JSON.stringify({
-          vendor_id: vendorId,
-          work_order_id: workOrderId,
-          order_date: document.getElementById("woPoDate").value || "",
-          items: orderItems.map(function (i) {
-            return { part_id: i.part_id, quantity: i.quantity, price: i.price };
-          }),
-        }),
+        body: JSON.stringify(payload),
       }).then(function (data) {
         if (!data.ok) { alertFn(data.error || "Failed to create order", "error"); return; }
         bootstrap.Modal.getOrCreateInstance(poModalEl).hide();

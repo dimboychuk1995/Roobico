@@ -1994,6 +1994,7 @@ def parts_api_orders_create():
     work_order_oid = None
     work_order_number = None
     wo_raw = str(data.get("work_order_id") or "").strip()
+    pending_raw = str(data.get("pending_work_order_id") or "").strip()
     if wo_raw:
         work_order_oid = _oid(wo_raw)
         wo_doc = orders_coll.database.work_orders.find_one(
@@ -2003,6 +2004,13 @@ def parts_api_orders_create():
         if not wo_doc:
             return jsonify({"ok": False, "error": "Work order not found."}), 400
         work_order_number = wo_doc.get("wo_number")
+    elif pending_raw:
+        # WO ещё не создан: заказ вешается на временный id страницы создания
+        # (тот же pending_attachment_id, что и у вложений). При создании WO
+        # create_work_order перепривяжет заказ на настоящий id и номер.
+        work_order_oid = _oid(pending_raw)
+        if not work_order_oid:
+            return jsonify({"ok": False, "error": "Invalid pending work order id."}), 400
 
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))

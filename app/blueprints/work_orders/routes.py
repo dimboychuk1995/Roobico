@@ -855,6 +855,12 @@ def create_work_order():
             {"entity_id": pending_att_id},
             {"$set": {"entity_id": new_wo_id}},
         )
+        # Парт-ордера, созданные со страницы ДО сохранения WO, висели на том
+        # же временном id — перевешиваем на настоящий и проставляем номер.
+        shop_db.parts_orders.update_many(
+            {"shop_id": shop["_id"], "work_order_id": pending_att_id},
+            {"$set": {"work_order_id": new_wo_id, "work_order_number": wo_number}},
+        )
 
     # Sync cores collection using unpaid-core logic from this work order.
     # Для estimate физического движения партов нет — cores не создаём.
@@ -2263,7 +2269,9 @@ def api_work_order_parts_orders(work_order_id):
         {"_id": wo_id, "shop_id": shop["_id"], "is_active": {"$ne": False}}
     )
     if not wo:
-        return jsonify({"ok": False, "error": "work_order_not_found"}), 404
+        # Страница создания WO: заказы висят на временном pending-id, самого
+        # WO ещё нет — отдаём их с пустой сверкой (все позиции «не в WO»).
+        wo = {"_id": wo_id, "labors": []}
 
     orders = linked_parts_orders_payload(shop_db, shop, wo, fmt_date=format_date_mmddyyyy)
     return jsonify({"ok": True, "orders": orders}), 200

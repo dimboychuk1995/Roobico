@@ -79,14 +79,21 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
 
 ## Parts orders for a work order
 
-On an already-created WO (office interface only — requires the "View part
-costs inside WO" permission), the Customer & Unit section has a discreet
-**Parts orders** button under the unit row. It expands a block where you can:
+In the office interface (requires the "View part costs inside WO"
+permission), the Customer & Unit section of a WO has a discreet
+**Parts orders** button under the unit row — on existing WOs and on the
+create screen alike. It expands a block where you can:
 
 - **Create parts order** — vendor, order date and items (search by part # or
-  description; price prefills from average cost). The order is linked to
-  this WO and ALSO appears on Parts → Parts Orders like any other order,
-  marked with a **WO #** badge that links back to the work order.
+  description; price prefills from average cost). **Scan invoice** in the
+  same dialog runs the AI invoice reader: it picks the vendor and fills the
+  matched items automatically; lines missing from the parts catalog are
+  listed in a warning (add them on the Parts page first). The order is
+  linked to this WO and ALSO appears on Parts → Parts Orders like any other
+  order, marked with a **WO #** badge that links back to the work order.
+- Orders can be created **before the WO is saved**: they attach to the page
+  and link to the work order automatically the moment you press Create
+  Work Order (the WO # badge appears then).
 - See every linked order with its **status** (ordered / received) and
   **payment status** (unpaid / partial / paid), total and balance, and act
   right there: **Receive** (updates stock) and **Pay** (records a payment).
