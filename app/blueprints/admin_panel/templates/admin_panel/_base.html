@@ -15,16 +15,19 @@
     *,*::before,*::after { box-sizing: border-box; }
     /* flex_tables (js/flex_tables.js): admin panel не грузит public.css */
     .ft-host { position: relative; }
+    .ft-toolbar {
+      display: flex; justify-content: flex-end; align-items: center;
+      min-height: 16px; margin-bottom: 2px;
+    }
     .ft-gear {
-      position: absolute; top: 3px; right: 3px; z-index: 6;
       border: none; background: transparent; color: #64748b;
-      padding: 1px 6px; border-radius: 6px; font-size: .8rem;
+      padding: 0 6px; border-radius: 6px; font-size: .8rem;
       opacity: .4; cursor: pointer;
     }
     .ft-host:hover .ft-gear, .ft-gear:focus { opacity: 1; }
     .ft-gear:hover { background: rgba(255,255,255,.08); color: #cbd5e1; }
     .ft-menu {
-      display: none; position: absolute; top: 26px; right: 3px; z-index: 40;
+      display: none; position: absolute; top: 20px; right: 3px; z-index: 40;
       min-width: 210px; max-height: 340px; overflow-y: auto;
       background: #111a2c; border: 1px solid #1f2937; border-radius: 10px;
       box-shadow: 0 12px 30px rgba(0,0,0,.5); padding: 4px 0 2px;
@@ -57,7 +60,6 @@
     .ft-resize-handle:hover::after,
     body.ft-resizing .ft-resize-handle::after { background: rgba(96,165,250,.55); }
     body.ft-resizing { cursor: col-resize; user-select: none; }
-    .ft-host thead tr:first-child > *:last-child { padding-right: 26px; }
     body {
       margin: 0;
       min-height: 100vh;

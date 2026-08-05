@@ -1566,19 +1566,24 @@ a:hover {
 /* ── Flex tables: меню колонок, ресайз (см. static/js/flex_tables.js) ── */
 .ft-host { position: relative; }
 
+.ft-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-height: 16px;
+  margin-bottom: 2px;
+}
+
 .ft-gear {
-  position: absolute;
-  top: 3px;
-  right: 3px;
-  z-index: 6;
   border: none;
   background: transparent;
   color: #8a93a2;
-  padding: 1px 6px;
+  padding: 0 6px;
   border-radius: 6px;
-  line-height: 1.2;
+  line-height: 1.1;
   font-size: 0.8rem;
   opacity: 0.4;
+  cursor: pointer;
   transition: opacity 0.15s ease, background-color 0.15s ease;
 }
 .ft-host:hover .ft-gear,
@@ -1588,7 +1593,7 @@ a:hover {
 .ft-menu {
   display: none;
   position: absolute;
-  top: 26px;
+  top: 20px;
   right: 3px;
   z-index: 40;
   min-width: 210px;
@@ -1662,6 +1667,3 @@ a:hover {
 body.ft-resizing .ft-resize-handle::after { background: rgba(13, 110, 253, 0.45); }
 
 body.ft-resizing { cursor: col-resize; user-select: none; }
-
-/* Резерв под шестерёнку: последняя ячейка шапки не уходит под кнопку */
-.ft-host thead tr:first-child > *:last-child { padding-right: 26px; }

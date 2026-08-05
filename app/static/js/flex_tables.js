@@ -286,7 +286,7 @@
     if (!e.target.closest || !e.target.closest(".ft-menu, .ft-gear")) closeMenus();
   });
 
-  function buildMenu(table, wrapper) {
+  function buildMenu(table, wrapper, toolbar) {
     var gear = document.createElement("button");
     gear.type = "button";
     gear.className = "ft-gear";
@@ -352,7 +352,7 @@
       menu.appendChild(reset);
     }
 
-    wrapper.appendChild(gear);
+    toolbar.appendChild(gear);
     wrapper.appendChild(menu);
   }
 
@@ -377,8 +377,14 @@
       wrapper.appendChild(target);
     }
 
+    // Шестерёнка живёт в тонком тулбаре НАД таблицей — поверх заголовков
+    // ничего не висит (при горизонтальном скролле оверлей налезал бы).
+    var toolbar = document.createElement("div");
+    toolbar.className = "ft-toolbar";
+    wrapper.insertBefore(toolbar, wrapper.firstChild);
+
     ensureStyleEl(table);
-    buildMenu(table, wrapper);
+    buildMenu(table, wrapper, toolbar);
     attachResizers(table);
     applyWidths(table);
     applyHidden(table);
