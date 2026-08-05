@@ -17,15 +17,19 @@
     .ft-host { position: relative; }
     .ft-toolbar {
       display: flex; justify-content: flex-end; align-items: center;
-      min-height: 16px; margin-bottom: 2px;
+      min-height: 22px; margin-bottom: 3px;
     }
     .ft-gear {
-      border: none; background: transparent; color: #64748b;
-      padding: 0 6px; border-radius: 6px; font-size: .8rem;
-      opacity: .4; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 5px;
+      border: 1px solid #1f2937; background: transparent; color: #94a3b8;
+      padding: 1px 9px; border-radius: 999px; font-size: .72rem;
+      font-weight: 500; line-height: 1.5; cursor: pointer;
     }
-    .ft-host:hover .ft-gear, .ft-gear:focus { opacity: 1; }
-    .ft-gear:hover { background: rgba(255,255,255,.08); color: #cbd5e1; }
+    .ft-gear svg { flex: none; }
+    .ft-gear:hover, .ft-gear:focus {
+      color: #7fb3fa; border-color: rgba(96,165,250,.5);
+      background: rgba(96,165,250,.08);
+    }
     .ft-menu {
       display: none; position: absolute; top: 20px; right: 3px; z-index: 40;
       min-width: 210px; max-height: 340px; overflow-y: auto;
@@ -54,11 +58,12 @@
       cursor: col-resize; z-index: 5; user-select: none;
     }
     .ft-resize-handle::after {
-      content: ""; position: absolute; top: 20%; bottom: 20%; left: 3px;
-      width: 2px; border-radius: 2px; background: transparent;
+      content: ""; position: absolute; top: 22%; bottom: 22%; left: 3px;
+      width: 2px; border-radius: 2px; background: rgba(148,163,184,.3);
     }
     .ft-resize-handle:hover::after,
-    body.ft-resizing .ft-resize-handle::after { background: rgba(96,165,250,.55); }
+    body.ft-resizing .ft-resize-handle::after { background: rgba(96,165,250,.7); }
+    th:last-child > .ft-resize-handle::after { background: transparent; }
     body.ft-resizing { cursor: col-resize; user-select: none; }
     body {
       margin: 0;

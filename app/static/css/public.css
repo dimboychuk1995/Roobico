@@ -1570,25 +1570,32 @@ a:hover {
   display: flex;
   justify-content: flex-end;
   align-items: center;
-  min-height: 16px;
-  margin-bottom: 2px;
+  min-height: 22px;
+  margin-bottom: 3px;
 }
 
 .ft-gear {
-  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid #e0e5ec;
   background: transparent;
-  color: #8a93a2;
-  padding: 0 6px;
-  border-radius: 6px;
-  line-height: 1.1;
-  font-size: 0.8rem;
-  opacity: 0.4;
+  color: #6b7280;
+  padding: 1px 9px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.5;
   cursor: pointer;
-  transition: opacity 0.15s ease, background-color 0.15s ease;
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
 }
-.ft-host:hover .ft-gear,
-.ft-gear:focus { opacity: 1; }
-.ft-gear:hover { background: rgba(0, 0, 0, 0.06); color: #4b5563; }
+.ft-gear svg { flex: none; }
+.ft-gear:hover,
+.ft-gear:focus {
+  color: #0d6efd;
+  border-color: rgba(13, 110, 253, 0.45);
+  background: rgba(13, 110, 253, 0.05);
+}
 
 .ft-menu {
   display: none;
@@ -1652,18 +1659,28 @@ a:hover {
   z-index: 5;
   user-select: none;
 }
+/* Постоянный разделитель между колонками шапки — видно, что колонки
+   можно тянуть; при наведении разгорается и растягивается на всю высоту */
 .ft-resize-handle::after {
   content: "";
   position: absolute;
-  top: 20%;
-  bottom: 20%;
+  top: 22%;
+  bottom: 22%;
   left: 3px;
   width: 2px;
   border-radius: 2px;
-  background: transparent;
-  transition: background-color 0.12s ease;
+  background: rgba(100, 116, 139, 0.28);
+  transition: background-color 0.12s ease, top 0.12s ease, bottom 0.12s ease;
 }
 .ft-resize-handle:hover::after,
-body.ft-resizing .ft-resize-handle::after { background: rgba(13, 110, 253, 0.45); }
+body.ft-resizing .ft-resize-handle::after {
+  top: 8%;
+  bottom: 8%;
+  background: rgba(13, 110, 253, 0.65);
+}
+/* У последней колонки разделитель не рисуем — край таблицы */
+th:last-child > .ft-resize-handle::after { background: transparent; }
+th:last-child > .ft-resize-handle:hover::after,
+body.ft-resizing th:last-child > .ft-resize-handle::after { background: rgba(13, 110, 253, 0.65); }
 
 body.ft-resizing { cursor: col-resize; user-select: none; }

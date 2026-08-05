@@ -1281,8 +1281,14 @@ html[data-theme="dark"] .badge-status-approved { background: rgba(34, 197, 94, 0
 html[data-theme="dark"] .badge-status-declined { background: rgba(239, 68, 68, 0.18);  color: #f87171; }
 
 /* ── Flex tables ── */
-[data-theme="dark"] .ft-gear { color: #93a0b5; }
-[data-theme="dark"] .ft-gear:hover { background: rgba(255, 255, 255, 0.08); color: #d6deeb; }
+[data-theme="dark"] .ft-gear { color: #93a0b5; border-color: #2a3446; }
+[data-theme="dark"] .ft-gear:hover,
+[data-theme="dark"] .ft-gear:focus {
+  color: #7fb3fa;
+  border-color: rgba(96, 165, 250, 0.5);
+  background: rgba(96, 165, 250, 0.08);
+}
+[data-theme="dark"] .ft-resize-handle::after { background: rgba(148, 163, 184, 0.3); }
 
 [data-theme="dark"] .ft-menu {
   background: #171e2b;
@@ -1300,4 +1306,7 @@ html[data-theme="dark"] .badge-status-declined { background: rgba(239, 68, 68, 0
 [data-theme="dark"] .ft-menu__reset:hover { background: rgba(255, 255, 255, 0.06); color: #d6deeb; }
 
 [data-theme="dark"] .ft-resize-handle:hover::after,
-[data-theme="dark"] body.ft-resizing .ft-resize-handle::after { background: rgba(96, 165, 250, 0.55); }
+[data-theme="dark"] body.ft-resizing .ft-resize-handle::after { background: rgba(96, 165, 250, 0.7); }
+[data-theme="dark"] th:last-child > .ft-resize-handle::after { background: transparent; }
+[data-theme="dark"] th:last-child > .ft-resize-handle:hover::after,
+[data-theme="dark"] body.ft-resizing th:last-child > .ft-resize-handle::after { background: rgba(96, 165, 250, 0.7); }
