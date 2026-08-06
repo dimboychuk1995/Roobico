@@ -131,7 +131,7 @@
                 {% endif %}
               </div>
               <button type="button" class="btn btn-sm btn-primary" id="woCreatePartsOrderBtn"
-                      data-bs-toggle="modal" data-bs-target="#woPartsOrderModal">
+                      data-bs-toggle="modal" data-bs-target="#orderModal">
                 <i class="bi bi-plus-lg me-1"></i>Create parts order
               </button>
             </div>
@@ -1063,100 +1063,22 @@
     </div>
 
     {% if "work_orders.view_costs" in user_permissions %}
-    <!-- Модалка: создать парт-ордер для этого WO -->
-    <div class="modal fade" id="woPartsOrderModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-lg modal-dialog-scrollable">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Create parts order{% if wo_number %} for WO #{{ wo_number }}{% endif %}</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <div class="d-flex align-items-center gap-2 mb-2">
-              <label class="btn btn-sm btn-outline-secondary mb-0">
-                <i class="bi bi-camera me-1"></i>Scan invoice
-                <input type="file" id="woPoScanInput" class="d-none"
-                       accept="application/pdf,image/jpeg,image/png,image/gif,image/webp,image/bmp,image/tiff">
-              </label>
-              <span id="woPoScanStatus" class="text-muted small"></span>
-            </div>
-            <div id="woPoScanWarn" class="alert alert-warning py-1 px-2 small d-none mb-2"></div>
-            <div class="row g-2 mb-3">
-              <div class="col-12 col-md-7">
-                <label class="form-label small fw-semibold mb-1">Vendor</label>
-                <select id="woPoVendor" class="form-select form-select-sm">
-                  <option value="">-- Select vendor --</option>
-                </select>
-              </div>
-              <div class="col-12 col-md-5">
-                <label class="form-label small fw-semibold mb-1">Order date</label>
-                <input type="date" id="woPoDate" class="form-control form-control-sm"
-                       value="{{ today_date_input_value or '' }}">
-              </div>
-            </div>
-            <label class="form-label small fw-semibold mb-1">Items</label>
-            <div id="woPoItems"></div>
-            <div class="position-relative mt-1">
-              <input type="text" id="woPoPartSearch" class="form-control form-control-sm"
-                     placeholder="Type part # or description to add an item..." autocomplete="off">
-              <div id="woPoPartResults" class="list-group position-absolute w-100 d-none"
-                   style="z-index: 1060; max-height: 240px; overflow-y: auto;"></div>
-            </div>
-            <div class="text-muted small mt-2">
-              The order is linked to this work order and also appears on
-              Parts → Parts Orders.
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-            <button type="button" class="btn btn-primary btn-sm" id="woPoSubmit">Create order</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Модалка: платёж по привязанному парт-ордеру -->
-    <div class="modal fade" id="woPoPayModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Record payment <span id="woPoPayMeta" class="text-muted fs-6"></span></h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <input type="hidden" id="woPoPayOrderId" value="">
-            <div class="mb-2">
-              <label class="form-label small fw-semibold mb-1">Amount</label>
-              <input type="number" min="0.01" step="0.01" id="woPoPayAmount" class="form-control form-control-sm">
-            </div>
-            <div class="mb-2">
-              <label class="form-label small fw-semibold mb-1">Method</label>
-              <select id="woPoPayMethod" class="form-select form-select-sm">
-                <option value="cash">Cash</option>
-                <option value="check">Check</option>
-                <option value="card">Card</option>
-                <option value="ach">ACH</option>
-                <option value="other">Other</option>
-              </select>
-            </div>
-            <div>
-              <label class="form-label small fw-semibold mb-1">Notes</label>
-              <input type="text" id="woPoPayNotes" class="form-control form-control-sm" maxlength="200">
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-dismiss="modal">Cancel</button>
-            <button type="button" class="btn btn-primary btn-sm" id="woPoPaySubmit">Record payment</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    {# Модалка заказа — та же, что на странице Parts (общий компонент).
+       data-атрибуты привязки к WO читает parts.js: новый заказ создаётся
+       сразу с work_order_id (или pending-id до сохранения WO). #}
+    {% with wo_link_work_order_id = created_work_order_id or "",
+            wo_link_pending_id = pending_attachment_id or "" %}
+      {% include "components/parts_order_modal.html" %}
+    {% endwith %}
     {% endif %}
 
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="{{ url_for('static', filename='js/work_orders/work_order_details.js') }}"></script>
     <script src="{{ url_for('static', filename='js/unit_recalls.js') }}"></script>
+    {% if "work_orders.view_costs" in user_permissions %}
+    <script src="{{ url_for('static', filename='js/parts/parts.js') }}"></script>
+    {% endif %}
     <script src="{{ url_for('static', filename='js/work_orders/wo_parts_orders.js') }}"></script>
 
     <script>

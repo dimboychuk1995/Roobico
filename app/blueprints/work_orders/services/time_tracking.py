@@ -116,15 +116,22 @@ def start_timer(shop_db, shop, user_id, user_name, work_order_id, labor_id):
     res = shop_db.wo_time_logs.insert_one(doc)
     doc["_id"] = res.inserted_id
 
-    shop_db.work_orders.update_one(
+    res_status = shop_db.work_orders.update_one(
         {"_id": wo_id, "shop_id": shop["_id"], "status": {"$ne": "in_progress"}},
         {"$set": {"status": "in_progress", "updated_at": now}},
     )
     # Механик снова взялся за работу — флаг «закончил» больше не актуален.
-    shop_db.work_orders.update_one(
+    res_done = shop_db.work_orders.update_one(
         {"_id": wo_id, "shop_id": shop["_id"], "mechanic_done": True},
         {"$set": {"mechanic_done": False, "mechanic_done_at": None, "mechanic_done_by": None, "updated_at": now}},
     )
+
+    # WO-уровневый переход «взят в работу» (не каждый старт таймера, а только
+    # когда сам WO поменял состояние) — пуш офисным пользователям.
+    if res_status.modified_count or res_done.modified_count:
+        from app.blueprints.work_orders.services.push_events import notify_wo_event
+
+        notify_wo_event(shop, wo_id, wo.get("wo_number"), user_id, "taken")
 
     return doc, stopped_prev, None
 

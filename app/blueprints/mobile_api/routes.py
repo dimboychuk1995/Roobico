@@ -161,7 +161,38 @@ def mobile_session():
 @mobile_api_bp.post("/api/mobile/logout")
 @api_login_required
 def mobile_logout():
+    # Приложение передаёт свой push-токен — устройство больше не должно
+    # получать уведомления этого пользователя.
+    data = request.get_json(silent=True) or {}
+    push_token = str(data.get("push_token") or "").strip()
+    if push_token:
+        from app.utils.push_notifications import remove_push_token
+
+        remove_push_token(get_master_db(), push_token)
     logout_user()
+    return jsonify({"ok": True}), 200
+
+
+@mobile_api_bp.post("/api/mobile/push-token")
+@api_login_required
+def mobile_register_push_token():
+    """Регистрация Expo-токена устройства для push-уведомлений.
+
+    Токен привязывается к пользователю (upsert по токену): перелогин другого
+    пользователя на том же устройстве переносит токен к нему.
+    """
+    from app.utils.push_notifications import register_push_token
+
+    data = request.get_json(silent=True) or {}
+    token = str(data.get("token") or "").strip()
+    if not token or not token.startswith("ExponentPushToken"):
+        return jsonify({"ok": False, "error": "invalid_token"}), 400
+
+    user_id = oid(session.get("user_id"))
+    if user_id is None:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    register_push_token(get_master_db(), user_id, token, str(data.get("platform") or ""))
     return jsonify({"ok": True}), 200
 
 
@@ -576,6 +607,10 @@ def mobile_work_order_create():
 
     core_sync = sync_work_order_cores(shop_db, shop, [], labors, user_id)
 
+    from app.blueprints.work_orders.services.push_events import notify_after_mechanic_save
+
+    notify_after_mechanic_save(shop, None, doc, res.inserted_id, doc["wo_number"], user_id)
+
     return jsonify({
         "ok": True,
         "id": str(res.inserted_id),
@@ -693,6 +728,10 @@ def mobile_work_order_edit(work_order_id):
         )
 
     shop_db.work_orders.update_one({"_id": wo_id}, {"$set": set_fields})
+
+    from app.blueprints.work_orders.services.push_events import notify_after_mechanic_save
+
+    notify_after_mechanic_save(shop, wo, set_fields, wo_id, wo.get("wo_number"), user_id)
 
     return jsonify({
         "ok": True,

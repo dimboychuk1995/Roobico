@@ -61,6 +61,13 @@ locations" (From / To / Qty). Totals don't change.
 Reader**: upload the invoice PDF/photo; review matched parts, create missing
 ones ("Create & Add"), then Create order.
 
+**Order parts for a specific job.** Open the work order (or the create
+screen — even before saving) → **Parts orders** under the unit → Create
+parts order. It's the same dialog as Parts → Order, AI Order Reader
+included, but the order links to that WO: the WO row gets a **PO #** badge,
+the order gets a **WO #** badge, and once the WO is accepted the block
+flags anything ordered for the job but not used on it.
+
 **Where does Avg cost come from?** Weighted average recalculated at every
 receiving: (old avg × old qty + received price × received qty) ÷ total.
 

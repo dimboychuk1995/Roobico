@@ -323,9 +323,34 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
         except Exception:
             pass
 
+    # Справочники для общей модалки парт-ордера (components/parts_order_modal):
+    # те же, что на странице Parts. Только для ролей с ценами — механик модалку
+    # не видит вовсе.
+    po_vendors, po_categories, po_locations = [], [], []
+    if has_permission("work_orders.view_costs"):
+        from app.utils.parts_locations import flatten_location_tree
+
+        po_vendors = list(
+            shop_db.vendors.find({"is_active": {"$ne": False}})
+            .sort([("name", 1), ("company_name", 1), ("created_at", -1)])
+        )
+        po_categories = list(
+            shop_db.parts_categories.find({"is_active": {"$ne": False}})
+            .sort([("name", 1), ("created_at", -1)])
+        )
+        po_locations = [
+            {"_id": item["oid"], "name": item["path"], "depth": item["depth"]}
+            for item in flatten_location_tree(
+                list(shop_db.parts_locations.find({"is_active": {"$ne": False}}))
+            )
+        ]
+
     ctx = {
         "sales_tax_context": sales_tax_context,
         "active_page": "work_orders",
+        "vendors": po_vendors,
+        "categories": po_categories,
+        "locations": po_locations,
         "customers": customers,
         "units": units,
         "selected_customer_id": str(customer_id) if customer_id else "",
@@ -2268,29 +2293,20 @@ def api_work_order_parts_orders(work_order_id):
     wo = shop_db.work_orders.find_one(
         {"_id": wo_id, "shop_id": shop["_id"], "is_active": {"$ne": False}}
     )
+    # Сверка использования показывается только для принятого WO: смета и
+    # страница создания (pending-id, самого WO ещё нет) живут без «не
+    # использовано» — состав работ ещё не финален.
+    estimate_statuses = ("estimate", "estimated", "quote", "quoted")
+    show_usage = bool(wo) and (wo.get("status") or "open").strip().lower() not in estimate_statuses
     if not wo:
-        # Страница создания WO: заказы висят на временном pending-id, самого
-        # WO ещё нет — отдаём их с пустой сверкой (все позиции «не в WO»).
         wo = {"_id": wo_id, "labors": []}
 
-    orders = linked_parts_orders_payload(shop_db, shop, wo, fmt_date=format_date_mmddyyyy)
+    orders = linked_parts_orders_payload(
+        shop_db, shop, wo, fmt_date=format_date_mmddyyyy, show_usage=show_usage
+    )
     return jsonify({"ok": True, "orders": orders}), 200
 
 
-@work_orders_bp.get("/work_orders/api/vendors-lookup")
-@login_required
-@permission_required("work_orders.view_costs")
-def api_vendors_lookup():
-    """Активные вендоры магазина — для формы заказа внутри WO."""
-    shop_db, shop = get_shop_db()
-    if shop_db is None:
-        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
-    rows = shop_db.vendors.find(
-        {"shop_id": shop["_id"], "is_active": {"$ne": False}}, {"name": 1}
-    ).sort("name", 1)
-    return jsonify({"ok": True, "vendors": [
-        {"id": str(r["_id"]), "name": str(r.get("name") or "-")} for r in rows
-    ]}), 200
 
 
 @work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/delete")
@@ -3309,6 +3325,10 @@ def api_mechanic_work_order_create():
     res = shop_db.work_orders.insert_one(doc)
     core_sync = sync_work_order_cores(shop_db, shop, [], labors, user_id)
 
+    from app.blueprints.work_orders.services.push_events import notify_after_mechanic_save
+
+    notify_after_mechanic_save(shop, None, doc, res.inserted_id, doc["wo_number"], user_id)
+
     return jsonify({
         "ok": True,
         "id": str(res.inserted_id),
@@ -3396,6 +3416,10 @@ def api_mechanic_work_order_update(work_order_id):
         )
 
     shop_db.work_orders.update_one({"_id": wo_id}, {"$set": set_fields})
+
+    from app.blueprints.work_orders.services.push_events import notify_after_mechanic_save
+
+    notify_after_mechanic_save(shop, wo, set_fields, wo_id, wo.get("wo_number"), user_id)
 
     return jsonify({
         "ok": True,

@@ -131,6 +131,30 @@ def test_linked_orders_endpoint_usage_comparison(client, wo_env):
     assert unused == {"WOPO-B", "WOPO-C"}
 
 
+def test_usage_hidden_until_wo_accepted(client, wo_env):
+    """Для сметы (estimate) сверка использования не показывается —
+    неиспользованные позиции появляются только когда WO принят."""
+    login(client)
+    _create_linked_order(client, wo_env, [
+        {"part_id": str(wo_env["parts"]["c"]["_id"]), "quantity": 1, "price": 7.0},  # unused
+    ])
+    db = wo_env["db"]
+    wo_id = wo_env["wo"]["_id"]
+
+    db.work_orders.update_one({"_id": wo_id}, {"$set": {"status": "estimate"}})
+    try:
+        order = client.get(f"/work_orders/api/work_orders/{wo_id}/parts_orders").get_json()["orders"][0]
+        assert all(it["usage"] == "" for it in order["items"])
+        assert order["unused"] == []
+    finally:
+        db.work_orders.update_one({"_id": wo_id}, {"$set": {"status": "in_progress"}})
+
+    # Принятый WO (in_progress) — сверка снова видна
+    order = client.get(f"/work_orders/api/work_orders/{wo_id}/parts_orders").get_json()["orders"][0]
+    assert {it["part_number"]: it["usage"] for it in order["items"]}["WOPO-C"] == "unused"
+    assert {u["part_number"] for u in order["unused"]} == {"WOPO-C"}
+
+
 def test_parts_orders_list_shows_wo_badge(client, wo_env):
     login(client)
     _create_linked_order(client, wo_env, [
@@ -140,12 +164,36 @@ def test_parts_orders_list_shows_wo_badge(client, wo_env):
     assert "WO #88001" in page
 
 
-def test_vendors_lookup(client, wo_env):
+def test_work_orders_list_shows_po_badge(client, wo_env):
+    """Зеркальный бейдж: в таблице WO виден "PO #" привязанного заказа."""
     login(client)
-    resp = client.get("/work_orders/api/vendors-lookup")
-    assert resp.status_code == 200
-    names = [v["name"] for v in resp.get_json()["vendors"]]
-    assert "WO Link Vendor" in names
+    order_id = _create_linked_order(client, wo_env, [
+        {"part_id": str(wo_env["parts"]["a"]["_id"]), "quantity": 1, "price": 10.0},
+    ])
+    order = wo_env["db"].parts_orders.find_one({"_id": ObjectId(order_id)})
+
+    page = client.get("/work_orders?date_preset=all_time").get_data(as_text=True)
+    assert f"PO #{order['order_number']}" in page
+    assert f"open_order={order_id}" in page
+
+
+def test_wo_details_renders_shared_order_modal(client, wo_env):
+    """Страница WO использует ту же модалку заказа, что и Parts (общий
+    компонент): #orderModal с data-атрибутами привязки к WO."""
+    login(client)
+    page = client.get(
+        f"/work_orders/details?work_order_id={wo_env['wo']['_id']}"
+    ).get_data(as_text=True)
+    assert 'id="orderModal"' in page
+    assert f'data-work-order-id="{wo_env["wo"]["_id"]}"' in page
+    assert 'id="partsOrderPaymentModal"' in page
+    assert "WO Link Vendor" in page  # вендоры отрендерены в селект модалки
+
+    # Страница создания WO: привязка через pending-id
+    page = client.get("/work_orders/details").get_data(as_text=True)
+    assert 'id="orderModal"' in page
+    assert 'data-work-order-id=""' in page
+    assert 'data-pending-work-order-id="' in page
 
 
 def test_pending_order_links_on_wo_create(client, wo_env, mongo):
@@ -168,11 +216,13 @@ def test_pending_order_links_on_wo_create(client, wo_env, mongo):
     assert order["work_order_id"] == pending_id
     assert order.get("work_order_number") is None
 
-    # Блок на странице создания видит заказ по pending-id (сверка пустая)
+    # Блок на странице создания видит заказ по pending-id; WO ещё не принят —
+    # сверка использования спрятана (нейтральные позиции, без «не использовано»)
     api = client.get(f"/work_orders/api/work_orders/{pending_id}/parts_orders").get_json()
     assert api["ok"] is True
     assert len(api["orders"]) == 1
-    assert api["orders"][0]["items"][0]["usage"] == "unused"
+    assert api["orders"][0]["items"][0]["usage"] == ""
+    assert api["orders"][0]["unused"] == []
 
     # Создаём WO с этим pending_attachment_id — заказ перепривязывается
     token = get_csrf_token(client)

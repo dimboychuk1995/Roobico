@@ -1,7 +1,8 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
-import { Stack } from "expo-router";
+import * as Notifications from "expo-notifications";
+import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useColorScheme } from "react-native";
 
 import { KeyboardDismissButton } from "@/components/keyboard-dismiss-button";
@@ -12,6 +13,42 @@ import { loadThemePreference, palette } from "@/lib/theme";
 SplashScreen.preventAutoHideAsync();
 // Сохранённый выбор темы применяем до первого рендера, насколько возможно.
 loadThemePreference();
+
+/**
+ * Тап по push-уведомлению → экран WO. Покрывает и запущенное приложение,
+ * и холодный старт (useLastNotificationResponse отдаёт «догоняющий» ответ).
+ * Если WO из другого магазина — сначала переключаем активный магазин.
+ */
+function PushNotificationRouter() {
+  const { session, setActiveShop } = useAuth();
+  const response = Notifications.useLastNotificationResponse();
+  const handledId = useRef<string>("");
+
+  useEffect(() => {
+    if (!response || !session) return;
+    const id = response.notification.request.identifier;
+    if (!id || handledId.current === id) return;
+
+    const data = response.notification.request.content.data as Record<string, unknown>;
+    const workOrderId = String(data?.work_order_id || "");
+    if (!workOrderId) return;
+    handledId.current = id;
+
+    (async () => {
+      const shopId = String(data?.shop_id || "");
+      if (shopId && shopId !== session.active_shop_id) {
+        try {
+          await setActiveShop(shopId);
+        } catch {
+          return; // нет доступа к магазину — остаёмся где были
+        }
+      }
+      router.push(`/work-order/${workOrderId}`);
+    })();
+  }, [response, session, setActiveShop]);
+
+  return null;
+}
 
 function RootNavigator() {
   const { ready, session } = useAuth();
@@ -69,6 +106,7 @@ export default function RootLayout() {
       <AuthProvider>
         <ToastProvider>
           <RootNavigator />
+          <PushNotificationRouter />
           <KeyboardDismissButton />
         </ToastProvider>
       </AuthProvider>

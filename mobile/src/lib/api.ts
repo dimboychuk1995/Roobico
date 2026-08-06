@@ -227,9 +227,19 @@ export async function apiSession(): Promise<SessionInfo> {
   return data;
 }
 
-export async function apiLogout(): Promise<void> {
-  await request<{ ok: boolean }>("/api/mobile/logout", { method: "POST" });
+export async function apiLogout(pushToken?: string | null): Promise<void> {
+  await request<{ ok: boolean }>("/api/mobile/logout", {
+    method: "POST",
+    body: JSON.stringify(pushToken ? { push_token: pushToken } : {}),
+  });
   setCsrfToken("");
+}
+
+export async function apiRegisterPushToken(token: string, platform: string): Promise<void> {
+  await request<{ ok: boolean }>("/api/mobile/push-token", {
+    method: "POST",
+    body: JSON.stringify({ token, platform }),
+  });
 }
 
 export async function apiSetActiveShop(shopId: string): Promise<void> {

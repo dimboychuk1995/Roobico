@@ -23,6 +23,10 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
   mechanics, not marked done yet" header, highlighted with the in-progress
   color, so the shop floor status is visible at a glance. They are not
   duplicated below — each WO appears once.
+- **Push notifications**: office users with the mobile app installed also
+  get a phone notification the moment a mechanic takes a WO into work and
+  when they mark it Done — see the Mechanic mode & Mobile app help for
+  details.
 - **Confirming a mechanic's work**: when a WO shows "Mechanic done", a
   manager can confirm it from the mobile app WO page ("Confirm work
   order"). A confirmed WO gets a **Confirmed** badge and is **locked for
@@ -84,24 +88,37 @@ permission), the Customer & Unit section of a WO has a discreet
 **Parts orders** button under the unit row — on existing WOs and on the
 create screen alike. It expands a block where you can:
 
-- **Create parts order** — vendor, order date and items (search by part # or
-  description; price prefills from average cost). **Scan invoice** in the
-  same dialog runs the AI invoice reader: it picks the vendor and fills the
-  matched items automatically; lines missing from the parts catalog are
-  listed in a warning (add them on the Parts page first). The order is
-  linked to this WO and ALSO appears on Parts → Parts Orders like any other
+- **Create parts order** — opens the SAME order dialog as on the Parts page
+  (Parts → Order Parts), with everything it can do there: vendor search,
+  order date, part search with cross-references and stock counts, core
+  charges, non-inventory amounts (shop supplies, tools…), the running order
+  total, and the **AI Order Reader** — upload a vendor invoice (PDF/photo)
+  and it picks the vendor and fills the items; unknown vendors and parts can
+  be created right from the scan results without leaving the dialog. The
+  only difference from the Parts page: the order is automatically linked to
+  this work order. It ALSO appears on Parts → Parts Orders like any other
   order, marked with a **WO #** badge that links back to the work order.
+- The work orders table shows the mirror of that badge: each WO row with
+  linked orders carries **PO #** badges; clicking one opens that parts
+  order on the Parts page.
 - Orders can be created **before the WO is saved**: they attach to the page
   and link to the work order automatically the moment you press Create
   Work Order (the WO # badge appears then).
 - See every linked order with its **status** (ordered / received) and
   **payment status** (unpaid / partial / paid), total and balance, and act
-  right there: **Receive** (updates stock) and **Pay** (records a payment).
-- **Usage check**: each order item is shown as a chip — green when the WO
-  actually uses that many of the part, yellow when only part of the ordered
-  quantity is on the WO (e.g. "2/3"), red when the part is not on the WO at
-  all. A warning box lists everything ordered for this WO but not used in
-  it, so nothing bought for a job gets forgotten on a shelf.
+  right there: click the order number (or **Open**) to view/edit it in the
+  full dialog, **Receive** (asks for the vendor bill and stock locations,
+  then updates stock) and **Pay** (records a payment with attachments for
+  the receipt).
+- **Usage check** — shown once the WO is accepted (a real work order, not
+  an estimate and not an unsaved page): each order item is shown as a
+  chip — green when the WO actually uses that many of the part, yellow when
+  only part of the ordered quantity is on the WO (e.g. "2/3"), red when the
+  part is not on the WO at all. A warning box lists everything ordered for
+  this WO but not used in it, so nothing bought for a job gets forgotten on
+  a shelf. While the WO is still an estimate or hasn't been created yet,
+  the chips stay neutral and no "not used" warnings appear — the job list
+  isn't final yet, so the comparison would only add noise.
 
 ## Labor blocks (jobs)
 

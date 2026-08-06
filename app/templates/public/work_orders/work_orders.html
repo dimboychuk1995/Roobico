@@ -7,7 +7,16 @@
 {# Строка таблицы WO — общая для закреплённого блока «In Work» и основного списка. #}
 {% macro wo_table_row(w) %}
   <tr>
-    <td><span class="badge text-bg-secondary">{{ w.wo_number or '-' }}</span></td>
+    <td>
+      <span class="badge text-bg-secondary">{{ w.wo_number or '-' }}</span>
+      {% for po in w.parts_orders or [] %}
+        <a class="badge text-bg-info text-decoration-none"
+           href="/parts/?tab=orders&open_order={{ po.id }}"
+           title="Parts order #{{ po.order_number }} is linked to this work order">
+          PO #{{ po.order_number }}
+        </a>
+      {% endfor %}
+    </td>
     <td>
       {{ w.customer }}
       {% if w.customer_inactive %}

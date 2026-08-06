@@ -376,6 +376,19 @@
       wrapper.className = "ft-host";
       target.parentNode.insertBefore(wrapper, target);
       wrapper.appendChild(target);
+    } else {
+      // Таблица пришла клоном (cloneNode целого блока, напр. "+ Add Labor"):
+      // в клоне остались тулбар/меню/ручки прошлой инициализации, но их
+      // обработчики при клонировании не копируются — кнопки мёртвые.
+      // Вычищаем и собираем заново.
+      for (var c = wrapper.children.length - 1; c >= 0; c--) {
+        var child = wrapper.children[c];
+        if (child.classList.contains("ft-toolbar") || child.classList.contains("ft-menu")) {
+          child.remove();
+        }
+      }
+      var deadHandles = table.tHead.querySelectorAll(".ft-resize-handle");
+      for (var h = 0; h < deadHandles.length; h++) deadHandles[h].remove();
     }
 
     // Шестерёнка живёт в тонком тулбаре НАД таблицей — поверх заголовков

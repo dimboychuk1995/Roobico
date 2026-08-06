@@ -316,6 +316,24 @@ def _build_work_order_items(shop_db, shop_id: ObjectId, rows: list) -> list:
             if name not in names:
                 names.append(name)
 
+    # Привязанные парт-ордера — бейдж "PO #" в строке (зеркало бейджа
+    # "WO #" в таблице Parts Orders).
+    parts_orders_map: dict = {}
+    if wo_ids:
+        linked_orders = shop_db.parts_orders.find(
+            {
+                "shop_id": shop_id,
+                "work_order_id": {"$in": wo_ids},
+                "is_active": {"$ne": False},
+                "is_return": {"$ne": True},
+            },
+            {"work_order_id": 1, "order_number": 1},
+        ).sort("order_number", 1)
+        for o in linked_orders:
+            parts_orders_map.setdefault(o.get("work_order_id"), []).append(
+                {"id": str(o["_id"]), "order_number": o.get("order_number")}
+            )
+
     items = []
     for x in rows:
         totals = x.get("totals") if isinstance(x.get("totals"), dict) else {}
@@ -348,6 +366,7 @@ def _build_work_order_items(shop_db, shop_id: ObjectId, rows: list) -> list:
                 "status": status,
                 "is_in_progress": status == "in_progress",
                 "working_now": working_map.get(x.get("_id")) or [],
+                "parts_orders": parts_orders_map.get(x.get("_id")) or [],
                 "mechanics": _wo_mechanic_names(x),
                 # Флаг «механик закончил» имеет смысл только пока WO в работе.
                 "mechanic_done": bool(x.get("mechanic_done")) and status == "in_progress",

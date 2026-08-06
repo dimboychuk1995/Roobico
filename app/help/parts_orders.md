@@ -118,11 +118,16 @@ an optional note (reason, RMA number).
 ## Orders linked to a work order
 
 A parts order can be created straight from a work order page (the
-**Parts orders** button in the Customer & Unit section). Such orders live in
-the normal Parts Orders list like any other order and carry a **WO #** badge
-linking to the work order. Inside the work order the same orders are shown
-with statuses, Receive/Pay actions and a check of which ordered items are
-actually used on that WO. See the Work Orders help for details.
+**Parts orders** button in the Customer & Unit section) — it opens the very
+same order dialog as the Parts page, including the AI Order Reader, core
+charges and non-inventory amounts; the only difference is that the order is
+linked to that work order. Such orders live in the normal Parts Orders list
+like any other order and carry a **WO #** badge linking to the work order;
+the work orders table shows matching **PO #** badges on WO rows that have
+linked orders. Inside the work order the same orders are shown with
+statuses, Open/Receive/Pay actions and — once the WO is accepted (not an
+estimate) — a check of which ordered items are actually used on that WO.
+See the Work Orders help for details.
 
 ## Access
 

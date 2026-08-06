@@ -149,6 +149,10 @@ def ensure_master_collections_indexes(master_db):
     _safe_create_index(master_db.admin_audit, [("admin_id", ASCENDING), ("created_at", DESCENDING)], name="idx_admin_audit_admin_created")
     _safe_create_index(master_db.admin_audit, [("target_type", ASCENDING), ("target_id", ASCENDING), ("created_at", DESCENDING)], name="idx_admin_audit_target")
 
+    # Mobile push-токены (Expo): upsert по токену, выборка по пользователям.
+    _safe_create_index(master_db.push_tokens, [("token", ASCENDING)], unique=True, name="uniq_push_tokens_token")
+    _safe_create_index(master_db.push_tokens, [("user_id", ASCENDING)], name="idx_push_tokens_user")
+
     # Rate limiting (login / forgot-password). TTL подчищает неактивные ключи.
     _safe_create_index(master_db.rate_limits, [("updated_at", ASCENDING)], expireAfterSeconds=3600, name="ttl_rate_limits_updated")
 
@@ -182,6 +186,8 @@ def ensure_shop_collections_indexes(shop_db):
     _safe_create_index(shop_db.parts_orders, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_parts_orders_shop_active_created_desc")
     _safe_create_index(shop_db.parts_orders, [("shop_id", ASCENDING), ("vendor_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_parts_orders_shop_vendor_active_created_desc")
     _safe_create_index(shop_db.parts_orders, [("shop_id", ASCENDING), ("order_number", ASCENDING)], name="idx_parts_orders_shop_order_number")
+    # Привязка заказов к WO: блок на странице WO + бейджи "PO #" в списке WO.
+    _safe_create_index(shop_db.parts_orders, [("shop_id", ASCENDING), ("work_order_id", ASCENDING)], name="idx_parts_orders_shop_work_order")
     _safe_create_index(shop_db.parts_orders, [("payment_status", ASCENDING)], name="idx_parts_orders_payment_status")
     _safe_create_index(shop_db.parts_orders, [("status", ASCENDING)], name="idx_parts_orders_status")
 

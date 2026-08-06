@@ -139,6 +139,38 @@
 		let scannedInvoiceFile = null;
 		let scannedVendorData = null;
 
+		// Контекст страницы Work Order: общий компонент модалки несёт
+		// data-атрибуты привязки (work_order_id или pending-id до сохранения WO).
+		// Там перезагрузка страницы недопустима — она убила бы несохранённую
+		// форму WO, поэтому вместо location.reload() шлём событие, по которому
+		// wo_parts_orders.js обновляет блок заказов.
+		function woLinkContext() {
+			const el = document.getElementById("orderModal");
+			if (!el) return null;
+			const workOrderId = String(el.dataset.workOrderId || "").trim();
+			const pendingWorkOrderId = String(el.dataset.pendingWorkOrderId || "").trim();
+			if (!workOrderId && !pendingWorkOrderId) return null;
+			return { workOrderId, pendingWorkOrderId };
+		}
+
+		function notifyWoPartsOrders() {
+			if (woLinkContext()) {
+				window.dispatchEvent(new CustomEvent("roobico:wo-parts-orders-changed"));
+			}
+		}
+
+		function finishOrderMutation() {
+			if (!woLinkContext()) {
+				location.reload();
+				return;
+			}
+			document.querySelectorAll(".modal.show").forEach((el) => {
+				const inst = window.bootstrap?.Modal?.getInstance(el);
+				if (inst) inst.hide();
+			});
+			notifyWoPartsOrders();
+		}
+
 		const canUseOrderComposer = !!(
 			vendorSelect && vendorSearchInput && vendorDropdown && partSearch && dropdown && itemsBody &&
 			createOrderBtn && createdOrderId && orderCreatedBox && orderAlert && orderTotalAmount && nonInventoryBody
@@ -647,6 +679,7 @@
 						throw new Error((data && (data.message || data.error)) || "Failed to delete payment");
 					}
 					await loadOrderIntoModal(orderId);
+					notifyWoPartsOrders();
 				} catch (err) {
 					appAlert(err.message || "Failed to delete payment", 'error');
 					inlineDeleteBtn.disabled = false;
@@ -725,8 +758,9 @@
 
 				if (openedOverOrderModal) {
 					await loadOrderIntoModal(orderId);
+					notifyWoPartsOrders();
 				} else {
-					location.reload();
+					finishOrderMutation();
 				}
 			} catch (err) {
 				appAlert(err.message || "Failed to save payment", 'error');
@@ -761,7 +795,7 @@
 					throw new Error((data && (data.message || data.error)) || "Failed to delete payment");
 				}
 
-				location.reload();
+				finishOrderMutation();
 			} catch (err) {
 				appAlert(err.message || "Failed to delete payment", 'error');
 				btn.disabled = false;
@@ -1160,15 +1194,22 @@
 
 			try {
 				const isEdit = createdOrderId.value !== "";
-				const endpoint = isEdit 
+				const endpoint = isEdit
 					? `/parts/api/orders/${createdOrderId.value}/update`
 					: "/parts/api/orders/create";
 				const method = isEdit ? "PUT" : "POST";
 
+				const payload = { vendor_id: vendorId, order_date: orderDate, items, non_inventory_amounts: nonInventoryPayload.lines };
+				const woLink = woLinkContext();
+				if (!isEdit && woLink) {
+					if (woLink.workOrderId) payload.work_order_id = woLink.workOrderId;
+					else payload.pending_work_order_id = woLink.pendingWorkOrderId;
+				}
+
 				const res = await fetch(endpoint, {
 					method: method,
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ vendor_id: vendorId, order_date: orderDate, items, non_inventory_amounts: nonInventoryPayload.lines }),
+					body: JSON.stringify(payload),
 				});
 				const data = await res.json();
 
@@ -1211,6 +1252,8 @@
 				Array.from(nonInventoryBody.querySelectorAll("input,button")).forEach((el) => {
 					el.disabled = true;
 				});
+
+				notifyWoPartsOrders();
 
 			} catch (e) {
 				showError("Network error while " + (createdOrderId.value ? "updating" : "creating") + " order.");
@@ -1334,7 +1377,7 @@
 				const modal = window.bootstrap?.Modal?.getInstance(modalEl);
 				if (modal) modal.hide();
 
-				location.reload();
+				finishOrderMutation();
 			} catch (e) {
 				showError("Network error while receiving order.");
 				receiveBtn.disabled = false;
@@ -1361,7 +1404,7 @@
 					const modalEl = document.getElementById("orderModal");
 					const modal = window.bootstrap?.Modal?.getInstance(modalEl);
 					if (modal) modal.hide();
-					location.reload();
+					finishOrderMutation();
 				} catch (err) {
 					appAlert(err.message || "Network error while receiving order", 'error');
 				}
@@ -1386,7 +1429,7 @@
 							const modalEl = document.getElementById("orderModal");
 							const modal = window.bootstrap?.Modal?.getInstance(modalEl);
 							if (modal) modal.hide();
-							location.reload();
+							finishOrderMutation();
 						} else {
 							appAlert("Error: " + (data.error || "Failed to unreceive order"), 'error');
 						}
@@ -2659,7 +2702,7 @@
 				try {
 					const data = await receiveOrderWithVendorBill(orderId, details.vendorBill, details.itemLocations);
 					appAlert(`Order received! ${data.updated_parts} parts updated.`, 'success');
-					location.reload();
+					finishOrderMutation();
 				} catch (err) {
 					appAlert(err.message || "Network error while receiving order", 'error');
 				}
@@ -2752,7 +2795,7 @@
 						return;
 					}
 					appAlert(`Return R-${data.order_number} created (credit $${Number(data.credit_total || 0).toFixed(2)}).`, "success");
-					location.reload();
+					finishOrderMutation();
 				} catch (err) {
 					appAlert("Network error while creating return", "error");
 				}
@@ -2777,7 +2820,7 @@
 
 						if (data.ok) {
 							appAlert("Order deleted successfully", 'success');
-							location.reload();
+							finishOrderMutation();
 						} else {
 							appAlert("Error: " + (data.error || "Failed to delete order"), 'error');
 						}

@@ -105,6 +105,26 @@ More).
 - **More**: global Search, Vendors, Calendar, Reports (all standard reports
   with period chips), Settings — **Active shop** switching and account info.
 
+### Push notifications (managers)
+
+Office users (any non-mechanic role) get a push notification on their phone
+when a mechanic **takes a work order into work** and when a mechanic
+**finishes** one — WO-level events only, individual job timers don't spam:
+
+- **"WO #… in work"** — the WO just went in progress by a mechanic action:
+  they started their first job timer on it, or saved it from mechanic mode,
+  or picked a finished WO back up after Done.
+- **"WO #… finished"** — the mechanic pressed **Done**: the WO is waiting
+  for a manager's review/confirmation.
+
+Tapping the notification opens that work order in the app (switching the
+active shop first if the WO belongs to another shop). Notifications are per
+device: they start after the first login on the phone (allow notifications
+when asked) and stop on logout. Mechanics don't receive these alerts, and
+actions by office users don't trigger them — only mechanics' own take/finish
+do. Requires the installed app (TestFlight build); pushes don't work inside
+the Expo Go development client.
+
 Web-only for now: Import/Export, PDF design, roles editing, integrations,
 billing. Mobile-first: camera flows (AI scan of work orders and vendor
-invoices, photo attachments).
+invoices, photo attachments), push notifications.

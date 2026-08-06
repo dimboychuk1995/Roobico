@@ -14,6 +14,11 @@ import {
   loadBaseUrl,
   setUnauthorizedHandler,
 } from "@/lib/api";
+import {
+  clearRegisteredPushToken,
+  getRegisteredPushToken,
+  registerPushToken,
+} from "@/lib/push";
 
 interface AuthState {
   ready: boolean;
@@ -38,6 +43,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const s = await apiSession();
         setSession(s);
+        registerPushToken(); // fire-and-forget: пуши не блокируют старт
       } catch {
         setSession(null);
       } finally {
@@ -50,15 +56,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const login = useCallback(async (email: string, password: string) => {
     const s = await apiLogin(email, password);
     setSession(s);
+    registerPushToken();
   }, []);
 
   const logout = useCallback(async () => {
     try {
-      await apiLogout();
+      // Токен устройства снимается вместе с сессией — чтобы этот телефон
+      // не получал уведомления после выхода.
+      await apiLogout(getRegisteredPushToken());
     } catch (e) {
       // Сессия могла уже истечь — локальный выход в любом случае.
       if (!(e instanceof ApiError)) throw e;
     }
+    clearRegisteredPushToken();
     setSession(null);
   }, []);
 

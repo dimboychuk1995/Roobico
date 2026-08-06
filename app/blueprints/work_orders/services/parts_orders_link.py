@@ -38,8 +38,13 @@ def _wo_parts_usage(wo: dict) -> tuple[dict, dict]:
     return by_id, by_pn
 
 
-def linked_parts_orders_payload(shop_db, shop, wo, fmt_date=None) -> list[dict]:
-    """Список привязанных к WO заказов со статусами и сверкой использования."""
+def linked_parts_orders_payload(shop_db, shop, wo, fmt_date=None, show_usage=True) -> list[dict]:
+    """Список привязанных к WO заказов со статусами и сверкой использования.
+
+    show_usage=False — WO ещё не принят (estimate или страница создания):
+    сверка «использовано/не использовано» не имеет смысла, пока состав работ
+    не финален — позиции отдаются нейтрально (usage=""), unused пустой.
+    """
     from app.blueprints.parts.routes import _parts_order_amounts
 
     orders = list(
@@ -76,13 +81,15 @@ def linked_parts_orders_payload(shop_db, shop, wo, fmt_date=None) -> list[dict]:
             used_qty = used_by_id.get(pid_key)
             if used_qty is None:
                 used_qty = used_by_pn.get(pn_key, 0)
-            if used_qty >= ordered_qty and ordered_qty > 0:
+            if not show_usage:
+                usage = ""
+            elif used_qty >= ordered_qty and ordered_qty > 0:
                 usage = "used"
             elif used_qty > 0:
                 usage = "partial"
             else:
                 usage = "unused"
-            if usage != "used":
+            if show_usage and usage != "used":
                 unused.append({
                     "part_number": it.get("part_number") or "-",
                     "ordered": ordered_qty,
