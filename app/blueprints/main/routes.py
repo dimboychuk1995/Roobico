@@ -51,6 +51,18 @@ def index():
     return render_template("public/auth.html")
 
 
+@main_bp.get("/privacy")
+def privacy():
+    # Публичная страница без логина: её URL уходит в App Store / клиентам.
+    return render_template("public/legal_privacy.html")
+
+
+@main_bp.get("/terms")
+def terms():
+    # Публичная страница без логина: её URL уходит в App Store / клиентам.
+    return render_template("public/legal_terms.html")
+
+
 # Единый список меню (добавлять новые страницы — 1 строка тут)
 NAV_ITEMS = [
     {"key": "dashboard", "label": "Dashboard", "endpoint": "dashboard.dashboard"},

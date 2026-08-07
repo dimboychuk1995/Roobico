@@ -1,0 +1,102 @@
+{% extends "layouts/public_base.html" %}
+
+{% block title %}Privacy Policy — Roobico{% endblock %}
+
+{% block content %}
+<div class="container legal-page py-5" style="max-width: 860px;">
+  <div class="d-flex align-items-center gap-2 mb-4">
+    <img src="{{ url_for('static', filename='images/logo-circle.svg') }}" alt="Roobico" width="36" height="36">
+    <a href="{{ url_for('main.index') }}" class="fs-4 fw-bold text-decoration-none text-body">Roobico</a>
+  </div>
+
+  <h1 class="mb-1">Privacy Policy</h1>
+  <p class="text-muted">Effective date: August 7, 2026</p>
+
+  <p>Roobico ("Roobico", "we", "us") provides shop-management software for auto repair
+  shops and fleets: work orders, parts inventory, customers, invoicing, payments and a
+  customer portal, available on the web and through our mobile application. This policy
+  explains what information we collect, how we use it, and the choices you have.</p>
+
+  <h2 class="h4 mt-4">Information we collect</h2>
+  <ul>
+    <li><strong>Account information.</strong> Name, email address, phone number, role and
+      login credentials for users invited to a shop's account.</li>
+    <li><strong>Business records.</strong> Data your shop enters while using Roobico:
+      customers and their contact details, vehicles/units, work orders, estimates,
+      invoices, parts and inventory, vendor and payment records.</li>
+    <li><strong>Photos and documents.</strong> Images you attach to work orders or units,
+      and photos of paper documents (work orders, vendor invoices) you scan in the app.</li>
+    <li><strong>Billing information.</strong> Subscription billing is processed by
+      <a href="https://stripe.com/privacy" rel="noopener">Stripe</a>. We do not store your
+      full card number on our servers.</li>
+    <li><strong>Technical data.</strong> Log data (IP address, browser/device type,
+      timestamps), and — if you enable notifications in the mobile app — a push
+      notification token for your device.</li>
+  </ul>
+
+  <h2 class="h4 mt-4">Camera and photo library</h2>
+  <p>The mobile app asks for camera and photo-library access only when you choose to
+  attach a photo or scan a document. Selected images are uploaded to your shop's account
+  and become part of your shop's business records. We never access your camera or photo
+  library in the background.</p>
+
+  <h2 class="h4 mt-4">How we use information</h2>
+  <ul>
+    <li>To provide and operate the service, including syncing your data across web and mobile.</li>
+    <li>To process subscription payments and send service emails (e.g. invoices, customer
+      authorization requests you initiate).</li>
+    <li>To send push notifications you have enabled (e.g. job assignments, approvals).</li>
+    <li>To secure the service, keep audit records, prevent abuse, and provide support.</li>
+    <li>To improve the product. We do not sell your data and we do not use your business
+      records for advertising.</li>
+  </ul>
+
+  <h2 class="h4 mt-4">AI features</h2>
+  <p>Some features use AI to help you work faster — for example, extracting line items
+  from a photographed vendor invoice or a handwritten work order, or polishing text you
+  wrote. The content you submit to these features is processed by our AI service
+  providers solely to return the result to you; it is not used to train their models.</p>
+
+  <h2 class="h4 mt-4">Sharing</h2>
+  <p>We share information only with service providers that help us run Roobico — cloud
+  hosting, payment processing (Stripe), email delivery, and AI processing — under
+  agreements that limit their use of your data, and when required by law. Data your shop
+  chooses to send to your customers (estimates, invoices, portal links) is shared at your
+  direction.</p>
+
+  <h2 class="h4 mt-4">Data retention and deletion</h2>
+  <p>Your data is retained while your shop's account is active. Individual users can be
+  deactivated by a shop administrator at any time. When a subscription ends, the shop
+  owner may request export or deletion of the shop's data by contacting us; we delete it
+  within a reasonable period, except where we must keep records to meet legal or
+  accounting obligations. Regular encrypted backups are kept on a rolling window and
+  expire automatically.</p>
+
+  <h2 class="h4 mt-4">Security</h2>
+  <p>Data is encrypted in transit (HTTPS). Access to production systems is limited to
+  authorized personnel. Each shop's data is stored in a separate database, and access in
+  the application is controlled by per-user roles and permissions.</p>
+
+  <h2 class="h4 mt-4">Your rights</h2>
+  <p>You may request access to, correction of, or deletion of your personal information.
+  If you are an employee or customer of a shop that uses Roobico, that shop controls its
+  business records — please direct requests to the shop first; we will assist them in
+  fulfilling your request. For anything else, contact us directly.</p>
+
+  <h2 class="h4 mt-4">Children</h2>
+  <p>Roobico is a business tool and is not directed to children under 13. We do not
+  knowingly collect personal information from children.</p>
+
+  <h2 class="h4 mt-4">Changes</h2>
+  <p>If we make material changes to this policy, we will update this page and change the
+  effective date above.</p>
+
+  <h2 class="h4 mt-4">Contact</h2>
+  <p>Questions or requests: <a href="mailto:billing@roobico.com">billing@roobico.com</a></p>
+
+  <p class="mt-5 text-muted small">
+    <a href="{{ url_for('main.terms') }}">Terms of Service</a> ·
+    <a href="{{ url_for('main.index') }}">roobico.com</a>
+  </p>
+</div>
+{% endblock %}

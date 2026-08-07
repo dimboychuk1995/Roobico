@@ -1,0 +1,70 @@
+{% extends "layouts/public_base.html" %}
+
+{% block title %}Terms of Service — Roobico{% endblock %}
+
+{% block content %}
+<div class="container legal-page py-5" style="max-width: 860px;">
+  <div class="d-flex align-items-center gap-2 mb-4">
+    <img src="{{ url_for('static', filename='images/logo-circle.svg') }}" alt="Roobico" width="36" height="36">
+    <a href="{{ url_for('main.index') }}" class="fs-4 fw-bold text-decoration-none text-body">Roobico</a>
+  </div>
+
+  <h1 class="mb-1">Terms of Service</h1>
+  <p class="text-muted">Effective date: August 7, 2026</p>
+
+  <p>These terms govern your use of Roobico, a shop-management service for auto repair
+  shops and fleets, available on the web and through our mobile application. By creating
+  an account or using the service you agree to these terms.</p>
+
+  <h2 class="h4 mt-4">Accounts</h2>
+  <p>Accounts are created for a business ("shop") and its invited users. You are
+  responsible for keeping credentials confidential and for activity under your account.
+  Shop administrators control which users have access and what they can do.</p>
+
+  <h2 class="h4 mt-4">Subscription and billing</h2>
+  <p>Roobico is offered on a subscription basis, billed through Stripe. Fees are charged
+  in advance for each billing period and are non-refundable except where required by law.
+  We may change pricing with advance notice effective at your next billing period.</p>
+
+  <h2 class="h4 mt-4">Your data</h2>
+  <p>Your shop owns the business records it enters into Roobico. We process them only to
+  provide the service, as described in our
+  <a href="{{ url_for('main.privacy') }}">Privacy Policy</a>. You are responsible for
+  having the right to store the data you enter (including your customers' contact
+  details) and for the accuracy of documents you issue.</p>
+
+  <h2 class="h4 mt-4">Acceptable use</h2>
+  <p>You agree not to misuse the service: no unauthorized access attempts, no
+  interference with its operation, no use of the service to violate the law or the
+  rights of others, and no reselling of the service without our agreement.</p>
+
+  <h2 class="h4 mt-4">Availability and changes</h2>
+  <p>We work to keep Roobico available and back up data regularly, but the service is
+  provided "as is" without warranties of uninterrupted or error-free operation. We may
+  improve or change features over time.</p>
+
+  <h2 class="h4 mt-4">Limitation of liability</h2>
+  <p>To the maximum extent permitted by law, Roobico is not liable for indirect,
+  incidental or consequential damages, or for loss of profits or data. Our total
+  liability for any claim is limited to the amount you paid us in the twelve months
+  before the claim arose.</p>
+
+  <h2 class="h4 mt-4">Termination</h2>
+  <p>You may cancel your subscription at any time; access continues until the end of the
+  paid period. We may suspend or terminate accounts that violate these terms. After
+  termination, the shop owner may request export or deletion of the shop's data as
+  described in the Privacy Policy.</p>
+
+  <h2 class="h4 mt-4">Changes to these terms</h2>
+  <p>If we make material changes, we will update this page and change the effective date
+  above. Continued use of the service after changes take effect constitutes acceptance.</p>
+
+  <h2 class="h4 mt-4">Contact</h2>
+  <p>Questions: <a href="mailto:billing@roobico.com">billing@roobico.com</a></p>
+
+  <p class="mt-5 text-muted small">
+    <a href="{{ url_for('main.privacy') }}">Privacy Policy</a> ·
+    <a href="{{ url_for('main.index') }}">roobico.com</a>
+  </p>
+</div>
+{% endblock %}
