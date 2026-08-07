@@ -14,14 +14,17 @@ import { Platform } from "react-native";
 import { apiRegisterPushToken } from "@/lib/api";
 
 // Как показывать уведомление, пришедшее при ОТКРЫТОМ приложении.
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
-});
+// На вебе expo-notifications не реализован — не трогаем вовсе.
+if (Platform.OS !== "web") {
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowBanner: true,
+      shouldShowList: true,
+      shouldPlaySound: true,
+      shouldSetBadge: false,
+    }),
+  });
+}
 
 let registeredToken: string | null = null;
 
@@ -37,6 +40,7 @@ export function getRegisteredPushToken(): string | null {
  */
 export async function registerPushToken(): Promise<void> {
   try {
+    if (Platform.OS === "web") return; // на вебе пушей нет
     if (!Device.isDevice) return; // симулятор — пушей не бывает
 
     if (Platform.OS === "android") {

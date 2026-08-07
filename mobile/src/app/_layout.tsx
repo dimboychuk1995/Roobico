@@ -3,7 +3,7 @@ import * as Notifications from "expo-notifications";
 import { Stack, router } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useRef } from "react";
-import { useColorScheme } from "react-native";
+import { Platform, useColorScheme } from "react-native";
 
 import { KeyboardDismissButton } from "@/components/keyboard-dismiss-button";
 import { AuthProvider, useAuth } from "@/context/auth";
@@ -106,7 +106,8 @@ export default function RootLayout() {
       <AuthProvider>
         <ToastProvider>
           <RootNavigator />
-          <PushNotificationRouter />
+          {/* expo-notifications не реализован на вебе — хук уронит рендер. */}
+          {Platform.OS !== "web" ? <PushNotificationRouter /> : null}
           <KeyboardDismissButton />
         </ToastProvider>
       </AuthProvider>
