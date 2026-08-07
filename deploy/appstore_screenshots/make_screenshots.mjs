@@ -16,9 +16,11 @@ import path from "node:path";
 import sharp from "sharp";
 
 const DEVICES = {
-  // App Store Connect: iPhone 6.9" и iPad Pro 13" (portrait)
-  iphone69: { w: 1320, h: 2868 },
-  ipad13: { w: 2064, h: 2752 },
+  // App Store Connect (portrait). Какой слот показывает ASC — тот размер и грузим.
+  iphone69: { w: 1320, h: 2868 }, // iPhone 6.9" Display
+  iphone65: { w: 1284, h: 2778 }, // iPhone 6.5" Display
+  ipad13: { w: 2064, h: 2752 },   // iPad Pro 13"
+  ipad129: { w: 2048, h: 2732 },  // iPad Pro 12.9"
 };
 
 const BG_TOP = "#15803d";
@@ -66,7 +68,7 @@ async function makeOne({ file, device, caption }) {
   if (!spec) throw new Error(`Unknown device "${device}" for ${file}`);
   const { w, h } = spec;
 
-  const fontSize = device === "iphone69" ? 88 : 96;
+  const fontSize = device.startsWith("iphone") ? 88 : 96;
   const lines = caption.split("\n");
   const cap = captionSvg(w, lines, fontSize);
 
