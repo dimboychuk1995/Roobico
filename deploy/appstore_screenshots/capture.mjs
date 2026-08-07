@@ -2,6 +2,9 @@
  * Автосъёмка сырых скриншотов из веб-рендера приложения (react-native-web).
  * Требует поднятого стенда: Flask :5000 + same-origin прокси :7777 (см.
  * scratchpad/shots/proxy.mjs). Результат кладёт в raw/iphone и raw/ipad.
+ *
+ *   node capture.mjs         # светлая тема
+ *   node capture.mjs dark    # тёмная тема -> raw/iphone-dark, raw/ipad-dark
  */
 import fs from "node:fs";
 import { chromium } from "playwright";
@@ -31,9 +34,12 @@ async function shoot(page, file, settle = 1500) {
   console.log("shot", file);
 }
 
-for (const [name, dev] of Object.entries(DEVICES)) {
+const scheme = process.argv.includes("dark") ? "dark" : "light";
+
+for (const [base, dev] of Object.entries(DEVICES)) {
+  const name = scheme === "dark" ? `${base}-dark` : base;
   const browser = await chromium.launch();
-  const ctx = await browser.newContext({ ...dev, colorScheme: "light" });
+  const ctx = await browser.newContext({ ...dev, colorScheme: scheme });
   const page = await ctx.newPage();
   fs.mkdirSync(`raw/${name}`, { recursive: true });
 

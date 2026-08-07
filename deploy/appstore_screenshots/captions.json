@@ -1,66 +1,6 @@
 [
   {
     "file": "raw/iphone/01-dashboard.png",
-    "device": "iphone69",
-    "caption": "Your whole shop\nin your pocket"
-  },
-  {
-    "file": "raw/iphone/02-wo-list.png",
-    "device": "iphone69",
-    "caption": "Every work order\nat a glance"
-  },
-  {
-    "file": "raw/iphone/03-wo-editor.png",
-    "device": "iphone69",
-    "caption": "Labor, parts and\nlive totals with tax"
-  },
-  {
-    "file": "raw/iphone/04-parts.png",
-    "device": "iphone69",
-    "caption": "Parts, inventory\nand vendor orders"
-  },
-  {
-    "file": "raw/iphone/05-reports.png",
-    "device": "iphone69",
-    "caption": "Sales, payments and\nbalances — built in"
-  },
-  {
-    "file": "raw/iphone/06-calendar.png",
-    "device": "iphone69",
-    "caption": "Schedule jobs\non the calendar"
-  },
-  {
-    "file": "raw/ipad/01-dashboard.png",
-    "device": "ipad13",
-    "caption": "Your whole shop\nin your pocket"
-  },
-  {
-    "file": "raw/ipad/02-wo-list.png",
-    "device": "ipad13",
-    "caption": "Every work order\nat a glance"
-  },
-  {
-    "file": "raw/ipad/03-wo-editor.png",
-    "device": "ipad13",
-    "caption": "Labor, parts and\nlive totals with tax"
-  },
-  {
-    "file": "raw/ipad/04-parts.png",
-    "device": "ipad13",
-    "caption": "Parts, inventory\nand vendor orders"
-  },
-  {
-    "file": "raw/ipad/05-reports.png",
-    "device": "ipad13",
-    "caption": "Sales, payments and\nbalances — built in"
-  },
-  {
-    "file": "raw/ipad/06-calendar.png",
-    "device": "ipad13",
-    "caption": "Schedule jobs\non the calendar"
-  },
-  {
-    "file": "raw/iphone/01-dashboard.png",
     "device": "iphone65",
     "caption": "Your whole shop\nin your pocket"
   },
@@ -86,6 +26,36 @@
   },
   {
     "file": "raw/iphone/06-calendar.png",
+    "device": "iphone65",
+    "caption": "Schedule jobs\non the calendar"
+  },
+  {
+    "file": "raw/iphone-dark/01-dashboard.png",
+    "device": "iphone65",
+    "caption": "Your whole shop\nin your pocket"
+  },
+  {
+    "file": "raw/iphone-dark/02-wo-list.png",
+    "device": "iphone65",
+    "caption": "Every work order\nat a glance"
+  },
+  {
+    "file": "raw/iphone-dark/03-wo-editor.png",
+    "device": "iphone65",
+    "caption": "Labor, parts and\nlive totals with tax"
+  },
+  {
+    "file": "raw/iphone-dark/04-parts.png",
+    "device": "iphone65",
+    "caption": "Parts, inventory\nand vendor orders"
+  },
+  {
+    "file": "raw/iphone-dark/05-reports.png",
+    "device": "iphone65",
+    "caption": "Sales, payments and\nbalances — built in"
+  },
+  {
+    "file": "raw/iphone-dark/06-calendar.png",
     "device": "iphone65",
     "caption": "Schedule jobs\non the calendar"
   },
@@ -116,6 +86,36 @@
   },
   {
     "file": "raw/ipad/06-calendar.png",
+    "device": "ipad129",
+    "caption": "Schedule jobs\non the calendar"
+  },
+  {
+    "file": "raw/ipad-dark/01-dashboard.png",
+    "device": "ipad129",
+    "caption": "Your whole shop\nin your pocket"
+  },
+  {
+    "file": "raw/ipad-dark/02-wo-list.png",
+    "device": "ipad129",
+    "caption": "Every work order\nat a glance"
+  },
+  {
+    "file": "raw/ipad-dark/03-wo-editor.png",
+    "device": "ipad129",
+    "caption": "Labor, parts and\nlive totals with tax"
+  },
+  {
+    "file": "raw/ipad-dark/04-parts.png",
+    "device": "ipad129",
+    "caption": "Parts, inventory\nand vendor orders"
+  },
+  {
+    "file": "raw/ipad-dark/05-reports.png",
+    "device": "ipad129",
+    "caption": "Sales, payments and\nbalances — built in"
+  },
+  {
+    "file": "raw/ipad-dark/06-calendar.png",
     "device": "ipad129",
     "caption": "Schedule jobs\non the calendar"
   }

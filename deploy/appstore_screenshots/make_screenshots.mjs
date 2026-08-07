@@ -16,11 +16,10 @@ import path from "node:path";
 import sharp from "sharp";
 
 const DEVICES = {
-  // App Store Connect (portrait). Какой слот показывает ASC — тот размер и грузим.
-  iphone69: { w: 1320, h: 2868 }, // iPhone 6.9" Display
+  // App Store Connect (portrait): слоты этого приложения.
+  // 2048×2732 принимают и слот iPad 13", и слот iPad 12.9".
   iphone65: { w: 1284, h: 2778 }, // iPhone 6.5" Display
-  ipad13: { w: 2064, h: 2752 },   // iPad Pro 13"
-  ipad129: { w: 2048, h: 2732 },  // iPad Pro 12.9"
+  ipad129: { w: 2048, h: 2732 },  // iPad
 };
 
 const BG_TOP = "#15803d";
@@ -87,7 +86,7 @@ async function makeOne({ file, device, caption }) {
     .png()
     .toBuffer();
 
-  const outName = `${device}-${path.basename(file)}`;
+  const outName = `${device}${file.includes("-dark") ? "-dark" : ""}-${path.basename(file)}`;
   await sharp(backgroundSvg(w, h))
     .composite([
       { input: cap.svg, top: CAPTION_TOP, left: 0 },
