@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
   container: { flexGrow: 1, justifyContent: "center", padding: 28 },
   brand: { fontSize: 34, fontWeight: "900", letterSpacing: 2, textAlign: "center" },
   subtitle: { textAlign: "center", marginTop: 4, marginBottom: 32, fontSize: 14 },
-  form: { gap: 8 },
+  form: { gap: 8, width: "100%", maxWidth: 420, alignSelf: "center" },
   label: { fontSize: 11, fontWeight: "700", letterSpacing: 1, marginTop: 8 },
   input: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 12, fontSize: 15 },
   error: { marginTop: 8, fontSize: 13, fontWeight: "500" },

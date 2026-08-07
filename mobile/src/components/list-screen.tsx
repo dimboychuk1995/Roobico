@@ -120,6 +120,8 @@ export function ListScreen<T>({
 
   return (
     <View style={[styles.container, { backgroundColor: theme.bg }]}>
+      {/* На планшете контент — центрированная колонка, а не лента во всю ширину. */}
+      <View style={styles.contentWrap}>
       <View style={styles.searchWrap}>
         <TextInput
           style={[
@@ -172,12 +174,14 @@ export function ListScreen<T>({
           }
         />
       )}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
+  contentWrap: { flex: 1, width: "100%", maxWidth: 760, alignSelf: "center" },
   searchWrap: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4 },
   search: {
     borderWidth: 1,
