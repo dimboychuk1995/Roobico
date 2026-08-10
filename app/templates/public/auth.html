@@ -191,6 +191,13 @@
 
       <form method="post" action="/tenant/register" autocomplete="on" id="registerForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {# Анти-бот: honeypot (людям не виден, боты заполняют) + form_ts,
+           который проставляет JS при загрузке — сабмит без JS или мгновенный
+           сабмит отклоняется сервером. #}
+        <div style="position:absolute; left:-9999px; top:-9999px;" aria-hidden="true">
+          <label>Website <input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+        </div>
+        <input type="hidden" name="form_ts" id="registerFormTs" value="">
 
         <div class="land-section-label">Company</div>
         <div class="land-grid-2">
@@ -262,6 +269,10 @@
 <script>
 (function () {
   var overlay = document.getElementById('landOverlay');
+
+  // Анти-бот: метка времени загрузки страницы (сервер требует минимум
+  // несколько секунд между загрузкой и сабмитом регистрации).
+  document.getElementById('registerFormTs').value = Math.floor(Date.now() / 1000);
 
   function openRegister() {
     overlay.classList.add('open');

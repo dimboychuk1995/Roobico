@@ -1,15 +1,17 @@
 from __future__ import annotations
 
 import re
+import time
 import hashlib
 from datetime import datetime, timezone, timedelta
 
 from bson import ObjectId
-from flask import request, jsonify
+from flask import current_app, request, jsonify
 from werkzeug.security import generate_password_hash
 from pymongo.errors import DuplicateKeyError
 
 from app.extensions import get_master_db, get_mongo_client
+from app.utils.rate_limit import hit_rate_limit
 from app.utils.sales_tax import extract_us_zip, refresh_zip_tax_rate
 from . import tenant_bp
 
@@ -478,9 +480,56 @@ def init_shop_database(shop_db_name: str, tenant_doc: dict, shop_doc: dict, acto
         pass
 
 
+# Спам-боты вписывают в текстовые поля ссылки и HTML — легитимному
+# автосервису ни то, ни другое в названии/имени/адресе не нужно.
+_SPAM_CONTENT_RE = re.compile(r"[<>]|https?://|\bwww\.", re.IGNORECASE)
+
+# Минимальное время от загрузки страницы до сабмита: люди заполняют форму
+# десятки секунд, боты сабмитят мгновенно.
+REGISTER_MIN_FORM_SECONDS = 5
+REGISTER_MAX_FORM_SECONDS = 24 * 3600
+
+
+def _register_spam_reason(form) -> str | None:
+    """Вернуть причину, по которой сабмит похож на бота (None — похоже на человека)."""
+    # Honeypot: скрытое поле, человек его не видит и не заполняет.
+    if (form.get("website") or "").strip():
+        return "honeypot filled"
+
+    # form_ts проставляет JS при загрузке страницы: отсутствие поля означает
+    # сабмит без исполнения JS (curl/простой бот), слишком свежий ts — автозаполнение.
+    ts_raw = (form.get("form_ts") or "").strip()
+    try:
+        ts = int(ts_raw)
+    except ValueError:
+        return f"bad form_ts {ts_raw!r}"
+    age = time.time() - ts
+    if age < REGISTER_MIN_FORM_SECONDS or age > REGISTER_MAX_FORM_SECONDS:
+        return f"form_ts age {age:.1f}s"
+
+    for field in ("company_name", "company_address", "first_name", "last_name"):
+        value = form.get(field) or ""
+        if _SPAM_CONTENT_RE.search(value):
+            return f"spam content in {field}: {value[:80]!r}"
+    return None
+
+
 @tenant_bp.post("/register")
 def register_tenant():
     master = get_master_db()
+
+    if hit_rate_limit("register", request.remote_addr, max_attempts=3, window_seconds=3600):
+        return jsonify({"ok": False, "errors": ["Too many signup attempts. Please try again later."]}), 429
+
+    spam_reason = _register_spam_reason(request.form)
+    if spam_reason:
+        current_app.logger.warning(
+            "Blocked bot-like registration from %s (%s), company_name=%r, email=%r",
+            request.remote_addr, spam_reason,
+            (request.form.get("company_name") or "")[:120],
+            (request.form.get("email") or "")[:120],
+        )
+        return jsonify({"ok": False, "errors": ["Registration failed. Please contact support if you are a real shop."]}), 400
 
     company_name = (request.form.get("company_name") or "").strip()
     company_address = (request.form.get("company_address") or "").strip()
