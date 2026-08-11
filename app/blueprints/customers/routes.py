@@ -23,7 +23,7 @@ from app.utils.duplicates import (
     find_duplicate_unit,
     unit_duplicate_message,
 )
-from app.utils.permissions import permission_required
+from app.utils.permissions import has_permission, permission_required
 from app.utils.display_datetime import format_date_mmddyyyy, format_preferred_shop_date
 from app.utils.date_filters import build_date_range_filters
 from app.utils.contacts import (
@@ -992,11 +992,22 @@ def customer_details_page(customer_id):
     else:
         tab_pagination = _empty_pagination(page, per_page)
 
+    # Годовая инспекция из списка юнитов — общая модалка (avi_*).
+    from app.blueprints.work_orders.services.inspections import (
+        VEHICLE_TYPE_COMPONENT_DEFAULTS,
+        annual_inspection_checklist,
+    )
+    from app.utils.display_datetime import get_active_shop_today_iso
+
     return _render_app_page(
         "public/customers/customer_details.html",
         active_page="customers",
         customer=customer_view,
         customer_id=str(cid),
+        avi_checklist=annual_inspection_checklist(),
+        avi_type_defaults=VEHICLE_TYPE_COMPONENT_DEFAULTS,
+        today_date_input_value=get_active_shop_today_iso(),
+        can_create_inspection=has_permission("work_orders.create"),
         active_tab=tab,
         q=q,
         tab_items=tab_items,
@@ -1150,14 +1161,25 @@ def customer_unit_details_page(customer_id, unit_id):
         "is_active": bool(unit.get("is_active", True)),
     }
 
-    # Latest annual vehicle inspection for this unit (only one is kept).
-    annual_inspection = None
-    inspection = shop_db.annual_inspections.find_one(
-        {"unit_id": uid, "shop_id": shop["_id"]},
-        sort=[("created_at", -1)],
+    # Annual vehicle inspections: полная история, последняя — действующая
+    # (срок 12 месяцев: valid / expiring (≤30 дней) / expired).
+    from app.blueprints.work_orders.services.inspections import (
+        VEHICLE_TYPE_COMPONENT_DEFAULTS,
+        annual_inspection_checklist,
+        inspection_expiry,
+        inspection_expiry_status,
     )
-    if inspection:
-        annual_inspection = {
+    from app.utils.display_datetime import get_active_shop_today_iso
+
+    annual_inspection = None
+    annual_inspection_history = []
+    for i, inspection in enumerate(
+        shop_db.annual_inspections.find(
+            {"unit_id": uid, "shop_id": shop["_id"]}
+        ).sort([("created_at", -1)])
+    ):
+        expires_at = inspection_expiry(inspection)
+        row = {
             "id": str(inspection.get("_id")),
             "date": _fmt_preferred_dt_label(inspection.get("inspection_date"), inspection.get("created_at")),
             "created_at": _fmt_dt_label(inspection.get("created_at")),
@@ -1165,7 +1187,13 @@ def customer_unit_details_page(customer_id, unit_id):
             "motor_carrier_operator": inspection.get("motor_carrier_operator") or "-",
             "inspection_agency": inspection.get("inspection_agency") or "-",
             "vin": inspection.get("vin") or "-",
+            "expires": _fmt_dt_label(expires_at) if expires_at else "-",
+            "expiry_status": inspection_expiry_status(expires_at) if i == 0 else "",
         }
+        if i == 0:
+            annual_inspection = row
+        else:
+            annual_inspection_history.append(row)
 
     return _render_app_page(
         "public/customers/unit_details.html",
@@ -1175,6 +1203,14 @@ def customer_unit_details_page(customer_id, unit_id):
         customer_inactive=customer.get("is_active") is False,
         unit=unit_view,
         annual_inspection=annual_inspection,
+        annual_inspection_history=annual_inspection_history,
+        can_delete_inspection=has_permission("work_orders.delete"),
+        can_create_inspection=has_permission("work_orders.create"),
+        avi_checklist=annual_inspection_checklist(),
+        avi_type_defaults=VEHICLE_TYPE_COMPONENT_DEFAULTS,
+        today_date_input_value=get_active_shop_today_iso(),
+        customer_address=str(customer.get("address") or ""),
+        customer_company=str(customer.get("company_name") or "") or _customer_label(customer),
         active_tab=tab,
         q=q,
         date_preset=date_preset,

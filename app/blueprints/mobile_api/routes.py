@@ -928,10 +928,17 @@ def mobile_unit_details(unit_id):
 
     customer = shop_db.customers.find_one({"_id": u.get("customer_id")}) or {}
 
+    from app.blueprints.work_orders.services.inspections import (
+        inspection_expiry,
+        inspection_expiry_status,
+    )
+
+    # У инспекций нет флага is_active — просто последняя по created_at.
     inspection = shop_db.annual_inspections.find_one(
-        {"unit_id": u_id, "shop_id": shop["_id"], "is_active": True},
+        {"unit_id": u_id, "shop_id": shop["_id"]},
         sort=[("created_at", -1)],
     )
+    inspection_expires = inspection_expiry(inspection) if inspection else None
 
     customer_lbl = customer_label(customer) if customer else ""
     if customer and customer.get("is_active") is False:
@@ -955,6 +962,8 @@ def mobile_unit_details(unit_id):
         "annual_inspection": {
             "date": str(inspection.get("inspection_date") or ""),
             "inspector": str(inspection.get("inspector_name") or ""),
+            "expires": str(inspection_expires or ""),
+            "expiry_status": inspection_expiry_status(inspection_expires),
         } if inspection else None,
     }), 200
 

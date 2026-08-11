@@ -60,8 +60,15 @@ Header buttons: **"Back"**, **"Portal Link"**, **"Create Work Order"**.
   Year+Make+Model or a valid VIN). New recalls show a "NEW" badge; a nightly
   job also emails customers a recall digest automatically.
 - **Annual Inspection** card shows the unit's latest DOT annual inspection
-  with a Download PDF link (created from the work order editor; only the
-  most recent one is kept).
+  with its **Valid until** date — an
+  inspection lasts 12 months, the card turns yellow within 30 days of
+  expiry and red once expired. **History** expands all previous inspections
+  of the unit; each row has its own Download PDF, and users with the
+  "Delete work orders" permission can delete records. A new inspection can
+  be created right here — the **Annual Inspection** button in the unit
+  header (and the **Inspection** button on each row of the customer's
+  Units tab) opens the same dialog as the work order editor, prefilled
+  with the unit's VIN and the customer as the carrier.
 
 ## Customer portal
 

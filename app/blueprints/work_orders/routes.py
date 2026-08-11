@@ -28,6 +28,10 @@ from app.blueprints.work_orders.services.pdf_contexts import (
     _build_annual_inspection_pdf_context,
     _build_wo_pdf_context,
 )
+from app.blueprints.work_orders.services.inspections import (
+    VEHICLE_TYPE_COMPONENT_DEFAULTS,
+    annual_inspection_checklist,
+)
 from app.blueprints.work_orders.services.listing import (
     _paginate_by_customer,
     get_estimates_list,
@@ -380,6 +384,8 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
         "mechanic_done": bool((form_state or {}).get("mechanic_done")),
         "pending_attachment_id": pending_attachment_id,
         "initial_authorizations": (form_state or {}).get("authorizations") or [],
+        "avi_checklist": annual_inspection_checklist(),
+        "avi_type_defaults": VEHICLE_TYPE_COMPONENT_DEFAULTS,
     }
 
     return _render_app_page("public/work_orders/work_order_details.html", **ctx)
@@ -1332,12 +1338,15 @@ def api_create_annual_inspection():
     now = utcnow()
     user_id = current_user_id()
 
+    from app.blueprints.work_orders.services.inspections import sanitize_components
+
     doc = {
         "shop_id": shop["_id"],
         "tenant_id": shop.get("tenant_id"),
         "unit_id": unit_id,
         "customer_id": customer_id,
         "work_order_id": oid(data.get("work_order_id")),
+        "report_number": (data.get("report_number") or "").strip(),
         "inspection_date": inspection_date,
         "motor_carrier_operator": (data.get("motor_carrier_operator") or "").strip(),
         "address": (data.get("address") or "").strip(),
@@ -1348,24 +1357,42 @@ def api_create_annual_inspection():
         "vin": (data.get("vin") or "").strip().upper(),
         "inspection_agency": (data.get("inspection_agency") or "").strip(),
         "vehicle_type": (data.get("vehicle_type") or "").strip().lower() or (unit.get("type") or "").strip().lower(),
-        # Component checklist (Brake System, Coupling Devices, ...) — filled later.
-        "components": {},
+        # Component checklist marks: {"1a": {"status": "ok"|"repair"|"na", ...}}
+        "components": sanitize_components(data.get("components")),
         "created_at": now,
         "created_by": user_id,
     }
 
-    # Only one annual inspection per unit: a new one replaces the previous one.
-    shop_db.annual_inspections.delete_many({"unit_id": unit_id, "shop_id": shop["_id"]})
+    # История инспекций хранится целиком (DOT требует retention);
+    # последняя по created_at считается действующей.
     res = shop_db.annual_inspections.insert_one(doc)
 
     return jsonify({"ok": True, "id": str(res.inserted_id)}), 200
 
 
+@work_orders_bp.post("/work_orders/api/annual_inspections/<inspection_id>/delete")
+@login_required
+@permission_required("work_orders.delete")
+def api_delete_annual_inspection(inspection_id):
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    insp_id = oid(inspection_id)
+    if not insp_id:
+        return jsonify({"ok": False, "error": "invalid_inspection_id"}), 200
+
+    res = shop_db.annual_inspections.delete_one({"_id": insp_id, "shop_id": shop["_id"]})
+    if not res.deleted_count:
+        return jsonify({"ok": False, "error": "inspection_not_found"}), 200
+    return jsonify({"ok": True}), 200
 
 
 
 
-@work_orders_bp.get("/work_orders/api/annual_inspections/preview-pdf")
+
+
+@work_orders_bp.route("/work_orders/api/annual_inspections/preview-pdf", methods=["GET", "POST"])
 @login_required
 @permission_required("work_orders.create")
 def api_preview_annual_inspection_pdf():
@@ -1373,23 +1400,32 @@ def api_preview_annual_inspection_pdf():
     if shop_db is None:
         return jsonify({"ok": False, "error": "shop_db_missing"}), 404
 
-    args = request.args
+    from app.blueprints.work_orders.services.inspections import sanitize_components
+
+    # POST с JSON — основной путь (чеклист не помещается в query string);
+    # GET оставлен для обратной совместимости.
+    if request.method == "POST":
+        args = request.get_json(silent=True) or {}
+    else:
+        args = request.args
     draft = {
         "_id": "",
         "unit_id": oid(args.get("unit_id")),
+        "report_number": (args.get("report_number") or "").strip(),
         "inspection_date": shop_local_date_to_utc(args.get("date"), default_today=True),
         "motor_carrier_operator": (args.get("motor_carrier_operator") or "").strip(),
         "address": (args.get("address") or "").strip(),
         "city_state_zip": (args.get("city_state_zip") or "").strip(),
         "inspector_name": (args.get("inspector_name") or "").strip(),
-        "inspector_qualified": (args.get("inspector_qualified") or "1") not in ("0", "false", ""),
+        "inspector_qualified": str(args.get("inspector_qualified") if args.get("inspector_qualified") is not None else "1").lower() not in ("0", "false", ""),
         "vin": (args.get("vin") or "").strip().upper(),
         "inspection_agency": (args.get("inspection_agency") or "").strip(),
         "vehicle_type": (args.get("vehicle_type") or "").strip().lower(),
+        "components": sanitize_components(args.get("components")),
     }
 
+    # report_number в контексте берётся из draft'а (пустой — пустая клетка).
     ctx = _build_annual_inspection_pdf_context(shop_db, draft)
-    ctx["report_number"] = ""
     pdf_html = render_template("emails/annual_inspection_pdf.html", **ctx)
 
     try:

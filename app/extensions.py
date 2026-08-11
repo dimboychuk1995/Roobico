@@ -222,6 +222,9 @@ def ensure_shop_collections_indexes(shop_db):
     # Кэш AI-матчинга uAttend-сотрудников: поиск по отпечатку состава
     _safe_create_index(shop_db.uattend_match_cache, [("shop_id", ASCENDING), ("key", ASCENDING)], name="idx_uattend_match_cache_shop_key")
 
+    # Годовые инспекции (AVIR): история юнита, последняя — действующая
+    _safe_create_index(shop_db.annual_inspections, [("shop_id", ASCENDING), ("unit_id", ASCENDING), ("created_at", DESCENDING)], name="idx_annual_inspections_shop_unit_created")
+
     # Логи времени механиков (start/stop на labor-строках WO)
     _safe_create_index(shop_db.wo_time_logs, [("shop_id", ASCENDING), ("user_id", ASCENDING), ("stopped_at", ASCENDING)], name="idx_wo_time_logs_shop_user_open")
     _safe_create_index(shop_db.wo_time_logs, [("shop_id", ASCENDING), ("work_order_id", ASCENDING), ("labor_id", ASCENDING)], name="idx_wo_time_logs_shop_wo_labor")

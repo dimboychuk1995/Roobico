@@ -2,6 +2,7 @@
 {% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
 {% from "components/unit_recalls.html" import unit_recalls_btn, unit_recalls_modal %}
 {% from "components/ui.html" import empty_state, wo_status_badge %}
+{% from "components/annual_inspection.html" import annual_inspection_btn, annual_inspection_modal with context %}
 {% block page_title %}Unit Details{% endblock %}
 
 {% block app_content %}
@@ -25,22 +26,75 @@
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='units') }}">Back</a>
     {{ attachments_btn(entity_type="unit", entity_id=unit.id, label="Files") }}
     {{ unit_recalls_btn(unit_id=unit.id, css_class="btn btn-outline-secondary btn-sm") }}
+    {% if can_create_inspection %}
+      {{ annual_inspection_btn(unit_id=unit.id, customer_id=customer_id, vin=unit.raw_vin, carrier=customer_company, address=customer_address, css_class="btn btn-outline-secondary btn-sm") }}
+    {% endif %}
     <a class="btn btn-primary btn-sm" href="{{ url_for('work_orders.work_order_details_page', customer_id=customer_id, unit_id=unit.id) }}">Create Work Order</a>
   </div>
 </div>
 
 {% if annual_inspection %}
+{% set insp_status = annual_inspection.expiry_status %}
+{% set insp_badge = 'text-bg-danger' if insp_status == 'expired' else ('text-bg-warning' if insp_status == 'expiring' else 'text-bg-success') %}
+{% set insp_border = 'border-danger-subtle' if insp_status == 'expired' else ('border-warning-subtle' if insp_status == 'expiring' else 'border-success-subtle') %}
 <div class="mt-3">
-  <div class="card border-success-subtle">
+  <div class="card {{ insp_border }}">
     <div class="card-body py-2 d-flex flex-wrap align-items-center gap-3">
-      <span class="badge text-bg-success">Annual Inspection</span>
+      <span class="badge {{ insp_badge }}">
+        Annual Inspection{% if insp_status == 'expired' %} — expired{% elif insp_status == 'expiring' %} — expires soon{% endif %}
+      </span>
       <span class="small"><span class="text-muted">Inspection date:</span> <strong>{{ annual_inspection.date }}</strong></span>
+      <span class="small"><span class="text-muted">Valid until:</span> <strong>{{ annual_inspection.expires }}</strong></span>
       <span class="small"><span class="text-muted">Inspector:</span> {{ annual_inspection.inspector_name }}</span>
       <span class="small"><span class="text-muted">Carrier:</span> {{ annual_inspection.motor_carrier_operator }}</span>
-      <span class="small"><span class="text-muted">Agency/Location:</span> {{ annual_inspection.inspection_agency }}</span>
       <span class="small text-muted ms-auto">Recorded {{ annual_inspection.created_at }}</span>
+      {% if annual_inspection_history %}
+      <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#inspectionHistory">
+        History ({{ annual_inspection_history|length }})
+      </button>
+      {% endif %}
       <a class="btn btn-sm btn-outline-secondary" href="/work_orders/api/annual_inspections/{{ annual_inspection.id }}/download-pdf"><i class="bi bi-file-earmark-pdf me-1"></i>Download PDF</a>
+      {% if can_delete_inspection %}
+      <button class="btn btn-sm btn-outline-danger inspection-delete-btn" type="button" data-inspection-id="{{ annual_inspection.id }}" title="Delete inspection"><i class="bi bi-trash"></i></button>
+      {% endif %}
     </div>
+    {% if annual_inspection_history %}
+    <div class="collapse" id="inspectionHistory">
+      <div class="card-body pt-0">
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead>
+              <tr class="text-muted small">
+                <th>Inspection date</th>
+                <th>Valid until</th>
+                <th>Inspector</th>
+                <th>Carrier</th>
+                <th>Recorded</th>
+                <th class="text-end"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for row in annual_inspection_history %}
+              <tr>
+                <td>{{ row.date }}</td>
+                <td>{{ row.expires }}</td>
+                <td>{{ row.inspector_name }}</td>
+                <td>{{ row.motor_carrier_operator }}</td>
+                <td class="text-muted small">{{ row.created_at }}</td>
+                <td class="text-end">
+                  <a class="btn btn-sm btn-outline-secondary" href="/work_orders/api/annual_inspections/{{ row.id }}/download-pdf"><i class="bi bi-file-earmark-pdf"></i></a>
+                  {% if can_delete_inspection %}
+                  <button class="btn btn-sm btn-outline-danger inspection-delete-btn" type="button" data-inspection-id="{{ row.id }}" title="Delete inspection"><i class="bi bi-trash"></i></button>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    {% endif %}
   </div>
 </div>
 {% endif %}
@@ -351,6 +405,49 @@
   const debouncedLookup = debounced(lookup, 500);
   vinInput.addEventListener("input", debouncedLookup);
   vinInput.addEventListener("change", lookup);
+})();
+</script>
+
+{% if can_create_inspection %}
+  {{ annual_inspection_modal() }}
+{% endif %}
+
+<script>
+(function () {
+  // Удаление годовой инспекции (кнопки в карточке и в истории)
+  document.querySelectorAll(".inspection-delete-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const inspectionId = btn.getAttribute("data-inspection-id");
+      if (!inspectionId) return;
+
+      const confirmed = typeof Swal !== "undefined"
+        ? (await Swal.fire({
+            icon: "warning",
+            title: "Delete this inspection?",
+            text: "The inspection record and its PDF will no longer be available.",
+            showCancelButton: true,
+            confirmButtonText: "Delete",
+            confirmButtonColor: "#dc3545",
+          })).isConfirmed
+        : window.confirm("Delete this inspection?");
+      if (!confirmed) return;
+
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/work_orders/api/annual_inspections/${encodeURIComponent(inspectionId)}/delete`, { method: "POST" });
+        const data = await res.json();
+        if (!data || !data.ok) throw new Error((data && data.error) || "Failed to delete inspection");
+        window.location.reload();
+      } catch (err) {
+        btn.disabled = false;
+        if (typeof Swal !== "undefined") {
+          Swal.fire({ icon: "error", title: "Delete failed", text: err.message || "Failed to delete inspection" });
+        } else {
+          alert(err.message || "Failed to delete inspection");
+        }
+      }
+    });
+  });
 })();
 </script>
 

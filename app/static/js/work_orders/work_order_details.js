@@ -56,8 +56,8 @@
     appAlert(msg, type);
   }
 
-  // Неблокирующий тост о предупреждении vPIC (расшифровка получена, но VIN
-  // возможно содержит опечатку — NHTSA может предложить исправленный).
+  // ÐÐµÐ±Ð»Ð¾ÐºÐ¸Ñ€ÑƒÑŽÑ‰Ð¸Ð¹ Ñ‚Ð¾ÑÑ‚ Ð¾ Ð¿Ñ€ÐµÐ´ÑƒÐ¿Ñ€ÐµÐ¶Ð´ÐµÐ½Ð¸Ð¸ vPIC (Ñ€Ð°ÑÑˆÐ¸Ñ„Ñ€Ð¾Ð²ÐºÐ° Ð¿Ð¾Ð»ÑƒÑ‡ÐµÐ½Ð°, Ð½Ð¾ VIN
+  // Ð²Ð¾Ð·Ð¼Ð¾Ð¶Ð½Ð¾ ÑÐ¾Ð´ÐµÑ€Ð¶Ð¸Ñ‚ Ð¾Ð¿ÐµÑ‡Ð°Ñ‚ÐºÑƒ â€” NHTSA Ð¼Ð¾Ð¶ÐµÑ‚ Ð¿Ñ€ÐµÐ´Ð»Ð¾Ð¶Ð¸Ñ‚ÑŒ Ð¸ÑÐ¿Ñ€Ð°Ð²Ð»ÐµÐ½Ð½Ñ‹Ð¹).
   function vinWarningToast(warning, suggestedVin) {
     if (typeof Swal === "undefined") return;
     var noAnim = { popup: "", backdrop: "" };
@@ -155,7 +155,7 @@
     }
   }
 
-  // Сводка времени по строкам (wo_time_logs) — заполняется в applyTrackedTime.
+  // Ð¡Ð²Ð¾Ð´ÐºÐ° Ð²Ñ€ÐµÐ¼ÐµÐ½Ð¸ Ð¿Ð¾ ÑÑ‚Ñ€Ð¾ÐºÐ°Ð¼ (wo_time_logs) â€” Ð·Ð°Ð¿Ð¾Ð»Ð½ÑÐµÑ‚ÑÑ Ð² applyTrackedTime.
   let woTimeSummaryMap = {};
 
   function fmtTrackedShort(seconds) {
@@ -177,8 +177,8 @@
     const bucket = laborId ? woTimeSummaryMap[laborId] : null;
     const runningUsers = (bucket && bucket.running_users) || [];
 
-    // Есть фактическое время — механики и их доли определяются временем
-    // (один — 100%, несколько — пропорционально), ручной Assign не нужен.
+    // Ð•ÑÑ‚ÑŒ Ñ„Ð°ÐºÑ‚Ð¸Ñ‡ÐµÑÐºÐ¾Ðµ Ð²Ñ€ÐµÐ¼Ñ â€” Ð¼ÐµÑ…Ð°Ð½Ð¸ÐºÐ¸ Ð¸ Ð¸Ñ… Ð´Ð¾Ð»Ð¸ Ð¾Ð¿Ñ€ÐµÐ´ÐµÐ»ÑÑŽÑ‚ÑÑ Ð²Ñ€ÐµÐ¼ÐµÐ½ÐµÐ¼
+    // (Ð¾Ð´Ð¸Ð½ â€” 100%, Ð½ÐµÑÐºÐ¾Ð»ÑŒÐºÐ¾ â€” Ð¿Ñ€Ð¾Ð¿Ð¾Ñ€Ñ†Ð¸Ð¾Ð½Ð°Ð»ÑŒÐ½Ð¾), Ñ€ÑƒÑ‡Ð½Ð¾Ð¹ Assign Ð½Ðµ Ð½ÑƒÐ¶ÐµÐ½.
     if (bucket && (bucket.total_seconds > 0 || runningUsers.length)) {
       const users = bucket.users || {};
       const totalSeconds = Object.keys(users)
@@ -188,23 +188,23 @@
         .map((uid) => {
           const u = users[uid];
           const pct = totalSeconds > 0 ? Math.round(((u.seconds || 0) * 100) / totalSeconds) : 0;
-          return `${escText(u.user_name || "—")} ${fmtTrackedShort(u.seconds)} (${pct}%)`;
+          return `${escText(u.user_name || "â€”")} ${fmtTrackedShort(u.seconds)} (${pct}%)`;
         })
         .join(", ");
-      const runningNames = runningUsers.map((u) => u.user_name || "—").join(", ");
+      const runningNames = runningUsers.map((u) => u.user_name || "â€”").join(", ");
       summaryEl.innerHTML =
         `Mechanics: <strong>${fmtTrackedShort(bucket.total_seconds)}</strong>` +
-        (perUser ? ` — ${perUser}` : "") +
+        (perUser ? ` â€” ${perUser}` : "") +
         (runningNames ? ` <span class="text-danger">&#9679; ${escText(runningNames)} working</span>` : "");
       if (assignBtn) assignBtn.style.display = "none";
       return;
     }
 
-    // Времени нет — ручное назначение через модалку Assign.
+    // Ð’Ñ€ÐµÐ¼ÐµÐ½Ð¸ Ð½ÐµÑ‚ â€” Ñ€ÑƒÑ‡Ð½Ð¾Ðµ Ð½Ð°Ð·Ð½Ð°Ñ‡ÐµÐ½Ð¸Ðµ Ñ‡ÐµÑ€ÐµÐ· Ð¼Ð¾Ð´Ð°Ð»ÐºÑƒ Assign.
     if (assignBtn) assignBtn.style.display = "";
     const assignments = getLaborAssignments(blockEl);
     if (!assignments.length) {
-      summaryEl.textContent = "Mechanics: —";
+      summaryEl.textContent = "Mechanics: â€”";
       return;
     }
 
@@ -431,7 +431,7 @@
       <td class="p-1 align-middle"><div class="p-1"><input class="form-control form-control-sm part-price" name="labors[${laborIndex}][parts][${rowIndex}][price]" value="" inputmode="decimal" style="width: 88%;"></div></td>
       <td class="part-line-total p-1 align-middle">
         <div class="d-flex align-items-center gap-2 p-1">
-          <div class="part-line-total-value"><span class="text-muted">—</span></div>
+          <div class="part-line-total-value"><span class="text-muted">â€”</span></div>
           <div class="form-check form-switch part-core-toggle-wrapper" style="display: none; margin: 0;">
             <input class="form-check-input part-core-toggle" type="checkbox">
             <label class="form-check-label small text-muted" style="margin-bottom: 0;">Core</label>
@@ -440,7 +440,7 @@
       </td>
       <td class="text-center p-1 align-middle">
         <div class="p-1">
-          <button type="button" class="btn btn-sm btn-outline-danger delete-part-row" title="Delete this part">×</button>
+          <button type="button" class="btn btn-sm btn-outline-danger delete-part-row" title="Delete this part">Ã—</button>
         </div>
       </td>
     `;
@@ -551,7 +551,7 @@
     const lineCell = tr.querySelector(".part-line-total");
     if (lineCell) {
       const valueEl = lineCell.querySelector(".part-line-total-value");
-      if (valueEl) valueEl.innerHTML = `<span class="text-muted">—</span>`;
+      if (valueEl) valueEl.innerHTML = `<span class="text-muted">â€”</span>`;
       const toggleWrapper = lineCell.querySelector(".part-core-toggle-wrapper");
       if (toggleWrapper) toggleWrapper.style.display = "none";
     }
@@ -793,17 +793,17 @@
     const supplyEl = blockEl.querySelector(".shopSupplyTotalDisplay");
     const blockElTotal = blockEl.querySelector(".laborFullTotalDisplay");
 
-    if (laborEl) laborEl.textContent = Number.isFinite(laborTotal) ? `$${money(laborTotal)}` : "—";
+    if (laborEl) laborEl.textContent = Number.isFinite(laborTotal) ? `$${money(laborTotal)}` : "â€”";
     setLaborTotalInput(blockEl, Number.isFinite(laborTotal) ? laborTotal : null);
-    if (partsEl) partsEl.textContent = Number.isFinite(partsTotal) ? `$${money(partsTotal)}` : "—";
+    if (partsEl) partsEl.textContent = Number.isFinite(partsTotal) ? `$${money(partsTotal)}` : "â€”";
     const hasCore = Number.isFinite(coreTotal) && coreTotal > 0;
     const hasMisc = Number.isFinite(miscTotal) && miscTotal > 0;
     if (coreWrap) coreWrap.style.display = hasCore ? "" : "none";
     if (miscWrap) miscWrap.style.display = hasMisc ? "" : "none";
     if (supplyWrap) supplyWrap.style.display = "none";
-    if (coreEl) coreEl.textContent = hasCore ? `$${money(coreTotal)}` : "—";
-    if (miscEl) miscEl.textContent = hasMisc ? `$${money(miscTotal)}` : "—";
-    if (supplyEl) supplyEl.textContent = "—";
+    if (coreEl) coreEl.textContent = hasCore ? `$${money(coreTotal)}` : "â€”";
+    if (miscEl) miscEl.textContent = hasMisc ? `$${money(miscTotal)}` : "â€”";
+    if (supplyEl) supplyEl.textContent = "â€”";
 
     const laborBlockTotal =
       (Number.isFinite(laborTotal) ? laborTotal : 0)
@@ -813,7 +813,7 @@
     if (blockElTotal) {
       blockElTotal.textContent = (Number.isFinite(laborTotal) || Number.isFinite(partsTotal) || Number.isFinite(coreTotal) || Number.isFinite(miscTotal))
         ? `$${money(round2(laborBlockTotal))}`
-        : "—";
+        : "â€”";
     }
   }
 
@@ -882,45 +882,45 @@
     grand = round2(grand);
 
     const laborGrandEl = $("laborGrandTotalDisplay");
-    if (laborGrandEl) laborGrandEl.textContent = blocks.length ? `$${money(laborGrandTotal)}` : "—";
+    if (laborGrandEl) laborGrandEl.textContent = blocks.length ? `$${money(laborGrandTotal)}` : "â€”";
     const laborGrandBaseEl = $("laborGrandBaseDisplay");
-    if (laborGrandBaseEl) laborGrandBaseEl.textContent = blocks.length ? `$${money(laborGrand)}` : "—";
+    if (laborGrandBaseEl) laborGrandBaseEl.textContent = blocks.length ? `$${money(laborGrand)}` : "â€”";
 
     const partsGrandEl = $("partsGrandTotalDisplay");
-    if (partsGrandEl) partsGrandEl.textContent = blocks.length ? `$${money(partsGrandTotal)}` : "—";
+    if (partsGrandEl) partsGrandEl.textContent = blocks.length ? `$${money(partsGrandTotal)}` : "â€”";
     const partsGrandBaseEl = $("partsGrandBaseDisplay");
-    if (partsGrandBaseEl) partsGrandBaseEl.textContent = blocks.length ? `$${money(partsGrand)}` : "—";
+    if (partsGrandBaseEl) partsGrandBaseEl.textContent = blocks.length ? `$${money(partsGrand)}` : "â€”";
 
     const salesTaxRateEl = $("salesTaxRateLabel");
     if (salesTaxRateEl) salesTaxRateEl.textContent = `${(round2((currentSalesTaxRate || 0) * 10000) / 100).toFixed(2)}%`;
     const salesTaxEl = $("salesTaxGrandTotalDisplay");
-    if (salesTaxEl) salesTaxEl.textContent = blocks.length ? `$${money(salesTaxGrand)}` : "—";
+    if (salesTaxEl) salesTaxEl.textContent = blocks.length ? `$${money(salesTaxGrand)}` : "â€”";
 
     const coreGrandWrap = $("coreGrandTotalWrap");
     const coreGrandEl = $("coreGrandTotalDisplay");
     const hasCoreGrand = coreGrand > 0;
     if (coreGrandWrap) coreGrandWrap.style.display = hasCoreGrand ? "" : "none";
-    if (coreGrandEl) coreGrandEl.textContent = hasCoreGrand ? `$${money(coreGrand)}` : "—";
+    if (coreGrandEl) coreGrandEl.textContent = hasCoreGrand ? `$${money(coreGrand)}` : "â€”";
 
     const miscGrandWrap = $("miscGrandTotalWrap");
     const miscGrandEl = $("miscGrandTotalDisplay");
     const hasMiscGrand = miscGrand > 0;
     if (miscGrandWrap) miscGrandWrap.style.display = hasMiscGrand ? "" : "none";
-    if (miscGrandEl) miscGrandEl.textContent = hasMiscGrand ? `$${money(miscGrand)}` : "—";
+    if (miscGrandEl) miscGrandEl.textContent = hasMiscGrand ? `$${money(miscGrand)}` : "â€”";
 
     const supplyGrandWrap = $("shopSupplyGrandTotalWrap");
     const supplyGrandEl = $("shopSupplyGrandTotalDisplay");
     const supplyGrandInput = $("shopSupplyGrandTotalInput");
     const supplyResetBtn = $("shopSupplyResetBtn");
     if (supplyGrandWrap) supplyGrandWrap.style.display = "";
-    if (supplyGrandEl) supplyGrandEl.textContent = supplyGrand > 0 ? `$${money(round2(supplyGrand))}` : "—";
+    if (supplyGrandEl) supplyGrandEl.textContent = supplyGrand > 0 ? `$${money(round2(supplyGrand))}` : "â€”";
     if (supplyGrandInput && document.activeElement !== supplyGrandInput) {
       supplyGrandInput.value = money(round2(supplyGrand));
     }
     if (supplyResetBtn) supplyResetBtn.style.display = hasOverride ? "" : "none";
 
     const grandEl = $("grandTotalDisplay");
-    if (grandEl) grandEl.textContent = blocks.length ? `$${money(grand)}` : "—";
+    if (grandEl) grandEl.textContent = blocks.length ? `$${money(grand)}` : "â€”";
 
     const cnt = $("laborCount");
     if (cnt) cnt.textContent = String(blocks.length);
@@ -1005,7 +1005,7 @@
     });
     miscTaxableSum = round2(miscTaxableSum);
 
-    // grand_total берём из UI, но если там "—" / пусто — пересчитаем из блоков
+    // grand_total Ð±ÐµÑ€Ñ‘Ð¼ Ð¸Ð· UI, Ð½Ð¾ ÐµÑÐ»Ð¸ Ñ‚Ð°Ð¼ "â€”" / Ð¿ÑƒÑÑ‚Ð¾ â€” Ð¿ÐµÑ€ÐµÑÑ‡Ð¸Ñ‚Ð°ÐµÐ¼ Ð¸Ð· Ð±Ð»Ð¾ÐºÐ¾Ð²
     const grandText = $("grandTotalDisplay")?.textContent || "";
     const grandUi = round2(parseMoneyText(grandText));
     const grandFinal = grandUi > 0 ? grandUi : round2(grandSum + supplySum);
@@ -1142,13 +1142,13 @@
     const coreGrandEl = $("coreGrandTotalDisplay");
     const hasCoreGrand = Number.isFinite(coreGrand) && coreGrand > 0;
     if (coreGrandWrap) coreGrandWrap.style.display = hasCoreGrand ? "" : "none";
-    if (coreGrandEl) coreGrandEl.textContent = hasCoreGrand ? `$${money(round2(coreGrand))}` : "—";
+    if (coreGrandEl) coreGrandEl.textContent = hasCoreGrand ? `$${money(round2(coreGrand))}` : "â€”";
 
     const miscGrandWrap = $("miscGrandTotalWrap");
     const miscGrandEl = $("miscGrandTotalDisplay");
     const hasMiscGrand = Number.isFinite(miscGrand) && miscGrand > 0;
     if (miscGrandWrap) miscGrandWrap.style.display = hasMiscGrand ? "" : "none";
-    if (miscGrandEl) miscGrandEl.textContent = hasMiscGrand ? `$${money(round2(miscGrand))}` : "—";
+    if (miscGrandEl) miscGrandEl.textContent = hasMiscGrand ? `$${money(round2(miscGrand))}` : "â€”";
 
     const supplyGrandWrap = $("shopSupplyGrandTotalWrap");
     const supplyGrandEl = $("shopSupplyGrandTotalDisplay");
@@ -1156,7 +1156,7 @@
     const supplyResetBtn = $("shopSupplyResetBtn");
     const hasOverride = Number.isFinite(shopSupplyManualOverride) && shopSupplyManualOverride >= 0;
     if (supplyGrandWrap) supplyGrandWrap.style.display = "";
-    if (supplyGrandEl) supplyGrandEl.textContent = (Number.isFinite(supplyGrand) && supplyGrand > 0) ? `$${money(round2(supplyGrand))}` : "—";
+    if (supplyGrandEl) supplyGrandEl.textContent = (Number.isFinite(supplyGrand) && supplyGrand > 0) ? `$${money(round2(supplyGrand))}` : "â€”";
     if (supplyGrandInput && document.activeElement !== supplyGrandInput) {
       supplyGrandInput.value = money(round2(Number.isFinite(supplyGrand) ? supplyGrand : 0));
     }
@@ -1282,7 +1282,7 @@
     const list = Array.isArray(items) ? items : [];
     const oneTimeItem = { __one_time_part: true };
     const displayItems = [oneTimeItem];
-    // Взаимозаменяемые парты идут отдельными строками сразу под своим результатом.
+    // Ð’Ð·Ð°Ð¸Ð¼Ð¾Ð·Ð°Ð¼ÐµÐ½ÑÐµÐ¼Ñ‹Ðµ Ð¿Ð°Ñ€Ñ‚Ñ‹ Ð¸Ð´ÑƒÑ‚ Ð¾Ñ‚Ð´ÐµÐ»ÑŒÐ½Ñ‹Ð¼Ð¸ ÑÑ‚Ñ€Ð¾ÐºÐ°Ð¼Ð¸ ÑÑ€Ð°Ð·Ñƒ Ð¿Ð¾Ð´ ÑÐ²Ð¾Ð¸Ð¼ Ñ€ÐµÐ·ÑƒÐ»ÑŒÑ‚Ð°Ñ‚Ð¾Ð¼.
     list.forEach((it) => {
       displayItems.push(it);
       (Array.isArray(it.alternates) ? it.alternates : []).forEach((alt) => {
@@ -1301,17 +1301,17 @@
         `;
       }
 
-      const title = `${it.part_number || ""} — ${it.description || ""}`.trim();
+      const title = `${it.part_number || ""} â€” ${it.description || ""}`.trim();
       const coreCost = (it.core_has_charge && Number.isFinite(toNum(it.core_cost))) ? toNum(it.core_cost) : 0;
       const miscCost = (it.misc_has_charge && Array.isArray(it.misc_charges))
         ? round2(it.misc_charges.reduce((sum, ch) => sum + (toNum(ch?.price) || 0), 0))
         : 0;
       const chargesText = (coreCost > 0 || miscCost > 0)
-        ? ` • Charges: core $${money(coreCost)}${miscCost > 0 ? `, misc $${money(miscCost)}` : ""}`
+        ? ` â€¢ Charges: core $${money(coreCost)}${miscCost > 0 ? `, misc $${money(miscCost)}` : ""}`
         : "";
-      const trackingText = it.do_not_track_inventory ? " • Not tracked" : "";
-      const altText = it.__alt_for ? `⇄ Cross ref for ${it.__alt_for} • ` : "";
-      const meta = `${altText}Stock: ${it.in_stock ?? 0} • Avg cost: $${money(toNum(it.average_cost) ?? 0)}${trackingText}${chargesText}`;
+      const trackingText = it.do_not_track_inventory ? " â€¢ Not tracked" : "";
+      const altText = it.__alt_for ? `â‡„ Cross ref for ${it.__alt_for} â€¢ ` : "";
+      const meta = `${altText}Stock: ${it.in_stock ?? 0} â€¢ Avg cost: $${money(toNum(it.average_cost) ?? 0)}${trackingText}${chargesText}`;
       return `
         <div class="parts-dd-item${it.__alt_for ? " parts-dd-item-alt" : ""}" data-idx="${idx}">
           <div class="parts-dd-title">${escapeHtml(title)}</div>
@@ -1514,7 +1514,7 @@
 
     placeDropdownNearInput(dd, inputEl);
     dd.style.display = "block";
-    dd.innerHTML = `<div style="padding:10px; color:#6c757d;">Searching…</div>`;
+    dd.innerHTML = `<div style="padding:10px; color:#6c757d;">Searchingâ€¦</div>`;
 
     const items = await fetchParts(q);
     dd._targetInput = inputEl;
@@ -1590,7 +1590,7 @@
     delete clone.dataset.issueDescription;
     delete clone.dataset.laborId;
     clone.querySelectorAll(".laborAssignSummary").forEach(el => {
-      el.textContent = "Mechanics: —";
+      el.textContent = "Mechanics: â€”";
     });
     clone.querySelectorAll(".laborAuthBadge").forEach(el => {
       el.innerHTML = "";
@@ -1612,8 +1612,8 @@
       const toggleWrapper = tr.querySelector(".part-core-toggle-wrapper");
       if (toggleWrapper) toggleWrapper.style.display = "none";
     });
-    clone.querySelectorAll(".part-line-total-value").forEach(td => td.innerHTML = `<span class="text-muted">—</span>`);
-    clone.querySelectorAll(".laborTotalDisplay, .partsTotalDisplay, .laborFullTotalDisplay").forEach(el => el.textContent = "—");
+    clone.querySelectorAll(".part-line-total-value").forEach(td => td.innerHTML = `<span class="text-muted">â€”</span>`);
+    clone.querySelectorAll(".laborTotalDisplay, .partsTotalDisplay, .laborFullTotalDisplay").forEach(el => el.textContent = "â€”");
 
     // Clear misc charges table
     const miscTbody = clone.querySelector(".miscChargesTbody");
@@ -1927,7 +1927,7 @@
       let existingRows = Array.from(tbody.querySelectorAll("tr.parts-row"));
       let startRowIdx = existingRows.length;
 
-      // Check if last row is empty — use it for first preset part
+      // Check if last row is empty â€” use it for first preset part
       const lastRow = existingRows[existingRows.length - 1];
       let firstEmptyRow = null;
       if (lastRow && !rowHasAnyInput(lastRow)) {
@@ -1974,7 +1974,7 @@
         setOneTimePartRow(tr, !p.part_id);
         updatePartCostEditableState(tr);
 
-        // ── core charge ──
+        // â”€â”€ core charge â”€â”€
         const coreCharge = (p.core_has_charge && Number.isFinite(toNum(p.core_cost)))
           ? Math.max(0, round2(toNum(p.core_cost)))
           : 0;
@@ -1991,7 +1991,7 @@
         }
         syncCoreChargeFromToggle(tr);
 
-        // ── misc charges ──
+        // â”€â”€ misc charges â”€â”€
         const miscCharge = (p.misc_has_charge && Array.isArray(p.misc_charges))
           ? Math.max(0, round2(p.misc_charges.reduce((sum, ch) => sum + (toNum(ch?.price) || 0), 0)))
           : 0;
@@ -2382,7 +2382,7 @@
     if (isEditing) {
       editor.style.pointerEvents = "";
       editor.style.opacity = "";
-      // При редактировании разрешаем менять customer/unit
+      // ÐŸÑ€Ð¸ Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¸Ñ€Ð¾Ð²Ð°Ð½Ð¸Ð¸ Ñ€Ð°Ð·Ñ€ÐµÑˆÐ°ÐµÐ¼ Ð¼ÐµÐ½ÑÑ‚ÑŒ customer/unit
       setSelectDisabled(customerSel, false);
       setSelectDisabled(unitSel, false);
       if (addUnitBtn) addUnitBtn.disabled = false;
@@ -2400,7 +2400,7 @@
       document.querySelectorAll(".removeLaborBtn").forEach(b => { b.disabled = true; });
     }
 
-    // WO attachments block is outside the fieldset — toggle readonly separately
+    // WO attachments block is outside the fieldset â€” toggle readonly separately
     const woAttBlock = document.getElementById("woAttachmentsBlock");
     if (woAttBlock) {
       if (isEditing) {
@@ -2438,7 +2438,7 @@
       showCreateGroup(true);
       showSaveGroup(false);
       show(createBtn, true); enable(createBtn, false);
-      if (createBtn) createBtn.textContent = "Creating…";
+      if (createBtn) createBtn.textContent = "Creatingâ€¦";
       show(editBtn, false);
       show(saveBtn, false);
       show(paidBtn, false);
@@ -2469,7 +2469,7 @@
       show(createBtn, false);
       show(editBtn, false);
       show(saveBtn, true); enable(saveBtn, true);
-      show(paidBtn, true); enable(paidBtn, false); // пока редактируем — paid запрещаем
+      show(paidBtn, true); enable(paidBtn, false); // Ð¿Ð¾ÐºÐ° Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¸Ñ€ÑƒÐµÐ¼ â€” paid Ð·Ð°Ð¿Ñ€ÐµÑ‰Ð°ÐµÐ¼
       show(unpaidBtn, false);
       show(emailBtn, true); enable(emailBtn, true);
       show(downloadPdfBtn, true); enable(downloadPdfBtn, true);
@@ -2971,8 +2971,8 @@
       // Show loading spinner
       if (vinLoadingSpinner) vinLoadingSpinner.style.display = "block";
 
-      // Visual feedback через CSS-классы (цвета в work_order_details.css,
-      // тёмные варианты в theme_dark.css)
+      // Visual feedback Ñ‡ÐµÑ€ÐµÐ· CSS-ÐºÐ»Ð°ÑÑÑ‹ (Ñ†Ð²ÐµÑ‚Ð° Ð² work_order_details.css,
+      // Ñ‚Ñ‘Ð¼Ð½Ñ‹Ðµ Ð²Ð°Ñ€Ð¸Ð°Ð½Ñ‚Ñ‹ Ð² theme_dark.css)
       if (unitVinInput) unitVinInput.classList.add("vin-checking");
 
       const data = await fetchVinDetails(vin);
@@ -3036,7 +3036,7 @@
     }
 
     function refreshEditorGate() {
-      // For an already-created WO the editor is always enabled — we don't
+      // For an already-created WO the editor is always enabled â€” we don't
       // want the mileage gate to hide it while the value is still being
       // fetched asynchronously.
       if (isCreated) {
@@ -3070,7 +3070,7 @@
     function submitCreate(status) {
       if (!woForm) return;
 
-      // ✅ Mileage is REQUIRED before creating WO
+      // âœ… Mileage is REQUIRED before creating WO
       if (unitMileageInput) {
         const mv = String(unitMileageInput.value || "").trim();
         if (!mv) {
@@ -3080,11 +3080,11 @@
         }
       }
 
-      // ✅ перед отправкой формы на create кладём totals_json
+      // âœ… Ð¿ÐµÑ€ÐµÐ´ Ð¾Ñ‚Ð¿Ñ€Ð°Ð²ÐºÐ¾Ð¹ Ñ„Ð¾Ñ€Ð¼Ñ‹ Ð½Ð° create ÐºÐ»Ð°Ð´Ñ‘Ð¼ totals_json
       const totals = serializeTotals(blocksContainer);
       upsertHiddenJsonInput(woForm, "totals_json", totals);
 
-      // ✅ optional create status: "in_progress" | "estimate" (смета — без списания склада)
+      // âœ… optional create status: "in_progress" | "estimate" (ÑÐ¼ÐµÑ‚Ð° â€” Ð±ÐµÐ· ÑÐ¿Ð¸ÑÐ°Ð½Ð¸Ñ ÑÐºÐ»Ð°Ð´Ð°)
       const rawStatus = String(status || "").toLowerCase();
       const desiredStatus = (rawStatus === "in_progress" || rawStatus === "estimate") ? rawStatus : "";
       let statusInput = woForm.querySelector('input[name="create_status"]');
@@ -3096,7 +3096,7 @@
       }
       statusInput.value = desiredStatus;
 
-      // ✅ Sync mileage to hidden field before submit
+      // âœ… Sync mileage to hidden field before submit
       if (unitMileageInput && unitMileageHidden) {
         unitMileageHidden.value = String(unitMileageInput.value || "").trim();
       }
@@ -3113,56 +3113,9 @@
     document.getElementById("createEstimateBtn")?.addEventListener("click", () => submitCreate("estimate"));
 
     // ---------- Annual Vehicle Inspection ----------
-    const annualInspectionModalEl = $("annualInspectionModal");
-
-    function collectAviFields() {
-      const val = (id) => String(document.getElementById(id)?.value || "").trim();
-      return {
-        customer_id: String(customerSel?.value || "").trim(),
-        unit_id: String(unitSel?.value || "").trim(),
-        work_order_id: isCreated && workOrderId ? String(workOrderId) : "",
-        date: val("aviDateInput"),
-        motor_carrier_operator: val("aviCarrierInput"),
-        address: val("aviAddressInput"),
-        city_state_zip: val("aviCityStateZipInput"),
-        inspector_name: val("aviInspectorInput"),
-        inspector_qualified: !!document.getElementById("aviQualifiedCheck")?.checked,
-        vin: val("aviVinInput").toUpperCase(),
-        inspection_agency: val("aviAgencyInput"),
-        vehicle_type: val("aviVehicleTypeSelect"),
-      };
-    }
-
-    function refreshAviPreview() {
-      const frame = document.getElementById("aviPreviewFrame");
-      if (!frame) return;
-      const f = collectAviFields();
-      const params = new URLSearchParams({
-        unit_id: f.unit_id,
-        date: f.date,
-        motor_carrier_operator: f.motor_carrier_operator,
-        address: f.address,
-        city_state_zip: f.city_state_zip,
-        inspector_name: f.inspector_name,
-        inspector_qualified: f.inspector_qualified ? "1" : "0",
-        vin: f.vin,
-        inspection_agency: f.inspection_agency,
-        vehicle_type: f.vehicle_type,
-      });
-      frame.src = `/work_orders/api/annual_inspections/preview-pdf?${params.toString()}#toolbar=0&navpanes=0`;
-    }
-
-    const debouncedAviPreview = debounce(refreshAviPreview, 600);
-
-    ["aviDateInput", "aviCarrierInput", "aviAddressInput", "aviCityStateZipInput",
-     "aviInspectorInput", "aviQualifiedCheck", "aviVinInput", "aviAgencyInput",
-     "aviVehicleTypeSelect"].forEach((id) => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.addEventListener("input", debouncedAviPreview);
-      el.addEventListener("change", debouncedAviPreview);
-    });
-
+    // Модалка и вся логика — общий модуль static/js/annual_inspection.js
+    // (разметка: components/annual_inspection.html). Здесь только префилл
+    // из выбранных на странице клиента/юнита.
     async function openAnnualInspectionModal() {
       const customerId = String(customerSel?.value || "").trim();
       const unitId = String(unitSel?.value || "").trim();
@@ -3170,82 +3123,23 @@
         toast("Select a customer and unit first.");
         return;
       }
-
-      const setVal = (id, value) => {
-        const el = document.getElementById(id);
-        if (el) el.value = String(value || "").trim();
-      };
+      if (!window.AnnualInspection) return;
 
       const customer = findCustomerById(customersData, customerId);
-      setVal("aviCarrierInput", (customer && (customer.company_name || customer.label)) || "");
-      setVal("aviAddressInput", (customer && customer.address) || "");
-      setVal("aviCityStateZipInput", "");
-
       const unitDetails = await fetchUnitDetails(unitId);
-      setVal("aviVinInput", String((unitDetails && unitDetails.vin) || "").toUpperCase());
 
-      const errEl = document.getElementById("aviError");
-      if (errEl) errEl.style.display = "none";
-
-      if (annualInspectionModalEl && window.bootstrap && window.bootstrap.Modal) {
-        window.bootstrap.Modal.getOrCreateInstance(annualInspectionModalEl).show();
-      }
-      refreshAviPreview();
+      window.AnnualInspection.open({
+        customer_id: customerId,
+        unit_id: unitId,
+        work_order_id: isCreated && workOrderId ? String(workOrderId) : "",
+        carrier: (customer && (customer.company_name || customer.label)) || "",
+        address: (customer && customer.address) || "",
+        vin: (unitDetails && unitDetails.vin) || "",
+      });
     }
 
     document.getElementById("createAnnualInspectionBtn")?.addEventListener("click", openAnnualInspectionModal);
     document.getElementById("saveAnnualInspectionMenuBtn")?.addEventListener("click", openAnnualInspectionModal);
-
-    document.getElementById("aviSaveBtn")?.addEventListener("click", async function () {
-      const btn = this;
-      const errEl = document.getElementById("aviError");
-      const showError = (msg) => {
-        if (errEl) {
-          errEl.textContent = msg;
-          errEl.style.display = "";
-        }
-      };
-      const val = (id) => String(document.getElementById(id)?.value || "").trim();
-
-      const payload = collectAviFields();
-
-      if (!payload.unit_id) {
-        showError("Select a unit first.");
-        return;
-      }
-      if (!payload.vin) {
-        showError("VIN is required.");
-        return;
-      }
-      if (!payload.vehicle_type) {
-        showError("Select a vehicle type.");
-        return;
-      }
-
-      btn.disabled = true;
-      try {
-        const res = await fetch("/work_orders/api/annual_inspections/create", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (!data || !data.ok) {
-          throw new Error((data && data.error) || "Failed to create inspection");
-        }
-        if (annualInspectionModalEl && window.bootstrap && window.bootstrap.Modal) {
-          window.bootstrap.Modal.getInstance(annualInspectionModalEl)?.hide();
-        }
-        toast("Annual inspection created", "success");
-        if (data.id) {
-          window.location.href = `/work_orders/api/annual_inspections/${encodeURIComponent(data.id)}/download-pdf`;
-        }
-      } catch (err) {
-        showError(err.message || "Failed to create inspection");
-      } finally {
-        btn.disabled = false;
-      }
-    });
 
     unitVinInput?.addEventListener("input", debouncedVinLookup);
     unitVinInput?.addEventListener("blur", debouncedVinLookup);
@@ -3299,8 +3193,8 @@
     }
     applyAuthorizationBadges();
 
-    // ---------- tracked mechanic time (read-only, из wo_time_logs) ----------
-    // Время и назначение — одно поле: сводка Mechanics в updateLaborAssignSummary.
+    // ---------- tracked mechanic time (read-only, Ð¸Ð· wo_time_logs) ----------
+    // Ð’Ñ€ÐµÐ¼Ñ Ð¸ Ð½Ð°Ð·Ð½Ð°Ñ‡ÐµÐ½Ð¸Ðµ â€” Ð¾Ð´Ð½Ð¾ Ð¿Ð¾Ð»Ðµ: ÑÐ²Ð¾Ð´ÐºÐ° Mechanics Ð² updateLaborAssignSummary.
     function applyTrackedTime() {
       woTimeSummaryMap = readJsonScript("woTimeSummary", {}) || {};
       const keys = Object.keys(woTimeSummaryMap);
@@ -3311,7 +3205,7 @@
         updateLaborAssignSummary(blockEl);
       });
       if (!keys.length) return;
-      // Логи строк, удалённых из WO: показываем суммарно, чтобы время не «терялось».
+      // Ð›Ð¾Ð³Ð¸ ÑÑ‚Ñ€Ð¾Ðº, ÑƒÐ´Ð°Ð»Ñ‘Ð½Ð½Ñ‹Ñ… Ð¸Ð· WO: Ð¿Ð¾ÐºÐ°Ð·Ñ‹Ð²Ð°ÐµÐ¼ ÑÑƒÐ¼Ð¼Ð°Ñ€Ð½Ð¾, Ñ‡Ñ‚Ð¾Ð±Ñ‹ Ð²Ñ€ÐµÐ¼Ñ Ð½Ðµ Â«Ñ‚ÐµÑ€ÑÐ»Ð¾ÑÑŒÂ».
       const orphanSeconds = keys
         .filter((k) => !seenIds.has(k))
         .reduce((sum, k) => sum + (Number(woTimeSummaryMap[k]?.total_seconds) || 0), 0);
@@ -3542,7 +3436,7 @@
     // Also gate the Create button right away.
     setTimeout(() => { try { refreshEditorGate(); } catch {} }, 0);
 
-    // customer/unit change (только пока НЕ создано)
+    // customer/unit change (Ñ‚Ð¾Ð»ÑŒÐºÐ¾ Ð¿Ð¾ÐºÐ° ÐÐ• ÑÐ¾Ð·Ð´Ð°Ð½Ð¾)
     customerSel?.addEventListener("change", async function () {
       const customerId = String(customerSel.value || "").trim();
       currentCustomerTaxable = getCustomerTaxable(customersData, customerId);
@@ -3586,7 +3480,7 @@
       if (unitHidden) unitHidden.value = "";
       if (unitSel) {
         setSelectDisabled(unitSel, !customerId);
-        setSelectOptions(unitSel, [], customerId ? "Loading…" : "-- Select unit --");
+        setSelectOptions(unitSel, [], customerId ? "Loadingâ€¦" : "-- Select unit --");
         setSelectValue(unitSel, "");
       }
       
@@ -3673,7 +3567,7 @@
       }
     });
 
-    // ── Add Preset ──
+    // â”€â”€ Add Preset â”€â”€
     const addPresetModalEl = $("addPresetModal");
     const presetSelectedId = $("presetSelectedId");
     const presetSelectEl = $("presetSelect");
@@ -3968,21 +3862,21 @@
                 };
 
             const writtenInfo = `
-              <div class="small text-muted">Written: <code>${escapeHtml(p.written_part_number || "—")}</code> ·
-                ${escapeHtml(p.written_description || "—")}</div>
+              <div class="small text-muted">Written: <code>${escapeHtml(p.written_part_number || "â€”")}</code> Â·
+                ${escapeHtml(p.written_description || "â€”")}</div>
             `;
 
             const pickedHtml = renderPickedPartHtml(initialPicked);
 
             const suggestionsHtml = cands.length
               ? cands.map(c => {
-                  const stockNote = c.do_not_track_inventory ? "" : ` · stock: ${c.in_stock}`;
-                  const priceNote = c.has_selling_price ? ` · $${(c.selling_price || 0).toFixed(2)}` : "";
+                  const stockNote = c.do_not_track_inventory ? "" : ` Â· stock: ${c.in_stock}`;
+                  const priceNote = c.has_selling_price ? ` Â· $${(c.selling_price || 0).toFixed(2)}` : "";
                   return `
                     <button type="button" class="list-group-item list-group-item-action recognize-wo-suggestion-btn"
                             data-cand='${escapeHtml(JSON.stringify(c))}'>
                       <span class="badge bg-secondary me-2">${c.score}</span>
-                      <code>${escapeHtml(c.part_number)}</code> — ${escapeHtml(c.description)}${priceNote}${stockNote}
+                      <code>${escapeHtml(c.part_number)}</code> â€” ${escapeHtml(c.description)}${priceNote}${stockNote}
                       <span class="text-muted small ms-1">${escapeHtml(c.reason || "")}</span>
                     </button>`;
                 }).join("")
@@ -3995,11 +3889,11 @@
                   <input type="number" class="form-control form-control-sm recognize-wo-qty"
                          style="max-width:80px;" value="${escapeHtml(p.qty || 1)}" min="1" step="1" title="Qty">
                   <div class="recognize-wo-picked-box flex-grow-1">${pickedHtml}</div>
-                  <button type="button" class="btn btn-sm btn-outline-danger recognize-wo-skip-btn" title="Skip this part">×</button>
+                  <button type="button" class="btn btn-sm btn-outline-danger recognize-wo-skip-btn" title="Skip this part">Ã—</button>
                 </div>
                 <div class="mt-2 recognize-wo-search-wrap" style="position:relative;">
                   <input type="text" class="form-control form-control-sm recognize-wo-search"
-                         placeholder="Search catalog by PN or description (min 3 chars)…">
+                         placeholder="Search catalog by PN or description (min 3 chars)â€¦">
                   <div class="list-group recognize-wo-search-results"
                        style="position:absolute; z-index:1080; width:100%; max-height:240px; overflow:auto; display:none;"></div>
                 </div>
@@ -4016,7 +3910,7 @@
           <div class="card-body">
             <div class="row g-2 mb-3">
               <div class="col-md-9">
-                <label class="form-label small fw-semibold mb-1">Labor ${lIdx + 1} — Description</label>
+                <label class="form-label small fw-semibold mb-1">Labor ${lIdx + 1} â€” Description</label>
                 <input type="text" class="form-control form-control-sm recognize-wo-labor-desc" value="${escapeHtml(desc)}">
               </div>
               <div class="col-md-3">
@@ -4035,16 +3929,16 @@
 
     function renderPickedPartHtml(picked) {
       if (!picked || (!picked.part_number && !picked.description)) {
-        return `<span class="text-muted small">— Skipped —</span>`;
+        return `<span class="text-muted small">â€” Skipped â€”</span>`;
       }
       const tag = picked.is_manual
         ? `<span class="badge bg-warning text-dark me-1">manual</span>`
         : `<span class="badge bg-success me-1">DB</span>`;
-      const priceNote = picked.price ? ` · $${Number(picked.price).toFixed(2)}` : "";
+      const priceNote = picked.price ? ` Â· $${Number(picked.price).toFixed(2)}` : "";
       return `
         ${tag}
-        <code>${escapeHtml(picked.part_number || "—")}</code>
-        — ${escapeHtml(picked.description || "—")}${priceNote}
+        <code>${escapeHtml(picked.part_number || "â€”")}</code>
+        â€” ${escapeHtml(picked.description || "â€”")}${priceNote}
       `;
     }
 
@@ -4066,7 +3960,7 @@
             reason: c.reason || "",
             score: c.score || 0,
             is_manual: false,
-            // Full DB part info — used by applyReviewedLaborsToUi to replay
+            // Full DB part info â€” used by applyReviewedLaborsToUi to replay
             // fillRowFromPart so core/misc charges fill into the WO row.
             __full_part: {
               id: c.part_id,
@@ -4120,11 +4014,11 @@
                 return;
               }
               resultsBox.innerHTML = items.map(it => {
-                const stockNote = it.do_not_track_inventory ? "" : ` · stock: ${it.in_stock || 0}`;
-                const priceNote = it.has_selling_price ? ` · $${(it.selling_price || 0).toFixed(2)}` : "";
+                const stockNote = it.do_not_track_inventory ? "" : ` Â· stock: ${it.in_stock || 0}`;
+                const priceNote = it.has_selling_price ? ` Â· $${(it.selling_price || 0).toFixed(2)}` : "";
                 return `<button type="button" class="list-group-item list-group-item-action recognize-wo-search-item"
                           data-item='${escapeHtml(JSON.stringify(it))}'>
-                          <code>${escapeHtml(it.part_number || "")}</code> — ${escapeHtml(it.description || "")}${priceNote}${stockNote}
+                          <code>${escapeHtml(it.part_number || "")}</code> â€” ${escapeHtml(it.description || "")}${priceNote}${stockNote}
                         </button>`;
               }).join("");
               resultsBox.style.display = "";
@@ -4181,7 +4075,7 @@
       const box = row.querySelector(".recognize-wo-picked-box");
       if (box) {
         if (picked === null) {
-          box.innerHTML = `<span class="text-muted small">— Skipped —</span>`;
+          box.innerHTML = `<span class="text-muted small">â€” Skipped â€”</span>`;
         } else {
           box.innerHTML = renderPickedPartHtml(picked);
         }
@@ -4302,7 +4196,7 @@
         firstBlock.querySelectorAll(".labor-assignments-json").forEach(i => { i.value = "[]"; });
         delete firstBlock.dataset.issueDescription;
         firstBlock.querySelectorAll(".laborAssignSummary").forEach(el => {
-          el.textContent = "Mechanics: —";
+          el.textContent = "Mechanics: â€”";
         });
         const tbody = firstBlock.querySelector(".partsTbody");
         if (tbody) {
@@ -4405,7 +4299,7 @@
         applyReviewedLaborsToUi(blocks);
 
         // Persist the original recognized document into WO attachments.
-        // If WO is already created — upload right away. Otherwise stash the
+        // If WO is already created â€” upload right away. Otherwise stash the
         // file in sessionStorage so we can upload after the create-form
         // submit reloads the page with a fresh workOrderId.
         if (lastRecognizedWoFile) {
@@ -4493,7 +4387,7 @@
     let workOrderStatus = "open"; // "open" | "paid"
     let isCreated = false;
     let customerEmail = "";
-    // Механик нажал done: страница сразу в режиме правки, Save подписан Confirm.
+    // ÐœÐµÑ…Ð°Ð½Ð¸Ðº Ð½Ð°Ð¶Ð°Ð» done: ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ð° ÑÑ€Ð°Ð·Ñƒ Ð² Ñ€ÐµÐ¶Ð¸Ð¼Ðµ Ð¿Ñ€Ð°Ð²ÐºÐ¸, Save Ð¿Ð¾Ð´Ð¿Ð¸ÑÐ°Ð½ Confirm.
     let mechanicDone = false;
 
     const createdInfo = readJsonScript("workOrderCreatedData", { created: false, id: "", status: "open" });
@@ -4509,8 +4403,8 @@
 
     function applyStateFromStatus() {
       if (!isCreated) {
-        // до create: только create, форма активна по unit
-        setButtonsState("created_locked_open", els); // не показываем
+        // Ð´Ð¾ create: Ñ‚Ð¾Ð»ÑŒÐºÐ¾ create, Ñ„Ð¾Ñ€Ð¼Ð° Ð°ÐºÑ‚Ð¸Ð²Ð½Ð° Ð¿Ð¾ unit
+        setButtonsState("created_locked_open", els); // Ð½Ðµ Ð¿Ð¾ÐºÐ°Ð·Ñ‹Ð²Ð°ÐµÐ¼
         const createGroup = document.getElementById("createWorkOrderGroup");
         const createDropdownToggle = document.getElementById("createWorkOrderDropdownToggle");
         if (createGroup) createGroup.style.display = "";
@@ -4524,7 +4418,7 @@
         return;
       }
 
-      // created: customer/unit больше не меняем
+      // created: customer/unit Ð±Ð¾Ð»ÑŒÑˆÐµ Ð½Ðµ Ð¼ÐµÐ½ÑÐµÐ¼
       setSelectDisabled(customerSel, true);
       setSelectDisabled(unitSel, true);
       if (addUnitBtn) addUnitBtn.disabled = true;
@@ -4533,8 +4427,8 @@
         setEditingMode(false, els);
         setButtonsState("paid", els);
       } else if (mechanicDone) {
-        // Механик закончил — менеджеру не нужен лишний клик Edit:
-        // поля сразу редактируемы, Confirm сохраняет и закрывает ревью.
+        // ÐœÐµÑ…Ð°Ð½Ð¸Ðº Ð·Ð°ÐºÐ¾Ð½Ñ‡Ð¸Ð» â€” Ð¼ÐµÐ½ÐµÐ´Ð¶ÐµÑ€Ñƒ Ð½Ðµ Ð½ÑƒÐ¶ÐµÐ½ Ð»Ð¸ÑˆÐ½Ð¸Ð¹ ÐºÐ»Ð¸Ðº Edit:
+        // Ð¿Ð¾Ð»Ñ ÑÑ€Ð°Ð·Ñƒ Ñ€ÐµÐ´Ð°ÐºÑ‚Ð¸Ñ€ÑƒÐµÐ¼Ñ‹, Confirm ÑÐ¾Ñ…Ñ€Ð°Ð½ÑÐµÑ‚ Ð¸ Ð·Ð°ÐºÑ€Ñ‹Ð²Ð°ÐµÑ‚ Ñ€ÐµÐ²ÑŒÑŽ.
         setEditingMode(true, els);
         setButtonsState("editing_open", els);
         if (saveBtn) saveBtn.textContent = "Confirm";
@@ -4561,7 +4455,7 @@
         const labors = serializeBlocks(blocksContainer);
         const totals = serializeTotals(blocksContainer);
 
-        // ✅ Get current mileage from input
+        // âœ… Get current mileage from input
         const unit_mileage = unitMileageInput ? String(unitMileageInput.value || "").trim() : "";
         const customer_id = String(customerSel?.value || "").trim();
         const unit_id = String(unitSel?.value || "").trim();
@@ -4578,7 +4472,7 @@
           work_order_date: workOrderDateInput ? String(workOrderDateInput.value || "").trim() : undefined,
         };
         // "open" = saved as completed (default), "in_progress" = still in
-        // progress, "estimate" = смета остаётся сметой (склад не трогается)
+        // progress, "estimate" = ÑÐ¼ÐµÑ‚Ð° Ð¾ÑÑ‚Ð°Ñ‘Ñ‚ÑÑ ÑÐ¼ÐµÑ‚Ð¾Ð¹ (ÑÐºÐ»Ð°Ð´ Ð½Ðµ Ñ‚Ñ€Ð¾Ð³Ð°ÐµÑ‚ÑÑ)
         const desired = String(saveStatus || "open").toLowerCase();
         payload.save_status = (desired === "in_progress" || desired === "estimate") ? desired : "open";
 
@@ -4594,8 +4488,8 @@
           workOrderStatus = payload.save_status;
         }
 
-        // после сохранения снова лочим; «Save In Progress» оставляет WO
-        // в ревью механика — режим Confirm сохраняется до полного сохранения.
+        // Ð¿Ð¾ÑÐ»Ðµ ÑÐ¾Ñ…Ñ€Ð°Ð½ÐµÐ½Ð¸Ñ ÑÐ½Ð¾Ð²Ð° Ð»Ð¾Ñ‡Ð¸Ð¼; Â«Save In ProgressÂ» Ð¾ÑÑ‚Ð°Ð²Ð»ÑÐµÑ‚ WO
+        // Ð² Ñ€ÐµÐ²ÑŒÑŽ Ð¼ÐµÑ…Ð°Ð½Ð¸ÐºÐ° â€” Ñ€ÐµÐ¶Ð¸Ð¼ Confirm ÑÐ¾Ñ…Ñ€Ð°Ð½ÑÐµÑ‚ÑÑ Ð´Ð¾ Ð¿Ð¾Ð»Ð½Ð¾Ð³Ð¾ ÑÐ¾Ñ…Ñ€Ð°Ð½ÐµÐ½Ð¸Ñ.
         const wasConfirm = mechanicDone && workOrderStatus !== "in_progress";
         if (wasConfirm) {
           mechanicDone = false;
@@ -4611,11 +4505,11 @@
       }
     }
 
-    // Обычный Save сметы оставляет её сметой; конверсия — только явной кнопкой.
+    // ÐžÐ±Ñ‹Ñ‡Ð½Ñ‹Ð¹ Save ÑÐ¼ÐµÑ‚Ñ‹ Ð¾ÑÑ‚Ð°Ð²Ð»ÑÐµÑ‚ ÐµÑ‘ ÑÐ¼ÐµÑ‚Ð¾Ð¹; ÐºÐ¾Ð½Ð²ÐµÑ€ÑÐ¸Ñ â€” Ñ‚Ð¾Ð»ÑŒÐºÐ¾ ÑÐ²Ð½Ð¾Ð¹ ÐºÐ½Ð¾Ð¿ÐºÐ¾Ð¹.
     saveBtn?.addEventListener("click", () => saveWorkOrderEdits(workOrderStatus === "estimate" ? "estimate" : "open"));
     document.getElementById("saveInProgressWorkOrderBtn")?.addEventListener("click", () => saveWorkOrderEdits("in_progress"));
 
-    // ── Estimate mode: бейдж, скрытый Paid, пункт «Convert to Work Order» ──
+    // â”€â”€ Estimate mode: Ð±ÐµÐ¹Ð´Ð¶, ÑÐºÑ€Ñ‹Ñ‚Ñ‹Ð¹ Paid, Ð¿ÑƒÐ½ÐºÑ‚ Â«Convert to Work OrderÂ» â”€â”€
     function applyEstimateUi() {
       const isEst = workOrderStatus === "estimate";
       const badge = document.getElementById("woEstimateBadge");
@@ -4720,7 +4614,7 @@
 
       const originalText = deleteBtn.textContent;
       deleteBtn.disabled = true;
-      deleteBtn.textContent = "Deleting…";
+      deleteBtn.textContent = "Deletingâ€¦";
 
       try {
         const res = await fetch(`/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/delete`, {
@@ -4773,7 +4667,7 @@
       }
     });
 
-    // ── Email contacts modal logic ──
+    // â”€â”€ Email contacts modal logic â”€â”€
     let customerContacts = [];
     const emailModal = document.getElementById("emailContactsModal");
     const emailModalTitle = document.getElementById("emailContactsModalTitle");
@@ -4798,7 +4692,7 @@
         const email = c.email || "";
         if (!email) return;
         const checked = c.is_main || c._added ? "checked" : "";
-        const label = name ? name + " — " + email : email;
+        const label = name ? name + " â€” " + email : email;
         const badge = c.is_main ? ' <span class="badge bg-primary ms-1" style="font-size:0.65rem;">Main</span>' : "";
         const addedBadge = c._added ? ' <span class="badge bg-success ms-1" style="font-size:0.65rem;">New</span>' : "";
         html += '<div class="form-check mb-2">' +
@@ -5015,7 +4909,7 @@
             return `
               <tr>
                 <td>${escapeText(m.name)}</td>
-                <td class="text-muted">${escapeText(m.role || "—")}</td>
+                <td class="text-muted">${escapeText(m.role || "â€”")}</td>
                 <td>
                   <input type="number" class="form-control form-control-sm wo-cost-mech-rate"
                          data-mech-id="${escapeText(m.user_id)}"
@@ -5051,7 +4945,7 @@
                 const pct = Number.isFinite(toNum(a.percent)) ? round2(toNum(a.percent)) : 0;
                 return `${escapeText(a.name || "Mechanic")} (${pct}%)`;
               }).join(", ")
-            : '<span class="text-muted">—</span>';
+            : '<span class="text-muted">â€”</span>';
 
           const profitClass = profit >= 0 ? "text-success" : "text-danger";
 
@@ -5121,7 +5015,7 @@
         openEmailModal("Send Work Order", async function (emails, newContact) {
           emailBtn.disabled = true;
           const originalText = emailBtn.textContent;
-          emailBtn.textContent = "Sending…";
+          emailBtn.textContent = "Sendingâ€¦";
 
           try {
             const payload = { emails: emails };
@@ -5154,7 +5048,7 @@
       });
     }
 
-    // ───────────────────────────── Authorization send ─────────────────────────────
+    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ Authorization send â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     async function sendAuthorization(scope, laborIndex, btnEl) {
       if (!isCreated || !workOrderId) {
         toast("Save the work order first before requesting authorization.", "error");
@@ -5165,7 +5059,7 @@
         : "Authorize Work Order";
       openEmailModal(title, async function (emails, newContact) {
         const originalText = btnEl ? btnEl.textContent : "";
-        if (btnEl) { btnEl.disabled = true; btnEl.textContent = "Sending…"; }
+        if (btnEl) { btnEl.disabled = true; btnEl.textContent = "Sendingâ€¦"; }
         try {
           const payload = { emails: emails, scope: scope };
           if (scope === "labor") payload.labor_index = laborIndex;
@@ -5227,7 +5121,7 @@
       });
     }
 
-    // Per-labor "Describe Issue" link — opens AI-powered modal to draft/polish
+    // Per-labor "Describe Issue" link â€” opens AI-powered modal to draft/polish
     // the issue text that will be sent to the customer for authorization.
     const describeModalEl = document.getElementById("describeIssueModal");
     const describeText = document.getElementById("describeIssueText");
@@ -5321,7 +5215,7 @@
             const lang = String(data.language || "").toUpperCase();
             describeLangBadge.textContent = data.is_english
               ? "Polished (EN)"
-              : `Translated from ${lang || "auto"} → EN`;
+              : `Translated from ${lang || "auto"} â†’ EN`;
           }
         } catch (err) {
           toast(err.message || "AI polish failed.", "error");
@@ -5385,7 +5279,7 @@
       openEmailModal("Send Payment Receipt", async function (emails, newContact) {
         const originalText = btn.textContent;
         btn.disabled = true;
-        btn.textContent = "Sending…";
+        btn.textContent = "Sendingâ€¦";
 
         try {
           const payload = { emails: emails };
@@ -5474,7 +5368,7 @@
     if (isCreated) {
       applyTotalsSnapshotToUi(blocksContainer, totalsSnapshot, shopSupplyPct);
       
-      // ✅ Load unit mileage when editing an existing work order
+      // âœ… Load unit mileage when editing an existing work order
       (async () => {
         const selectedUnitId = String(unitSel?.value || "").trim();
         if (selectedUnitId) {
@@ -5485,14 +5379,14 @@
               unitMileageInput.style.color = "";
               if (unitMileageHidden) unitMileageHidden.value = unitDetails.mileage || "";
             }
-            mileageConfirmed = true; // already-created WO — no need to re-confirm
+            mileageConfirmed = true; // already-created WO â€” no need to re-confirm
           }
         }
       })();
 
       loadWorkOrderTimeline();
     } else {
-      // New WO — hide editor until unit selected and mileage confirmed
+      // New WO â€” hide editor until unit selected and mileage confirmed
       refreshEditorGate();
     }
 
@@ -5568,7 +5462,7 @@
 
     applyStateFromStatus();
 
-    // ── Auto-apply presets from URL query params ──
+    // â”€â”€ Auto-apply presets from URL query params â”€â”€
     if (!isCreated) {
       const urlParams = new URLSearchParams(window.location.search);
       const presetsParam = urlParams.get("presets");

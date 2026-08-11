@@ -1,6 +1,7 @@
 {% extends "layouts/app_base.html" %}
 {% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
 {% from "components/ui.html" import empty_state, wo_status_badge %}
+{% from "components/annual_inspection.html" import annual_inspection_btn, annual_inspection_modal with context %}
 {% block page_title %}Customer Details{% endblock %}
 
 {% block app_content %}
@@ -245,6 +246,9 @@
                     <td class="text-end">
                       <div class="d-flex gap-1 justify-content-end flex-nowrap">
                         {{ attachments_btn(entity_type="unit", entity_id=item.id) }}
+                        {% if can_create_inspection %}
+                          {{ annual_inspection_btn(unit_id=item.id, customer_id=customer_id, vin=item.vin, carrier=customer.company_name or customer.label, address=customer.address, label="Inspection") }}
+                        {% endif %}
                         <a class="btn btn-sm btn-outline-primary" href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=item.id) }}">Open</a>
                       </div>
                     </td>
@@ -660,5 +664,9 @@
 </script>
 
 {{ attachments_modal() }}
+
+{% if can_create_inspection and active_tab == 'units' %}
+  {{ annual_inspection_modal() }}
+{% endif %}
 
 {% endblock %}

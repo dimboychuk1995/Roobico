@@ -140,10 +140,10 @@
             </tr>
             {% for item in section['items'] %}
             <tr>
-              <td class="chk">&nbsp;</td>
-              <td class="chk">&nbsp;</td>
-              <td class="rdate">&nbsp;</td>
-              <td class="item">{{ item }}</td>
+              <td class="chk" style="text-align:center; font-weight:bold;">{{ item.ok_mark or '&nbsp;'|safe }}</td>
+              <td class="chk" style="text-align:center; font-weight:bold;">{{ item.repair_mark or '&nbsp;'|safe }}</td>
+              <td class="rdate" style="text-align:center;">{{ item.repaired_date or '&nbsp;'|safe }}</td>
+              <td class="item">{{ item.text }}</td>
             </tr>
             {% endfor %}
             {% endfor %}

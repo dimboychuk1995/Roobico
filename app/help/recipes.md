@@ -143,6 +143,15 @@ quarterly maintenance files. Valid 30 days, auto-renews with use.
 **Recall notices.** Unit → Recalls checks NHTSA now; a nightly job emails
 customers automatically when new recalls appear for their vehicles.
 
+**DOT annual inspection (AVIR).** WO editor → "Create Annual Inspection",
+or the "Annual Inspection" button on the unit page, or "Inspection" next to
+a unit in the customer's Units tab: fill the carrier/inspector fields, pick
+the vehicle type (its OK/NA preset applies automatically), adjust the
+checklist (NR = needs repair with a date, NA = not applicable), save — the
+49 CFR 396 PDF downloads with the marks. The unit page keeps the full
+history and shows when the current inspection expires (12 months; yellow =
+within 30 days, red = expired).
+
 ## Organization
 
 **Open a second location.** Settings → Shops → "+ Add shop". It gets its

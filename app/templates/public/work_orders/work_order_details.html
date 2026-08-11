@@ -1,6 +1,7 @@
 {% extends "layouts/app_base.html" %}
 {% from "components/attachments.html" import attachments_block, attachments_modal %}
 {% from "components/unit_recalls.html" import unit_recalls_btn, unit_recalls_modal %}
+{% from "components/annual_inspection.html" import annual_inspection_modal with context %}
 {% block page_title %}Work Order Details{% endblock %}
 
 {% block app_content %}
@@ -109,9 +110,9 @@
       </div>
 
       {% if "work_orders.view_costs" in user_permissions %}
-      <!-- Парт-ордера этого WO: неброская ссылка + раскрывающийся блок.
-           До сохранения WO заказы вешаются на pending-id и перепривяжутся
-           при создании (как вложения). -->
+      <!-- ÐŸÐ°Ñ€Ñ‚-Ð¾Ñ€Ð´ÐµÑ€Ð° ÑÑ‚Ð¾Ð³Ð¾ WO: Ð½ÐµÐ±Ñ€Ð¾ÑÐºÐ°Ñ ÑÑÑ‹Ð»ÐºÐ° + Ñ€Ð°ÑÐºÑ€Ñ‹Ð²Ð°ÑŽÑ‰Ð¸Ð¹ÑÑ Ð±Ð»Ð¾Ðº.
+           Ð”Ð¾ ÑÐ¾Ñ…Ñ€Ð°Ð½ÐµÐ½Ð¸Ñ WO Ð·Ð°ÐºÐ°Ð·Ñ‹ Ð²ÐµÑˆÐ°ÑŽÑ‚ÑÑ Ð½Ð° pending-id Ð¸ Ð¿ÐµÑ€ÐµÐ¿Ñ€Ð¸Ð²ÑÐ¶ÑƒÑ‚ÑÑ
+           Ð¿Ñ€Ð¸ ÑÐ¾Ð·Ð´Ð°Ð½Ð¸Ð¸ (ÐºÐ°Ðº Ð²Ð»Ð¾Ð¶ÐµÐ½Ð¸Ñ). -->
       <div class="mt-3">
         <button type="button" class="btn btn-sm btn-outline-secondary" id="woPartsOrdersToggle"
                 data-bs-toggle="collapse" data-bs-target="#woPartsOrdersBlock"
@@ -125,7 +126,7 @@
             <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
               <div class="text-muted small">
                 Vendor orders placed for this work order. They also appear on the
-                Parts → Parts Orders tab like any other order.
+                Parts â†’ Parts Orders tab like any other order.
                 {% if not work_order_created %}
                   <br>The order links to this work order once you create it.
                 {% endif %}
@@ -260,15 +261,15 @@
             (county, city and special-district rates are not included).
             If you need the full combined rate, go to
             <a href="{{ url_for('settings.parts_settings_index') }}#tax-rate-card"
-               class="alert-link">Settings → Parts Settings</a>
+               class="alert-link">Settings â†’ Parts Settings</a>
             and enter the correct percentage in the
             <strong>Custom Tax Rate</strong> field.
           </div>
 
           <div class="wo-totals-row">
             <div class="wo-totals-chip">
-              <div>Labor total: <strong id="laborGrandTotalDisplay">—</strong></div>
-              <div>Labor: <strong id="laborGrandBaseDisplay">—</strong></div>
+              <div>Labor total: <strong id="laborGrandTotalDisplay">â€”</strong></div>
+              <div>Labor: <strong id="laborGrandBaseDisplay">â€”</strong></div>
               <div id="shopSupplyGrandTotalWrap" class="d-flex align-items-center justify-content-center gap-1">
                 <span>Shop supply:</span>
                 <span>$</span>
@@ -276,22 +277,22 @@
                        class="form-control form-control-sm text-end"
                        style="width:90px; padding:0 4px; height:auto;" value="0">
                 <button type="button" id="shopSupplyResetBtn" class="btn btn-sm btn-link p-0"
-                        title="Reset to calculated value" style="display:none; line-height:1;">↺</button>
-                <strong id="shopSupplyGrandTotalDisplay" class="d-none">—</strong>
+                        title="Reset to calculated value" style="display:none; line-height:1;">â†º</button>
+                <strong id="shopSupplyGrandTotalDisplay" class="d-none">â€”</strong>
               </div>
             </div>
             <div class="wo-totals-chip">
-              <div>Parts total: <strong id="partsGrandTotalDisplay">—</strong></div>
-              <div>Parts: <strong id="partsGrandBaseDisplay">—</strong></div>
-              <div id="coreGrandTotalWrap" style="display:none;">Cores: <strong id="coreGrandTotalDisplay">—</strong></div>
-              <div id="miscGrandTotalWrap" style="display:none;">Misc: <strong id="miscGrandTotalDisplay">—</strong></div>
-              <div>Sales tax (<span id="salesTaxRateLabel">0.00%</span>): <strong id="salesTaxGrandTotalDisplay">—</strong></div>
+              <div>Parts total: <strong id="partsGrandTotalDisplay">â€”</strong></div>
+              <div>Parts: <strong id="partsGrandBaseDisplay">â€”</strong></div>
+              <div id="coreGrandTotalWrap" style="display:none;">Cores: <strong id="coreGrandTotalDisplay">â€”</strong></div>
+              <div id="miscGrandTotalWrap" style="display:none;">Misc: <strong id="miscGrandTotalDisplay">â€”</strong></div>
+              <div>Sales tax (<span id="salesTaxRateLabel">0.00%</span>): <strong id="salesTaxGrandTotalDisplay">â€”</strong></div>
               <div class="form-check form-switch mt-1 d-inline-flex align-items-center gap-2 m-0">
                 <input class="form-check-input" type="checkbox" id="woTaxableToggle">
                 <label class="form-check-label small" for="woTaxableToggle">Taxable</label>
               </div>
             </div>
-            <div class="wo-totals-chip wo-grand-total">Grand total: <strong id="grandTotalDisplay" class="ms-1">—</strong></div>
+            <div class="wo-totals-chip wo-grand-total">Grand total: <strong id="grandTotalDisplay" class="ms-1">â€”</strong></div>
           </div>
         </div>
 
@@ -303,14 +304,14 @@
           <div class="d-flex gap-2 align-items-center">
             <input type="file" id="recognizeWoFileInput" accept="application/pdf,image/*" style="display:none;">
             <button type="button" class="btn btn-outline-success btn-sm" id="recognizeWoBtn" title="Recognize a handwritten work order with AI">
-              <span class="recognize-wo-label">📷 Recognize WO</span>
+              <span class="recognize-wo-label">ðŸ“· Recognize WO</span>
               <span class="recognize-wo-spinner" style="display:none;">
                 <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                Recognizing…
+                Recognizingâ€¦
               </span>
             </button>
             <button type="button" class="btn btn-outline-warning btn-sm" id="sendWoAuthBtn" title="Send the entire work order to the customer for authorization" style="display:none;">
-              ✉ Send for Authorization
+              âœ‰ Send for Authorization
             </button>
             <button type="button" class="btn btn-outline-primary btn-sm" id="addLaborBtn">+ Add Labor</button>
           </div>
@@ -325,21 +326,21 @@
               <div class="d-flex justify-content-between align-items-center pb-3 mb-3 wo-labor-header">
                 <div>
                   <h2 class="h6 mb-0">Labor <span class="labor-number">1</span><span class="laborAuthBadge ms-2 wo-auth-badge"></span></h2>
-                  <div class="text-muted small mt-1 laborAssignSummary">Mechanics: —</div>
+                  <div class="text-muted small mt-1 laborAssignSummary">Mechanics: â€”</div>
                   <div class="wo-labor-summary mt-2">
                     <div class="wo-totals-chip">
-                      <div>Labor: <strong class="laborTotalDisplay">—</strong></div>
+                      <div>Labor: <strong class="laborTotalDisplay">â€”</strong></div>
                     </div>
                     <div class="wo-totals-chip">
-                      <div>Parts: <strong class="partsTotalDisplay">—</strong></div>
+                      <div>Parts: <strong class="partsTotalDisplay">â€”</strong></div>
                       <div class="coreTotalWrap" style="display:none;">
-                        Cores: <strong class="coreTotalDisplay">—</strong>
+                        Cores: <strong class="coreTotalDisplay">â€”</strong>
                       </div>
                       <div class="miscTotalWrap" style="display:none;">
-                        Misc: <strong class="miscTotalDisplay">—</strong>
+                        Misc: <strong class="miscTotalDisplay">â€”</strong>
                       </div>
                     </div>
-                    <div class="wo-totals-chip wo-chip-inline">Labor total: <strong class="laborFullTotalDisplay ms-1">—</strong></div>
+                    <div class="wo-totals-chip wo-chip-inline">Labor total: <strong class="laborFullTotalDisplay ms-1">â€”</strong></div>
                   </div>
                 </div>
 
@@ -433,7 +434,7 @@
                         <td class="p-1 align-middle"><div class="p-1"><input class="form-control form-control-sm part-price" name="labors[0][parts][0][price]" value="" inputmode="decimal" style="width: 88%;"></div></td>
                         <td class="part-line-total p-1 align-middle">
                           <div class="d-flex align-items-center gap-2 p-1">
-                            <div class="part-line-total-value"><span class="text-muted">—</span></div>
+                            <div class="part-line-total-value"><span class="text-muted">â€”</span></div>
                             <div class="form-check form-switch part-core-toggle-wrapper" style="display: none; margin: 0;">
                               <input class="form-check-input part-core-toggle" type="checkbox">
                               <label class="form-check-label small text-muted" style="margin-bottom: 0;">Core</label>
@@ -442,7 +443,7 @@
                         </td>
                         <td class="text-center p-1 align-middle">
                           <div class="p-1">
-                            <button type="button" class="btn btn-sm btn-outline-danger delete-part-row" title="Delete this part">×</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger delete-part-row" title="Delete this part">Ã—</button>
                           </div>
                         </td>
                       </tr>
@@ -505,7 +506,7 @@
                         <div class="progress" style="height:4px;">
                           <div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%"></div>
                         </div>
-                        <small class="text-muted">Uploading…</small>
+                        <small class="text-muted">Uploadingâ€¦</small>
                       </div>
                       <div class="att-gallery d-flex flex-wrap gap-2"></div>
                       <div class="att-empty text-muted small" style="display:none;">No attachments yet.</div>
@@ -613,7 +614,7 @@
 
     </form>
 
-    <!-- Recognize Work Order (AI) — review modal -->
+    <!-- Recognize Work Order (AI) â€” review modal -->
     <div class="modal fade" id="recognizeWoModal" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-fullscreen modal-dialog-scrollable">
         <div class="modal-content">
@@ -649,87 +650,8 @@
       </div>
     </div>
 
-    <!-- Annual Vehicle Inspection Modal -->
-    <div class="modal fade" id="annualInspectionModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">Annual Vehicle Inspection</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-          </div>
-          <div class="modal-body">
-            <div class="row g-3">
-              <div class="col-12 col-lg-5">
-                <div class="row g-3">
-                  <div class="col-12 col-md-5">
-                    <label class="form-label small text-muted mb-1" for="aviDateInput">Date</label>
-                    <input type="date" id="aviDateInput" class="form-control" value="{{ today_date_input_value }}"/>
-                  </div>
-                  <div class="col-12 col-md-7">
-                    <label class="form-label small text-muted mb-1" for="aviCarrierInput">Motor Carrier Operator</label>
-                    <input type="text" id="aviCarrierInput" class="form-control" placeholder="Company name"/>
-                  </div>
-                  <div class="col-12">
-                    <label class="form-label small text-muted mb-1" for="aviAddressInput">Address</label>
-                    <input type="text" id="aviAddressInput" class="form-control" placeholder="Street address"/>
-                  </div>
-                  <div class="col-12">
-                    <label class="form-label small text-muted mb-1" for="aviCityStateZipInput">City, State, Zip Code</label>
-                    <input type="text" id="aviCityStateZipInput" class="form-control" placeholder="City, State, Zip"/>
-                  </div>
-                  <div class="col-12">
-                    <label class="form-label small text-muted mb-1" for="aviInspectorInput">Inspector's Name</label>
-                    <input type="text" id="aviInspectorInput" class="form-control" value="{{ app_user_display }}"/>
-                  </div>
-                  <div class="col-12">
-                    <div class="form-check">
-                      <input class="form-check-input" type="checkbox" id="aviQualifiedCheck" checked/>
-                      <label class="form-check-label small" for="aviQualifiedCheck">
-                        <strong>Yes</strong> — this inspector meets the qualification requirements in Section 396.19
-                      </label>
-                    </div>
-                  </div>
-                  <div class="col-12">
-                    <label class="form-label small text-muted mb-1" for="aviVinInput">Vehicle Identification</label>
-                    <div class="d-flex align-items-center gap-2">
-                      <div class="form-check mb-0 flex-shrink-0">
-                        <input class="form-check-input" type="checkbox" id="aviVinCheck" checked/>
-                        <label class="form-check-label small" for="aviVinCheck">VIN</label>
-                      </div>
-                      <input type="text" id="aviVinInput" class="form-control" maxlength="32" placeholder="VIN"/>
-                    </div>
-                  </div>
-                  <div class="col-12">
-                    <label class="form-label small text-muted mb-1" for="aviAgencyInput">Inspection Agency/Location (optional)</label>
-                    <input type="text" id="aviAgencyInput" class="form-control" value="{{ app_shop_display }}"/>
-                  </div>
-                  <div class="col-12">
-                    <label class="form-label small text-muted mb-1" for="aviVehicleTypeSelect">Vehicle Type</label>
-                    <select id="aviVehicleTypeSelect" class="form-select">
-                      <option value="">-- Select type --</option>
-                      <option value="semi_trailer">Semi Trailer</option>
-                      <option value="semi_truck">Semi Truck</option>
-                      <option value="hot_shot_electric">Hot Shot Trailer with Electric Brakes</option>
-                      <option value="hot_shot_hydraulic">Hot Shot Trailer with Hydraulic Brakes</option>
-                      <option value="pickup_truck">Pick Up Truck</option>
-                    </select>
-                  </div>
-                </div>
-                <div id="aviError" class="text-danger small mt-2" style="display:none;"></div>
-              </div>
-              <div class="col-12 col-lg-7">
-                <label class="form-label small text-muted mb-1">Preview</label>
-                <iframe id="aviPreviewFrame" title="Inspection preview" class="border rounded w-100 bg-light" style="height:65vh;"></iframe>
-              </div>
-            </div>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-            <button type="button" id="aviSaveBtn" class="btn btn-primary">Create Inspection</button>
-          </div>
-        </div>
-      </div>
-    </div>
+    <!-- Annual Vehicle Inspection Modal (components/annual_inspection.html) -->
+    {{ annual_inspection_modal() }}
 
     <!-- Add Misc Charge Modal -->
     <div class="modal fade" id="addMiscChargeModal" tabindex="-1" aria-hidden="true">
@@ -787,7 +709,7 @@
             </p>
             <div class="mb-3">
               <label class="form-label fw-semibold" for="describeIssueText">Issue description</label>
-              <textarea id="describeIssueText" class="form-control" rows="5" maxlength="4000" placeholder="e.g. Двигатель глохнет на холостых, обороты плавают, чек включился позавчера."></textarea>
+              <textarea id="describeIssueText" class="form-control" rows="5" maxlength="4000" placeholder="e.g. Ð”Ð²Ð¸Ð³Ð°Ñ‚ÐµÐ»ÑŒ Ð³Ð»Ð¾Ñ…Ð½ÐµÑ‚ Ð½Ð° Ñ…Ð¾Ð»Ð¾ÑÑ‚Ñ‹Ñ…, Ð¾Ð±Ð¾Ñ€Ð¾Ñ‚Ñ‹ Ð¿Ð»Ð°Ð²Ð°ÑŽÑ‚, Ñ‡ÐµÐº Ð²ÐºÐ»ÑŽÑ‡Ð¸Ð»ÑÑ Ð¿Ð¾Ð·Ð°Ð²Ñ‡ÐµÑ€Ð°."></textarea>
               <div class="form-text d-flex justify-content-between">
                 <span id="describeIssueLangBadge" class="text-muted small"></span>
                 <span class="text-muted small"><span id="describeIssueCharCount">0</span> / 4000</span>
@@ -800,10 +722,10 @@
           </div>
           <div class="modal-footer d-flex justify-content-between">
             <button type="button" class="btn btn-outline-success" id="describeIssuePolishBtn">
-              <span class="describe-issue-polish-label">✨ Polish with AI</span>
+              <span class="describe-issue-polish-label">âœ¨ Polish with AI</span>
               <span class="describe-issue-polish-spinner" style="display:none;">
                 <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                Polishing…
+                Polishingâ€¦
               </span>
             </button>
             <div>
@@ -908,7 +830,7 @@
                 </table>
               </div>
               <div class="small text-muted mt-1">
-                Rates are saved in this browser only — they are not stored on the work order.
+                Rates are saved in this browser only â€” they are not stored on the work order.
               </div>
             </div>
 
@@ -963,9 +885,9 @@
 
           <div class="modal-body">
             <div class="alert alert-info mb-3">
-              <div class="small">Invoice Total: <strong id="paymentInvoiceTotal">—</strong></div>
-              <div class="small">Already Paid: <strong id="paymentAlreadyPaid">—</strong></div>
-              <div class="small">Remaining Balance: <strong id="paymentRemainingBalance">—</strong></div>
+              <div class="small">Invoice Total: <strong id="paymentInvoiceTotal">â€”</strong></div>
+              <div class="small">Already Paid: <strong id="paymentAlreadyPaid">â€”</strong></div>
+              <div class="small">Remaining Balance: <strong id="paymentRemainingBalance">â€”</strong></div>
             </div>
 
             <div class="mb-3">
@@ -1063,9 +985,9 @@
     </div>
 
     {% if "work_orders.view_costs" in user_permissions %}
-    {# Модалка заказа — та же, что на странице Parts (общий компонент).
-       data-атрибуты привязки к WO читает parts.js: новый заказ создаётся
-       сразу с work_order_id (или pending-id до сохранения WO). #}
+    {# ÐœÐ¾Ð´Ð°Ð»ÐºÐ° Ð·Ð°ÐºÐ°Ð·Ð° â€” Ñ‚Ð° Ð¶Ðµ, Ñ‡Ñ‚Ð¾ Ð½Ð° ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ðµ Parts (Ð¾Ð±Ñ‰Ð¸Ð¹ ÐºÐ¾Ð¼Ð¿Ð¾Ð½ÐµÐ½Ñ‚).
+       data-Ð°Ñ‚Ñ€Ð¸Ð±ÑƒÑ‚Ñ‹ Ð¿Ñ€Ð¸Ð²ÑÐ·ÐºÐ¸ Ðº WO Ñ‡Ð¸Ñ‚Ð°ÐµÑ‚ parts.js: Ð½Ð¾Ð²Ñ‹Ð¹ Ð·Ð°ÐºÐ°Ð· ÑÐ¾Ð·Ð´Ð°Ñ‘Ñ‚ÑÑ
+       ÑÑ€Ð°Ð·Ñƒ Ñ work_order_id (Ð¸Ð»Ð¸ pending-id Ð´Ð¾ ÑÐ¾Ñ…Ñ€Ð°Ð½ÐµÐ½Ð¸Ñ WO). #}
     {% with wo_link_work_order_id = created_work_order_id or "",
             wo_link_pending_id = pending_attachment_id or "" %}
       {% include "components/parts_order_modal.html" %}
@@ -1082,7 +1004,7 @@
     <script src="{{ url_for('static', filename='js/work_orders/wo_parts_orders.js') }}"></script>
 
     <script>
-    /* Initialize attachment blocks — wire collapse IDs always, set entity IDs */
+    /* Initialize attachment blocks â€” wire collapse IDs always, set entity IDs */
     (function () {
       var woId = {{ (created_work_order_id or "")|tojson }};
       var pendingId = {{ (pending_attachment_id or "")|tojson }};

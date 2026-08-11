@@ -214,8 +214,24 @@ invoices; adjust per-WO amounts if needed and record all at once.
 - **Email Work Order** — sends the PDF to chosen customer contacts (you can
   add a new contact on the fly and save it to the customer). The email also
   includes a customer portal link.
-- **Create Annual Inspection** — generates a DOT Annual Vehicle Inspection
-  (49 CFR 396) PDF for the unit; only the latest inspection per unit is kept.
+- **Create Annual Inspection** — fills out a DOT Annual Vehicle Inspection
+  report (49 CFR 396) for the unit. The dialog has the carrier/inspector
+  fields, an optional **Report Number** (your own numbering; auto-generated
+  when left empty), a live PDF preview and the full **component checklist**
+  (Brake System, Coupling Devices, … Windshield Wipers): every item starts
+  as **OK**; switch an item to **NR** (needs repair — a repaired-date field
+  appears) or **NA** (does not apply). Picking a **vehicle type** applies
+  its OK/NA preset automatically (e.g. Semi Trailer marks steering, exhaust,
+  coupling etc. as N/A); adjust any item after that. "Mark all OK" /
+  "Clear" set the whole list at once; "Clear" prints an empty form to be
+  filled by hand. On the printed form OK items get a check mark in the OK
+  column, needs-repair items get an X plus the repaired date, and N/A items
+  are marked in the third column.
+- Inspections are **kept as history** per unit (a new one does not erase the
+  previous). Each inspection is valid for 12 months — the unit page shows
+  the latest one with its "Valid until" date (yellow when it expires within
+  30 days, red when expired), the full history with PDFs, and Delete
+  buttons (requires the "Delete work orders" permission).
 
 ## Attachments
 
