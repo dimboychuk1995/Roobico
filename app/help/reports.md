@@ -86,8 +86,10 @@ month / This year / Custom):
 - **Hourly** employees: uAttend punches in the period × their hourly rate
   (set in Settings → Integrations; only employees ticked there appear).
 - uAttend people are auto-matched to Roobico users (AI) so nobody is counted
-  twice — a matched employee shows inside their salary row with a
-  "↔ uAttend" badge.
+  twice — an employee matched to a **salary** user is folded into that salary
+  row with a "↔ uAttend" badge. An employee matched to an **hourly** user
+  (e.g. a mechanic) keeps their own hourly row — with the internal user's
+  role and a "↔ Internal" badge — whether or not that user ever logs in.
 - Banners explain when the uAttend integration is missing/disabled/erroring.
   The same payroll numbers feed the General Revenue report.
 

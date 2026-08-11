@@ -2374,12 +2374,19 @@ def timecard_salary_page():
                 "rate": _rate,
             }
 
+    internal_by_id = {str(u.get("_id")): u for u in internal_users}
+    # Внутренние пользователи, «поглотившие» своего uAttend-сотрудника
+    # (salary-строка ниже) — только их uAttend-двойники скрываются из
+    # почасового списка.
+    salary_internal_ids: set[str] = set()
+
     for u in internal_users:
         pay_type = (u.get("pay_type") or "salary").lower()
         # At this stage we do not try to match hourly internal users to
         # uAttend employees — uAttend employees are listed separately below.
         if pay_type != "salary":
             continue
+        salary_internal_ids.add(str(u.get("_id")))
         full_name = (u.get("name") or "").strip() or (
             f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()
         )
@@ -2413,14 +2420,17 @@ def timecard_salary_page():
 
     # ── Append rows for uAttend employees from the integration ──────────
     # Show every active uAttend employee as a separate hourly row, except
-    # those already merged into an internal salary user above.
+    # those already merged into an internal SALARY user above. A match to an
+    # hourly internal user (e.g. a mechanic) must not hide the row — иначе
+    # заматченный механик пропадает из отчёта целиком.
     for emp in uattend_emp_rows:
         uid_raw = emp.get("uattend_user_id")
         try:
             uid = int(uid_raw) if uid_raw is not None else None
         except (TypeError, ValueError):
             uid = None
-        if uid is not None and uid in matched_uattend_uids:
+        matched_iid = str((ai_match_map.get(uid) or {}).get("internal_id") or "") if uid is not None else ""
+        if uid is not None and uid in matched_uattend_uids and matched_iid in salary_internal_ids:
             continue
         full_name = (
             f"{emp.get('first_name', '') or ''} {emp.get('last_name', '') or ''}".strip()
@@ -2433,10 +2443,11 @@ def timecard_salary_page():
             rate = None
         hours = hours_by_uid.get(uid) if uid is not None else None
         matched = ai_match_map.get(uid) if uid is not None else None
+        internal_u = internal_by_id.get(matched_iid) if matched_iid else None
         row = {
             "name": full_name,
-            "email": emp.get("email") or "",
-            "role": "uAttend employee",
+            "email": (emp.get("email") or "") or (internal_u or {}).get("email") or "",
+            "role": (internal_u or {}).get("role") or "uAttend employee",
             "pay_type": "hourly",
             "salary_amount": None,
             "hourly_rate": rate,
