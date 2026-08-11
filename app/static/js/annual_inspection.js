@@ -154,6 +154,12 @@
       errEl.textContent = msg;
       errEl.style.display = msg ? "" : "none";
     }
+    // Модалка длинная: ошибка у полей может быть за пределами экрана,
+    // поэтому дублируем тостом и подскролливаем к самим полям.
+    if (msg) {
+      toast(msg, "error");
+      errEl?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
   }
 
   document.getElementById("aviSaveBtn")?.addEventListener("click", async function () {
