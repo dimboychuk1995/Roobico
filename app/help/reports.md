@@ -43,7 +43,15 @@ and click **"Generate"**; **"Download PDF"** exports the same report.
   Supply, Tools, Utilities, Pmt to Svc, totals, paid and balance.
 - **Mechanic Hours** — per mechanic: **Billed Hours** (labor hours from WOs
   allocated by the assignment percentages) vs **Tracked Hours** (real job
-  timer time), plus WO and labor-entry counts.
+  timer time), plus WO and labor-entry counts. If the uAttend integration is
+  connected, a **uAttend Hours** column is added — attendance hours from the
+  time clock for the same period. uAttend employees are matched to app users
+  automatically (same matching as the Dashboard hours chart): hours of an
+  employee matched to a mechanic land in that mechanic's row; employees
+  matched to non-mechanics (managers, owner) are excluded; unmatched
+  employees appear as their own rows. This means a mechanic who never
+  presses the job timer still shows attendance hours here — use it to see
+  who was at work even when Tracked Hours is empty.
 - **General Revenue** — see below.
 
 ## General Revenue report

@@ -59,11 +59,18 @@
     </table>
     {% else %}
     <table class="summary-table">
+      {% set summary_labels = {
+        'total_hours': 'Billed Hours',
+        'total_tracked_hours': 'Tracked Hours',
+        'total_uattend_hours': 'uAttend Hours',
+        'total_wo': 'Work Orders',
+        'total_entries': 'Labor Entries',
+      } if selected_tab == 'mechanic_hours' else {} %}
       {% for key, value in report_data.summary.items() %}
       <tr>
-        <td>{{ key.replace('_', ' ')|title }}</td>
+        <td>{{ summary_labels.get(key) or key.replace('_', ' ')|title }}</td>
         <td class="text-end">
-          {% if 'count' in key %}
+          {% if 'count' in key or key in ('total_wo', 'total_entries') %}
             {{ value }}
           {% elif 'hours' in key or 'entries' in key %}
             {{ "%.2f"|format(value or 0) }}
@@ -137,6 +144,9 @@
             <th>Mechanic</th>
             <th class="text-end">Billed Hours</th>
             <th class="text-end">Tracked Hours</th>
+            {% if 'total_uattend_hours' in report_data.summary %}
+            <th class="text-end">uAttend Hours</th>
+            {% endif %}
             <th class="text-end">Work Orders</th>
             <th class="text-end">Labor Entries</th>
           </tr>
@@ -208,6 +218,9 @@
               <td>{{ row.mechanic_name }}</td>
               <td class="text-end">{{ "%.2f"|format(row.total_hours or 0) }}</td>
               <td class="text-end">{{ "%.2f"|format(row.tracked_hours or 0) }}</td>
+              {% if 'total_uattend_hours' in report_data.summary %}
+              <td class="text-end">{{ "%.2f"|format(row.uattend_hours or 0) }}</td>
+              {% endif %}
               <td class="text-end">{{ row.wo_count or 0 }}</td>
               <td class="text-end">{{ row.labor_entries or 0 }}</td>
             </tr>

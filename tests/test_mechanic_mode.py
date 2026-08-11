@@ -615,7 +615,7 @@ def test_mechanic_hours_report_includes_tracked(app, client, mech_seed, mongo):
 
     with app.app_context():
         report = _report_mechanic_hours(
-            mongo[SHOP_A_DB], mech_seed["customer"]["shop_id"], {}, chart_bucket="month"
+            mongo[SHOP_A_DB], {"_id": mech_seed["customer"]["shop_id"]}, {}, chart_bucket="month"
         )
 
     assert "total_tracked_hours" in report["summary"]

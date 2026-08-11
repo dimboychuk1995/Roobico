@@ -187,12 +187,28 @@
         ["wo_count", "po_count", "invoiced_hours", "total_mech_hours"]
       ],
       "mechanic_hours": [
-        ["total_hours", "total_tracked_hours", "mechanics_count"],
+        ["total_hours", "total_tracked_hours", "total_uattend_hours", "mechanics_count"],
         ["total_wo", "total_entries"]
       ]
     };
 
     var rowDefs = layouts[tab];
+
+    // Явные подписи/форматы там, где эвристика по имени ключа даёт мусор
+    // (total_wo — это количество WO, а не деньги).
+    var cardOpts = {
+      "mechanic_hours": {
+        "total_hours": { label: "Billed Hours" },
+        "total_tracked_hours": { label: "Tracked Hours" },
+        "total_uattend_hours": { label: "uAttend Hours" },
+        "total_wo": { label: "Work Orders", isCount: true },
+        "total_entries": { label: "Labor Entries", isCount: true }
+      }
+    };
+
+    function optsFor(key) {
+      return (cardOpts[tab] || {})[key] || {};
+    }
 
     function cardHtml(key, val, opts) {
       opts = opts || {};
@@ -212,8 +228,9 @@
         display = "$" + fmtMoney(val);
       }
       var accent = opts.accent ? ' style="border-left:3px solid ' + opts.accent + '"' : '';
+      var capCls = opts.label ? "" : " text-capitalize";
       return '<div class="col"><div class="border rounded p-2 h-100"' + accent + '>' +
-        '<div class="small text-muted text-capitalize">' + escapeHtml(label) + '</div>' +
+        '<div class="small text-muted' + capCls + '">' + escapeHtml(label) + '</div>' +
         '<div class="fw-semibold">' + escapeHtml(display) + '</div>' +
         '</div></div>';
     }
@@ -334,7 +351,7 @@
       // Fallback: all keys in one row
       var html = "";
       for (var key in summary) {
-        if (summary.hasOwnProperty(key)) html += cardHtml(key, summary[key]);
+        if (summary.hasOwnProperty(key)) html += cardHtml(key, summary[key], optsFor(key));
       }
       return html ? '<div class="row g-2">' + html + '</div>' : "";
     }
@@ -346,7 +363,7 @@
       for (var i = 0; i < rowDefs[r].length; i++) {
         var k = rowDefs[r][i];
         if (summary.hasOwnProperty(k)) {
-          rowHtml += cardHtml(k, summary[k]);
+          rowHtml += cardHtml(k, summary[k], optsFor(k));
           usedKeys[k] = true;
         }
       }
@@ -355,13 +372,14 @@
     // Any remaining keys
     var extraHtml = "";
     for (var key in summary) {
-      if (summary.hasOwnProperty(key) && !usedKeys[key]) extraHtml += cardHtml(key, summary[key]);
+      if (summary.hasOwnProperty(key) && !usedKeys[key]) extraHtml += cardHtml(key, summary[key], optsFor(key));
     }
     if (extraHtml) html += '<div class="row g-2">' + extraHtml + '</div>';
     return html;
   }
 
-  function buildTheadHtml(tab) {
+  function buildTheadHtml(tab, opts) {
+    opts = opts || {};
     if (tab === "sales_summary") {
       return '<tr class="text-muted"><th>Customer</th><th class="text-end">Orders</th><th class="text-end">Labor</th><th class="text-end">Parts</th><th class="text-end">Parts Cost</th><th class="text-end">Tax</th><th class="text-end">Hours</th><th class="text-end">Revenue</th></tr>';
     }
@@ -378,12 +396,15 @@
       return '<tr class="text-muted"><th style="width:30%">Category</th><th>What is this</th><th class="text-end" style="width:16%">Amount</th></tr>';
     }
     if (tab === "mechanic_hours") {
-      return '<tr class="text-muted"><th>Mechanic</th><th class="text-end">Billed Hours</th><th class="text-end">Tracked Hours</th><th class="text-end">Work Orders</th><th class="text-end">Labor Entries</th></tr>';
+      return '<tr class="text-muted"><th>Mechanic</th><th class="text-end">Billed Hours</th><th class="text-end">Tracked Hours</th>' +
+        (opts.hasUattend ? '<th class="text-end">uAttend Hours</th>' : '') +
+        '<th class="text-end">Work Orders</th><th class="text-end">Labor Entries</th></tr>';
     }
     return '<tr class="text-muted"><th>Vendor</th><th class="text-end">Orders</th><th class="text-end">Parts</th><th class="text-end">Cores</th><th class="text-end">Shop Supply</th><th class="text-end">Tools</th><th class="text-end">Utilities</th><th class="text-end">Pmt to Svc</th><th class="text-end">Non‑Inv Total</th><th class="text-end">Total</th><th class="text-end">Paid</th><th class="text-end">Balance</th></tr>';
   }
 
-  function buildRowHtml(tab, row) {
+  function buildRowHtml(tab, row, opts) {
+    opts = opts || {};
     if (tab === "sales_summary") {
       return '<tr><td>' + escapeHtml(row.customer_label) + '</td>' +
         '<td class="text-end">' + (row.orders_count || 0) + '</td>' +
@@ -462,6 +483,7 @@
       return '<tr><td>' + escapeHtml(row.mechanic_name) + '</td>' +
         '<td class="text-end fw-semibold">' + fmtHours(row.total_hours) + '</td>' +
         '<td class="text-end">' + fmtHours(row.tracked_hours) + '</td>' +
+        (opts.hasUattend ? '<td class="text-end">' + fmtHours(row.uattend_hours) + '</td>' : '') +
         '<td class="text-end">' + (row.wo_count || 0) + '</td>' +
         '<td class="text-end">' + (row.labor_entries || 0) + '</td></tr>';
     }
@@ -543,10 +565,13 @@
 
         var rows = rd.rows || [];
         if (rows.length) {
-          thead.innerHTML = buildTheadHtml(tab);
+          var rowOpts = {
+            hasUattend: !!(rd.summary && rd.summary.hasOwnProperty("total_uattend_hours"))
+          };
+          thead.innerHTML = buildTheadHtml(tab, rowOpts);
           var rowsHtml = "";
           for (var i = 0; i < rows.length; i++) {
-            rowsHtml += buildRowHtml(tab, rows[i]);
+            rowsHtml += buildRowHtml(tab, rows[i], rowOpts);
           }
           tbody.innerHTML = rowsHtml;
           tableWrap.classList.remove("d-none");

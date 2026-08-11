@@ -97,6 +97,9 @@ always all-time. Same for the Dashboard's Outstanding Balance widget.
 
 **Is a mechanic efficient?** Reports → Mechanic Hours: Billed Hours (from
 WO labor, split by assignment %) vs Tracked Hours (their real job timers).
+With uAttend connected there is also a uAttend Hours column — attendance
+from the time clock, so mechanics who don't use the job timer still show
+their hours at work for any past period.
 
 **Who changed/deleted this?** Reports → Activity Journal — every
 create/edit/delete with user, time and endpoint.
@@ -120,8 +123,9 @@ role in Roles & Permissions.
 cannot deactivate yourself.
 
 **Track employee hours.** Settings → Integrations → uAttend: API key,
-enable, tick employees, set $/hr. Hours appear in Timecard / Salary and in
-General Revenue payroll.
+enable, tick employees, set $/hr. Hours appear in Timecard / Salary, in
+General Revenue payroll, on the Dashboard hours chart and in the Mechanic
+Hours report (uAttend Hours column).
 
 ## Customer-facing
 

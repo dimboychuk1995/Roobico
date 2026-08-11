@@ -1639,7 +1639,8 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=Non
     }
 
 
-def _report_mechanic_hours(shop_db, shop_id, date_ctx, chart_bucket="month"):
+def _report_mechanic_hours(shop_db, shop, date_ctx, chart_bucket="month"):
+    shop_id = shop["_id"]
     wo_query = {
         "shop_id": shop_id,
         "is_active": True,
@@ -1734,7 +1735,83 @@ def _report_mechanic_hours(shop_db, shop_id, date_ctx, chart_bucket="month"):
     for bucket in mechanics.values():
         bucket.setdefault("tracked_hours", 0.0)
 
-    rows = sorted(mechanics.values(), key=lambda x: x.get("total_hours", 0), reverse=True)
+    # uAttend-часы за тот же период — как на дашборде: сотрудники uAttend,
+    # заматченные на не-механиков (менеджеры, владелец), исключаются;
+    # несматченные остаются отдельными строками — это механики без аккаунта.
+    uattend_connected = False
+    total_uattend_hours = 0.0
+    date_from_iso = str(date_ctx.get("date_from") or "")
+    date_to_iso = str(date_ctx.get("date_to") or "")
+    if date_from_iso and date_to_iso:
+        from app.blueprints.work_orders.services.lookups import get_assignable_mechanics
+        from app.utils.integrations.uattend_hours import load_uattend_period_hours
+        from app.utils.integrations.uattend_match import current_match_map
+        from app.utils.tenant import tenant_id_variants
+
+        mechanic_ids = {m["id"] for m in get_assignable_mechanics(shop)}
+        match_map = current_match_map(shop_db, shop_id, get_master_db(), tenant_id_variants())
+        non_mechanic_uids = {
+            uatt_uid
+            for uatt_uid, match in match_map.items()
+            if str(match.get("internal_id") or "")
+            and str(match["internal_id"]) not in mechanic_ids
+        }
+        uattend = load_uattend_period_hours(
+            shop_db, shop_id, date_from_iso, date_to_iso, exclude_uids=non_mechanic_uids,
+        )
+        uattend_connected = bool(uattend.get("connected"))
+        if uattend_connected and uattend.get("by_uid"):
+            emp_names = {}
+            for emp in shop_db.uattend_employees.find(
+                {"shop_id": shop_id, "is_active": True},
+                {"uattend_user_id": 1, "first_name": 1, "last_name": 1, "email": 1},
+            ):
+                try:
+                    emp_uid = int(emp.get("uattend_user_id"))
+                except (TypeError, ValueError):
+                    continue
+                emp_name = f"{emp.get('first_name') or ''} {emp.get('last_name') or ''}".strip()
+                emp_names[emp_uid] = emp_name or (emp.get("email") or "")
+
+            for uatt_uid, uatt_hours in uattend["by_uid"].items():
+                try:
+                    uatt_hours = float(uatt_hours or 0)
+                except (TypeError, ValueError):
+                    continue
+                if uatt_hours <= 0 or uatt_uid in non_mechanic_uids:
+                    continue
+                match = match_map.get(uatt_uid)
+                if match and match.get("internal_id"):
+                    key = str(match["internal_id"])
+                    name = str(match.get("internal_name") or "").strip()
+                else:
+                    key = f"uattend:{uatt_uid}"
+                    name = emp_names.get(uatt_uid) or f"uAttend #{uatt_uid}"
+                bucket = mechanics.setdefault(key, {
+                    "mechanic_id": key,
+                    "mechanic_name": name or "-",
+                    "total_hours": 0.0,
+                    "wo_count": 0,
+                    "labor_entries": 0,
+                    "tracked_hours": 0.0,
+                })
+                if name and bucket.get("mechanic_name") in ("", "-"):
+                    bucket["mechanic_name"] = name
+                bucket["uattend_hours"] = _round2(float(bucket.get("uattend_hours") or 0.0) + uatt_hours)
+                total_uattend_hours += uatt_hours
+        if uattend_connected:
+            for bucket in mechanics.values():
+                bucket.setdefault("uattend_hours", 0.0)
+
+    rows = sorted(
+        mechanics.values(),
+        key=lambda x: (
+            _round2(x.get("total_hours")),
+            _round2(x.get("tracked_hours")),
+            _round2(x.get("uattend_hours")),
+        ),
+        reverse=True,
+    )
 
     total_hours = _round2(sum(float(r.get("total_hours") or 0) for r in rows))
     total_tracked_hours = _round2(sum(float(r.get("tracked_hours") or 0) for r in rows))
@@ -1753,15 +1830,21 @@ def _report_mechanic_hours(shop_db, shop_id, date_ctx, chart_bucket="month"):
         "is_hours": True,
     }
 
+    summary = {
+        "mechanics_count": len(rows),
+        "total_hours": total_hours,
+        "total_tracked_hours": total_tracked_hours,
+        "total_wo": total_wo,
+        "total_entries": total_entries,
+    }
+    # Ключ присутствует только при подключённой интеграции — фронт по нему
+    # решает, показывать ли колонку uAttend.
+    if uattend_connected:
+        summary["total_uattend_hours"] = _round2(total_uattend_hours)
+
     return {
         "title": "Mechanic Hours",
-        "summary": {
-            "mechanics_count": len(rows),
-            "total_hours": total_hours,
-            "total_tracked_hours": total_tracked_hours,
-            "total_wo": total_wo,
-            "total_entries": total_entries,
-        },
+        "summary": summary,
         "rows": rows,
         "chart_data": chart_data,
     }
@@ -1884,7 +1967,7 @@ def _build_standard_reports_context(selected_tab: str, args, *, skip_report_data
     elif selected_tab == "mechanic_hours":
         report_data = _report_mechanic_hours(
             shop_db,
-            shop["_id"],
+            shop,
             date_ctx,
             chart_bucket=chart_bucket,
         )
