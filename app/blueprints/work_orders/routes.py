@@ -1324,15 +1324,18 @@ def api_create_annual_inspection():
 
     data = request.get_json(silent=True) or {}
 
+    # Юнит опционален: со страницы Perks инспекция делается «быстро» —
+    # только VIN + тип + кастомер текстом, без заведения юнита в систему.
     unit_id = oid(data.get("unit_id"))
-    if not unit_id:
-        return jsonify({"ok": False, "error": "unit_required"}), 200
+    unit = None
+    if unit_id:
+        unit = shop_db.units.find_one({"_id": unit_id, "shop_id": shop["_id"], "is_active": True})
+        if not unit:
+            return jsonify({"ok": False, "error": "unit_not_found"}), 200
+    elif not (data.get("vin") or "").strip():
+        return jsonify({"ok": False, "error": "vin_required"}), 200
 
-    unit = shop_db.units.find_one({"_id": unit_id, "shop_id": shop["_id"], "is_active": True})
-    if not unit:
-        return jsonify({"ok": False, "error": "unit_not_found"}), 200
-
-    customer_id = oid(data.get("customer_id")) or unit.get("customer_id")
+    customer_id = oid(data.get("customer_id")) or (unit.get("customer_id") if unit else None)
     inspection_date = shop_local_date_to_utc(data.get("date"), default_today=True)
 
     now = utcnow()
@@ -1356,7 +1359,7 @@ def api_create_annual_inspection():
         "vehicle_id_type": "vin",
         "vin": (data.get("vin") or "").strip().upper(),
         "inspection_agency": (data.get("inspection_agency") or "").strip(),
-        "vehicle_type": (data.get("vehicle_type") or "").strip().lower() or (unit.get("type") or "").strip().lower(),
+        "vehicle_type": (data.get("vehicle_type") or "").strip().lower() or ((unit.get("type") or "").strip().lower() if unit else ""),
         # Component checklist marks: {"1a": {"status": "ok"|"repair"|"na", ...}}
         "components": sanitize_components(data.get("components")),
         "created_at": now,

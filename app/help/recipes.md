@@ -152,6 +152,12 @@ checklist (NR = needs repair with a date, NA = not applicable), save — the
 history and shows when the current inspection expires (12 months; yellow =
 within 30 days, red = expired).
 
+**Inspection for a vehicle that's not in the system.** Perks → Annual
+Inspection → "New Inspection": type the VIN, pick the type, enter the
+customer name by hand — no unit or customer record needed. All saved
+inspections (quick ones and those from work orders/units) are listed on
+that page with PDF download and delete.
+
 ## Organization
 
 **Open a second location.** Settings → Shops → "+ Add shop". It gets its

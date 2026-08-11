@@ -8,8 +8,9 @@
   const modalEl = document.getElementById("annualInspectionModal");
   if (!modalEl || window.AnnualInspection) return;
 
-  // Контекст текущего открытия (не редактируется в форме)
-  let ctx = { customer_id: "", unit_id: "", work_order_id: "", reload_after: false };
+  // Контекст текущего открытия (не редактируется в форме).
+  // standalone — «быстрая» инспекция без юнита в системе (страница Perks).
+  let ctx = { customer_id: "", unit_id: "", work_order_id: "", reload_after: false, standalone: false };
   let previewUrl = null;
 
   function readJson(id, fallback) {
@@ -159,7 +160,7 @@
     const btn = this;
     const payload = collectFields();
 
-    if (!payload.unit_id) { showError("Select a unit first."); return; }
+    if (!payload.unit_id && !ctx.standalone) { showError("Select a unit first."); return; }
     if (!payload.vin) { showError("VIN is required."); return; }
     if (!payload.vehicle_type) { showError("Select a vehicle type."); return; }
 
@@ -200,6 +201,7 @@
       unit_id: String(options.unit_id || ""),
       work_order_id: String(options.work_order_id || ""),
       reload_after: !!options.reload_after,
+      standalone: !!options.standalone,
     };
 
     const setVal = (id, value) => {
@@ -234,7 +236,40 @@
       carrier: btn.getAttribute("data-avi-carrier"),
       address: btn.getAttribute("data-avi-address"),
       reload_after: btn.getAttribute("data-avi-reload") === "1",
+      standalone: btn.getAttribute("data-avi-standalone") === "1",
     });
+  });
+
+  // Удаление инспекции из реестра (кнопки с data-avi-delete="<id>")
+  document.addEventListener("click", async (e) => {
+    const del = e.target.closest("[data-avi-delete]");
+    if (!del) return;
+    e.preventDefault();
+    const inspectionId = del.getAttribute("data-avi-delete");
+    if (!inspectionId) return;
+
+    const confirmed = typeof Swal !== "undefined"
+      ? (await Swal.fire({
+          icon: "warning",
+          title: "Delete this inspection?",
+          text: "The inspection record and its PDF will no longer be available.",
+          showCancelButton: true,
+          confirmButtonText: "Delete",
+          confirmButtonColor: "#dc3545",
+        })).isConfirmed
+      : window.confirm("Delete this inspection?");
+    if (!confirmed) return;
+
+    del.disabled = true;
+    try {
+      const res = await fetch(`/work_orders/api/annual_inspections/${encodeURIComponent(inspectionId)}/delete`, { method: "POST" });
+      const data = await res.json();
+      if (!data || !data.ok) throw new Error((data && data.error) || "Failed to delete inspection");
+      window.location.reload();
+    } catch (err) {
+      del.disabled = false;
+      toast(err.message || "Failed to delete inspection", "error");
+    }
   });
 
   window.AnnualInspection = { open: open };

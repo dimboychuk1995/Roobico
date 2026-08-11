@@ -278,6 +278,66 @@ def test_inspection_modal_available_on_customer_pages(client, avi_unit):
     assert f'data-avi-unit-id="{uid}"' in html
 
 
+def test_standalone_inspection_without_unit(client, avi_unit):
+    """Perks: инспекция без юнита в системе — достаточно VIN + типа."""
+    login(client)
+    shop_db = avi_unit["shop_db"]
+
+    # Без юнита и без VIN — отказ
+    resp = client.post(
+        "/work_orders/api/annual_inspections/create",
+        json={"vehicle_type": "semi_trailer"},
+        headers={"X-CSRFToken": get_csrf_token(client)},
+    )
+    assert resp.get_json()["ok"] is False
+    assert resp.get_json()["error"] == "vin_required"
+
+    resp = client.post(
+        "/work_orders/api/annual_inspections/create",
+        json={
+            "vin": "QUICKVIN123456789",
+            "vehicle_type": "semi_trailer",
+            "motor_carrier_operator": "Walk-in Fleet LLC",
+            "date": "2026-06-01",
+            "components": {"1a": {"status": "ok"}},
+        },
+        headers={"X-CSRFToken": get_csrf_token(client)},
+    )
+    data = resp.get_json()
+    assert data["ok"] is True, data
+    doc = shop_db.annual_inspections.find_one({"_id": ObjectId(data["id"])})
+    assert doc["unit_id"] is None
+    assert doc["vin"] == "QUICKVIN123456789"
+    assert doc["motor_carrier_operator"] == "Walk-in Fleet LLC"
+
+    # PDF скачивается и без юнита
+    resp = client.get(f"/work_orders/api/annual_inspections/{data['id']}/download-pdf")
+    assert resp.status_code == 200
+    assert resp.headers["Content-Type"] == "application/pdf"
+
+    shop_db.annual_inspections.delete_one({"_id": ObjectId(data["id"])})
+
+
+def test_perks_pages(client, avi_unit):
+    """Perks: индекс с карточкой и страница AVIR с реестром и модалкой."""
+    login(client)
+    inspection_id = _create_inspection(client, avi_unit["unit"])
+
+    resp = client.get("/perks")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "Annual Inspection" in html
+
+    resp = client.get("/perks/annual-inspection")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert 'id="annualInspectionModal"' in html
+    assert 'data-avi-standalone="1"' in html
+    # Созданная инспекция видна в реестре (по хвосту id — report number)
+    assert inspection_id[-6:].upper() in html
+    assert f'data-avi-delete="{inspection_id}"' in html
+
+
 def test_component_keys_are_unique_and_stable():
     from app.blueprints.work_orders.services.inspections import (
         annual_inspection_checklist,

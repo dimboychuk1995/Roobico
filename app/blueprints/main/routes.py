@@ -74,6 +74,7 @@ NAV_ITEMS = [
     {"key": "work_orders", "label": "Work Orders", "endpoint": "work_orders.work_orders_page"},
     {"key": "settings", "label": "Settings", "endpoint": "main.settings"},
     {"key": "reports", "label": "Reports", "endpoint": "reports.reports_index"},
+    {"key": "perks", "label": "Perks", "endpoint": "perks.perks_index", "perm": "work_orders.view"},
     {"key": "import_export", "label": "Import / Export", "endpoint": "import_export.import_export_index"},
 ]
 

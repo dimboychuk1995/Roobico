@@ -1,0 +1,27 @@
+{% extends "layouts/app_base.html" %}
+{% block page_title %}Perks{% endblock %}
+
+{% block app_content %}
+<div class="page-header">
+  <h1 class="page-header__title">Perks</h1>
+</div>
+
+<h2 class="h6 text-muted text-uppercase mt-4 mb-2">Quick Tools</h2>
+<div class="row g-3">
+  <div class="col-12 col-md-6 col-xl-4">
+    <a href="{{ url_for('perks.perks_annual_inspection_page') }}" class="text-decoration-none">
+      <div class="card h-100">
+        <div class="card-body d-flex align-items-start gap-3">
+          <div class="flex-shrink-0 icon-tile icon-tile-green">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+          </div>
+          <div>
+            <h2 class="h6 mb-1">Annual Inspection</h2>
+            <p class="text-muted mb-0 small">DOT Annual Vehicle Inspection (49 CFR 396) for any unit — no need to add it to the system. Saved inspections live here too.</p>
+          </div>
+        </div>
+      </div>
+    </a>
+  </div>
+</div>
+{% endblock %}

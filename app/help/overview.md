@@ -7,8 +7,15 @@ orders, parts and inventory, vendor purchasing, customers and their units
 ## Navigation
 
 Left sidebar sections: **Dashboard, Calendar, Parts, Vendors, Customers,
-Work Orders, Settings, Reports, Import / Export**. The sidebar collapses
-with the hamburger button; the theme toggle (light/dark) is at its bottom.
+Work Orders, Settings, Reports, Perks, Import / Export**. The sidebar
+collapses with the hamburger button; the theme toggle (light/dark) is at
+its bottom.
+
+**Perks** — quick tools outside the normal work order flow. Currently:
+**Annual Inspection** — create a DOT annual inspection for any vehicle
+without adding it to the system (type the VIN, pick the vehicle type,
+enter the customer name by hand); the page also lists every saved
+inspection of the shop with PDF download and delete.
 
 - **Global search** — the "Search..." box at the top of the sidebar finds
   customers, units, parts and work orders from anywhere (2+ characters).

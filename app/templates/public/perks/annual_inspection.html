@@ -1,0 +1,93 @@
+{% extends "layouts/app_base.html" %}
+{% from "components/ui.html" import empty_state %}
+{% from "components/annual_inspection.html" import annual_inspection_modal with context %}
+{% block page_title %}Annual Inspection{% endblock %}
+
+{% block app_content %}
+<div class="page-header">
+  <h1 class="page-header__title">Annual Inspection</h1>
+  <div class="page-header__actions d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('perks.perks_index') }}">&larr; Back to Perks</a>
+    {% if can_create_inspection %}
+    <button type="button" class="btn btn-primary btn-sm" data-avi-open data-avi-standalone="1" data-avi-reload="1">
+      <i class="bi bi-clipboard-check me-1"></i>New Inspection
+    </button>
+    {% endif %}
+  </div>
+</div>
+
+{% if error %}
+<div class="alert alert-warning mt-3">{{ error }}</div>
+{% else %}
+<div class="mt-3">
+  <div class="card">
+    <div class="card-body">
+      <p class="text-muted small mb-3">
+        Quick DOT Annual Vehicle Inspection for units you don't want to add to the
+        system: enter the VIN, pick the vehicle type (its OK/NA preset applies) and
+        type the customer name — the saved report and its PDF stay in this list.
+        Inspections created from work orders and unit pages appear here too.
+      </p>
+
+      {% if rows %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle">
+          <thead>
+            <tr class="text-muted small">
+              <th>Date</th>
+              <th>Report #</th>
+              <th>VIN</th>
+              <th>Carrier / Customer</th>
+              <th>Type</th>
+              <th>Unit</th>
+              <th>Valid until</th>
+              <th class="text-end"></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in rows %}
+            <tr>
+              <td>{{ row.date }}</td>
+              <td class="fw-semibold">{{ row.report_number }}</td>
+              <td>{{ row.vin }}</td>
+              <td>{{ row.carrier }}</td>
+              <td>{{ row.vehicle_type }}</td>
+              <td>
+                {% if row.unit_id and row.unit_customer_id %}
+                  <a href="{{ url_for('customers.customer_unit_details_page', customer_id=row.unit_customer_id, unit_id=row.unit_id) }}">{{ row.unit_number or 'Unit' }}</a>
+                {% else %}
+                  <span class="text-muted">quick</span>
+                {% endif %}
+              </td>
+              <td>
+                {{ row.expires }}
+                {% if row.expiry_status == 'expired' %}
+                  <span class="badge text-bg-danger ms-1">expired</span>
+                {% elif row.expiry_status == 'expiring' %}
+                  <span class="badge text-bg-warning ms-1">soon</span>
+                {% endif %}
+              </td>
+              <td class="text-end">
+                <a class="btn btn-sm btn-outline-secondary" href="/work_orders/api/annual_inspections/{{ row.id }}/download-pdf" title="Download PDF"><i class="bi bi-file-earmark-pdf"></i></a>
+                {% if can_delete_inspection %}
+                <button class="btn btn-sm btn-outline-danger" type="button" data-avi-delete="{{ row.id }}" title="Delete inspection"><i class="bi bi-trash"></i></button>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+        {{ empty_state("No inspections yet", "Create the first one with the New Inspection button.") }}
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{# Модалка нужна и ради общего JS (обработчик удаления data-avi-delete) #}
+{% if can_create_inspection or can_delete_inspection %}
+  {{ annual_inspection_modal() }}
+{% endif %}
+{% endblock %}
