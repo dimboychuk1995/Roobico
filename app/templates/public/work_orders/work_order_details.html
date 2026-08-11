@@ -110,9 +110,9 @@
       </div>
 
       {% if "work_orders.view_costs" in user_permissions %}
-      <!-- ÐŸÐ°Ñ€Ñ‚-Ð¾Ñ€Ð´ÐµÑ€Ð° ÑÑ‚Ð¾Ð³Ð¾ WO: Ð½ÐµÐ±Ñ€Ð¾ÑÐºÐ°Ñ ÑÑÑ‹Ð»ÐºÐ° + Ñ€Ð°ÑÐºÑ€Ñ‹Ð²Ð°ÑŽÑ‰Ð¸Ð¹ÑÑ Ð±Ð»Ð¾Ðº.
-           Ð”Ð¾ ÑÐ¾Ñ…Ñ€Ð°Ð½ÐµÐ½Ð¸Ñ WO Ð·Ð°ÐºÐ°Ð·Ñ‹ Ð²ÐµÑˆÐ°ÑŽÑ‚ÑÑ Ð½Ð° pending-id Ð¸ Ð¿ÐµÑ€ÐµÐ¿Ñ€Ð¸Ð²ÑÐ¶ÑƒÑ‚ÑÑ
-           Ð¿Ñ€Ð¸ ÑÐ¾Ð·Ð´Ð°Ð½Ð¸Ð¸ (ÐºÐ°Ðº Ð²Ð»Ð¾Ð¶ÐµÐ½Ð¸Ñ). -->
+      <!-- Парт-ордера этого WO: неброская ссылка + раскрывающийся блок.
+           До сохранения WO заказы вешаются на pending-id и перепривяжутся
+           при создании (как вложения). -->
       <div class="mt-3">
         <button type="button" class="btn btn-sm btn-outline-secondary" id="woPartsOrdersToggle"
                 data-bs-toggle="collapse" data-bs-target="#woPartsOrdersBlock"
@@ -126,7 +126,7 @@
             <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
               <div class="text-muted small">
                 Vendor orders placed for this work order. They also appear on the
-                Parts â†’ Parts Orders tab like any other order.
+                Parts → Parts Orders tab like any other order.
                 {% if not work_order_created %}
                   <br>The order links to this work order once you create it.
                 {% endif %}
@@ -261,15 +261,15 @@
             (county, city and special-district rates are not included).
             If you need the full combined rate, go to
             <a href="{{ url_for('settings.parts_settings_index') }}#tax-rate-card"
-               class="alert-link">Settings â†’ Parts Settings</a>
+               class="alert-link">Settings → Parts Settings</a>
             and enter the correct percentage in the
             <strong>Custom Tax Rate</strong> field.
           </div>
 
           <div class="wo-totals-row">
             <div class="wo-totals-chip">
-              <div>Labor total: <strong id="laborGrandTotalDisplay">â€”</strong></div>
-              <div>Labor: <strong id="laborGrandBaseDisplay">â€”</strong></div>
+              <div>Labor total: <strong id="laborGrandTotalDisplay">—</strong></div>
+              <div>Labor: <strong id="laborGrandBaseDisplay">—</strong></div>
               <div id="shopSupplyGrandTotalWrap" class="d-flex align-items-center justify-content-center gap-1">
                 <span>Shop supply:</span>
                 <span>$</span>
@@ -277,22 +277,22 @@
                        class="form-control form-control-sm text-end"
                        style="width:90px; padding:0 4px; height:auto;" value="0">
                 <button type="button" id="shopSupplyResetBtn" class="btn btn-sm btn-link p-0"
-                        title="Reset to calculated value" style="display:none; line-height:1;">â†º</button>
-                <strong id="shopSupplyGrandTotalDisplay" class="d-none">â€”</strong>
+                        title="Reset to calculated value" style="display:none; line-height:1;">↺</button>
+                <strong id="shopSupplyGrandTotalDisplay" class="d-none">—</strong>
               </div>
             </div>
             <div class="wo-totals-chip">
-              <div>Parts total: <strong id="partsGrandTotalDisplay">â€”</strong></div>
-              <div>Parts: <strong id="partsGrandBaseDisplay">â€”</strong></div>
-              <div id="coreGrandTotalWrap" style="display:none;">Cores: <strong id="coreGrandTotalDisplay">â€”</strong></div>
-              <div id="miscGrandTotalWrap" style="display:none;">Misc: <strong id="miscGrandTotalDisplay">â€”</strong></div>
-              <div>Sales tax (<span id="salesTaxRateLabel">0.00%</span>): <strong id="salesTaxGrandTotalDisplay">â€”</strong></div>
+              <div>Parts total: <strong id="partsGrandTotalDisplay">—</strong></div>
+              <div>Parts: <strong id="partsGrandBaseDisplay">—</strong></div>
+              <div id="coreGrandTotalWrap" style="display:none;">Cores: <strong id="coreGrandTotalDisplay">—</strong></div>
+              <div id="miscGrandTotalWrap" style="display:none;">Misc: <strong id="miscGrandTotalDisplay">—</strong></div>
+              <div>Sales tax (<span id="salesTaxRateLabel">0.00%</span>): <strong id="salesTaxGrandTotalDisplay">—</strong></div>
               <div class="form-check form-switch mt-1 d-inline-flex align-items-center gap-2 m-0">
                 <input class="form-check-input" type="checkbox" id="woTaxableToggle">
                 <label class="form-check-label small" for="woTaxableToggle">Taxable</label>
               </div>
             </div>
-            <div class="wo-totals-chip wo-grand-total">Grand total: <strong id="grandTotalDisplay" class="ms-1">â€”</strong></div>
+            <div class="wo-totals-chip wo-grand-total">Grand total: <strong id="grandTotalDisplay" class="ms-1">—</strong></div>
           </div>
         </div>
 
@@ -304,14 +304,14 @@
           <div class="d-flex gap-2 align-items-center">
             <input type="file" id="recognizeWoFileInput" accept="application/pdf,image/*" style="display:none;">
             <button type="button" class="btn btn-outline-success btn-sm" id="recognizeWoBtn" title="Recognize a handwritten work order with AI">
-              <span class="recognize-wo-label">ðŸ“· Recognize WO</span>
+              <span class="recognize-wo-label">📷 Recognize WO</span>
               <span class="recognize-wo-spinner" style="display:none;">
                 <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                Recognizingâ€¦
+                Recognizing…
               </span>
             </button>
             <button type="button" class="btn btn-outline-warning btn-sm" id="sendWoAuthBtn" title="Send the entire work order to the customer for authorization" style="display:none;">
-              âœ‰ Send for Authorization
+              ✉ Send for Authorization
             </button>
             <button type="button" class="btn btn-outline-primary btn-sm" id="addLaborBtn">+ Add Labor</button>
           </div>
@@ -326,21 +326,21 @@
               <div class="d-flex justify-content-between align-items-center pb-3 mb-3 wo-labor-header">
                 <div>
                   <h2 class="h6 mb-0">Labor <span class="labor-number">1</span><span class="laborAuthBadge ms-2 wo-auth-badge"></span></h2>
-                  <div class="text-muted small mt-1 laborAssignSummary">Mechanics: â€”</div>
+                  <div class="text-muted small mt-1 laborAssignSummary">Mechanics: —</div>
                   <div class="wo-labor-summary mt-2">
                     <div class="wo-totals-chip">
-                      <div>Labor: <strong class="laborTotalDisplay">â€”</strong></div>
+                      <div>Labor: <strong class="laborTotalDisplay">—</strong></div>
                     </div>
                     <div class="wo-totals-chip">
-                      <div>Parts: <strong class="partsTotalDisplay">â€”</strong></div>
+                      <div>Parts: <strong class="partsTotalDisplay">—</strong></div>
                       <div class="coreTotalWrap" style="display:none;">
-                        Cores: <strong class="coreTotalDisplay">â€”</strong>
+                        Cores: <strong class="coreTotalDisplay">—</strong>
                       </div>
                       <div class="miscTotalWrap" style="display:none;">
-                        Misc: <strong class="miscTotalDisplay">â€”</strong>
+                        Misc: <strong class="miscTotalDisplay">—</strong>
                       </div>
                     </div>
-                    <div class="wo-totals-chip wo-chip-inline">Labor total: <strong class="laborFullTotalDisplay ms-1">â€”</strong></div>
+                    <div class="wo-totals-chip wo-chip-inline">Labor total: <strong class="laborFullTotalDisplay ms-1">—</strong></div>
                   </div>
                 </div>
 
@@ -434,7 +434,7 @@
                         <td class="p-1 align-middle"><div class="p-1"><input class="form-control form-control-sm part-price" name="labors[0][parts][0][price]" value="" inputmode="decimal" style="width: 88%;"></div></td>
                         <td class="part-line-total p-1 align-middle">
                           <div class="d-flex align-items-center gap-2 p-1">
-                            <div class="part-line-total-value"><span class="text-muted">â€”</span></div>
+                            <div class="part-line-total-value"><span class="text-muted">—</span></div>
                             <div class="form-check form-switch part-core-toggle-wrapper" style="display: none; margin: 0;">
                               <input class="form-check-input part-core-toggle" type="checkbox">
                               <label class="form-check-label small text-muted" style="margin-bottom: 0;">Core</label>
@@ -443,7 +443,7 @@
                         </td>
                         <td class="text-center p-1 align-middle">
                           <div class="p-1">
-                            <button type="button" class="btn btn-sm btn-outline-danger delete-part-row" title="Delete this part">Ã—</button>
+                            <button type="button" class="btn btn-sm btn-outline-danger delete-part-row" title="Delete this part">×</button>
                           </div>
                         </td>
                       </tr>
@@ -506,7 +506,7 @@
                         <div class="progress" style="height:4px;">
                           <div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%"></div>
                         </div>
-                        <small class="text-muted">Uploadingâ€¦</small>
+                        <small class="text-muted">Uploading…</small>
                       </div>
                       <div class="att-gallery d-flex flex-wrap gap-2"></div>
                       <div class="att-empty text-muted small" style="display:none;">No attachments yet.</div>
@@ -614,7 +614,7 @@
 
     </form>
 
-    <!-- Recognize Work Order (AI) â€” review modal -->
+    <!-- Recognize Work Order (AI) — review modal -->
     <div class="modal fade" id="recognizeWoModal" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-fullscreen modal-dialog-scrollable">
         <div class="modal-content">
@@ -709,7 +709,7 @@
             </p>
             <div class="mb-3">
               <label class="form-label fw-semibold" for="describeIssueText">Issue description</label>
-              <textarea id="describeIssueText" class="form-control" rows="5" maxlength="4000" placeholder="e.g. Ð”Ð²Ð¸Ð³Ð°Ñ‚ÐµÐ»ÑŒ Ð³Ð»Ð¾Ñ…Ð½ÐµÑ‚ Ð½Ð° Ñ…Ð¾Ð»Ð¾ÑÑ‚Ñ‹Ñ…, Ð¾Ð±Ð¾Ñ€Ð¾Ñ‚Ñ‹ Ð¿Ð»Ð°Ð²Ð°ÑŽÑ‚, Ñ‡ÐµÐº Ð²ÐºÐ»ÑŽÑ‡Ð¸Ð»ÑÑ Ð¿Ð¾Ð·Ð°Ð²Ñ‡ÐµÑ€Ð°."></textarea>
+              <textarea id="describeIssueText" class="form-control" rows="5" maxlength="4000" placeholder="e.g. Двигатель глохнет на холостых, обороты плавают, чек включился позавчера."></textarea>
               <div class="form-text d-flex justify-content-between">
                 <span id="describeIssueLangBadge" class="text-muted small"></span>
                 <span class="text-muted small"><span id="describeIssueCharCount">0</span> / 4000</span>
@@ -722,10 +722,10 @@
           </div>
           <div class="modal-footer d-flex justify-content-between">
             <button type="button" class="btn btn-outline-success" id="describeIssuePolishBtn">
-              <span class="describe-issue-polish-label">âœ¨ Polish with AI</span>
+              <span class="describe-issue-polish-label">✨ Polish with AI</span>
               <span class="describe-issue-polish-spinner" style="display:none;">
                 <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-                Polishingâ€¦
+                Polishing…
               </span>
             </button>
             <div>
@@ -830,7 +830,7 @@
                 </table>
               </div>
               <div class="small text-muted mt-1">
-                Rates are saved in this browser only â€” they are not stored on the work order.
+                Rates are saved in this browser only — they are not stored on the work order.
               </div>
             </div>
 
@@ -885,9 +885,9 @@
 
           <div class="modal-body">
             <div class="alert alert-info mb-3">
-              <div class="small">Invoice Total: <strong id="paymentInvoiceTotal">â€”</strong></div>
-              <div class="small">Already Paid: <strong id="paymentAlreadyPaid">â€”</strong></div>
-              <div class="small">Remaining Balance: <strong id="paymentRemainingBalance">â€”</strong></div>
+              <div class="small">Invoice Total: <strong id="paymentInvoiceTotal">—</strong></div>
+              <div class="small">Already Paid: <strong id="paymentAlreadyPaid">—</strong></div>
+              <div class="small">Remaining Balance: <strong id="paymentRemainingBalance">—</strong></div>
             </div>
 
             <div class="mb-3">
@@ -985,9 +985,9 @@
     </div>
 
     {% if "work_orders.view_costs" in user_permissions %}
-    {# ÐœÐ¾Ð´Ð°Ð»ÐºÐ° Ð·Ð°ÐºÐ°Ð·Ð° â€” Ñ‚Ð° Ð¶Ðµ, Ñ‡Ñ‚Ð¾ Ð½Ð° ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ðµ Parts (Ð¾Ð±Ñ‰Ð¸Ð¹ ÐºÐ¾Ð¼Ð¿Ð¾Ð½ÐµÐ½Ñ‚).
-       data-Ð°Ñ‚Ñ€Ð¸Ð±ÑƒÑ‚Ñ‹ Ð¿Ñ€Ð¸Ð²ÑÐ·ÐºÐ¸ Ðº WO Ñ‡Ð¸Ñ‚Ð°ÐµÑ‚ parts.js: Ð½Ð¾Ð²Ñ‹Ð¹ Ð·Ð°ÐºÐ°Ð· ÑÐ¾Ð·Ð´Ð°Ñ‘Ñ‚ÑÑ
-       ÑÑ€Ð°Ð·Ñƒ Ñ work_order_id (Ð¸Ð»Ð¸ pending-id Ð´Ð¾ ÑÐ¾Ñ…Ñ€Ð°Ð½ÐµÐ½Ð¸Ñ WO). #}
+    {# Модалка заказа — та же, что на странице Parts (общий компонент).
+       data-атрибуты привязки к WO читает parts.js: новый заказ создаётся
+       сразу с work_order_id (или pending-id до сохранения WO). #}
     {% with wo_link_work_order_id = created_work_order_id or "",
             wo_link_pending_id = pending_attachment_id or "" %}
       {% include "components/parts_order_modal.html" %}
@@ -1004,7 +1004,7 @@
     <script src="{{ url_for('static', filename='js/work_orders/wo_parts_orders.js') }}"></script>
 
     <script>
-    /* Initialize attachment blocks â€” wire collapse IDs always, set entity IDs */
+    /* Initialize attachment blocks — wire collapse IDs always, set entity IDs */
     (function () {
       var woId = {{ (created_work_order_id or "")|tojson }};
       var pendingId = {{ (pending_attachment_id or "")|tojson }};
