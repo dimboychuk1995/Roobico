@@ -27,12 +27,17 @@ from app.utils.display_datetime import format_date_mmddyyyy
 from app.utils.layout import render_internal_page
 from app.utils.permissions import filter_nav_items, permission_required
 from app.utils.stripe_client import (
+    ANNUAL_DISCOUNT_PERCENT,
+    BASE_PRICE_CENTS,
     PRICE_PER_FULL_USER_CENTS,
     PRICE_PER_LOCATION_CENTS,
     PRICE_PER_MECHANIC_CENTS,
+    annual_amount_cents,
     apply_billing_discount,
+    billing_period,
     compute_amount_cents,
     count_billable,
+    extra_counts,
     create_billing_invoice,
     create_card_setup_session,
     create_payment_checkout_session,
@@ -96,19 +101,35 @@ def subscription_page():
         return redirect(url_for("main.index"))
 
     counts = count_billable(tenant["_id"])
-    base_cents = compute_amount_cents(counts)
-    effective_cents, discount_desc = apply_billing_discount(base_cents, tenant)
+    extra = extra_counts(counts)
+    computed_cents = compute_amount_cents(counts)
+    effective_cents, discount_desc = apply_billing_discount(computed_cents, tenant)
+    period = billing_period(tenant)
+    annual_cents = annual_amount_cents(effective_cents)
+    due_cents = annual_cents if period == "annual" else effective_cents
     price = {
+        # Период биллинга и суммы к оплате: годовая = 12 месячных − 20%.
+        "period": period,
+        "annual_total": annual_cents / 100,
+        "annual_full": effective_cents * 12 / 100,
+        "annual_savings": (effective_cents * 12 - annual_cents) / 100,
+        "annual_discount_percent": ANNUAL_DISCOUNT_PERCENT,
+        "due_total": due_cents / 100,
         "locations": counts["locations_active"],
         "full_users": counts["full_active"],
         "mechanics": counts["mech_active"],
-        "locations_cost": counts["locations_active"] * PRICE_PER_LOCATION_CENTS / 100,
-        "full_cost": counts["full_active"] * PRICE_PER_FULL_USER_CENTS / 100,
+        # База $59 включает первую локацию и первого полного юзера;
+        # в строках разбивки показываем только «лишние» юниты.
+        "extra_locations": extra["extra_locations"],
+        "extra_full_users": extra["extra_full"],
+        "base_price": BASE_PRICE_CENTS / 100 if computed_cents else 0,
+        "locations_cost": extra["extra_locations"] * PRICE_PER_LOCATION_CENTS / 100,
+        "full_cost": extra["extra_full"] * PRICE_PER_FULL_USER_CENTS / 100,
         "mech_cost": counts["mech_active"] * PRICE_PER_MECHANIC_CENTS / 100,
         "per_location": PRICE_PER_LOCATION_CENTS / 100,
         "per_full_user": PRICE_PER_FULL_USER_CENTS / 100,
         "per_mechanic": PRICE_PER_MECHANIC_CENTS / 100,
-        "base_total": base_cents / 100,
+        "base_total": computed_cents / 100,
         "discount_desc": discount_desc,
         "monthly_total": effective_cents / 100,
     }
@@ -130,7 +151,6 @@ def subscription_page():
         tenant=tenant,
         subscription=_subscription_view(tenant),
         price=price,
-        card=tenant.get("stripe_default_card"),
         invoices=invoices,
         open_invoice=open_invoice,
         stripe_ready=stripe_configured(),
@@ -138,6 +158,42 @@ def subscription_page():
         card_saved=request.args.get("card") == "saved",
         payment_done=request.args.get("paid") == "1",
     )
+
+
+@billing_bp.post("/settings/billing/period")
+@login_required
+@permission_required("settings.manage_billing")
+def set_billing_period():
+    """
+    Переключение периода подписки владельцем: monthly ↔ annual.
+    Влияет на будущие инвойсы (Pay now и авто-продление); уже выставленные
+    открытые инвойсы не пересчитываются.
+    """
+    master = get_master_db()
+    tenant = _session_tenant(master)
+    if not tenant:
+        flash("Session data mismatch. Please login again.", "error")
+        session.clear()
+        return redirect(url_for("main.index"))
+
+    period = (request.form.get("period") or "").strip().lower()
+    if period not in ("monthly", "annual"):
+        flash("Invalid billing period.", "error")
+        return redirect(url_for("billing.subscription_page"))
+
+    master.tenants.update_one(
+        {"_id": tenant["_id"]},
+        {"$set": {"billing_period": period, "updated_at": datetime.utcnow()}},
+    )
+    if period == "annual":
+        flash(
+            f"Switched to annual billing — you save {ANNUAL_DISCOUNT_PERCENT}% "
+            "on every renewal.",
+            "success",
+        )
+    else:
+        flash("Switched to monthly billing.", "success")
+    return redirect(url_for("billing.subscription_page"))
 
 
 @billing_bp.post("/settings/billing/pay-now")

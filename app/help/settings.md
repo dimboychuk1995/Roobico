@@ -96,9 +96,25 @@ operational data (customers, units, parts, WOs) are per shop.
 
 ## Subscription & Billing (owner)
 
-Usage-based pricing: $100/mo per active location + $50/mo per active full
-user + $25/mo per active mechanic (mechanic & senior mechanic roles). 30-day
-free trial. The owner's billing page shows the monthly price breakdown,
+Usage-based pricing: the **$59/mo base plan includes your first active
+location and first active full user**. On top of that: $100/mo per extra
+active location + $50/mo per extra active full user + $25/mo per active
+mechanic (mechanic & senior mechanic roles). Example: 1 location with an
+owner and 2 mechanics = $59 + 2 × $25 = $109/mo; 2 locations with 3 office
+users and 4 mechanics = $59 + $100 + 2 × $50 + 4 × $25 = $359/mo. Only
+active locations and users count — deactivated staff is free. 30-day
+free trial.
+
+**Annual billing — save 20%.** On the billing page you can switch the
+billing period from monthly to annual ("Switch to annual" in the Monthly
+price card). An annual subscription is billed once a year at 12 × the
+monthly price minus 20% (e.g. $109/mo → $1,046.40/yr instead of $1,308),
+and each payment extends the subscription by a full year. The price is
+recalculated from the currently active locations/users at each renewal.
+You can switch back to monthly at any time — the change applies to the
+next invoice; already-issued invoices are not recalculated.
+
+The owner's billing page shows the monthly price breakdown,
 subscription status (Active / Renews soon / Payment failed / Expired), "Paid
 until" date, saved card, invoice history and a **"Pay now"** button (Stripe).
 Renewal is charged automatically ~3 days before the period ends; a failed

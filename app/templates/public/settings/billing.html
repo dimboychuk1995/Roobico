@@ -12,11 +12,11 @@
 {% if payment_done %}
 <div class="alert alert-success" role="alert">
   Payment received — your subscription will update here within a few seconds.
-  Your card is saved for automatic renewals.
+  Your card stays securely with Stripe for automatic renewals.
 </div>
 {% elif card_saved %}
 <div class="alert alert-success" role="alert">
-  Payment method saved. Future renewals will be charged automatically.
+  Payment method saved securely with Stripe. Future renewals will be charged automatically.
 </div>
 {% endif %}
 
@@ -32,8 +32,8 @@
   {% endif %}
   <form method="post" action="{{ url_for('billing.pay_now') }}" class="d-inline ms-1">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit" class="btn btn-light btn-sm" {% if not stripe_ready or price.monthly_total <= 0 %}disabled{% endif %}>
-      Pay now — ${{ '%.2f'|format(price.monthly_total) }}
+    <button type="submit" class="btn btn-light btn-sm" {% if not stripe_ready or price.due_total <= 0 %}disabled{% endif %}>
+      Pay now — ${{ '%.2f'|format(price.due_total) }}
     </button>
   </form>
 </div>
@@ -41,7 +41,7 @@
 
 <div class="row g-3">
   <!-- Subscription status -->
-  <div class="col-12 col-md-6 col-xl-4">
+  <div class="col-12 col-md-6">
     <div class="card h-100">
       <div class="card-body">
         <h2 class="h6 text-muted text-uppercase mb-2">Subscription</h2>
@@ -73,31 +73,44 @@
         <form method="post" action="{{ url_for('billing.pay_now') }}" class="mt-3">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-primary btn-sm"
-                  {% if not stripe_ready or price.monthly_total <= 0 %}disabled{% endif %}>
-            {{ 'Pay open invoice' if open_invoice else 'Pay now' }} — ${{ '%.2f'|format((open_invoice.amount_cents / 100) if open_invoice else price.monthly_total) }}
+                  {% if not stripe_ready or price.due_total <= 0 %}disabled{% endif %}>
+            {{ 'Pay open invoice' if open_invoice else 'Pay now' }} — ${{ '%.2f'|format((open_invoice.amount_cents / 100) if open_invoice else price.due_total) }}{% if not open_invoice and price.period == 'annual' %} / year{% endif %}
           </button>
         </form>
+        <div class="text-muted small mt-2">
+          Payments are processed securely by Stripe — we never store your card details.
+        </div>
       </div>
     </div>
   </div>
 
   <!-- Monthly price -->
-  <div class="col-12 col-md-6 col-xl-4">
+  <div class="col-12 col-md-6">
     <div class="card h-100">
       <div class="card-body">
         <h2 class="h6 text-muted text-uppercase mb-2">Monthly price</h2>
         <div class="d-flex justify-content-between small">
-          <span>{{ price.locations }} location{{ '' if price.locations == 1 else 's' }} × ${{ '%.0f'|format(price.per_location) }}</span>
+          <span>Base plan (includes 1 location + 1 user)</span>
+          <span>${{ '%.2f'|format(price.base_price) }}</span>
+        </div>
+        {% if price.extra_locations %}
+        <div class="d-flex justify-content-between small">
+          <span>{{ price.extra_locations }} extra location{{ '' if price.extra_locations == 1 else 's' }} × ${{ '%.0f'|format(price.per_location) }}</span>
           <span>${{ '%.2f'|format(price.locations_cost) }}</span>
         </div>
+        {% endif %}
+        {% if price.extra_full_users %}
         <div class="d-flex justify-content-between small">
-          <span>{{ price.full_users }} user{{ '' if price.full_users == 1 else 's' }} × ${{ '%.0f'|format(price.per_full_user) }}</span>
+          <span>{{ price.extra_full_users }} extra user{{ '' if price.extra_full_users == 1 else 's' }} × ${{ '%.0f'|format(price.per_full_user) }}</span>
           <span>${{ '%.2f'|format(price.full_cost) }}</span>
         </div>
+        {% endif %}
+        {% if price.mechanics %}
         <div class="d-flex justify-content-between small">
           <span>{{ price.mechanics }} mechanic{{ '' if price.mechanics == 1 else 's' }} × ${{ '%.0f'|format(price.per_mechanic) }}</span>
           <span>${{ '%.2f'|format(price.mech_cost) }}</span>
         </div>
+        {% endif %}
         {% if price.discount_desc and price.base_total > price.monthly_total %}
         <div class="d-flex justify-content-between small text-success">
           <span>{{ price.discount_desc|capitalize }}</span>
@@ -111,40 +124,46 @@
           <span>Total per month</span>
           <span>${{ '%.2f'|format(price.monthly_total) }}</span>
         </div>
+        {% if price.period == 'annual' %}
+        <div class="d-flex justify-content-between small text-success">
+          <span>Billed yearly (&minus;{{ price.annual_discount_percent }}%)</span>
+          <span class="fw-semibold">${{ '%.2f'|format(price.annual_total) }}/yr</span>
+        </div>
+        {% endif %}
+        <hr class="my-2">
+        <div class="small">
+          <div class="text-muted text-uppercase mb-1" style="font-size:.72rem;">Billing period</div>
+          {% if price.period == 'annual' %}
+            <div>
+              Annual — you save <span class="text-success fw-semibold">${{ '%.2f'|format(price.annual_savings) }}/yr</span>
+            </div>
+            <form method="post" action="{{ url_for('billing.set_billing_period') }}" class="mt-2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="period" value="monthly">
+              <button type="submit" class="btn btn-outline-secondary btn-sm">Switch to monthly billing</button>
+            </form>
+          {% else %}
+            <div>Monthly</div>
+            <form method="post" action="{{ url_for('billing.set_billing_period') }}" class="mt-2">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="period" value="annual">
+              <button type="submit" class="btn btn-outline-success btn-sm"
+                      {% if price.monthly_total <= 0 %}disabled{% endif %}>
+                Switch to annual — save {{ price.annual_discount_percent }}% (${{ '%.2f'|format(price.annual_total) }}/yr)
+              </button>
+            </form>
+          {% endif %}
+        </div>
         <div class="text-muted small mt-2">
-          Based on currently active locations and users.
+          Based on currently active locations and users. The base plan
+          covers your first location and first user; extras are billed per
+          unit.{% if price.period == 'annual' %} Annual billing renews once a
+          year at 12&times; the monthly price minus {{ price.annual_discount_percent }}%.{% endif %}
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Payment method -->
-  <div class="col-12 col-md-6 col-xl-4">
-    <div class="card h-100">
-      <div class="card-body">
-        <h2 class="h6 text-muted text-uppercase mb-2">Payment method</h2>
-        {% if card and card.last4 %}
-          <div class="fw-semibold">{{ (card.brand or 'Card')|capitalize }} •••• {{ card.last4 }}</div>
-          {% if card.exp_month and card.exp_year %}
-            <div class="text-muted small">Expires {{ card.exp_month }}/{{ card.exp_year }}</div>
-          {% endif %}
-          <div class="text-muted small mt-2">
-            Renewals are charged to this card automatically. Paying an invoice
-            with a different card replaces it.
-          </div>
-        {% elif card %}
-          <div class="fw-semibold">Card on file</div>
-          <div class="text-muted small mt-2">Renewals are charged automatically.</div>
-        {% else %}
-          <div class="text-muted small">
-            No card on file yet. Your card is saved automatically when you pay
-            your first invoice — after that, renewals are charged to it without
-            any action from you.
-          </div>
-        {% endif %}
-      </div>
-    </div>
-  </div>
 </div>
 
 <!-- Invoices -->

@@ -57,6 +57,9 @@ vendor invoice). See the mechanic & mobile documentation.
 
 ## Subscription
 
-Roobico is billed per active location/user/mechanic with a 30-day trial;
-the account owner manages it in Settings → Subscription & Billing. When a
-subscription expires, only the owner can log in (to pay) until renewal.
+Roobico billing starts at a $59/mo base plan that includes the first active
+location and first active full user; extra locations, users and mechanics
+are billed per unit, with a 30-day trial. Annual billing is available at a
+20% discount (12 × monthly − 20%, billed once a year). The account owner
+manages it in Settings → Subscription & Billing. When a subscription
+expires, only the owner can log in (to pay) until renewal.

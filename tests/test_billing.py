@@ -577,7 +577,11 @@ def test_owner_sees_billing_page(client, app, seed):
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert "Monthly price" in html
-    assert "Payment method" in html
+    # Блок «Payment method» удалён намеренно: карты храним не мы, а Stripe,
+    # и страница не должна намекать, что карточные данные лежат у нас.
+    assert "Payment method" not in html
+    assert "No card on file" not in html
+    assert "we never store your card details" in html
 
 
 def test_billing_card_on_settings_landing(client, seed):
@@ -734,6 +738,185 @@ def test_blocked_owner_can_pay_now(client, app, seed, monkeypatch):
     finally:
         app.config["STRIPE_SECRET_KEY"] = ""
         _restore_tenant_a(app, seed)
+
+
+# ---------------------------------------------------------------------------
+# Формула цены: база $59 включает первую локацию и первого полного юзера,
+# сверх — поштучно ($100 локация, $50 юзер, $25 механик).
+# ---------------------------------------------------------------------------
+
+def _cents(loc, full, mech):
+    from app.utils.stripe_client import compute_amount_cents
+    return compute_amount_cents(
+        {"locations_active": loc, "full_active": full, "mech_active": mech})
+
+
+def test_compute_amount_base_covers_first_location_and_user():
+    # Минимальный сетап (1 локация + owner) — только база.
+    assert _cents(1, 1, 0) == 59_00
+    # Доп. юниты — поштучно.
+    assert _cents(1, 2, 0) == 59_00 + 50_00
+    assert _cents(2, 1, 0) == 59_00 + 100_00
+    assert _cents(2, 3, 1) == 59_00 + 100_00 + 2 * 50_00 + 25_00
+    # Механики в базу не входят — каждый по $25.
+    assert _cents(1, 1, 2) == 59_00 + 2 * 25_00
+
+
+def test_compute_amount_edge_cases():
+    # Совсем пустой тенант не биллится (renewal скипнет как no_billable).
+    assert _cents(0, 0, 0) == 0
+    # Хоть что-то активно — база начисляется, «лишних» юнитов нет.
+    assert _cents(0, 0, 1) == 59_00 + 25_00
+    assert _cents(1, 0, 0) == 59_00
+    assert _cents(0, 1, 0) == 59_00
+
+
+def test_describe_breakdown_mentions_base_and_extras():
+    from app.utils.stripe_client import describe_breakdown
+    desc = describe_breakdown(
+        {"locations_active": 2, "full_active": 3, "mech_active": 1})
+    assert "base $59 (incl. 1 location + 1 user)" in desc
+    assert "1 extra location(s) × $100" in desc
+    assert "2 extra user(s) × $50" in desc
+    assert "1 mechanic(s) × $25" in desc
+    # Минимальный сетап — только база, без строк про экстры.
+    assert describe_breakdown(
+        {"locations_active": 1, "full_active": 1, "mech_active": 0}
+    ) == "base $59 (incl. 1 location + 1 user)"
+    assert describe_breakdown(
+        {"locations_active": 0, "full_active": 0, "mech_active": 0}
+    ) == "no billable units"
+
+
+def test_tenant_billing_page_shows_base_plan(client, seed):
+    from tests.conftest import login
+    login(client)
+    resp = client.get("/settings/billing")
+    assert resp.status_code == 200
+    html = resp.get_data(as_text=True)
+    assert "Base plan (includes 1 location + 1 user)" in html
+    assert "$59.00" in html
+
+
+# ---------------------------------------------------------------------------
+# Годовая подписка: 12 месячных сумм минус 20%.
+# ---------------------------------------------------------------------------
+
+def test_billing_period_resolution():
+    from app.utils.stripe_client import billing_period, billing_period_days
+    assert billing_period({}) == "monthly"
+    assert billing_period({"billing_period": "annual"}) == "annual"
+    assert billing_period({"billing_period": " Annual "}) == "annual"
+    assert billing_period({"billing_period": "garbage"}) == "monthly"
+    assert billing_period_days({}) == 30
+    assert billing_period_days({"billing_period": "annual"}) == 365
+
+
+def test_annual_amount_is_12_months_minus_20_percent():
+    from app.utils.stripe_client import (
+        ANNUAL_PERIOD_DAYS, annual_amount_cents, invoice_amount_for_period,
+    )
+    assert annual_amount_cents(59_00) == int(round(59_00 * 12 * 0.8))
+    assert annual_amount_cents(0) == 0
+
+    counts = {"locations_active": 1, "full_active": 1, "mech_active": 0}
+    # Месячный период — обычная месячная сумма.
+    assert invoice_amount_for_period({}, counts, 30) == (59_00, None)
+    # Годовой — ×12 −20%.
+    assert invoice_amount_for_period({}, counts, ANNUAL_PERIOD_DAYS) \
+        == (int(round(59_00 * 12 * 0.8)), None)
+    # Индивидуальная цена тенанта применяется ДО годового множителя.
+    tenant = {"billing_discount": {"type": "fixed", "value": 100}}
+    amount, desc = invoice_amount_for_period(tenant, counts, ANNUAL_PERIOD_DAYS)
+    assert amount == int(round(100_00 * 12 * 0.8))
+    assert desc == "custom price"
+
+
+def test_invoice_paid_annual_extends_365_days(client, app, webhook_secret, fake_signature):
+    from app.extensions import get_master_db
+    with app.app_context():
+        master = get_master_db()
+        until = datetime.utcnow() + timedelta(days=2)
+        tenant = _make_tenant(
+            master, "paid-annual",
+            subscription_status="active", subscription_until=until,
+            billing_period="annual",
+        )
+
+    event = _invoice_event("evt_annual_1", "invoice.paid", tenant, "in_annual_1")
+    event["data"]["object"]["metadata"]["period_days"] = "365"
+    assert _post_event(client, event).status_code == 200
+
+    with app.app_context():
+        fresh = get_master_db().tenants.find_one({"_id": tenant["_id"]})
+        expected = until + timedelta(days=365)
+        assert abs((fresh["subscription_until"] - expected).total_seconds()) < 60
+
+
+def test_owner_switches_billing_period(client, app, seed):
+    from tests.conftest import login, get_csrf_token
+    from app.extensions import get_master_db
+    login(client)
+    token = get_csrf_token(client)
+    try:
+        resp = client.post("/settings/billing/period",
+                           data={"period": "annual", "csrf_token": token})
+        assert resp.status_code == 302
+        with app.app_context():
+            t = get_master_db().tenants.find_one({"_id": seed["tenant_a"]["_id"]})
+            assert t["billing_period"] == "annual"
+
+        page = client.get("/settings/billing").get_data(as_text=True)
+        assert "Billed yearly" in page
+        assert "Switch to monthly billing" in page
+
+        # Невалидное значение не проходит.
+        client.post("/settings/billing/period",
+                    data={"period": "weekly", "csrf_token": token})
+        with app.app_context():
+            t = get_master_db().tenants.find_one({"_id": seed["tenant_a"]["_id"]})
+            assert t["billing_period"] == "annual"
+
+        # Обратно на месячный.
+        client.post("/settings/billing/period",
+                    data={"period": "monthly", "csrf_token": token})
+        with app.app_context():
+            t = get_master_db().tenants.find_one({"_id": seed["tenant_a"]["_id"]})
+            assert t["billing_period"] == "monthly"
+    finally:
+        with app.app_context():
+            get_master_db().tenants.update_one(
+                {"_id": seed["tenant_a"]["_id"]},
+                {"$unset": {"billing_period": ""}},
+            )
+
+
+def test_admin_sets_billing_period(client, app, seed):
+    from app.extensions import get_master_db
+    token = _admin_client(client, app)
+    tid = str(seed["tenant_a"]["_id"])
+    try:
+        resp = client.post(f"/admin/tenants/{tid}/set-billing-period",
+                           data={"period": "annual", "csrf_token": token})
+        assert resp.status_code == 302
+        with app.app_context():
+            t = get_master_db().tenants.find_one({"_id": seed["tenant_a"]["_id"]})
+            assert t["billing_period"] == "annual"
+            assert get_master_db().admin_audit.count_documents(
+                {"action": "tenant.billing.set_period", "target_id": t["_id"]}) >= 1
+
+        # Невалидный период отклоняется.
+        client.post(f"/admin/tenants/{tid}/set-billing-period",
+                    data={"period": "quarterly", "csrf_token": token})
+        with app.app_context():
+            t = get_master_db().tenants.find_one({"_id": seed["tenant_a"]["_id"]})
+            assert t["billing_period"] == "annual"
+    finally:
+        with app.app_context():
+            get_master_db().tenants.update_one(
+                {"_id": seed["tenant_a"]["_id"]},
+                {"$unset": {"billing_period": ""}},
+            )
 
 
 # ---------------------------------------------------------------------------

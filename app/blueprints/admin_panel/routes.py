@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -13,14 +13,26 @@ from app.utils.admin_auth import (
     get_current_admin,
 )
 from app.utils.admin_audit import log_admin_action
+from app.utils.stripe_client import (
+    ANNUAL_DISCOUNT_PERCENT,
+    BASE_PRICE_CENTS,
+    PRICE_PER_FULL_USER_CENTS,
+    PRICE_PER_LOCATION_CENTS,
+    PRICE_PER_MECHANIC_CENTS,
+    annual_amount_cents,
+    billing_period,
+)
 from . import admin_panel_bp
 
 
-# Per-unit pricing (USD/month). Total monthly cost is computed from the
-# tenant's active counts (locations, full users, mechanics) — no plans.
-PRICE_PER_LOCATION = 100
-PRICE_PER_FULL_USER = 50
-PRICE_PER_MECHANIC = 25
+# Pricing (USD/month), derived from the cent constants in
+# app.utils.stripe_client — the single source of truth. The $59 base
+# includes the first active location and the first active full user;
+# extra units are billed per piece, mechanics are always per piece.
+BASE_PRICE = BASE_PRICE_CENTS // 100
+PRICE_PER_LOCATION = PRICE_PER_LOCATION_CENTS // 100
+PRICE_PER_FULL_USER = PRICE_PER_FULL_USER_CENTS // 100
+PRICE_PER_MECHANIC = PRICE_PER_MECHANIC_CENTS // 100
 
 
 def _oid(value: str) -> ObjectId:
@@ -171,19 +183,33 @@ def tenant_detail(tenant_id: str):
             else:
                 full_inactive += 1
 
-    locations_cost = locations_active * PRICE_PER_LOCATION
-    full_cost = full_active * PRICE_PER_FULL_USER
+    # База $59 покрывает первую локацию и первого полного юзера; сверх —
+    # поштучно. Пустой тенант (ничего активного) не биллится вовсе.
+    locations_extra = max(0, locations_active - 1)
+    full_extra = max(0, full_active - 1)
+    base_cost = BASE_PRICE if (locations_active or full_active or mech_active) else 0
+    locations_cost = locations_extra * PRICE_PER_LOCATION
+    full_cost = full_extra * PRICE_PER_FULL_USER
     mech_cost = mech_active * PRICE_PER_MECHANIC
-    monthly_total = locations_cost + full_cost + mech_cost
+    monthly_total = base_cost + locations_cost + full_cost + mech_cost
 
     # Индивидуальная цена (скидка % / фикс) — то, что реально уйдёт в инвойс.
     from app.utils.stripe_client import apply_billing_discount
     effective_cents, discount_desc = apply_billing_discount(monthly_total * 100, tenant)
 
+    # Годовой период: инвойс раз в год на 12 месячных сумм минус 20%.
+    period = billing_period(tenant)
+    annual_cents = annual_amount_cents(effective_cents)
+    due_cents = annual_cents if period == "annual" else effective_cents
+
     billing = {
         "discount": tenant.get("billing_discount") or {},
         "discount_desc": discount_desc,
         "effective_total": effective_cents / 100,
+        "period": period,
+        "annual_total": annual_cents / 100,
+        "annual_discount_percent": ANNUAL_DISCOUNT_PERCENT,
+        "due_total": due_cents / 100,
         "locations_total": len(shops),
         "locations_active": locations_active,
         "locations_inactive": locations_inactive,
@@ -194,6 +220,10 @@ def tenant_detail(tenant_id: str):
         "mech_active": mech_active,
         "mech_inactive": mech_inactive,
         "mech_total": mech_active + mech_inactive,
+        "base_price": BASE_PRICE,
+        "base_cost": base_cost,
+        "locations_extra": locations_extra,
+        "full_extra": full_extra,
         "price_per_location": PRICE_PER_LOCATION,
         "price_per_full_user": PRICE_PER_FULL_USER,
         "price_per_mechanic": PRICE_PER_MECHANIC,
@@ -329,6 +359,48 @@ def tenant_set_discount(tenant_id: str):
         flash(f"Discount set: {value:g}% off the computed monthly total.", "success")
     else:
         flash(f"Custom price set: ${value:,.2f}/mo regardless of unit counts.", "success")
+    return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
+
+
+@admin_panel_bp.post("/admin/tenants/<tenant_id>/set-billing-period")
+@admin_required
+def tenant_set_billing_period(tenant_id: str):
+    """Период биллинга тенанта: monthly или annual (годовая −20%).
+    Влияет на будущие инвойсы (charge/send-invoice и авто-продление)."""
+    admin = get_current_admin()
+    master = get_master_db()
+    tid = _oid(tenant_id)
+    tenant = master.tenants.find_one({"_id": tid})
+    if not tenant:
+        abort(404)
+
+    period = (request.form.get("period") or "").strip().lower()
+    if period not in ("monthly", "annual"):
+        flash("Invalid billing period.", "error")
+        return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
+
+    before = billing_period(tenant)
+    master.tenants.update_one(
+        {"_id": tid},
+        {"$set": {"billing_period": period, "updated_at": datetime.utcnow()}},
+    )
+    log_admin_action(
+        admin,
+        action="tenant.billing.set_period",
+        target_type="tenant",
+        target_id=tid,
+        before={"billing_period": before},
+        after={"billing_period": period},
+        extra={"tenant_name": tenant.get("name")},
+    )
+    if period == "annual":
+        flash(
+            f"Billing period set to annual — 12 × monthly minus "
+            f"{ANNUAL_DISCOUNT_PERCENT}%.",
+            "success",
+        )
+    else:
+        flash("Billing period set to monthly.", "success")
     return redirect(url_for("admin_panel.tenant_detail", tenant_id=tenant_id))
 
 

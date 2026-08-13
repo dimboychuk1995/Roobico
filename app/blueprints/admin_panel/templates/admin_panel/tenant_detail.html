@@ -43,10 +43,21 @@
   <h3>Billing summary</h3>
   <div class="billing-grid">
     <div class="billing-card">
+      <div class="billing-label">Base plan</div>
+      <div class="billing-value">${{ billing.base_price }}</div>
+      <div class="billing-sub">
+        {% if billing.base_cost %}
+          includes 1 location + 1 full user
+        {% else %}
+          <span style="color:#94a3b8;">not billed — nothing active</span>
+        {% endif %}
+      </div>
+    </div>
+    <div class="billing-card">
       <div class="billing-label">Locations</div>
       <div class="billing-value">{{ billing.locations_active }}</div>
       <div class="billing-sub">
-        active × ${{ billing.price_per_location }}/mo = <strong>${{ '{:,}'.format(billing.locations_cost) }}</strong>
+        first incl. in base · {{ billing.locations_extra }} extra × ${{ billing.price_per_location }}/mo = <strong>${{ '{:,}'.format(billing.locations_cost) }}</strong>
         {% if billing.locations_inactive %}
           · <span style="color:#94a3b8;">{{ billing.locations_inactive }} inactive</span>
         {% endif %}
@@ -56,7 +67,7 @@
       <div class="billing-label">Full users</div>
       <div class="billing-value">{{ billing.full_active }}</div>
       <div class="billing-sub">
-        active × ${{ billing.price_per_full_user }}/mo = <strong>${{ '{:,}'.format(billing.full_cost) }}</strong>
+        first incl. in base · {{ billing.full_extra }} extra × ${{ billing.price_per_full_user }}/mo = <strong>${{ '{:,}'.format(billing.full_cost) }}</strong>
         {% if billing.full_inactive %}
           · <span style="color:#94a3b8;">{{ billing.full_inactive }} inactive</span>
         {% endif %}
@@ -82,6 +93,35 @@
           based on currently active counts
         {% endif %}
       </div>
+      {% if billing.period == 'annual' %}
+      <div class="billing-sub" style="color:#86efac;">
+        annual billing: <strong style="color:#bbf7d0;">${{ '{:,.2f}'.format(billing.annual_total) }}/yr</strong>
+        (&minus;{{ billing.annual_discount_percent }}%)
+      </div>
+      {% endif %}
+    </div>
+
+    <div class="billing-card">
+      <div class="billing-label">Billing period</div>
+      <form method="post"
+            action="{{ url_for('admin_panel.tenant_set_billing_period', tenant_id=tenant._id|string) }}"
+            class="sub-form" style="margin-top:.5rem;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label>
+          <span>Period</span>
+          <select name="period">
+            <option value="monthly" {% if billing.period == 'monthly' %}selected{% endif %}>Monthly</option>
+            <option value="annual" {% if billing.period == 'annual' %}selected{% endif %}>Annual (&minus;{{ billing.annual_discount_percent }}%)</option>
+          </select>
+        </label>
+        <div class="billing-sub full">
+          annual = 12 × monthly &minus; {{ billing.annual_discount_percent }}% =
+          <strong>${{ '{:,.2f}'.format(billing.annual_total) }}/yr</strong>
+        </div>
+        <div class="full">
+          <button type="submit" class="btn success">Apply period</button>
+        </div>
+      </form>
     </div>
 
     <div class="billing-card">
@@ -333,28 +373,28 @@
       <div class="billing-label" style="margin-bottom:.5rem;">Charge / invoice this tenant now</div>
       <div class="billing-sub" style="margin-bottom:.6rem;">
         Amount to bill:
-        <strong style="color:#bbf7d0;">${{ '{:,.2f}'.format(billing.effective_total) }}/mo</strong>
-        ({{ billing.locations_active }} loc + {{ billing.full_active }} full + {{ billing.mech_active }} mech{% if billing.discount_desc %}, {{ billing.discount_desc }}{% endif %}).
+        <strong style="color:#bbf7d0;">${{ '{:,.2f}'.format(billing.due_total) }}{{ '/yr' if billing.period == 'annual' else '/mo' }}</strong>
+        (base ${{ billing.base_price }} + {{ billing.locations_extra }} extra loc + {{ billing.full_extra }} extra full + {{ billing.mech_active }} mech{% if billing.discount_desc %}, {{ billing.discount_desc }}{% endif %}{% if billing.period == 'annual' %} · annual: 12 × monthly &minus;{{ billing.annual_discount_percent }}%{% endif %}).
       </div>
 
       <div class="sub-quick">
         <form method="post"
               action="{{ url_for('billing.admin_send_invoice', tenant_id=tenant._id|string) }}"
-              onsubmit="return confirm('Send a Stripe invoice for ${{ '{:,.2f}'.format(billing.effective_total) }} to {{ tenant.name }}? They will receive an email with a hosted payment page.');"
+              onsubmit="return confirm('Send a Stripe invoice for ${{ '{:,.2f}'.format(billing.due_total) }} to {{ tenant.name }}? They will receive an email with a hosted payment page.');"
               style="margin:0;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button type="submit" class="btn success" {% if billing.effective_total <= 0 %}disabled{% endif %}>
+          <button type="submit" class="btn success" {% if billing.due_total <= 0 %}disabled{% endif %}>
             Send invoice (hosted page)
           </button>
         </form>
 
         <form method="post"
               action="{{ url_for('billing.admin_charge_now', tenant_id=tenant._id|string) }}"
-              onsubmit="return confirm('Charge the saved card on file for ${{ '{:,.2f}'.format(billing.effective_total) }}? This bills immediately.');"
+              onsubmit="return confirm('Charge the saved card on file for ${{ '{:,.2f}'.format(billing.due_total) }}? This bills immediately.');"
               style="margin:0;">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn"
-                  {% if billing.effective_total <= 0 or not stripe_info.default_card %}disabled{% endif %}>
+                  {% if billing.due_total <= 0 or not stripe_info.default_card %}disabled{% endif %}>
             Charge saved card
           </button>
         </form>
@@ -362,7 +402,8 @@
 
       <div class="billing-sub" style="margin-top:.6rem; font-size:.75rem;">
         On payment success the webhook automatically extends
-        <code>subscription_until</code> by 30 days and flips status to active.
+        <code>subscription_until</code> by {{ '1 year' if billing.period == 'annual' else '30 days' }}
+        and flips status to active.
       </div>
     </div>
   </div>

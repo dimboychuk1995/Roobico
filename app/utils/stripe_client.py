@@ -4,7 +4,8 @@ Stripe integration for Roobico subscription billing.
 Architecture:
   * Roobico is the source of truth for the *amount*: we count active
     locations / full users / mechanics in the master DB and compute the
-    monthly total ourselves (PRICE_PER_* constants in admin_panel.routes).
+    monthly total ourselves (BASE_PRICE_CENTS + PRICE_PER_* below: the
+    $59 base covers the first location and first full user).
   * Stripe is just the payment processor: we create one Customer per
     tenant, then per billing cycle we create a single Invoice with one
     line item describing the breakdown.
@@ -31,12 +32,23 @@ from app.extensions import get_master_db
 
 
 # ---------------------------------------------------------------------------
-# Pricing (kept in sync with admin_panel.routes.PRICE_PER_*).
+# Pricing — single source of truth (admin_panel.routes derives its dollar
+# constants from these).
+#
+# Model: base $59/mo covers the first active location and the first active
+# full user; everything beyond that is billed per unit.
 # ---------------------------------------------------------------------------
-PRICE_PER_LOCATION_CENTS = 100_00   # $100/mo per active location
-PRICE_PER_FULL_USER_CENTS = 50_00   # $50/mo per active full user
+BASE_PRICE_CENTS = 59_00            # $59/mo base — includes 1 location + 1 full user
+PRICE_PER_LOCATION_CENTS = 100_00   # $100/mo per additional active location
+PRICE_PER_FULL_USER_CENTS = 50_00   # $50/mo per additional active full user
 PRICE_PER_MECHANIC_CENTS = 25_00    # $25/mo per active mechanic
 BILLING_CURRENCY = "usd"
+
+# Годовая подписка: 12 месячных сумм минус 20%. Период хранится на тенанте
+# (tenant.billing_period ∈ "monthly" | "annual", по умолчанию monthly).
+MONTHLY_PERIOD_DAYS = 30
+ANNUAL_PERIOD_DAYS = 365
+ANNUAL_DISCOUNT_PERCENT = 20
 
 
 # ---------------------------------------------------------------------------
@@ -104,23 +116,80 @@ def count_billable(tenant_id) -> dict:
     }
 
 
+def extra_counts(counts: dict) -> dict:
+    """Units billed on top of the base plan (base covers 1 location + 1 full user)."""
+    return {
+        "extra_locations": max(0, counts["locations_active"] - 1),
+        "extra_full": max(0, counts["full_active"] - 1),
+        "mech_active": counts["mech_active"],
+    }
+
+
 def compute_amount_cents(counts: dict) -> int:
+    # Совсем пустой тенант (ни локаций, ни пользователей) не биллим —
+    # renewal-cron пропустит его как skipped_no_billable.
+    if not (counts["locations_active"] or counts["full_active"] or counts["mech_active"]):
+        return 0
+    extra = extra_counts(counts)
     return (
-        counts["locations_active"] * PRICE_PER_LOCATION_CENTS
-        + counts["full_active"] * PRICE_PER_FULL_USER_CENTS
-        + counts["mech_active"] * PRICE_PER_MECHANIC_CENTS
+        BASE_PRICE_CENTS
+        + extra["extra_locations"] * PRICE_PER_LOCATION_CENTS
+        + extra["extra_full"] * PRICE_PER_FULL_USER_CENTS
+        + extra["mech_active"] * PRICE_PER_MECHANIC_CENTS
     )
 
 
 def describe_breakdown(counts: dict) -> str:
-    parts = []
-    if counts["locations_active"]:
-        parts.append(f"{counts['locations_active']} location(s) × $100")
-    if counts["full_active"]:
-        parts.append(f"{counts['full_active']} full user(s) × $50")
-    if counts["mech_active"]:
-        parts.append(f"{counts['mech_active']} mechanic(s) × $25")
-    return " + ".join(parts) if parts else "no billable units"
+    if not (counts["locations_active"] or counts["full_active"] or counts["mech_active"]):
+        return "no billable units"
+    extra = extra_counts(counts)
+    parts = [f"base ${BASE_PRICE_CENTS // 100} (incl. 1 location + 1 user)"]
+    if extra["extra_locations"]:
+        parts.append(
+            f"{extra['extra_locations']} extra location(s) × ${PRICE_PER_LOCATION_CENTS // 100}"
+        )
+    if extra["extra_full"]:
+        parts.append(
+            f"{extra['extra_full']} extra user(s) × ${PRICE_PER_FULL_USER_CENTS // 100}"
+        )
+    if extra["mech_active"]:
+        parts.append(
+            f"{extra['mech_active']} mechanic(s) × ${PRICE_PER_MECHANIC_CENTS // 100}"
+        )
+    return " + ".join(parts)
+
+
+def billing_period(tenant: dict) -> str:
+    """Период биллинга тенанта: 'annual' или 'monthly' (default)."""
+    return "annual" if (tenant.get("billing_period") or "").strip().lower() == "annual" \
+        else "monthly"
+
+
+def billing_period_days(tenant: dict) -> int:
+    return ANNUAL_PERIOD_DAYS if billing_period(tenant) == "annual" \
+        else MONTHLY_PERIOD_DAYS
+
+
+def annual_amount_cents(monthly_cents: int) -> int:
+    """Годовая цена: 12 месячных сумм минус ANNUAL_DISCOUNT_PERCENT."""
+    return int(round(
+        monthly_cents * 12 * (100 - ANNUAL_DISCOUNT_PERCENT) / 100.0
+    ))
+
+
+def invoice_amount_for_period(tenant: dict, counts: dict, period_days: int) -> tuple:
+    """
+    Сумма инвойса за период: месячная цена (с индивидуальной скидкой
+    тенанта), для годового периода — ×12 −20%.
+
+    Возвращает (amount_cents, discount_desc | None) — как apply_billing_discount.
+    """
+    monthly_cents, discount_desc = apply_billing_discount(
+        compute_amount_cents(counts), tenant
+    )
+    if period_days >= ANNUAL_PERIOD_DAYS:
+        return annual_amount_cents(monthly_cents), discount_desc
+    return monthly_cents, discount_desc
 
 
 def apply_billing_discount(amount_cents: int, tenant: dict) -> tuple:
@@ -205,15 +274,18 @@ def get_or_create_customer(tenant: dict) -> str:
 # Invoice creation.
 # ---------------------------------------------------------------------------
 
-def _line_description(counts: dict, period_label: str) -> str:
-    return f"Roobico subscription — {period_label} ({describe_breakdown(counts)})"
+def _line_description(counts: dict, period_label: str, annual: bool = False) -> str:
+    desc = f"Roobico subscription — {period_label} ({describe_breakdown(counts)})"
+    if annual:
+        desc += f" — 12 months − {ANNUAL_DISCOUNT_PERCENT}% annual discount"
+    return desc
 
 
 def create_billing_invoice(
     tenant: dict,
     *,
     auto_charge: bool,
-    period_days: int = 30,
+    period_days: Optional[int] = None,
     days_until_due: int = 7,
     purpose: str = "manual",
 ) -> dict:
@@ -222,6 +294,9 @@ def create_billing_invoice(
     units. If `auto_charge` is True, Stripe attempts to charge the saved
     default payment method immediately. Otherwise it sends a hosted
     invoice email.
+
+    `period_days=None` (default) берёт период из tenant.billing_period:
+    30 дней либо 365 (годовая — 12 месячных сумм минус 20%).
 
     Every invoice is mirrored into `master.billing_invoices` — the webhook
     uses that doc as an idempotency guard when extending the subscription,
@@ -232,17 +307,21 @@ def create_billing_invoice(
     """
     s = _stripe()
 
+    if period_days is None:
+        period_days = billing_period_days(tenant)
+    annual = period_days >= ANNUAL_PERIOD_DAYS
+
     customer_id = get_or_create_customer(tenant)
     counts = count_billable(tenant["_id"])
-    amount, discount_desc = apply_billing_discount(compute_amount_cents(counts), tenant)
+    amount, discount_desc = invoice_amount_for_period(tenant, counts, period_days)
     if amount <= 0:
         raise ValueError(
             "Tenant has no billable amount (no active locations/users, "
             "or the custom price is $0)."
         )
 
-    period_label = f"{period_days} days"
-    line_description = _line_description(counts, period_label)
+    period_label = "1 year" if annual else f"{period_days} days"
+    line_description = _line_description(counts, period_label, annual)
     if discount_desc:
         line_description += f" — {discount_desc}"
 
@@ -351,7 +430,7 @@ def create_billing_invoice(
 
 
 def charge_saved_card(
-    tenant: dict, period_days: int = 30, purpose: str = "manual"
+    tenant: dict, period_days: Optional[int] = None, purpose: str = "manual"
 ) -> dict:
     """
     Convenience wrapper for the renewal path: create an invoice with
@@ -469,7 +548,8 @@ def describe_payment_method(pm_id: str) -> dict:
 
 
 def create_payment_checkout_session(
-    tenant: dict, success_url: str, cancel_url: str, period_days: int = 30
+    tenant: dict, success_url: str, cancel_url: str,
+    period_days: Optional[int] = None,
 ) -> str:
     """
     Оплата подписки через Stripe Checkout (mode=payment) с гарантированным
@@ -480,15 +560,20 @@ def create_payment_checkout_session(
     подписку обычным путём, а payment_method.attached делает карту дефолтной.
     """
     s = _stripe()
+    if period_days is None:
+        period_days = billing_period_days(tenant)
+    annual = period_days >= ANNUAL_PERIOD_DAYS
     customer_id = get_or_create_customer(tenant)
     counts = count_billable(tenant["_id"])
-    amount, discount_desc = apply_billing_discount(compute_amount_cents(counts), tenant)
+    amount, discount_desc = invoice_amount_for_period(tenant, counts, period_days)
     if amount <= 0:
         raise ValueError(
             "Tenant has no billable amount (no active locations/users, "
             "or the custom price is $0)."
         )
-    line_description = _line_description(counts, f"{period_days} days")
+    line_description = _line_description(
+        counts, "1 year" if annual else f"{period_days} days", annual
+    )
     if discount_desc:
         line_description += f" — {discount_desc}"
 
