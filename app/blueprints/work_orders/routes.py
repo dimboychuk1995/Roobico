@@ -2424,6 +2424,23 @@ def api_work_order_delete(work_order_id):
 # Email helpers
 # ---------------------------------------------------------------------------
 
+def _write_customer_contacts(shop_db, customer, contacts):
+    """
+    Записать contacts кастомера + производные: легаси-поля главного контакта
+    (first_name/phone/email на корне документа) и search_terms — контакты
+    участвуют в поиске кастомеров.
+    """
+    from app.utils.contacts import build_customer_legacy_contact_fields
+    from app.utils.entity_search import build_customer_search_terms
+
+    normalized = normalize_contacts(contacts)
+    update = {"contacts": normalized}
+    update.update(build_customer_legacy_contact_fields(normalized))
+    update["search_terms"] = build_customer_search_terms({**customer, **update})
+    shop_db.customers.update_one({"_id": customer["_id"]}, {"$set": update})
+    return normalized
+
+
 def _save_new_contact_to_customer(shop_db, customer_id, new_contact):
     """Append a new contact to a customer's contacts array."""
     if not isinstance(new_contact, dict):
@@ -2449,10 +2466,92 @@ def _save_new_contact_to_customer(shop_db, customer_id, new_contact):
         "is_main": False,
     })
 
-    shop_db.customers.update_one(
-        {"_id": customer_id},
-        {"$set": {"contacts": normalize_contacts(existing)}},
-    )
+    _write_customer_contacts(shop_db, customer, existing)
+
+
+def _find_contact_index(contacts: list[dict], index, original_email: str):
+    """
+    Контакт в списке по индексу с проверкой email (клиент видит нормализованный
+    get_contacts-список, индексы совпадают); если документ успел измениться —
+    fallback-поиск по email.
+    """
+    if isinstance(index, int) and 0 <= index < len(contacts):
+        if str(contacts[index].get("email") or "").lower() == original_email:
+            return index
+    for i, c in enumerate(contacts):
+        if str(c.get("email") or "").lower() == original_email:
+            return i
+    return None
+
+
+@work_orders_bp.post("/work_orders/api/customers/<customer_id>/email-contacts/update")
+@login_required
+@permission_required("work_orders.manage_email_contacts")
+def api_update_email_contact(customer_id):
+    """Правка контакта кастомера из email-модалки WO."""
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "Shop not found"}), 404
+
+    cid = oid(customer_id)
+    customer = shop_db.customers.find_one({"_id": cid, "shop_id": shop["_id"]}) if cid else None
+    if not customer:
+        return jsonify({"ok": False, "error": "Customer not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    original_email = str(data.get("original_email") or "").strip().lower()
+    new_email = str(data.get("email") or "").strip().lower()
+    if not original_email:
+        return jsonify({"ok": False, "error": "original_email required"}), 400
+    if not new_email or "@" not in new_email:
+        return jsonify({"ok": False, "error": "Valid email address required"}), 400
+
+    contacts = get_contacts(customer, entity_type="customer")
+    idx = _find_contact_index(contacts, data.get("index"), original_email)
+    if idx is None:
+        return jsonify({"ok": False, "error": "Contact not found"}), 404
+    if any(i != idx and str(c.get("email") or "").lower() == new_email for i, c in enumerate(contacts)):
+        return jsonify({"ok": False, "error": "Another contact already uses this email"}), 400
+
+    contacts[idx] = {
+        **contacts[idx],
+        "first_name": str(data.get("first_name") or "").strip(),
+        "last_name": str(data.get("last_name") or "").strip(),
+        "phone": str(data.get("phone") or "").strip(),
+        "email": new_email,
+    }
+    normalized = _write_customer_contacts(shop_db, customer, contacts)
+    return jsonify({"ok": True, "contacts": normalized})
+
+
+@work_orders_bp.post("/work_orders/api/customers/<customer_id>/email-contacts/delete")
+@login_required
+@permission_required("work_orders.manage_email_contacts")
+def api_delete_email_contact(customer_id):
+    """Удаление контакта кастомера из email-модалки WO."""
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "Shop not found"}), 404
+
+    cid = oid(customer_id)
+    customer = shop_db.customers.find_one({"_id": cid, "shop_id": shop["_id"]}) if cid else None
+    if not customer:
+        return jsonify({"ok": False, "error": "Customer not found"}), 404
+
+    data = request.get_json(silent=True) or {}
+    original_email = str(data.get("original_email") or "").strip().lower()
+    if not original_email:
+        return jsonify({"ok": False, "error": "original_email required"}), 400
+
+    contacts = get_contacts(customer, entity_type="customer")
+    idx = _find_contact_index(contacts, data.get("index"), original_email)
+    if idx is None:
+        return jsonify({"ok": False, "error": "Contact not found"}), 404
+
+    contacts.pop(idx)
+    # normalize_contacts сам назначит главного из оставшихся, если удалили main.
+    normalized = _write_customer_contacts(shop_db, customer, contacts)
+    return jsonify({"ok": True, "contacts": normalized})
 
 
 # ---------------------------------------------------------------------------

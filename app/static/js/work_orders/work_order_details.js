@@ -4676,11 +4676,39 @@
     const emailAddToggle = document.getElementById("emailAddContactToggle");
     const emailNewForm = document.getElementById("emailNewContactForm");
     const emailNewAddBtn = document.getElementById("emailNewContactAdd");
+    const canManageEmailContacts = !!readJsonScript("woPermissionsData", {}).manage_email_contacts;
     let _emailSendCallback = null;
     let _emailAdditionalRecipients = []; // recipients added via "Add New Contact" form
+    let _emailEditIndex = null; // индекс контакта customerContacts в режиме инлайн-правки
 
-    function renderEmailContacts() {
+    function emailContactEditFormHtml(c, i) {
+      return '<div class="border rounded p-2 mb-2 email-contact-edit-form">' +
+        '<div class="row g-2 mb-2">' +
+          '<div class="col-6"><input type="text" class="form-control form-control-sm email-edit-first" placeholder="First name" value="' + escapeHtml(c.first_name || "") + '"></div>' +
+          '<div class="col-6"><input type="text" class="form-control form-control-sm email-edit-last" placeholder="Last name" value="' + escapeHtml(c.last_name || "") + '"></div>' +
+        '</div>' +
+        '<div class="row g-2 mb-2">' +
+          '<div class="col-7"><input type="email" class="form-control form-control-sm email-edit-email" placeholder="Email *" value="' + escapeHtml(c.email || "") + '"></div>' +
+          '<div class="col-5"><input type="text" class="form-control form-control-sm email-edit-phone" placeholder="Phone" value="' + escapeHtml(c.phone || "") + '"></div>' +
+        '</div>' +
+        '<div class="d-flex gap-2">' +
+          '<button type="button" class="btn btn-sm btn-primary email-contact-save" data-index="' + i + '"><i class="bi bi-check-lg me-1"></i>Save</button>' +
+          '<button type="button" class="btn btn-sm btn-outline-secondary email-contact-cancel">Cancel</button>' +
+        '</div>' +
+        '</div>';
+    }
+
+    function renderEmailContacts(preserveChecked) {
       if (!emailContactsList) return;
+      // Сохраняем отмеченные галочки: перерисовка после правки/удаления
+      // не должна сбрасывать выбор получателей.
+      let checkedByEmail = null;
+      if (preserveChecked) {
+        checkedByEmail = {};
+        emailContactsList.querySelectorAll(".email-contact-check").forEach(function (cb) {
+          checkedByEmail[cb.value.trim().toLowerCase()] = cb.checked;
+        });
+      }
       const all = customerContacts.concat(_emailAdditionalRecipients);
       if (!all.length) {
         emailContactsList.innerHTML = '<p class="text-muted small mb-0">No contacts found.</p>';
@@ -4691,13 +4719,30 @@
         const name = [c.first_name || "", c.last_name || ""].join(" ").trim();
         const email = c.email || "";
         if (!email) return;
-        const checked = c.is_main || c._added ? "checked" : "";
+        const isSaved = i < customerContacts.length; // сохранённый контакт кастомера (не "New")
+        if (isSaved && _emailEditIndex === i) {
+          html += emailContactEditFormHtml(c, i);
+          return;
+        }
+        const defaultChecked = !!(c.is_main || c._added);
+        const key = email.trim().toLowerCase();
+        const isChecked = checkedByEmail && (key in checkedByEmail) ? checkedByEmail[key] : defaultChecked;
         const label = name ? name + " — " + email : email;
         const badge = c.is_main ? ' <span class="badge bg-primary ms-1" style="font-size:0.65rem;">Main</span>' : "";
         const addedBadge = c._added ? ' <span class="badge bg-success ms-1" style="font-size:0.65rem;">New</span>' : "";
+        let actions = "";
+        if (isSaved && canManageEmailContacts) {
+          actions = '<span class="ms-2 text-nowrap">' +
+            '<button type="button" class="btn btn-link btn-sm p-0 me-2 email-contact-edit" data-index="' + i + '" title="Edit contact"><i class="bi bi-pencil"></i></button>' +
+            '<button type="button" class="btn btn-link btn-sm p-0 text-danger email-contact-delete" data-index="' + i + '" title="Delete contact"><i class="bi bi-trash"></i></button>' +
+            '</span>';
+        } else if (!isSaved) {
+          actions = '<button type="button" class="btn btn-link btn-sm p-0 ms-2 text-danger email-recipient-remove" data-index="' + (i - customerContacts.length) + '" title="Remove from list"><i class="bi bi-x-lg"></i></button>';
+        }
         html += '<div class="form-check mb-2">' +
-          '<input class="form-check-input email-contact-check" type="checkbox" id="emailContact' + i + '" value="' + email.replace(/"/g, "&quot;") + '" ' + checked + '>' +
-          '<label class="form-check-label" for="emailContact' + i + '">' + label + badge + addedBadge + '</label>' +
+          '<input class="form-check-input email-contact-check" type="checkbox" id="emailContact' + i + '" value="' + escapeHtml(email) + '" ' + (isChecked ? "checked" : "") + '>' +
+          '<label class="form-check-label" for="emailContact' + i + '">' + escapeHtml(label) + badge + addedBadge + '</label>' +
+          actions +
           '</div>';
       });
       emailContactsList.innerHTML = html;
@@ -4707,6 +4752,7 @@
       if (!emailModal) return;
       _emailSendCallback = callback;
       _emailAdditionalRecipients = [];
+      _emailEditIndex = null;
       if (emailModalTitle) emailModalTitle.innerHTML = '<i class="bi bi-envelope me-2"></i>' + (title || "Send Email");
       if (emailNewForm) emailNewForm.style.display = "none";
       // Clear new contact form
@@ -4778,7 +4824,96 @@
           var el = document.getElementById(id); if (el) el.value = "";
         });
         if (emailNewForm) emailNewForm.style.display = "none";
-        renderEmailContacts();
+        renderEmailContacts(true);
+      });
+    }
+
+    function emailContactsApiUrl(action) {
+      const customerId = String(customerSel?.value || "").trim();
+      return "/work_orders/api/customers/" + encodeURIComponent(customerId) + "/email-contacts/" + action;
+    }
+
+    async function postEmailContactsApi(action, payload) {
+      const res = await fetch(emailContactsApiUrl(action), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || !data || !data.ok) {
+        throw new Error((data && (data.error || data.message)) || "Request failed");
+      }
+      return data;
+    }
+
+    if (emailContactsList) {
+      emailContactsList.addEventListener("click", async function (e) {
+        const editBtn = e.target.closest(".email-contact-edit");
+        if (editBtn) {
+          _emailEditIndex = Number(editBtn.dataset.index);
+          renderEmailContacts(true);
+          return;
+        }
+        if (e.target.closest(".email-contact-cancel")) {
+          _emailEditIndex = null;
+          renderEmailContacts(true);
+          return;
+        }
+        const removeBtn = e.target.closest(".email-recipient-remove");
+        if (removeBtn) {
+          // Получатель, добавленный в этой модалке — просто убираем из списка.
+          _emailAdditionalRecipients.splice(Number(removeBtn.dataset.index), 1);
+          renderEmailContacts(true);
+          return;
+        }
+        const delBtn = e.target.closest(".email-contact-delete");
+        if (delBtn) {
+          const i = Number(delBtn.dataset.index);
+          const c = customerContacts[i];
+          if (!c) return;
+          if (!await appConfirm("Delete contact " + (c.email || "") + " from this customer?")) return;
+          delBtn.disabled = true;
+          try {
+            const data = await postEmailContactsApi("delete", { index: i, original_email: c.email || "" });
+            customerContacts = Array.isArray(data.contacts) ? data.contacts : [];
+            _emailEditIndex = null;
+            renderEmailContacts(true);
+          } catch (err) {
+            toast(err.message || "Failed to delete contact.");
+            delBtn.disabled = false;
+          }
+          return;
+        }
+        const saveBtn = e.target.closest(".email-contact-save");
+        if (saveBtn) {
+          const i = Number(saveBtn.dataset.index);
+          const c = customerContacts[i];
+          const form = saveBtn.closest(".email-contact-edit-form");
+          if (!c || !form) return;
+          const email = String(form.querySelector(".email-edit-email")?.value || "").trim().toLowerCase();
+          if (!email || email.indexOf("@") === -1) {
+            toast("Please enter a valid email address.");
+            return;
+          }
+          saveBtn.disabled = true;
+          try {
+            const data = await postEmailContactsApi("update", {
+              index: i,
+              original_email: c.email || "",
+              first_name: String(form.querySelector(".email-edit-first")?.value || "").trim(),
+              last_name: String(form.querySelector(".email-edit-last")?.value || "").trim(),
+              phone: String(form.querySelector(".email-edit-phone")?.value || "").trim(),
+              email: email,
+            });
+            customerContacts = Array.isArray(data.contacts) ? data.contacts : [];
+            _emailEditIndex = null;
+            renderEmailContacts(true);
+          } catch (err) {
+            toast(err.message || "Failed to update contact.");
+            saveBtn.disabled = false;
+          }
+          return;
+        }
       });
     }
 

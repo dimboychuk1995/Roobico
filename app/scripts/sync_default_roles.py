@@ -5,11 +5,13 @@
     python -m app.scripts.sync_default_roles            # применить
     python -m app.scripts.sync_default_roles --dry-run  # только показать изменения
 
-Только ДОБАВЛЯЕТ права ($addToSet) системным ролям (is_system: true) —
-никогда не убирает и не трогает кастомные роли, поэтому идемпотентен и
-безопасен для повторного запуска. Прогнать один раз после деплоя
-механик-режима (иначе у существующих тенантов роль mechanic не сможет
-сохранять WO, а parts_manager/viewer потеряют цены в WO).
+Только ДОБАВЛЯЕТ права ($addToSet): ROLE_GRANTS — системным ролям
+(is_system: true), GRANT_ALL_ROLES — всем ролям тенанта, включая кастомные
+(для прав, которые по умолчанию включены у всех и отключаются вручную).
+Никогда не убирает права, поэтому идемпотентен и безопасен для повторного
+запуска. Прогонять после деплоя фич, добавляющих новые permissions
+(иначе существующие тенанты права не получат — при создании тенанта роли
+сеются один раз).
 """
 from __future__ import annotations
 
@@ -31,15 +33,22 @@ ROLE_GRANTS: dict[str, list[str]] = {
     "viewer": ["work_orders.view_costs"],
 }
 
+# Права, включённые по умолчанию у ВСЕХ ролей (в т.ч. кастомных) —
+# владелец отключает их точечно в Settings → Roles.
+GRANT_ALL_ROLES: list[str] = [
+    "work_orders.manage_email_contacts",
+]
+
 
 def sync_tenant_roles(tdb, dry_run: bool = False) -> list[tuple[str, list[str]]]:
-    """Добавить недостающие права системным ролям одного тенанта (additive)."""
+    """Добавить недостающие права ролям одного тенанта (additive)."""
     changes: list[tuple[str, list[str]]] = []
-    for role_key, grants in ROLE_GRANTS.items():
-        role = tdb.roles.find_one({"key": role_key, "is_system": True})
-        if not role:
-            continue
-        missing = sorted(set(grants) - set(role.get("permissions") or []))
+    for role in tdb.roles.find({}):
+        role_key = str(role.get("key") or "")
+        grants = set(GRANT_ALL_ROLES)
+        if role.get("is_system"):
+            grants |= set(ROLE_GRANTS.get(role_key) or [])
+        missing = sorted(grants - set(role.get("permissions") or []))
         if not missing:
             continue
         if not dry_run:

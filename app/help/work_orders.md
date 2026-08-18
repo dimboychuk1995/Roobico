@@ -214,6 +214,17 @@ invoices; adjust per-WO amounts if needed and record all at once.
 - **Email Work Order** — sends the PDF to chosen customer contacts (you can
   add a new contact on the fly and save it to the customer). The email also
   includes a customer portal link.
+- **Managing contacts in the email dialog** — each saved customer contact in
+  the recipients list has a pencil (edit name / email / phone) and a trash
+  icon (delete the contact from the customer — after an "are you sure"
+  prompt). Changes are saved to the customer card immediately, exactly as if
+  you edited them on the Customers page, and apply to all email dialogs (work
+  order, payment receipt, authorization). Deleting the main contact promotes
+  the next one to main. Recipients added on the fly but not yet saved show a
+  green "New" badge and an ✕ to remove them from the list. The pencil/trash
+  icons are controlled by the **"Edit / delete customer contacts in email
+  dialogs"** permission (Settings → Roles) — it is enabled for all roles by
+  default; switch it off for a role to make the list read-only.
 - **Create Annual Inspection** — fills out a DOT Annual Vehicle Inspection
   report (49 CFR 396) for the unit. The dialog has the carrier/inspector
   fields, an optional **Report Number** (your own numbering; auto-generated

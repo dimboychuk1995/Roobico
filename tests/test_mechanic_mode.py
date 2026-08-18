@@ -651,8 +651,12 @@ def test_sync_default_roles_additive_and_idempotent(mongo):
     viewer = tdb.roles.find_one({"key": "viewer"})
     assert "work_orders.view_costs" in viewer["permissions"]
 
+    # Кастомная роль: только GRANT_ALL_ROLES (дефолтно-включённые права),
+    # ROLE_GRANTS системных ролей её не касаются.
+    from app.scripts.sync_default_roles import GRANT_ALL_ROLES
     custom = tdb.roles.find_one({"key": "custom_role"})
-    assert custom["permissions"] == ["work_orders.view"]  # кастомная роль не тронута
+    assert set(custom["permissions"]) == {"work_orders.view"} | set(GRANT_ALL_ROLES)
+    assert "work_orders.view_costs" not in custom["permissions"]
 
     # идемпотентность
     assert sync_tenant_roles(tdb) == []
