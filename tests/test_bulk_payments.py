@@ -54,6 +54,8 @@ def bulk_setup(app, seed):
         wo_new = make_wo(customer["_id"], 200.0, 9102, age_days=1)
         estimate = make_wo(customer["_id"], 50.0, 9103, status="estimate", age_days=2)
         foreign_wo = make_wo(other_customer["_id"], 300.0, 9104, age_days=2)
+        # WO в работе (не подтверждён менеджером) — в bulk-оплату не попадает.
+        wo_progress = make_wo(customer["_id"], 400.0, 9105, status="in_progress", age_days=2)
 
         data = {
             "db": db,
@@ -63,10 +65,11 @@ def bulk_setup(app, seed):
             "wo_new": wo_new,
             "estimate": estimate,
             "foreign_wo": foreign_wo,
+            "wo_progress": wo_progress,
         }
         yield data
 
-        wo_ids = [wo_old["_id"], wo_new["_id"], estimate["_id"], foreign_wo["_id"]]
+        wo_ids = [wo_old["_id"], wo_new["_id"], estimate["_id"], foreign_wo["_id"], wo_progress["_id"]]
         db.work_order_payments.delete_many({"work_order_id": {"$in": wo_ids}})
         db.work_orders.delete_many({"_id": {"$in": wo_ids}})
         db.customers.delete_many({"_id": {"$in": [customer["_id"], other_customer["_id"]]}})
@@ -205,6 +208,37 @@ def test_bulk_rejects_estimates(logged_in, bulk_setup, app):
     data = resp.get_json()
     assert data["ok"] is False
     assert data["error"] == "not_payable"
+    with app.app_context():
+        assert _payments_count(bulk_setup) == 0
+
+
+def test_bulk_excludes_and_rejects_in_progress(logged_in, bulk_setup, app):
+    """WO в работе (не подтверждённый) не виден в списках и не принимает оплату."""
+    cust_id = bulk_setup["customer"]["_id"]
+
+    # Не в списке неоплаченных инвойсов клиента.
+    rows = logged_in.get(f"/work_orders/api/bulk-payments/customers/{cust_id}/unpaid").get_json()["work_orders"]
+    assert 9105 not in [r["wo_number"] for r in rows]
+
+    # Не входит в баланс клиента (100 + 200, без in_progress 400).
+    customers = logged_in.get("/work_orders/api/bulk-payments/customers").get_json()["customers"]
+    entry = next(c for c in customers if c["id"] == str(cust_id))
+    assert entry["invoices_count"] == 2
+    assert entry["balance_due"] == 300.0
+
+    # Прямая попытка оплатить — отказ всего запроса.
+    resp = _bulk_pay(
+        logged_in,
+        [
+            {"work_order_id": str(bulk_setup["wo_old"]["_id"]), "amount": 100},
+            {"work_order_id": str(bulk_setup["wo_progress"]["_id"]), "amount": 10},
+        ],
+        customer_id=cust_id,
+    )
+    data = resp.get_json()
+    assert data["ok"] is False
+    assert data["error"] == "not_payable"
+    assert "in progress" in data["message"]
     with app.app_context():
         assert _payments_count(bulk_setup) == 0
 

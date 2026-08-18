@@ -157,6 +157,21 @@
       </div>
     </nav>
 
+    {# Полоска «подтверди email»: только для аккаунтов с email_verified=false
+       (старые пользователи без поля считаются подтверждёнными). #}
+    {% if _current_user and _current_user.get("email_verified") is sameas false %}
+    <div class="alert alert-warning rounded-0 border-0 border-bottom mb-0 py-2 px-3 d-flex align-items-center justify-content-between flex-wrap gap-2">
+      <div class="small">
+        <i class="bi bi-envelope-exclamation me-1"></i>
+        Please confirm your email <strong>{{ _current_user.get("email") or "" }}</strong> — we sent you a confirmation link.
+      </div>
+      <form method="post" action="{{ url_for('auth.resend_verification') }}" class="mb-0">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn-sm btn-outline-dark">Resend email</button>
+      </form>
+    </div>
+    {% endif %}
+
     <div class="app-main-col app-main-pad">
       {% block app_content %}
       <!-- Page content goes here -->

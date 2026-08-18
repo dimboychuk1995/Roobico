@@ -141,6 +141,11 @@ html[data-theme="dark"] .form-label {
   color: #cbd5e1;
 }
 
+/* Bootstrap-дефолт form-text — почти чёрный, на тёмном фоне не читается. */
+html[data-theme="dark"] .form-text {
+  color: var(--muted);
+}
+
 html[data-theme="dark"] .form-control,
 html[data-theme="dark"] .form-select,
 html[data-theme="dark"] textarea.form-control,

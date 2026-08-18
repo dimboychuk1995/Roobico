@@ -55,6 +55,16 @@ mechanic mode with job timers), customers, parts, vendors, reports, calendar
 and shop switching, plus camera AI flows (scan a paper work order or a
 vendor invoice). See the mechanic & mobile documentation.
 
+## Email confirmation
+
+After signing up, the account owner gets a confirmation email. Until the
+link in it is clicked, a yellow bar at the top of the app reminds about it
+with a **Resend email** button (the link is valid 7 days; resend is limited
+to a few times per hour). Confirmation does not block any features — it just
+verifies we can reach you at that address. Team members invited through
+Settings → Users confirm their email automatically when they accept the
+invitation and set a password.
+
 ## Subscription
 
 Roobico billing starts at a $59/mo base plan that includes the first active

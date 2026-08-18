@@ -25,6 +25,10 @@ from app.blueprints.work_orders.services.totals import _work_order_grand_total
 # Эстимейты — не инвойсы, их не оплачиваем (тот же список, что в listing.get_estimates_list).
 ESTIMATE_STATUSES = ["estimate", "estimated", "quote", "quoted"]
 
+# WO ещё в работе (в т.ч. механик закончил, но менеджер не подтвердил) —
+# суммы не финальные, в bulk-оплату не попадает.
+NOT_PAYABLE_STATUSES = ESTIMATE_STATUSES + ["in_progress"]
+
 MAX_BULK_ALLOCATIONS = 200
 
 # Balance meньше цента считаем нулевым — совпадает с порогом в
@@ -36,7 +40,7 @@ def _unpaid_invoices_match(shop_id) -> dict:
     return {
         "shop_id": shop_id,
         "is_active": True,
-        "status": {"$nin": ESTIMATE_STATUSES + ["paid"]},
+        "status": {"$nin": NOT_PAYABLE_STATUSES + ["paid"]},
     }
 
 
@@ -167,7 +171,7 @@ def apply_bulk_payment(
     """Проверяет распределение и атомарно записывает платежи по нескольким WO.
 
     Всё или ничего: любая невалидная строка (несуществующий WO, оверпеймент,
-    чужой клиент, эстимейт) отклоняет весь запрос без записи.
+    чужой клиент, эстимейт, WO в работе) отклоняет весь запрос без записи.
     """
     if not isinstance(allocations, list) or not allocations:
         return {"ok": False, "error": "no_allocations", "message": "Select at least one invoice to pay."}
@@ -221,6 +225,13 @@ def apply_bulk_payment(
                 "ok": False,
                 "error": "not_payable",
                 "message": f"#{wo_number} is an estimate and cannot receive payments.",
+            }
+        if status == "in_progress":
+            wo_number = wo.get("wo_number") or wo_id
+            return {
+                "ok": False,
+                "error": "not_payable",
+                "message": f"#{wo_number} is still in progress (not confirmed) and cannot receive payments.",
             }
         if customer_id and wo.get("customer_id") != customer_id:
             wo_number = wo.get("wo_number") or wo_id

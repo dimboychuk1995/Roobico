@@ -54,10 +54,12 @@
                   <span class="badge text-bg-secondary">{{ u.get("role") or "viewer" }}</span>
                 </td>
                 <td>
-                  {% if u.get("is_active", True) %}
-                    <span class="badge text-bg-success">Active</span>
-                  {% else %}
+                  {% if not u.get("is_active", True) %}
                     <span class="badge text-bg-secondary">Inactive</span>
+                  {% elif u.get("invite_pending") %}
+                    <span class="badge text-bg-warning" title="Invitation sent — the user hasn't set a password yet">Invited</span>
+                  {% else %}
+                    <span class="badge text-bg-success">Active</span>
                   {% endif %}
                 </td>
                 <td class="text-end">
@@ -91,6 +93,18 @@
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px;"><path d="M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/></svg>
                       Permissions
                     </button>
+
+                    {% if u.get('invite_pending') and u.get('is_active', True) %}
+                      <form method="post" action="{{ url_for('settings.users_resend_invite', user_id=u.get('_id_str')) }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="q" value="{{ q or '' }}">
+                        <input type="hidden" name="page" value="{{ pagination.page if pagination else 1 }}">
+                        <input type="hidden" name="per_page" value="{{ pagination.per_page if pagination else 20 }}">
+                        <button class="btn btn-sm btn-outline-warning" title="Send the invitation email again">
+                          Resend invite
+                        </button>
+                      </form>
+                    {% endif %}
 
                     {% if u.get('_id_str') != (session.get('user_id') or '')|string and u.get('is_active', True) %}
                       <form method="post" action="{{ url_for('settings.users_deactivate', user_id=u.get('_id_str')) }}" class="d-inline"
@@ -153,7 +167,7 @@
             <div class="col-12">
               <label class="form-label" for="email">Email</label>
               <input class="form-control" id="email" name="email" type="email" maxlength="120" placeholder="user@company.com" required>
-              <div class="form-text">We’ll later add “Send invite email” flow.</div>
+              <div class="form-text">The invitation will be sent to this address.</div>
             </div>
 
             <div class="col-12 col-md-6">
@@ -249,15 +263,28 @@
 
             <hr class="my-2">
 
-            <div class="col-12 col-md-6">
+            <div class="col-12">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" value="1" id="send_invite" name="send_invite" checked>
+                <label class="form-check-label" for="send_invite">
+                  Send invitation email — the user sets their own password
+                </label>
+              </div>
+              <div class="form-text">
+                The user gets a link (valid 7 days) to create a password. Until then they show as
+                <span class="badge text-bg-warning">Invited</span> and cannot log in.
+              </div>
+            </div>
+
+            <div class="col-12 col-md-6 d-none" data-manual-password-field>
               <label class="form-label" for="password">Password</label>
-              <input class="form-control" id="password" name="password" type="password" required minlength="8">
+              <input class="form-control" id="password" name="password" type="password" minlength="8">
               <div class="form-text">Minimum 8 characters.</div>
             </div>
 
-            <div class="col-12 col-md-6">
+            <div class="col-12 col-md-6 d-none" data-manual-password-field>
               <label class="form-label" for="password_confirm">Confirm password</label>
-              <input class="form-control" id="password_confirm" name="password_confirm" type="password" required minlength="8">
+              <input class="form-control" id="password_confirm" name="password_confirm" type="password" minlength="8">
             </div>
 
           </div>
@@ -266,7 +293,7 @@
 
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary">Create user</button>
+          <button type="submit" class="btn btn-primary" id="createUserSubmitBtn">Send invitation</button>
         </div>
       </form>
 

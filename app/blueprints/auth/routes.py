@@ -15,6 +15,11 @@ from . import auth_bp
 
 MIN_PASSWORD_LENGTH = 8
 
+# Ссылки подтверждения email и приглашения живут дольше сброса пароля:
+# письмо может отлежаться в ящике пару дней.
+_EMAIL_VERIFY_TTL = 7 * 24 * 3600
+_INVITE_TOKEN_TTL = 7 * 24 * 3600
+
 
 def _hash_reset_token(token: str) -> str:
     # В базе храним только хэш: утечка дампа не даёт готовых ссылок сброса.
@@ -83,7 +88,14 @@ def login():
         flash("User not found or inactive.", "error")
         return redirect(url_for("main.index"))
 
-    if not check_password_hash(user.get("password_hash", ""), password):
+    if user.get("invite_pending"):
+        flash(
+            "Your account is waiting for setup — open the invitation email and set your password first.",
+            "error",
+        )
+        return redirect(url_for("main.index"))
+
+    if not check_password_hash(user.get("password_hash") or "", password):
         flash("Wrong password.", "error")
         return redirect(url_for("main.index"))
 
@@ -258,4 +270,198 @@ def reset_password(token):
     )
 
     flash("Password has been reset. You can now log in.", "success")
+    return redirect(url_for("main.index"))
+
+
+# ── Email verification ────────────────────────────────────────────────────
+
+def _external_auth_url(endpoint: str, **kwargs) -> str:
+    """Абсолютная ссылка для письма: публичный хост, dev-fallback — _external."""
+    url = public_url(endpoint, **kwargs)
+    if not url.startswith("http"):
+        url = url_for(endpoint, _external=True, **kwargs)
+    return url
+
+
+def send_verification_email(master, user: dict) -> None:
+    """
+    Выдать пользователю новый токен подтверждения email и отправить письмо.
+    Ошибки отправки пробрасываются — вызывающий решает, критично это или нет.
+    """
+    token = secrets.token_urlsafe(48)
+    master.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {
+            "email_verify_token": _hash_reset_token(token),
+            "email_verify_token_created": time.time(),
+        }},
+    )
+    verify_url = _external_auth_url("auth.verify_email", token=token)
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:2rem;">
+        <h2 style="color:#0f172a;">Confirm your email</h2>
+        <p>Welcome to Roobico! Please confirm your email address to finish setting up your account:</p>
+        <p style="text-align:center;margin:2rem 0;">
+            <a href="{verify_url}"
+               style="background:#16a34a;color:#fff;padding:12px 32px;border-radius:6px;
+                      text-decoration:none;font-weight:700;display:inline-block;">
+                Confirm Email
+            </a>
+        </p>
+        <p style="color:#64748b;font-size:0.85rem;">This link expires in 7 days. If you didn't create a Roobico account, ignore this email.</p>
+    </div>
+    """
+    send_email(
+        to_address=user["email"],
+        subject="Confirm your email — Roobico",
+        html_body=html,
+        from_name="Roobico",
+    )
+
+
+@auth_bp.get("/verify-email/<token>")
+def verify_email(token):
+    master = get_master_db()
+    user = master.users.find_one({"email_verify_token": _hash_reset_token(token)})
+    if not user:
+        flash("Invalid or expired confirmation link.", "error")
+        return redirect(url_for("main.index"))
+
+    created = user.get("email_verify_token_created", 0)
+    if time.time() - created > _EMAIL_VERIFY_TTL:
+        flash("This confirmation link has expired. Log in and use the Resend button.", "error")
+        return redirect(url_for("main.index"))
+
+    master.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {"email_verified": True},
+         "$unset": {"email_verify_token": "", "email_verify_token_created": ""}},
+    )
+
+    flash("Email confirmed. Thank you!", "success")
+    # Если пользователь уже залогинен — вернём в приложение, иначе на логин.
+    if session.get(SESSION_USER_ID):
+        return redirect(app_url("dashboard.dashboard"))
+    return redirect(url_for("main.index"))
+
+
+@auth_bp.post("/resend-verification")
+def resend_verification():
+    user_id = _maybe_object_id(session.get(SESSION_USER_ID))
+    if not user_id:
+        flash("Please log in first.", "error")
+        return redirect(url_for("main.index"))
+
+    if hit_rate_limit("resend_verification", str(user_id), max_attempts=3, window_seconds=3600):
+        flash("Too many requests. Please try again later.", "error")
+        return redirect(request.referrer or app_url("dashboard.dashboard"))
+
+    master = get_master_db()
+    user = master.users.find_one({"_id": user_id, "is_active": True})
+    if not user or user.get("email_verified") is not False:
+        return redirect(request.referrer or app_url("dashboard.dashboard"))
+
+    try:
+        send_verification_email(master, user)
+        flash("Confirmation email sent — check your inbox.", "success")
+    except Exception:
+        current_app.logger.exception("Failed to send verification email")
+        flash("Failed to send the confirmation email. Please try again later.", "error")
+    return redirect(request.referrer or app_url("dashboard.dashboard"))
+
+
+# ── User invitations ──────────────────────────────────────────────────────
+
+def send_invite_email(master, user: dict, shop_name: str = "") -> None:
+    """
+    Выдать пользователю новый invite-токен и отправить письмо со ссылкой
+    «задай свой пароль». Ошибки отправки пробрасываются.
+    """
+    token = secrets.token_urlsafe(48)
+    master.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {
+            "invite_token": _hash_reset_token(token),
+            "invite_token_created": time.time(),
+        }},
+    )
+    invite_url = _external_auth_url("auth.accept_invite_page", token=token)
+    org = shop_name or "Roobico"
+    html = f"""
+    <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:2rem;">
+        <h2 style="color:#0f172a;">You're invited to {org}</h2>
+        <p>You've been invited to join <strong>{org}</strong> on Roobico.
+           Click the button below to set your password and activate your account:</p>
+        <p style="text-align:center;margin:2rem 0;">
+            <a href="{invite_url}"
+               style="background:#16a34a;color:#fff;padding:12px 32px;border-radius:6px;
+                      text-decoration:none;font-weight:700;display:inline-block;">
+                Accept Invitation
+            </a>
+        </p>
+        <p style="color:#64748b;font-size:0.85rem;">This link expires in 7 days. If you weren't expecting this invitation, ignore this email.</p>
+    </div>
+    """
+    send_email(
+        to_address=user["email"],
+        subject=f"Invitation to join {org} — Roobico",
+        html_body=html,
+        from_name="Roobico",
+    )
+
+
+def _find_user_by_invite_token(master, token: str):
+    user = master.users.find_one({"invite_token": _hash_reset_token(token)})
+    if not user:
+        return None, "Invalid or expired invitation link."
+    created = user.get("invite_token_created", 0)
+    if time.time() - created > _INVITE_TOKEN_TTL:
+        return None, "This invitation has expired. Ask your manager to resend it."
+    if not user.get("invite_pending"):
+        return None, "This invitation was already used. Just log in."
+    return user, None
+
+
+@auth_bp.get("/invite/<token>")
+def accept_invite_page(token):
+    master = get_master_db()
+    user, error = _find_user_by_invite_token(master, token)
+    if not user:
+        flash(error, "error")
+        return redirect(url_for("main.index"))
+    return render_template("public/invite_accept.html", token=token, invite_email=user.get("email") or "")
+
+
+@auth_bp.post("/invite/<token>")
+def accept_invite(token):
+    master = get_master_db()
+    user, error = _find_user_by_invite_token(master, token)
+    if not user:
+        flash(error, "error")
+        return redirect(url_for("main.index"))
+
+    password = request.form.get("password", "")
+    confirm = request.form.get("confirm_password", "")
+
+    if len(password) < MIN_PASSWORD_LENGTH:
+        flash(f"Password must be at least {MIN_PASSWORD_LENGTH} characters.", "error")
+        return redirect(url_for("auth.accept_invite_page", token=token))
+
+    if password != confirm:
+        flash("Passwords do not match.", "error")
+        return redirect(url_for("auth.accept_invite_page", token=token))
+
+    master.users.update_one(
+        {"_id": user["_id"]},
+        {"$set": {
+            "password_hash": generate_password_hash(password),
+            "invite_pending": False,
+            "invite_accepted_at": time.time(),
+            # Пароль задан по ссылке из письма — email фактически подтверждён.
+            "email_verified": True,
+        },
+         "$unset": {"invite_token": "", "invite_token_created": ""}},
+    )
+
+    flash("Your account is ready. Log in with your new password.", "success")
     return redirect(url_for("main.index"))

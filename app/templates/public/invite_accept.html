@@ -1,0 +1,48 @@
+{% extends "layouts/public_base.html" %}
+
+{% block title %}Accept Invitation{% endblock %}
+
+{% block extra_styles %}
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/auth.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="auth-split auth-compact">
+  <div class="auth-left">
+    <div class="auth-logo">
+      <img src="{{ url_for('static', filename='images/logo.svg') }}" alt="Roobico">
+      <h1>ROOBICO</h1>
+    </div>
+
+    <h5 class="text-center mb-3 auth-form-title">Create Your Password</h5>
+    <p class="text-center text-muted small mb-3">for <strong>{{ invite_email }}</strong></p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for cat, msg in messages %}
+        <div class="alert alert-{{ 'success' if cat == 'success' else 'danger' }} py-2 small">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <form method="post" action="{{ url_for('auth.accept_invite', token=token) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="mb-4">
+        <div class="auth-form-label">Password</div>
+        <input name="password" type="password" class="form-control auth-input" required autofocus minlength="8" />
+      </div>
+      <div class="mb-4">
+        <div class="auth-form-label">Confirm Password</div>
+        <input name="confirm_password" type="password" class="form-control auth-input" required minlength="8" />
+      </div>
+      <button type="submit" class="auth-btn auth-btn-success">Activate Account</button>
+    </form>
+  </div>
+
+  <div class="auth-right">
+    <div class="auth-hero">
+      <h2>Welcome Aboard</h2>
+      <p>Set a password (at least 8 characters) to activate your account and log in.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

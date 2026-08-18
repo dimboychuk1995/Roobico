@@ -326,6 +326,8 @@ def users_edit(user_id):
             return _redirect_users_index()
         from werkzeug.security import generate_password_hash
         update_doc["password_hash"] = generate_password_hash(password)
+        # Админ задал пароль руками — приглашение больше не ожидается.
+        update_doc["invite_pending"] = False
 
     if str(target_id) == str(session.get(SESSION_USER_ID)) and not is_active:
         flash("You cannot deactivate your own account.", "error")
@@ -381,6 +383,9 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
 
     pay_type, salary_amount = _parse_pay_fields(request.form)
 
+    # По умолчанию пользователь приглашается письмом и сам задаёт пароль;
+    # ручной пароль — только если чекбокс приглашения снят.
+    send_invite = bool(request.form.get("send_invite"))
     password = request.form.get("password") or ""
     password_confirm = request.form.get("password_confirm") or ""
 
@@ -388,13 +393,18 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
         flash("Please fill first name, last name and email.", "error")
         return redirect(url_for("settings.users_index"))
 
-    if len(password) < 8:
-        flash("Password must be at least 8 characters.", "error")
+    if "@" not in email:
+        flash("Valid email is required.", "error")
         return redirect(url_for("settings.users_index"))
 
-    if password != password_confirm:
-        flash("Passwords do not match.", "error")
-        return redirect(url_for("settings.users_index"))
+    if not send_invite:
+        if len(password) < 8:
+            flash("Password must be at least 8 characters.", "error")
+            return redirect(url_for("settings.users_index"))
+
+        if password != password_confirm:
+            flash("Passwords do not match.", "error")
+            return redirect(url_for("settings.users_index"))
 
     tenant_id = tenant_oid or _maybe_object_id(current_user.get("tenant_id")) or _maybe_object_id(tenant_id_raw)
 
@@ -457,7 +467,9 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
         "tenant_id": tenant_id,
         "shop_ids": selected_shop_oids,  # ✅ только shop_ids
         "email": email,
-        "password_hash": generate_password_hash(password),
+        # Приглашённый пользователь пароля не имеет — задаёт его сам по
+        # ссылке из письма; пустой hash логин не пропустит.
+        "password_hash": "" if send_invite else generate_password_hash(password),
         "first_name": first_name,
         "last_name": last_name,
         "name": f"{first_name} {last_name}".strip(),
@@ -467,20 +479,73 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
         "pay_type": pay_type,
         "salary_amount": salary_amount,
         "must_reset_password": False,
+        "invite_pending": send_invite,
         "allow_permissions": [],
         "deny_permissions": [],
         "updated_at": utcnow(),
     }
+    if send_invite:
+        user_doc["invited_at"] = utcnow()
+        user_doc["invited_by"] = creator_id
 
     if reactivate_target is not None:
         # Реактивация: полностью перезаписываем профиль новыми данными формы,
         # created_at/created_by остаются от исходной записи.
         master.users.update_one({"_id": reactivate_target["_id"]}, {"$set": user_doc})
+        user_id = reactivate_target["_id"]
         flash("User with this email was deactivated — reactivated with the new data.", "success")
     else:
         user_doc["created_at"] = utcnow()
         user_doc["created_by"] = creator_id
-        master.users.insert_one(user_doc)
+        user_id = master.users.insert_one(user_doc).inserted_id
+
+    if send_invite:
+        _send_invite_or_warn(master, {**user_doc, "_id": user_id})
+    elif reactivate_target is None:
         flash("User created successfully.", "success")
 
     return redirect(url_for("settings.users_index"))
+
+
+def _send_invite_or_warn(master, user_doc):
+    """Отправить приглашение; при неудаче — предупредить (есть кнопка Resend)."""
+    from flask import current_app
+
+    from app.blueprints.auth.routes import send_invite_email
+
+    tenant = master.tenants.find_one({"_id": user_doc.get("tenant_id")}) or {}
+    try:
+        send_invite_email(master, user_doc, shop_name=tenant.get("name") or "")
+        flash(f"Invitation sent to {user_doc['email']} — the user will set their own password.", "success")
+    except Exception:
+        current_app.logger.exception("Failed to send invite email")
+        flash(
+            "User created, but the invitation email failed to send. "
+            "Use the Resend invite button to try again.",
+            "error",
+        )
+
+
+@settings_bp.route("/users/<user_id>/resend-invite", methods=["POST"])
+@login_required
+@permission_required("settings.manage_users")
+def users_resend_invite(user_id):
+    master = get_master_db()
+
+    target_id = _maybe_object_id(user_id)
+    if not target_id:
+        flash("Invalid user id.", "error")
+        return _redirect_users_index()
+
+    tenant_values = _id_variants(session.get(SESSION_TENANT_ID))
+    target = master.users.find_one({"_id": target_id, "tenant_id": {"$in": tenant_values}})
+    if not target:
+        flash("User not found.", "error")
+        return _redirect_users_index()
+
+    if not target.get("invite_pending"):
+        flash("This user has already set a password.", "info")
+        return _redirect_users_index()
+
+    _send_invite_or_warn(master, target)
+    return _redirect_users_index()

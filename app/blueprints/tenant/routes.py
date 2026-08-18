@@ -652,6 +652,9 @@ def register_tenant():
             "password_hash": generate_password_hash(password),
             "role": "owner",
             "is_active": True,
+            # Новые регистрации подтверждают email: до подтверждения в шапке
+            # приложения висит полоска с кнопкой Resend (layouts/app_base.html).
+            "email_verified": False,
             "created_at": created_at,
             "updated_at": created_at,
         }
@@ -665,6 +668,16 @@ def register_tenant():
         # Create shop DB (will seed parts_categories + pricing rules + labor rates)
         init_shop_database(shop_db_name, tenant_doc, shop_doc, actor_user_id=owner_user_id)
         created_shop_db = True
+
+        # Письмо подтверждения email — best-effort: неудача не ломает
+        # регистрацию, владелец дошлёт его кнопкой Resend из приложения.
+        try:
+            from app.blueprints.auth.routes import send_verification_email
+
+            user_doc["_id"] = owner_user_id
+            send_verification_email(master, user_doc)
+        except Exception:
+            current_app.logger.exception("Failed to send verification email on register")
 
         return jsonify({
             "ok": True,

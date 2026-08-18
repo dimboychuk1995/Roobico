@@ -218,6 +218,10 @@ def _render_app_page(template_name: str, active_page: str, **ctx):
         user_permissions_list=user_permissions,     # алиас под твой DEBUG блок
         user_permissions_set=perms_set,             # удобно: {% if 'x' in user_permissions_set %}
         app_timezone=get_active_shop_timezone_name(),
+        # Как в build_app_layout_context: нужен layout'у (полоска
+        # «подтверди email» в app_base читает email_verified).
+        _current_user=user,
+        _current_tenant=tenant,
     )
 
     payload.update(ctx)
@@ -701,11 +705,14 @@ def global_search_api():
             for v in db.vendors.find({"_id": {"$in": ord_vendor_ids}}, {"name": 1}):
                 ord_vendor_map[v["_id"]] = (v.get("name") or "").strip()
 
-        # resolve payment status
+        # resolve payment status (поле платежа — parts_order_id, как в parts/routes)
         order_ids = [o["_id"] for o in orders]
         paid_totals = {}
-        for pay in db.parts_order_payments.find({"order_id": {"$in": order_ids}, "is_active": True}, {"order_id": 1, "amount": 1}):
-            paid_totals[pay["order_id"]] = paid_totals.get(pay["order_id"], 0.0) + float(pay.get("amount") or 0)
+        for pay in db.parts_order_payments.find(
+            {"parts_order_id": {"$in": order_ids}, "is_active": True},
+            {"parts_order_id": 1, "amount": 1},
+        ):
+            paid_totals[pay["parts_order_id"]] = paid_totals.get(pay["parts_order_id"], 0.0) + float(pay.get("amount") or 0)
 
         items = []
         for o in orders:

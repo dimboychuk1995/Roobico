@@ -12,7 +12,16 @@ unique), Phone, **Role** (Manager, Parts manager, Senior mechanic, Mechanic,
 Viewer, General manager — Owner is not assignable), Active flag, **Pay
 type** (Salary (fixed) + weekly "Salary amount", or Hourly — hourly rates
 are set per employee inside the uAttend integration, not here), **Shop
-access** checkboxes, Password (min 8).
+access** checkboxes.
+
+**Invitations (default).** With "Send invitation email" checked (it is by
+default) the new user gets an email with an **Accept Invitation** link (valid
+7 days) where they create their own password. Until then the user shows an
+orange **Invited** badge in the list, cannot log in, and has a **Resend
+invite** button in case the email got lost. Setting a password for them by
+hand (edit form → New password) also completes the setup. If you untick the
+invitation checkbox, the old flow applies: you type the password (min 8)
+yourself and the account is active immediately.
 
 - **Deactivate** blocks login but keeps history; you cannot deactivate
   yourself.
@@ -39,6 +48,13 @@ Key permission to know: **"View part costs inside WO"**
 (work_orders.view_costs). A user with work-order access but WITHOUT this
 permission works in **mechanic mode** — no prices anywhere (see the mechanic
 doc). The default Mechanic and Senior mechanic roles are like this.
+
+**"Edit / delete customer contacts in email dialogs"**
+(work_orders.manage_email_contacts) controls the pencil/trash icons next to
+contacts in the WO email dialogs (send work order, payment receipt,
+authorization). It is ON for every role by default; untick it for a role to
+make the recipients list read-only there (adding a new recipient on the fly
+still works).
 
 ## Work Order Settings
 
