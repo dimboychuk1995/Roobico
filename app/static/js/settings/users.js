@@ -28,30 +28,6 @@
     applyPayType(modal);
   });
 
-  // ── Invite toggle: с приглашением поля пароля скрыты и не обязательны ──
-  var inviteCheck = document.getElementById("send_invite");
-  if (inviteCheck) {
-    var applyInviteMode = function () {
-      var invite = inviteCheck.checked;
-      document.querySelectorAll("[data-manual-password-field]").forEach(function (el) {
-        el.classList.toggle("d-none", invite);
-        var input = el.querySelector("input");
-        if (input) {
-          if (invite) {
-            input.value = "";
-            input.removeAttribute("required");
-          } else {
-            input.setAttribute("required", "required");
-          }
-        }
-      });
-      var submitBtn = document.getElementById("createUserSubmitBtn");
-      if (submitBtn) submitBtn.textContent = invite ? "Send invitation" : "Create user";
-    };
-    inviteCheck.addEventListener("change", applyInviteMode);
-    applyInviteMode();
-  }
-
   document.addEventListener("click", function (event) {
     var btn = event.target && event.target.closest ? event.target.closest(".edit-user-btn") : null;
     if (!btn) return;
@@ -65,7 +41,6 @@
     var phoneInput = editForm.querySelector("#edit_user_phone");
     var roleInput = editForm.querySelector("#edit_user_role");
     var isActiveInput = editForm.querySelector("#edit_user_is_active");
-    var passwordInput = editForm.querySelector("#edit_user_password");
     var payTypeInput = editForm.querySelector("#edit_pay_type");
     var salaryInput = editForm.querySelector("#edit_salary_amount");
 
@@ -105,10 +80,6 @@
     for (var j = 0; j < boxes.length; j += 1) {
       var box = boxes[j];
       box.checked = !!selectedShopIds[String(box.value || "")];
-    }
-
-    if (passwordInput) {
-      passwordInput.value = "";
     }
   });
 })();

@@ -264,27 +264,12 @@
             <hr class="my-2">
 
             <div class="col-12">
-              <div class="form-check">
-                <input class="form-check-input" type="checkbox" value="1" id="send_invite" name="send_invite" checked>
-                <label class="form-check-label" for="send_invite">
-                  Send invitation email — the user sets their own password
-                </label>
+              <div class="alert alert-light border mb-0 small">
+                <i class="bi bi-envelope-paper me-1"></i>
+                The user will receive an <strong>invitation email</strong> with a link (valid 7 days)
+                to create their own password — passwords are always set by the users themselves.
+                Until then they show as <span class="badge text-bg-warning">Invited</span> and cannot log in.
               </div>
-              <div class="form-text">
-                The user gets a link (valid 7 days) to create a password. Until then they show as
-                <span class="badge text-bg-warning">Invited</span> and cannot log in.
-              </div>
-            </div>
-
-            <div class="col-12 col-md-6 d-none" data-manual-password-field>
-              <label class="form-label" for="password">Password</label>
-              <input class="form-control" id="password" name="password" type="password" minlength="8">
-              <div class="form-text">Minimum 8 characters.</div>
-            </div>
-
-            <div class="col-12 col-md-6 d-none" data-manual-password-field>
-              <label class="form-label" for="password_confirm">Confirm password</label>
-              <input class="form-control" id="password_confirm" name="password_confirm" type="password" minlength="8">
             </div>
 
           </div>
@@ -350,10 +335,10 @@
               </select>
             </div>
 
-            <div class="col-12 col-md-6">
-              <label class="form-label" for="edit_user_password">New password (optional)</label>
-              <input class="form-control" id="edit_user_password" name="password" type="password" minlength="8" placeholder="Leave blank to keep current">
-              <div class="form-text">If filled, must be at least 8 characters.</div>
+            <div class="col-12 col-md-6 d-flex align-items-end">
+              <div class="form-text mb-2">
+                Passwords are managed by the users themselves (invitation email / "Forgot password" on the login page).
+              </div>
             </div>
 
             <div class="col-12">

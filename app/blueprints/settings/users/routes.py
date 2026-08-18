@@ -319,15 +319,8 @@ def users_edit(user_id):
         "updated_at": utcnow(),
     }
 
-    password = request.form.get("password") or ""
-    if password:
-        if len(password) < 8:
-            flash("Password must be at least 8 characters.", "error")
-            return _redirect_users_index()
-        from werkzeug.security import generate_password_hash
-        update_doc["password_hash"] = generate_password_hash(password)
-        # Админ задал пароль руками — приглашение больше не ожидается.
-        update_doc["invite_pending"] = False
+    # Пароль здесь НЕ меняется даже владельцем: аккаунт и пароль — строго
+    # на стороне пользователя (приглашение / forgot password).
 
     if str(target_id) == str(session.get(SESSION_USER_ID)) and not is_active:
         flash("You cannot deactivate your own account.", "error")
@@ -383,12 +376,6 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
 
     pay_type, salary_amount = _parse_pay_fields(request.form)
 
-    # По умолчанию пользователь приглашается письмом и сам задаёт пароль;
-    # ручной пароль — только если чекбокс приглашения снят.
-    send_invite = bool(request.form.get("send_invite"))
-    password = request.form.get("password") or ""
-    password_confirm = request.form.get("password_confirm") or ""
-
     if not first_name or not last_name or not email:
         flash("Please fill first name, last name and email.", "error")
         return redirect(url_for("settings.users_index"))
@@ -396,15 +383,6 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
     if "@" not in email:
         flash("Valid email is required.", "error")
         return redirect(url_for("settings.users_index"))
-
-    if not send_invite:
-        if len(password) < 8:
-            flash("Password must be at least 8 characters.", "error")
-            return redirect(url_for("settings.users_index"))
-
-        if password != password_confirm:
-            flash("Passwords do not match.", "error")
-            return redirect(url_for("settings.users_index"))
 
     tenant_id = tenant_oid or _maybe_object_id(current_user.get("tenant_id")) or _maybe_object_id(tenant_id_raw)
 
@@ -431,8 +409,6 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
     if not role_doc:
         flash("Selected role does not exist in tenant roles.", "error")
         return redirect(url_for("settings.users_index"))
-
-    from werkzeug.security import generate_password_hash
 
     creator_id = _maybe_object_id(session.get(SESSION_USER_ID))
 
@@ -463,13 +439,14 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
             active_shop_oid = creator_shop_ids[0]
         selected_shop_oids = [active_shop_oid] if active_shop_oid is not None else []
 
+    # Пароль — строго на стороне пользователя: аккаунт всегда создаётся
+    # приглашением, пароль человек задаёт сам по ссылке из письма.
+    # Пустой password_hash логин не пропустит.
     user_doc = {
         "tenant_id": tenant_id,
         "shop_ids": selected_shop_oids,  # ✅ только shop_ids
         "email": email,
-        # Приглашённый пользователь пароля не имеет — задаёт его сам по
-        # ссылке из письма; пустой hash логин не пропустит.
-        "password_hash": "" if send_invite else generate_password_hash(password),
+        "password_hash": "",
         "first_name": first_name,
         "last_name": last_name,
         "name": f"{first_name} {last_name}".strip(),
@@ -479,18 +456,18 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
         "pay_type": pay_type,
         "salary_amount": salary_amount,
         "must_reset_password": False,
-        "invite_pending": send_invite,
+        "invite_pending": True,
+        "invited_at": utcnow(),
+        "invited_by": creator_id,
         "allow_permissions": [],
         "deny_permissions": [],
         "updated_at": utcnow(),
     }
-    if send_invite:
-        user_doc["invited_at"] = utcnow()
-        user_doc["invited_by"] = creator_id
 
     if reactivate_target is not None:
         # Реактивация: полностью перезаписываем профиль новыми данными формы,
-        # created_at/created_by остаются от исходной записи.
+        # created_at/created_by остаются от исходной записи. Старый пароль
+        # затирается — человек задаст новый по приглашению.
         master.users.update_one({"_id": reactivate_target["_id"]}, {"$set": user_doc})
         user_id = reactivate_target["_id"]
         flash("User with this email was deactivated — reactivated with the new data.", "success")
@@ -499,10 +476,7 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
         user_doc["created_by"] = creator_id
         user_id = master.users.insert_one(user_doc).inserted_id
 
-    if send_invite:
-        _send_invite_or_warn(master, {**user_doc, "_id": user_id})
-    elif reactivate_target is None:
-        flash("User created successfully.", "success")
+    _send_invite_or_warn(master, {**user_doc, "_id": user_id})
 
     return redirect(url_for("settings.users_index"))
 

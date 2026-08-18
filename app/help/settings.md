@@ -14,14 +14,16 @@ type** (Salary (fixed) + weekly "Salary amount", or Hourly — hourly rates
 are set per employee inside the uAttend integration, not here), **Shop
 access** checkboxes.
 
-**Invitations (default).** With "Send invitation email" checked (it is by
-default) the new user gets an email with an **Accept Invitation** link (valid
-7 days) where they create their own password. Until then the user shows an
-orange **Invited** badge in the list, cannot log in, and has a **Resend
-invite** button in case the email got lost. Setting a password for them by
-hand (edit form → New password) also completes the setup. If you untick the
-invitation checkbox, the old flow applies: you type the password (min 8)
-yourself and the account is active immediately.
+**Invitations — the only way to create a user.** The new user gets an email
+with an **Accept Invitation** link (valid 7 days) where they create their own
+password. Until then the user shows an orange **Invited** badge in the list,
+cannot log in, and has a **Resend invite** button in case the email got lost.
+**Passwords are strictly personal**: neither the owner nor managers can set
+or change another user's password anywhere in the app — the account and its
+password belong to the user. If someone forgets their password, they reset it
+themselves via **"Forgot password"** on the login page. Re-hiring a
+deactivated user also goes through a fresh invitation (the old password is
+cleared).
 
 - **Deactivate** blocks login but keeps history; you cannot deactivate
   yourself.

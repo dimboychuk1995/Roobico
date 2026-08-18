@@ -149,7 +149,7 @@ def cleanup_invited(mongo):
     mongo[TEST_MASTER].users.delete_many({"email": INVITED_EMAIL})
 
 
-def _create_invited_user(client, seed):
+def _create_invited_user(client, seed, **extra):
     login(client)
     token = get_csrf_token(client)
     return client.post("/settings/users", data={
@@ -159,8 +159,8 @@ def _create_invited_user(client, seed):
         "email": INVITED_EMAIL,
         "role": "manager",
         "is_active": "1",
-        "send_invite": "1",
         "shop_ids": str(seed["shop_a"]["_id"]),
+        **extra,
     }, follow_redirects=False)
 
 
@@ -215,6 +215,40 @@ def test_invite_flow_end_to_end(client, seed, mongo, cleanup_invited):
     resp = login(client, email=INVITED_EMAIL, password=PASSWORD)
     assert resp.status_code == 302
     assert "/login" not in (resp.headers.get("Location") or "")
+    client.get("/logout")
+
+
+def test_admin_cannot_set_passwords(client, seed, mongo, cleanup_invited):
+    """Пароль — строго на стороне пользователя: поля пароля в формах
+    создания/редактирования игнорируются, даже если их прислать руками."""
+    tdb = mongo["roobico_test_tenant_a"]
+    tdb.roles.update_one(
+        {"key": "manager"}, {"$set": {"key": "manager", "name": "Manager", "permissions": []}}, upsert=True
+    )
+    # Создание: password в форме не устанавливает пароль — только приглашение.
+    resp = _create_invited_user(client, seed, password=PASSWORD, password_confirm=PASSWORD)
+    assert resp.status_code == 302
+
+    master = mongo[TEST_MASTER]
+    user = master.users.find_one({"email": INVITED_EMAIL})
+    assert user["invite_pending"] is True
+    assert user["password_hash"] == ""
+
+    # Редактирование: password в форме игнорируется.
+    csrf = get_csrf_token(client)
+    resp = client.post(f"/settings/users/{user['_id']}/edit", data={
+        "csrf_token": csrf,
+        "first_name": "Ivy",
+        "last_name": "Invited",
+        "email": INVITED_EMAIL,
+        "role": "manager",
+        "is_active": "1",
+        "password": "hacked-by-admin1",
+    })
+    assert resp.status_code == 302
+    user = master.users.find_one({"_id": user["_id"]})
+    assert user["password_hash"] == ""
+    assert user["invite_pending"] is True
     client.get("/logout")
 
 
