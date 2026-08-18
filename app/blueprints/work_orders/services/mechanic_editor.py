@@ -108,19 +108,50 @@ def _attach_catalog_misc_items(parts: list[dict]) -> None:
     parts[0]["misc_charge_description"] = json.dumps(existing + new_items)
 
 
-def _default_rate_code(shop_db, shop_id) -> str:
+def _customer_default_rate_code(shop_db, customer_id) -> str:
     """
-    Ставка для работ механика без пресета: "standard", если есть, иначе
-    первая активная ставка магазина. Без ставки labor total был бы $0.
+    default_labor_rate кастомера: ObjectId ставки (новый формат) или
+    legacy-код строкой ("standart" — старая опечатка в данных).
+    """
+    from bson import ObjectId
+
+    from app.blueprints.work_orders.services.common import oid
+
+    cid = oid(customer_id)
+    if not cid:
+        return ""
+    doc = shop_db.customers.find_one({"_id": cid}, {"default_labor_rate": 1})
+    value = (doc or {}).get("default_labor_rate")
+    if isinstance(value, ObjectId):
+        rate = shop_db.labor_rates.find_one({"_id": value}, {"code": 1})
+        return str((rate or {}).get("code") or "").strip()
+    legacy = str(value or "").strip()
+    if legacy.lower() == "standart":
+        return "standard"
+    return legacy
+
+
+def _default_rate_code(shop_db, shop_id, customer_id=None) -> str:
+    """
+    Ставка для работ механика без пресета: дефолтная ставка кастомера
+    (как в веб-форме менеджера), иначе "standard", иначе первая активная
+    ставка магазина. Без ставки labor total был бы $0.
     """
     from app.blueprints.work_orders.services.lookups import get_labor_rates
 
     rates = get_labor_rates(shop_db, shop_id)
     if not rates:
         return ""
-    for r in rates:
-        if str(r.get("code") or "").strip().lower() == "standard":
-            return str(r.get("code") or "")
+
+    by_code = {
+        str(r.get("code") or "").strip().lower(): str(r.get("code") or "")
+        for r in rates
+    }
+    customer_code = _customer_default_rate_code(shop_db, customer_id).strip().lower()
+    if customer_code and customer_code in by_code:
+        return by_code[customer_code]
+    if "standard" in by_code:
+        return by_code["standard"]
     return str(rates[0].get("code") or "")
 
 
@@ -228,7 +259,7 @@ def _preset_defaults(shop_db, shop_id, preset_id_raw) -> dict:
 
 def build_mechanic_labors_payload(shop_db, shop, customer_id, payload_labors) -> list[dict]:
     """Создание WO механиком: все парты автозаполняются сервером."""
-    default_rate_code = _default_rate_code(shop_db, shop["_id"])
+    default_rate_code = _default_rate_code(shop_db, shop["_id"], customer_id)
     out = []
     for raw in payload_labors or []:
         if not isinstance(raw, dict):

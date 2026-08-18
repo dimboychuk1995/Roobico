@@ -1478,6 +1478,62 @@ def test_mechanic_custom_labor_gets_default_rate(client, mech_seed, mongo):
     _deactivate_wos(mongo, data["id"])
 
 
+def test_mechanic_wo_uses_customer_default_labor_rate(client, mech_seed, mongo):
+    """Работа без пресета берёт дефолтную ставку КАСТОМЕРА (как в веб-форме
+    менеджера), а не "standard"; ставка из пресета имеет приоритет."""
+    shop_db = mongo[SHOP_A_DB]
+    shop_id = mech_seed["customer"]["shop_id"]
+
+    fleet_rate_id = shop_db.labor_rates.insert_one({
+        "shop_id": shop_id, "code": "fleet", "name": "Fleet",
+        "hourly_rate": 85.0, "is_active": True,
+    }).inserted_id
+    preset_id = shop_db.wo_presets.insert_one({
+        "shop_id": shop_id, "name": "Preset rate", "labor_hours": 1,
+        "labor_rate_code": "standard", "parts": [], "is_active": True,
+    }).inserted_id
+    # Новый формат: default_labor_rate кастомера — ObjectId ставки.
+    shop_db.customers.update_one(
+        {"_id": mech_seed["customer"]["_id"]},
+        {"$set": {"default_labor_rate": fleet_rate_id}},
+    )
+    try:
+        login_mechanic(client)
+        resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
+            "customer_id": str(mech_seed["customer"]["_id"]),
+            "unit_id": str(mech_seed["unit"]["_id"]),
+            "labors": [
+                {"description": "Plain job", "parts": []},
+                {"description": "Preset job", "preset_id": str(preset_id), "parts": []},
+            ],
+        })
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        data = resp.get_json()
+        assert data["ok"] is True
+
+        wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+        plain_block, preset_block = wo["labors"]
+        assert plain_block["labor"]["rate_code"] == "fleet"
+        assert preset_block["labor"]["rate_code"] == "standard"
+
+        # Легаси-формат: код строкой, старая опечатка "standart" в данных.
+        shop_db.customers.update_one(
+            {"_id": mech_seed["customer"]["_id"]},
+            {"$set": {"default_labor_rate": "standart"}},
+        )
+        data2 = _create_wo_as_mechanic(client, mech_seed, description="Legacy rate")
+        wo2 = shop_db.work_orders.find_one({"_id": ObjectId(data2["id"])})
+        assert wo2["labors"][0]["labor"]["rate_code"] == "standard"
+        _deactivate_wos(mongo, data["id"], data2["id"])
+    finally:
+        shop_db.customers.update_one(
+            {"_id": mech_seed["customer"]["_id"]},
+            {"$unset": {"default_labor_rate": ""}},
+        )
+        shop_db.labor_rates.delete_one({"_id": fleet_rate_id})
+        shop_db.wo_presets.delete_one({"_id": preset_id})
+
+
 def test_mechanic_part_brings_core_and_misc_charges(client, mech_seed, mongo):
     """Запчасть с core/misc charge из каталога: чарджи попадают в WO механика
     (misc — JSON-списком на первой строке, как в веб-автозаполнении)."""
