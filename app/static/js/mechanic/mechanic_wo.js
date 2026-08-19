@@ -156,11 +156,11 @@
 
   // ================= LIST PAGE =================
   function initListPage(root) {
-    var state = { q: "", status: "all", page: 1 };
+    // Статус не выбирается: сервер отдаёт механику только in_progress.
+    var state = { q: "", page: 1 };
     var listEl = $("mechWoList");
     var emptyEl = $("mechListEmpty");
     var searchInput = $("mechSearchInput");
-    var chips = $("mechStatusChips");
 
     function cardHtml(item) {
       var workingNow = item.working_now || [];
@@ -270,7 +270,6 @@
     async function load() {
       try {
         var url = API.list + "?page=" + state.page +
-          "&status=" + encodeURIComponent(state.status) +
           (state.q ? "&q=" + encodeURIComponent(state.q) : "");
         var data = await getJson(url);
         syncServerNow(data.server_now);
@@ -302,16 +301,6 @@
         state.page = 1;
         load();
       }, 300);
-    });
-
-    chips.addEventListener("click", function (e) {
-      var btn = e.target.closest(".mech-chip");
-      if (!btn) return;
-      chips.querySelectorAll(".mech-chip").forEach(function (c) { c.classList.remove("active"); });
-      btn.classList.add("active");
-      state.status = btn.dataset.status || "all";
-      state.page = 1;
-      load();
     });
 
     $("mechPrevBtn").addEventListener("click", function () { state.page = Math.max(1, state.page - 1); load(); });

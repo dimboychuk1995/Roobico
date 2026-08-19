@@ -10,9 +10,13 @@ the normal Work Orders pages to a simplified no-price interface at
 
 What a mechanic sees and can do:
 
-- **Job list**: search, chips All / In Progress / Open, section **"In work
-  now"** with everyone's running timers, "My timer running" marker, "+"
-  button for a new WO.
+- **Job list**: search, section **"In work now"** with everyone's running
+  timers, "My timer running" marker, "+" button for a new WO. The list shows
+  **only In Progress work orders** — active work, including WOs marked
+  "Done" that await manager review. Completed (open), paid and estimate WOs
+  never appear in a mechanic's list (server-side, web and mobile alike), so
+  the list is exactly "what is on the shop floor right now". Past work on a
+  vehicle is still available through the unit's history.
 - **No money anywhere**: no prices, costs, totals, balances — stripped
   server-side, even for managers who open the mechanic pages.
 - **Create/edit WOs**: pick customer and unit (can create a new unit:

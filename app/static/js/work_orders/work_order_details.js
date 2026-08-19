@@ -4533,6 +4533,76 @@
       if (workOrderStatus !== "estimate") window.location.reload();
     });
 
+    // ---------- live updates (механики работают — страница обновляется сама) ----------
+    // Раз в LIVE_POLL_MS опрашиваем /live_state: идущие таймеры и накопленное
+    // время рисуем на месте (сводка Mechanics в строках). Если на сервере
+    // сдвинулся updated_at (механик сохранил WO, стартовал таймер со сменой
+    // статуса, нажал done) — перечитываем страницу целиком: сохранения
+    // переписывают labors/totals массивом, мержить их в открытую форму
+    // небезопасно. В режиме Edit/Confirm не перезагружаем — предупреждаем.
+    const LIVE_POLL_MS = 5000;
+    const LIVE_SCROLL_KEY = "woLiveScroll:" + workOrderId;
+    let liveUpdatedAt = String((createdInfo && createdInfo.updated_at) || "");
+    let livePollBusy = false;
+
+    // Скролл, сохранённый перед live-перезагрузкой, возвращаем на место.
+    try {
+      const savedScroll = sessionStorage.getItem(LIVE_SCROLL_KEY);
+      if (savedScroll !== null) {
+        sessionStorage.removeItem(LIVE_SCROLL_KEY);
+        const y = Number(savedScroll);
+        if (Number.isFinite(y) && y > 0) requestAnimationFrame(() => window.scrollTo(0, y));
+      }
+    } catch {}
+
+    function liveReload() {
+      try { sessionStorage.setItem(LIVE_SCROLL_KEY, String(window.scrollY || 0)); } catch {}
+      window.location.reload();
+    }
+
+    function isEditingNow() {
+      const editor = document.getElementById("workOrderEditor");
+      return !!editor && editor.style.pointerEvents !== "none";
+    }
+
+    async function pollLiveState() {
+      if (!isCreated || !workOrderId || livePollBusy || document.hidden) return;
+      livePollBusy = true;
+      try {
+        const res = await fetch(
+          `/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/live_state`,
+          { headers: { "Accept": "application/json" } }
+        );
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data || !data.ok) return;
+
+        woTimeSummaryMap = data.time_summary || {};
+        Array.from(blocksContainer.querySelectorAll(".wo-labor")).forEach((blockEl) => {
+          updateLaborAssignSummary(blockEl);
+        });
+
+        const serverUpdatedAt = String(data.updated_at || "");
+        if (serverUpdatedAt === liveUpdatedAt) return;
+        liveUpdatedAt = serverUpdatedAt;
+
+        // Собственное сохранение (в т.ч. из другой вкладки) — не перезагружаем.
+        if (data.updated_by_me) return;
+        if (!isEditingNow()) { liveReload(); return; }
+        toast("This work order was just updated by a mechanic. Refresh the page before saving, or your save may overwrite their changes.", "warning");
+      } catch {
+        // Фоновый poll: сеть моргнула — молчим и ждём следующего тика
+        // (тост здесь спамил бы при каждой просадке Wi-Fi).
+      } finally {
+        livePollBusy = false;
+      }
+    }
+
+    if (isCreated && workOrderId) {
+      setInterval(pollLiveState, LIVE_POLL_MS);
+      document.addEventListener("visibilitychange", () => { if (!document.hidden) pollLiveState(); });
+    }
+
     // paid -> open payment modal
     paidBtn?.addEventListener("click", async function () {
       if (!isCreated || !workOrderId) return;

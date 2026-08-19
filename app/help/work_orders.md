@@ -144,6 +144,31 @@ auto-fill for that job.
   translates the issue text into professional English for the customer),
   **"Send for Authorization"** (this labor only).
 
+## Live updates from mechanics
+
+The work order details page updates itself while it is open — no manual
+refresh needed. Every few seconds it checks the server and:
+
+- **Running timers show up live.** When a mechanic starts a job timer (from
+  the mobile app or mechanic mode), a red "● working" indicator with the
+  mechanic's name appears on that job's "Mechanics:" line within seconds,
+  and tracked time keeps accumulating on screen.
+- **Changes reload the page automatically.** When a mechanic saves the work
+  order, marks it Done, or a timer changes the status/hours, the page
+  reloads by itself to show the fresh jobs, parts and totals (your scroll
+  position is preserved). The same happens if another manager updates or
+  pays the work order from a different computer.
+- **You are protected while editing.** If you are in Edit (or Confirm) mode
+  when a mechanic saves changes, the page does NOT reload under you —
+  instead a warning toast tells you the WO was just updated so you can
+  refresh before saving. Saving without refreshing may overwrite the
+  mechanic's changes, since a save writes the whole job list.
+
+Your own saves never trigger a reload, and polling pauses while the browser
+tab is in the background (it catches up the moment you switch back). This
+works out of the box — there is nothing to configure, and mechanics do not
+need to do anything special in the app.
+
 ## Parts on a work order
 
 Type in the Part Number cell (3+ characters) to search the catalog. The

@@ -224,7 +224,7 @@
     <script type="application/json" id="coreChargeDefaultData">{{ {"enabled": charge_for_cores_default}|tojson }}</script>
     <script type="application/json" id="workOrderInitialData">{{ (initial_labors or [])|tojson }}</script>
     <script type="application/json" id="workOrderInitialTotalsData">{{ (initial_totals or {})|tojson }}</script>
-    <script type="application/json" id="workOrderCreatedData">{{ {"created": work_order_created, "id": created_work_order_id, "status": work_order_status, "mechanic_done": mechanic_done}|tojson }}</script>
+    <script type="application/json" id="workOrderCreatedData">{{ {"created": work_order_created, "id": created_work_order_id, "status": work_order_status, "mechanic_done": mechanic_done, "updated_at": wo_updated_at}|tojson }}</script>
     <script type="application/json" id="workOrderAuthorizationsData">{{ (initial_authorizations or [])|tojson }}</script>
     <script type="application/json" id="woTimeSummary">{{ (time_summary or {})|tojson }}</script>
     <script type="application/json" id="woPermissionsData">{{ {"manage_email_contacts": "work_orders.manage_email_contacts" in user_permissions}|tojson }}</script>

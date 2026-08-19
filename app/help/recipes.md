@@ -127,6 +127,13 @@ enable, tick employees, set $/hr. Hours appear in Timecard / Salary, in
 General Revenue payroll, on the Dashboard hours chart and in the Mechanic
 Hours report (uAttend Hours column).
 
+**See what mechanics are doing right now.** Open the work order — the
+details page is live: a red "● working" marker with the mechanic's name
+appears on a job within seconds of them starting a timer, tracked time
+grows on screen, and when a mechanic saves or marks the WO Done the page
+refreshes itself. Keep the WO open on a screen in the office and you have a
+live status board for that job — no manual refreshing.
+
 ## Customer-facing
 
 **Send the invoice.** WO → "Email Work Order" (PDF attached; you can add a

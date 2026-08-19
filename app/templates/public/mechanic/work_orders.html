@@ -28,11 +28,7 @@
       <i class="bi bi-search"></i>
       <input type="search" class="form-control" id="mechSearchInput" placeholder="Search work orders..." autocomplete="off">
     </div>
-    <div class="mech-filter-chips" id="mechStatusChips">
-      <button type="button" class="mech-chip active" data-status="all">All</button>
-      <button type="button" class="mech-chip" data-status="in_progress">In Progress</button>
-      <button type="button" class="mech-chip" data-status="open">Open</button>
-    </div>
+    {# Чипы статусов убраны: сервер отдаёт механику только in_progress #}
   </div>
 
   <div id="mechActiveNow" style="display:none">

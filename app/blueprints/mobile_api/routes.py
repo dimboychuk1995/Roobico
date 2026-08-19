@@ -225,10 +225,12 @@ def mobile_work_orders():
     paid_status = (request.args.get("paid_status") or "all").strip().lower()
     if paid_status not in ("all", "paid", "unpaid", "in_progress"):
         paid_status = "all"
-    # Механик не видит оплаченные WO и статусы paid/unpaid вообще —
-    # серверно исключаем paid независимо от параметров клиента.
-    if not has_permission("work_orders.view_costs") and paid_status != "in_progress":
-        paid_status = "unpaid"
+    # Механик видит только работу в процессе: open в этой системе = «закончен,
+    # ждёт менеджера/оплаты», paid скрыт всегда. Форсим серверно независимо от
+    # параметров клиента (in_progress включает и mechanic_done-WO — механик
+    # видит свой законченный WO до подтверждения менеджером).
+    if not has_permission("work_orders.view_costs"):
+        paid_status = "in_progress"
     page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
 
     items, pagination, totals = get_work_orders_list(

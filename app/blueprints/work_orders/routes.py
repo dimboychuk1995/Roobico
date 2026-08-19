@@ -382,6 +382,7 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
         "initial_totals": normalize_totals_payload((form_state or {}).get("initial_totals") or {}),
         "work_order_status": (form_state or {}).get("work_order_status") or "open",
         "mechanic_done": bool((form_state or {}).get("mechanic_done")),
+        "wo_updated_at": (form_state or {}).get("wo_updated_at") or "",
         "pending_attachment_id": pending_attachment_id,
         "initial_authorizations": (form_state or {}).get("authorizations") or [],
         "avi_checklist": annual_inspection_checklist(),
@@ -561,7 +562,7 @@ def work_order_details_page():
         if work_order_status not in ("open", "paid", "estimate"):
             work_order_status = "open"
 
-        from app.blueprints.work_orders.services.time_tracking import summarize_wo_time
+        from app.blueprints.work_orders.services.time_tracking import _fmt_iso, summarize_wo_time
 
         time_summary = summarize_wo_time(shop_db, shop["_id"], wo["_id"])
 
@@ -600,10 +601,43 @@ def work_order_details_page():
                 and (wo.get("status") or "").strip().lower() == "in_progress",
                 "authorizations": list(wo.get("authorizations") or []),
                 "time_summary": time_summary,
+                # Baseline для live-поллинга: страница перезагружается, когда
+                # updated_at на сервере уходит вперёд (см. api_work_order_live_state).
+                "wo_updated_at": _fmt_iso(wo.get("updated_at")),
             },
         )
 
     return render_details(shop_db, shop, customer_id, unit_id)
+
+
+@work_orders_bp.get("/work_orders/api/work_orders/<work_order_id>/live_state")
+@login_required
+@permission_required("work_orders.create")
+def api_work_order_live_state(work_order_id):
+    """Живое состояние WO для поллинга страницы деталей (services/live_state)."""
+    from app.blueprints.work_orders.services.live_state import build_live_state
+
+    # Менеджерский эндпоинт: страница деталей механиков редиректит, а статус
+    # paid механику не отдаём нигде — проще не отдавать payload вовсе.
+    if is_mechanic_mode():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return jsonify({"ok": False, "error": "invalid_work_order_id"}), 400
+
+    wo = shop_db.work_orders.find_one(
+        {"_id": wo_id, "shop_id": shop["_id"], "is_active": True},
+        {"status": 1, "mechanic_done": 1, "updated_at": 1, "updated_by": 1},
+    )
+    if not wo:
+        return jsonify({"ok": False, "error": "work_order_not_found"}), 404
+
+    return jsonify({"ok": True, **build_live_state(shop_db, shop, wo, current_user_id())}), 200
 
 
 @work_orders_bp.post("/work_orders/units/create")
@@ -3313,9 +3347,12 @@ def api_mechanic_work_orders():
     q = (request.args.get("q") or "").strip()
     status = (request.args.get("status") or "all").strip().lower()
     paid_status = status if status in ("in_progress",) else ("unpaid" if status == "open" else "all")
-    # Механик не видит оплаченные WO и статусы paid/unpaid вообще.
-    if is_mechanic_mode() and paid_status == "all":
-        paid_status = "unpaid"
+    # Механик видит только работу в процессе: open в этой системе = «закончен,
+    # ждёт менеджера/оплаты», paid скрыт всегда. Форсим серверно независимо от
+    # параметров клиента (in_progress включает и mechanic_done-WO — механик
+    # видит свой законченный WO до подтверждения менеджером).
+    if is_mechanic_mode():
+        paid_status = "in_progress"
     page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
 
     items, pagination, _totals = get_work_orders_list(

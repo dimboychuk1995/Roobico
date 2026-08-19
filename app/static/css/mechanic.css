@@ -54,27 +54,6 @@
   min-height: 44px;
 }
 
-.mech-filter-chips {
-  display: flex;
-  gap: 8px;
-}
-
-.mech-chip {
-  border: 1px solid var(--border);
-  background: var(--surface);
-  color: var(--muted);
-  border-radius: 999px;
-  padding: 6px 14px;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.mech-chip.active {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-}
-
 .mech-list {
   display: flex;
   flex-direction: column;

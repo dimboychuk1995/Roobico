@@ -1763,3 +1763,131 @@ def test_mechanic_unit_history_foreign_unit_not_found(client, mech_seed, mongo):
         assert resp.status_code == 404
     finally:
         mongo[SHOP_B_DB].units.delete_one({"_id": foreign_unit_id})
+
+
+# ── live state (поллинг менеджерской страницы деталей WO) ───────────
+
+
+def test_live_state_shows_running_timer(client, mech_seed, mongo):
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Live state timer")
+    shop_db = mongo[SHOP_A_DB]
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+    labor_id = wo["labors"][0]["labor_id"]
+    _post_json(client, "/work_orders/api/mechanic/timers/start",
+               {"work_order_id": data["id"], "labor_id": labor_id})
+
+    login(client)  # менеджер смотрит страницу деталей
+    resp = client.get(f"/work_orders/api/work_orders/{data['id']}/live_state")
+    assert resp.status_code == 200
+    body = resp.get_json()
+    assert body["ok"] is True
+    assert body["status"] == "in_progress"
+    bucket = body["time_summary"][labor_id]
+    assert bucket["running_users"]
+    assert bucket["running_users"][0]["user_name"] == "Mike Wrench"
+    assert bucket["my_running"] is False  # таймер чужой, не менеджера
+
+    login_mechanic(client)
+    _post_json(client, "/work_orders/api/mechanic/timers/stop", {})
+
+
+def test_live_state_updated_by_me_flag(client, seed, mech_seed, mongo):
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Live state author")
+    shop_db = mongo[SHOP_A_DB]
+    shop_db.work_orders.update_one(
+        {"_id": ObjectId(data["id"])},
+        {"$set": {"updated_at": _now(), "updated_by": seed["owner"]["_id"]}},
+    )
+
+    login(client)
+    body = client.get(f"/work_orders/api/work_orders/{data['id']}/live_state").get_json()
+    assert body["ok"] is True
+    assert body["updated_at"].endswith("Z")  # ISO-UTC, как в мобильных таймерах
+    assert body["updated_by_me"] is True  # своё сохранение — страница не перечитывается
+
+    shop_db.work_orders.update_one(
+        {"_id": ObjectId(data["id"])},
+        {"$set": {"updated_by": mech_seed["user"]["_id"]}},
+    )
+    body = client.get(f"/work_orders/api/work_orders/{data['id']}/live_state").get_json()
+    assert body["updated_by_me"] is False
+
+
+def test_live_state_forbidden_for_mechanic_mode(client, mech_seed):
+    # Менеджерский эндпоинт: механик-режим не должен видеть payload
+    # (в т.ч. статус paid, который механику не отдаётся нигде).
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Live state forbidden")
+    resp = client.get(f"/work_orders/api/work_orders/{data['id']}/live_state")
+    assert resp.status_code == 403
+
+
+def test_live_state_unknown_wo_404(client, mech_seed):
+    login(client)
+    resp = client.get(f"/work_orders/api/work_orders/{ObjectId()}/live_state")
+    assert resp.status_code == 404
+
+
+def test_details_page_embeds_updated_at_baseline(client, mech_seed, mongo):
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Live baseline")
+    login(client)
+    html = client.get(f"/work_orders/details?work_order_id={data['id']}").get_data(as_text=True)
+    assert '"updated_at"' in html  # baseline для live-поллинга в workOrderCreatedData
+
+
+# ── механик видит только in_progress ────────────────────────────────
+
+
+def test_mechanic_lists_only_in_progress(client, mech_seed, mongo):
+    login_mechanic(client)
+    d_prog = _create_wo_as_mechanic(client, mech_seed, description="Filter in progress")
+    d_open = _create_wo_as_mechanic(client, mech_seed, description="Filter open hidden")
+    shop_db = mongo[SHOP_A_DB]
+    # «open» в этой системе = завершён и ждёт менеджера/оплаты.
+    shop_db.work_orders.update_one(
+        {"_id": ObjectId(d_open["id"])}, {"$set": {"status": "open"}}
+    )
+
+    # Оба списочных эндпоинта форсят in_progress, что бы клиент ни прислал.
+    for url in (
+        "/work_orders/api/mechanic/work_orders",
+        "/work_orders/api/mechanic/work_orders?status=open",
+        "/work_orders/api/mechanic/work_orders?status=all",
+        "/api/mobile/work_orders",
+        "/api/mobile/work_orders?paid_status=unpaid",
+    ):
+        items = client.get(url).get_json()["items"]
+        ids = {i["id"] for i in items}
+        assert d_prog["id"] in ids, url
+        assert d_open["id"] not in ids, url
+
+    # Менеджер (owner) по-прежнему видит открытый WO.
+    login(client)
+    items = client.get("/api/mobile/work_orders").get_json()["items"]
+    assert any(i["id"] == d_open["id"] for i in items)
+
+    _deactivate_wos(mongo, d_prog["id"], d_open["id"])
+
+
+def test_mechanic_list_keeps_done_until_confirmed(client, mech_seed, mongo):
+    """Done-WO остаётся in_progress до подтверждения менеджером — механик
+    продолжает видеть его в списке (с бейджем Done)."""
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Filter keeps done")
+    shop_db = mongo[SHOP_A_DB]
+    labor = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})["labors"][0]["labor_id"]
+    resp = _post_json(
+        client,
+        f"/work_orders/api/mechanic/work_orders/{data['id']}",
+        _wo_update_payload(mech_seed, labor, "Filter keeps done", {"mechanic_state": "done"}),
+    )
+    assert resp.status_code == 200
+
+    items = client.get("/work_orders/api/mechanic/work_orders").get_json()["items"]
+    row = next(i for i in items if i["id"] == data["id"])
+    assert row["mechanic_done"] is True
+
+    _deactivate_wos(mongo, data["id"])
