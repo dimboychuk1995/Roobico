@@ -979,4 +979,63 @@
 
   bindEstimatesTab();
 
+  // ---------- live updates списка (механики и другие менеджеры) ----------
+  // Раз в LIVE_POLL_MS сравниваем серверную сигнатуру изменений (таймстемпы
+  // work_orders + wo_time_logs); сдвинулась — перечитываем страницу: список
+  // рендерит сервер, фильтры/страница живут в URL, активная вкладка — в
+  // localStorage, скролл возвращаем сами. Открытая модалка или фокус в поле
+  // откладывают перезагрузку до следующего тика.
+  (function initListLiveUpdates() {
+    if (!document.getElementById("content-work-orders")) return;
+
+    const LIVE_POLL_MS = 5000;
+    const SCROLL_KEY = "woListLiveScroll";
+    let baseline = null;
+    let busy = false;
+
+    try {
+      const saved = sessionStorage.getItem(SCROLL_KEY);
+      if (saved !== null) {
+        sessionStorage.removeItem(SCROLL_KEY);
+        const y = Number(saved);
+        if (Number.isFinite(y) && y > 0) requestAnimationFrame(() => window.scrollTo(0, y));
+      }
+    } catch { /* sessionStorage недоступен — просто без восстановления скролла */ }
+
+    function tryReload() {
+      if (document.querySelector(".modal.show")) return false;
+      const ae = document.activeElement;
+      if (ae && /^(input|textarea|select)$/i.test(ae.tagName)) return false;
+      try { sessionStorage.setItem(SCROLL_KEY, String(window.scrollY || 0)); } catch {}
+      window.location.reload();
+      return true;
+    }
+
+    async function poll() {
+      if (busy || document.hidden) return;
+      busy = true;
+      try {
+        const res = await fetch("/work_orders/api/work_orders/live_signature", {
+          headers: { "Accept": "application/json" },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data || data.ok !== true) return;
+        const sig = String(data.signature || "");
+        if (baseline === null) { baseline = sig; return; }
+        // baseline не трогаем, пока reload отложен модалкой/фокусом —
+        // следующий тик попробует снова.
+        if (sig !== baseline) tryReload();
+      } catch {
+        // Фоновый poll: сеть моргнула — молчим и ждём следующего тика.
+      } finally {
+        busy = false;
+      }
+    }
+
+    poll(); // baseline сразу при загрузке, чтобы не пропустить ранние изменения
+    setInterval(poll, LIVE_POLL_MS);
+    document.addEventListener("visibilitychange", () => { if (!document.hidden) poll(); });
+  })();
+
 })();

@@ -610,6 +610,24 @@ def work_order_details_page():
     return render_details(shop_db, shop, customer_id, unit_id)
 
 
+@work_orders_bp.get("/work_orders/api/work_orders/live_signature")
+@login_required
+@permission_required("work_orders.view")
+def api_work_orders_live_signature():
+    """Сигнатура изменений для live-поллинга страницы списка WO.
+
+    Только таймстемпы, без данных — клиент сравнивает строку и перечитывает
+    страницу при сдвиге (см. services/live_state.work_orders_live_signature).
+    """
+    from app.blueprints.work_orders.services.live_state import work_orders_live_signature
+
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    return jsonify({"ok": True, "signature": work_orders_live_signature(shop_db, shop["_id"])}), 200
+
+
 @work_orders_bp.get("/work_orders/api/work_orders/<work_order_id>/live_state")
 @login_required
 @permission_required("work_orders.create")

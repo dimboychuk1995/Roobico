@@ -211,6 +211,8 @@ def ensure_shop_collections_indexes(shop_db):
     _safe_create_index(shop_db.work_orders, [("shop_id", ASCENDING), ("customer_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_work_orders_shop_customer_active_created_desc")
     _safe_create_index(shop_db.work_orders, [("shop_id", ASCENDING), ("unit_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_work_orders_shop_unit_active_created_desc")
     _safe_create_index(shop_db.work_orders, [("shop_id", ASCENDING), ("status", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_work_orders_shop_status_active_created_desc")
+    # Live-сигнатура списка WO: max(updated_at) по магазину (services/live_state)
+    _safe_create_index(shop_db.work_orders, [("shop_id", ASCENDING), ("updated_at", DESCENDING)], name="idx_work_orders_shop_updated_desc")
 
     _safe_create_index(shop_db.work_order_payments, [("work_order_id", ASCENDING), ("is_active", ASCENDING)], name="idx_work_order_payments_order_active")
     _safe_create_index(shop_db.work_order_payments, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_work_order_payments_shop_active_created_desc")
@@ -229,6 +231,8 @@ def ensure_shop_collections_indexes(shop_db):
     _safe_create_index(shop_db.wo_time_logs, [("shop_id", ASCENDING), ("user_id", ASCENDING), ("stopped_at", ASCENDING)], name="idx_wo_time_logs_shop_user_open")
     _safe_create_index(shop_db.wo_time_logs, [("shop_id", ASCENDING), ("work_order_id", ASCENDING), ("labor_id", ASCENDING)], name="idx_wo_time_logs_shop_wo_labor")
     _safe_create_index(shop_db.wo_time_logs, [("shop_id", ASCENDING), ("started_at", DESCENDING)], name="idx_wo_time_logs_shop_started_desc")
+    # Live-сигнатура списка WO: max(updated_at) по магазину (services/live_state)
+    _safe_create_index(shop_db.wo_time_logs, [("shop_id", ASCENDING), ("updated_at", DESCENDING)], name="idx_wo_time_logs_shop_updated_desc")
 
     # Settings/reference collections used in lookups and pagination
     _safe_create_index(shop_db.labor_rates, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("name", ASCENDING)], name="idx_labor_rates_shop_active_name")

@@ -1891,3 +1891,52 @@ def test_mechanic_list_keeps_done_until_confirmed(client, mech_seed, mongo):
     assert row["mechanic_done"] is True
 
     _deactivate_wos(mongo, data["id"])
+
+
+# ── live-сигнатура списка WO ────────────────────────────────────────
+
+
+def test_live_signature_changes_on_mechanic_activity(client, mech_seed, mongo):
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Live signature")
+    shop_db = mongo[SHOP_A_DB]
+    labor = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})["labors"][0]["labor_id"]
+
+    login(client)
+    resp = client.get("/work_orders/api/work_orders/live_signature")
+    assert resp.status_code == 200
+    sig0 = resp.get_json()["signature"]
+    assert sig0
+
+    # Старт таймера механика двигает сигнатуру (wo_time_logs.updated_at).
+    login_mechanic(client)
+    _post_json(client, "/work_orders/api/mechanic/timers/start",
+               {"work_order_id": data["id"], "labor_id": labor})
+    login(client)
+    sig1 = client.get("/work_orders/api/work_orders/live_signature").get_json()["signature"]
+    assert sig1 != sig0
+
+    # Стоп таймера — снова.
+    login_mechanic(client)
+    _post_json(client, "/work_orders/api/mechanic/timers/stop", {})
+    login(client)
+    sig2 = client.get("/work_orders/api/work_orders/live_signature").get_json()["signature"]
+    assert sig2 != sig1
+
+    # Без изменений сигнатура стабильна (страница не перечитывается зря).
+    sig3 = client.get("/work_orders/api/work_orders/live_signature").get_json()["signature"]
+    assert sig3 == sig2
+
+    _deactivate_wos(mongo, data["id"])
+
+
+def test_live_signature_changes_on_wo_delete(client, mech_seed, mongo):
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Live signature delete")
+
+    login(client)
+    sig0 = client.get("/work_orders/api/work_orders/live_signature").get_json()["signature"]
+    resp = _post_json(client, f"/work_orders/api/work_orders/{data['id']}/delete", {})
+    assert resp.status_code == 200
+    sig1 = client.get("/work_orders/api/work_orders/live_signature").get_json()["signature"]
+    assert sig1 != sig0

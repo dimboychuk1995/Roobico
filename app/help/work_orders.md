@@ -23,6 +23,14 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
   mechanics, not marked done yet" header, highlighted with the in-progress
   color, so the shop floor status is visible at a glance. They are not
   duplicated below — each WO appears once.
+- **The list is live** — no manual refresh needed. Every few seconds the
+  page checks the server and reloads itself when anything changes: a
+  mechanic starts or stops a timer (the green "● working" names and the
+  "In Work" group update), saves a WO or marks it Done, someone creates,
+  edits, pays or deletes a work order from another computer. Your filters,
+  page, active tab and scroll position are preserved. The reload politely
+  waits if you are typing in a filter field or have a modal (e.g. payment)
+  open, and resumes the moment you finish. Works out of the box.
 - **Push notifications**: office users with the mobile app installed also
   get a phone notification the moment a mechanic takes a WO into work and
   when they mark it Done — see the Mechanic mode & Mobile app help for
