@@ -456,3 +456,49 @@ def test_mobile_unit_details(client, mobile_seed):
     assert data["annual_inspection"] is None
 
     assert client.get(f"/api/mobile/units/{ObjectId()}").status_code == 404
+
+
+# ── постоянная мобильная сессия (не выкидывает из приложения) ───────
+
+
+def _session_set_cookie(resp):
+    """Заголовок Set-Cookie, который реально ставит session-куку.
+
+    В ответе может быть и кука-удалялка легаси-сессии (session=; Expires=1970
+    из after_request) — берём ту, где у session непустое значение."""
+    for h in resp.headers.getlist("Set-Cookie"):
+        if h.startswith("session=") and not h.startswith("session=;"):
+            return h
+    return ""
+
+
+def test_mobile_login_sets_permanent_cookie(client):
+    """Кука мобильной сессии постоянная (с Expires): переживает перезапуск
+    приложения, срок продлевается каждым запросом."""
+    resp = _mobile_login(client)
+    cookie = _session_set_cookie(resp)
+    assert cookie
+    assert "Expires=" in cookie
+
+
+def test_mobile_session_upgrades_existing_session_to_permanent(client):
+    """Сессии, залогиненные до введения permanent-кук, апгрейдятся первым же
+    вызовом /api/mobile/session — без перелогина."""
+    from tests.conftest import login
+
+    login(client)  # веб-логин permanent не ставит — имитация старой сессии
+    resp = client.get("/api/mobile/session")
+    assert resp.status_code == 200
+    cookie = _session_set_cookie(resp)
+    assert cookie
+    assert "Expires=" in cookie
+
+
+def test_web_login_cookie_not_permanent(client):
+    """Веб не затронут: браузерная кука остаётся сессионной (без Expires)."""
+    from tests.conftest import login
+
+    resp = login(client)
+    cookie = _session_set_cookie(resp)
+    assert cookie
+    assert "Expires=" not in cookie

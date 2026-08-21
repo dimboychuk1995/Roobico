@@ -133,6 +133,10 @@ def mobile_login():
         shop_ids=[str(x) for x in shop_ids],
         shop_id=None,
     )
+    # Постоянная сессия: кука с Expires (PERMANENT_SESSION_LIFETIME) переживает
+    # перезапуски приложения, срок продлевается каждым запросом — из приложения
+    # не выкидывает. Доступ уволенных/неоплаченных режет before_request.
+    session.permanent = True
 
     # user_permissions в сессию кладёт _session_payload (пересчёт на каждый запрос)
     return jsonify(_session_payload(master, user, tenant)), 200
@@ -155,6 +159,9 @@ def mobile_session():
     user, tenant = _load_session_user_tenant(master)
     if not user or not tenant:
         return jsonify({"ok": False, "error": "session_invalid"}), 401
+    # Приложение зовёт /session при каждом старте — апгрейдим до постоянной
+    # и сессии, залогиненные до ввода permanent-кук (без перелогина).
+    session.permanent = True
     return jsonify(_session_payload(master, user, tenant)), 200
 
 

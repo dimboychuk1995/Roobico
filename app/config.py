@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -54,6 +55,19 @@ class Config:
     SESSION_COOKIE_SECURE = _parse_bool(os.environ.get("SESSION_COOKIE_SECURE"), False)
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = os.environ.get("SESSION_COOKIE_SAMESITE", "Lax")
+
+    # Срок жизни ПОСТОЯННЫХ сессий (session.permanent = True — только
+    # мобильный логин): кука получает Expires на год вперёд и переживает
+    # перезапуски приложения (без Expires iOS сбрасывает cookie при killed
+    # app → «выкидывало» из приложения). SESSION_REFRESH_EACH_REQUEST (по
+    # умолчанию True) продлевает срок на каждом запросе — активный
+    # пользователь не разлогинится никогда. Безопасность не завязана на срок
+    # куки: before_request на каждом запросе проверяет is_active юзера,
+    # статус тенанта и подписку. Веб-сессии не затронуты (permanent там
+    # не ставится).
+    PERMANENT_SESSION_LIFETIME = timedelta(
+        days=int(os.environ.get("MOBILE_SESSION_LIFETIME_DAYS", "365"))
+    )
 
     # Admin gets a completely separate cookie scoped only to admin.roobico.com
     # so that being logged into the tenant app (`app.roobico.com`) gives no

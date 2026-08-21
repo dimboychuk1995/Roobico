@@ -87,10 +87,14 @@ Stop button. Rules:
 
 ## Mobile app
 
-Same login as the web (email + password). Bottom tabs: **Dashboard**,
-**Work Orders**, **Customers**, **Parts**, **More** — tabs and rows hide
-according to the user's permissions (a mechanic sees only Work Orders +
-More).
+Same login as the web (email + password). You stay signed in
+permanently — closing or restarting the app does not log you out, and the
+session renews itself on every use, so there is no periodic re-login. You
+only leave the account by tapping Log out yourself. (Access still ends
+immediately when a user is deactivated — session lifetime never overrides
+that.) Bottom tabs: **Dashboard**, **Work Orders**, **Customers**,
+**Parts**, **More** — tabs and rows hide according to the user's
+permissions (a mechanic sees only Work Orders + More).
 
 - **Dashboard**: outstanding balance, revenue/paid/unpaid, WO count, labor,
   parts, parts-orders stats per period (Today/Week/Month/Year).
