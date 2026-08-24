@@ -460,6 +460,19 @@
     return !!(String(pn).trim() || String(ds).trim() || String(q).trim() || String(c).trim() || String(p).trim() || hasCharges || String(miscDesc).trim());
   }
 
+  function editorHasUserContent(blocksContainer) {
+    if (!blocksContainer) return false;
+    const blocks = Array.from(blocksContainer.querySelectorAll(".wo-labor"));
+    for (const blockEl of blocks) {
+      const desc = blockEl.querySelector(".labor-description")?.value || "";
+      const hours = blockEl.querySelector(".labor-hours")?.value || "";
+      if (String(desc).trim() || String(hours).trim()) return true;
+      const rows = Array.from(blockEl.querySelectorAll("tr.parts-row"));
+      if (rows.some((tr) => rowHasAnyInput(tr))) return true;
+    }
+    return false;
+  }
+
   function isOneTimePartRow(tr) {
     const input = tr.querySelector(".part-one-time");
     const raw = String(input?.value || "").trim().toLowerCase();
@@ -3047,7 +3060,11 @@
       const unitId = unitHidden ? String(unitHidden.value || "").trim() : "";
       const mv = unitMileageInput ? String(unitMileageInput.value || "").trim() : "";
       const ok = !!customerId && !!unitId && !!mv;
-      setEditorEnabled(ok);
+      // Уже заполненные работы/запчасти не прячем: при смене клиента редактор
+      // остаётся на экране со всеми данными, скрываем его только пока пустой.
+      const keepVisible = ok || editorHasUserContent(blocksContainer);
+      setEditorEnabled(keepVisible);
+      if (!ok && keepVisible && hint) hint.style.display = "";
       // Keep the Create WO button disabled until everything is set.
       // (Once the WO is created, applyStateFromStatus hides the create button
       // entirely, so we only gate it while still in the pre-create flow.)
@@ -3485,11 +3502,10 @@
       }
       
       // Clear mileage when customer changes
-      if (unitMileageInput) { unitMileageInput.value = ""; unitMileageInput.style.color = ""; }
+      if (unitMileageInput) { unitMileageInput.value = ""; unitMileageInput.style.color = ""; unitMileageInput.placeholder = "0"; }
       if (unitMileageHidden) unitMileageHidden.value = "";
       mileageConfirmed = false;
 
-      setEditorEnabled(false);
       refreshEditorGate();
 
       if (!customerId || !unitSel) return;
