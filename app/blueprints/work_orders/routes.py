@@ -1574,6 +1574,65 @@ def api_work_order_update(work_order_id):
 
     mechanics_by_id = {m["id"]: m for m in get_assignable_mechanics(shop)}
     labors = apply_assignments_to_labors(labors, mechanics_by_id)
+
+    # Мерж с сохранённым WO по labor_id. Веб-форма (serializeBlocks) не знает
+    # про hours_source и могла устареть, пока механики трекали время:
+    #   - новые строки приходят с пустым labor_id — без стабильного id на них
+    #     нельзя запустить таймер;
+    #   - маркер hours_source ("tracked"/"preset") живёт только в базе — его
+    #     потеря замораживала бы трекнутые часы;
+    #   - если менеджер часы НЕ трогал (нет hours_edited), для tracked-строк
+    #     авторитетны часы из базы, а не устаревший снапшот формы.
+    stored_blocks = {
+        str(b.get("labor_id") or ""): (i, b)
+        for i, b in enumerate(wo.get("labors") or [])
+        if isinstance(b, dict)
+    }
+    stored_totals_blocks = (wo.get("totals") or {}).get("labors")
+    if not isinstance(stored_totals_blocks, list):
+        stored_totals_blocks = []
+    client_totals_blocks = totals.get("labors") if isinstance(totals.get("labors"), list) else []
+
+    def _hours_eq(a, b):
+        try:
+            return abs(float(a or 0) - float(b or 0)) < 1e-9
+        except (TypeError, ValueError):
+            return False
+
+    for new_idx, block in enumerate(labors):
+        block["labor_id"] = ensure_labor_id(block.get("labor_id"))
+        hours_edited = bool(block.pop("hours_edited", False))
+        block.pop("hours_source", None)  # клиентское значение не авторитетно
+        labor_doc = block.get("labor") if isinstance(block.get("labor"), dict) else None
+        if labor_doc is None:
+            continue
+        labor_doc.pop("hours_edited", None)
+        stored_idx, stored = stored_blocks.get(str(block["labor_id"]), (None, None))
+        stored_labor = (stored or {}).get("labor") if isinstance((stored or {}).get("labor"), dict) else {}
+        stored_source = str(stored_labor.get("hours_source") or "").strip()
+        if hours_edited:
+            # Менеджер сам задал часы — дальше трекинг их не перетирает.
+            labor_doc["hours_source"] = ""
+            continue
+        if stored_source:
+            labor_doc["hours_source"] = stored_source
+        if stored_source == "tracked":
+            stored_hours = str(stored_labor.get("hours") or "").strip()
+            if stored_hours and not _hours_eq(labor_doc.get("hours"), stored_hours):
+                labor_doc["hours"] = stored_hours
+                # Labor base формы посчитана из устаревших часов — берём
+                # согласованную пару часы+база из сохранённого WO.
+                if (
+                    stored_idx is not None
+                    and stored_idx < len(stored_totals_blocks)
+                    and isinstance(stored_totals_blocks[stored_idx], dict)
+                    and new_idx < len(client_totals_blocks)
+                    and isinstance(client_totals_blocks[new_idx], dict)
+                ):
+                    client_totals_blocks[new_idx]["labor"] = round2(
+                        stored_totals_blocks[stored_idx].get("labor") or 0
+                    )
+
     totals = align_totals_with_labors(totals, labors)
 
     # Use the rate that was locked-in when the WO was originally created.
@@ -1719,6 +1778,10 @@ def api_work_order_update(work_order_id):
     return jsonify({
         "ok": True,
         "status": set_fields.get("status") or (wo.get("status") or "open"),
+        # Порядок соответствует присланным блокам: веб-форма подхватывает
+        # id, выданные сервером новым лейборам, чтобы повторный Save не
+        # плодил новые id (и не осиротил тайм-логи).
+        "labor_ids": [str(b.get("labor_id") or "") for b in labors],
         "inventory_adjusted": len(inventory_adjustment["adjusted"]) > 0,
         "inventory_changes": inventory_adjustment["adjusted"],
         "inventory_warnings": inventory_warnings,
@@ -3648,7 +3711,7 @@ def api_mechanic_timer_start():
                 "message": "This work order was confirmed by a manager and is locked.",
             }), 403
 
-    log, stopped_prev, error = time_tracking.start_timer(
+    log, stopped_prev_logs, error = time_tracking.start_timer(
         shop_db, shop, user_id, _current_user_display_name(),
         data.get("work_order_id"), data.get("labor_id"),
     )
@@ -3656,16 +3719,19 @@ def api_mechanic_timer_start():
         code = 404 if error in ("work_order_not_found", "labor_not_found") else 400
         return jsonify({"ok": False, "error": error}), code
 
-    # auto_switch закрыл предыдущую сессию — у того WO обновились время,
-    # назначения и биллинговые часы.
-    if stopped_prev:
+    # auto_switch закрыл предыдущие сессии (после гонки их может быть
+    # несколько на разных WO) — у тех WO обновились время, назначения и
+    # биллинговые часы.
+    if stopped_prev_logs:
         from app.blueprints.work_orders.services.mechanic_editor import refresh_time_derived_fields
 
-        refresh_time_derived_fields(
-            shop_db, shop, stopped_prev.get("work_order_id"),
-            mechanics_by_id={m["id"]: m for m in get_assignable_mechanics(shop)},
-        )
+        mechanics_by_id = {m["id"]: m for m in get_assignable_mechanics(shop)}
+        for prev_wo_id in {l.get("work_order_id") for l in stopped_prev_logs if l.get("work_order_id")}:
+            refresh_time_derived_fields(
+                shop_db, shop, prev_wo_id, mechanics_by_id=mechanics_by_id,
+            )
 
+    stopped_prev = stopped_prev_logs[-1] if stopped_prev_logs else None
     return jsonify({
         "ok": True,
         "timer": time_tracking._log_payload(log),
@@ -3686,18 +3752,22 @@ def api_mechanic_timer_stop():
         return jsonify({"ok": False, "error": "shop_db_missing"}), 200
 
     user_id = current_user_id()
-    log, error = time_tracking.stop_timer(shop_db, shop, user_id)
+    logs, error = time_tracking.stop_timer(shop_db, shop, user_id)
     if error:
         return jsonify({"ok": False, "error": error}), 400
 
     # После каждой сессии: assigned = кто фактически работал, часы работы =
     # суммарное время механиков (кроме пресетных/ручных), totals пересчитаны.
+    # Логов может быть несколько (фантомы после гонки start) — обновляем все
+    # затронутые WO; в ответ идёт последняя (актуальная) сессия.
     from app.blueprints.work_orders.services.mechanic_editor import refresh_time_derived_fields
 
-    refresh_time_derived_fields(
-        shop_db, shop, log.get("work_order_id"),
-        mechanics_by_id={m["id"]: m for m in get_assignable_mechanics(shop)},
-    )
+    log = logs[-1]
+    mechanics_by_id = {m["id"]: m for m in get_assignable_mechanics(shop)}
+    for stopped_wo_id in {l.get("work_order_id") for l in logs if l.get("work_order_id")}:
+        refresh_time_derived_fields(
+            shop_db, shop, stopped_wo_id, mechanics_by_id=mechanics_by_id,
+        )
 
     return jsonify({
         "ok": True,

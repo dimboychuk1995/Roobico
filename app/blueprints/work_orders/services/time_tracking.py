@@ -51,41 +51,51 @@ def _log_payload(log: dict) -> dict:
     }
 
 
-def _stop_open_log(shop_db, shop_id, user_id, stop_source: str):
-    """Атомарно закрыть открытый таймер пользователя (если есть)."""
-    now = utcnow()
-    log = shop_db.wo_time_logs.find_one_and_update(
-        {"shop_id": shop_id, "user_id": user_id, "stopped_at": None},
-        {"$set": {"stopped_at": now, "stop_source": stop_source, "updated_at": now}},
-        return_document=True,
-    )
-    if not log:
-        return None
-    seconds = _elapsed_seconds(log.get("started_at"), now)
-    shop_db.wo_time_logs.update_one({"_id": log["_id"]}, {"$set": {"seconds": seconds}})
-    log["stopped_at"] = now
-    log["seconds"] = seconds
-    return log
+def _stop_open_logs(shop_db, shop_id, user_id, stop_source: str):
+    """
+    Атомарно закрыть ВСЕ открытые таймеры пользователя. В норме открытый
+    таймер один, но гонка двух параллельных start могла оставить несколько —
+    незакрытый «фантомный» таймер копил бы часы вечно. Возвращает закрытые
+    логи в порядке started_at (последний = актуальная сессия).
+    """
+    closed = []
+    while True:
+        now = utcnow()
+        log = shop_db.wo_time_logs.find_one_and_update(
+            {"shop_id": shop_id, "user_id": user_id, "stopped_at": None},
+            {"$set": {"stopped_at": now, "stop_source": stop_source, "updated_at": now}},
+            return_document=True,
+        )
+        if not log:
+            break
+        seconds = _elapsed_seconds(log.get("started_at"), now)
+        shop_db.wo_time_logs.update_one({"_id": log["_id"]}, {"$set": {"seconds": seconds}})
+        log["stopped_at"] = now
+        log["seconds"] = seconds
+        closed.append(log)
+    closed.sort(key=lambda l: (l.get("started_at") is None, l.get("started_at")))
+    return closed
 
 
 def start_timer(shop_db, shop, user_id, user_name, work_order_id, labor_id):
     """
-    Возвращает (log, stopped_previous, error). error — строка-код или None.
-    Стартует таймер на labor-строке, форсит WO в in_progress.
+    Возвращает (log, stopped_previous_logs, error). error — строка-код или
+    None; stopped_previous_logs — список закрытых auto_switch сессий
+    (обычно 0 или 1). Стартует таймер на labor-строке, форсит WO в in_progress.
     """
     wo_id = oid(work_order_id)
     labor_id = str(labor_id or "").strip()
     if not wo_id or not labor_id:
-        return None, None, "invalid_arguments"
+        return None, [], "invalid_arguments"
 
     wo = shop_db.work_orders.find_one(
         {"_id": wo_id, "shop_id": shop["_id"], "is_active": True},
         {"labors": 1, "status": 1, "wo_number": 1},
     )
     if not wo:
-        return None, None, "work_order_not_found"
+        return None, [], "work_order_not_found"
     if (wo.get("status") or "").strip().lower() == "paid":
-        return None, None, "paid_cannot_track"
+        return None, [], "paid_cannot_track"
 
     labor_ids = {
         str(b.get("labor_id") or "").strip()
@@ -93,9 +103,9 @@ def start_timer(shop_db, shop, user_id, user_name, work_order_id, labor_id):
         if isinstance(b, dict)
     }
     if labor_id not in labor_ids:
-        return None, None, "labor_not_found"
+        return None, [], "labor_not_found"
 
-    stopped_prev = _stop_open_log(shop_db, shop["_id"], user_id, "auto_switch")
+    stopped_prev_logs = _stop_open_logs(shop_db, shop["_id"], user_id, "auto_switch")
 
     now = utcnow()
     doc = {
@@ -133,15 +143,15 @@ def start_timer(shop_db, shop, user_id, user_name, work_order_id, labor_id):
 
         notify_wo_event(shop, wo_id, wo.get("wo_number"), user_id, "taken")
 
-    return doc, stopped_prev, None
+    return doc, stopped_prev_logs, None
 
 
 def stop_timer(shop_db, shop, user_id):
-    """Возвращает (log, error)."""
-    log = _stop_open_log(shop_db, shop["_id"], user_id, "user")
-    if not log:
-        return None, "no_running_timer"
-    return log, None
+    """Возвращает (logs, error): все закрытые сессии в порядке started_at."""
+    logs = _stop_open_logs(shop_db, shop["_id"], user_id, "user")
+    if not logs:
+        return [], "no_running_timer"
+    return logs, None
 
 
 def get_running_timer(shop_db, shop, user_id):

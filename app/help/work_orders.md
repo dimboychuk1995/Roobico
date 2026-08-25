@@ -140,7 +140,11 @@ For jobs that mechanics created themselves, **Hours auto-fill from the
 mechanics' tracked timer time** and keep following it until someone edits
 Hours manually; jobs applied from a preset keep the preset's hours instead.
 You can always type your own Hours or Labor Total — a manual value stops the
-auto-fill for that job.
+auto-fill for that job. Simply saving the work order does **not** count as a
+manual edit: only actually typing in the Hours or Labor Total field does. So
+if a mechanic tracked more time while you had the page open, saving your
+other edits keeps their latest tracked hours instead of the stale number on
+your screen.
 
 - **Assign** button → "Assign Mechanics" modal: pick one or several
   mechanics. One mechanic = 100%; several = percentages auto-split evenly and

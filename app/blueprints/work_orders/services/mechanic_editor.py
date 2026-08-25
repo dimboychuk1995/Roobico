@@ -397,6 +397,11 @@ def refresh_time_derived_fields(shop_db, shop, work_order_id, mechanics_by_id=No
     )
     if not wo:
         return False
+    # Оплаченный WO — деньги зафиксированы платежом: сессия, остановленная
+    # после оплаты, остаётся в логах (payroll/отчёты), но часы и totals
+    # самого WO уже не переписывает.
+    if (wo.get("status") or "").strip().lower() == "paid":
+        return False
 
     assignments = time_tracking.time_based_assignments(shop_db, shop["_id"], wo_id)
     summary = time_tracking.summarize_wo_time(shop_db, shop["_id"], wo_id)

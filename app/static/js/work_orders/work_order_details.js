@@ -1730,6 +1730,9 @@
       if (!isLaborSyncing && t.classList?.contains("labor-total-input")) {
         const blockEl = t.closest(".wo-labor");
         if (blockEl) {
+          // Ручная правка суммы меняет и часы — сервер не должен
+          // перетирать их трекнутым временем.
+          if (e.isTrusted) blockEl.dataset.hoursEdited = "1";
           isLaborSyncing = true;
           syncHoursFromLaborTotal(blockEl, laborRates);
           isLaborSyncing = false;
@@ -1739,6 +1742,7 @@
       if (!isLaborSyncing && (t.classList?.contains("labor-hours") || t.classList?.contains("labor-rate"))) {
         const blockEl = t.closest(".wo-labor");
         if (blockEl) {
+          if (e.isTrusted && t.classList.contains("labor-hours")) blockEl.dataset.hoursEdited = "1";
           isLaborSyncing = true;
           syncLaborTotalFromHours(blockEl, laborRates);
           isLaborSyncing = false;
@@ -2348,6 +2352,9 @@
         labor_id: String(bEl.dataset.laborId || ""),
         labor_description,
         labor_hours: labor_hours === "" ? 0 : Number(labor_hours),
+        // Менеджер сам правил часы этого блока: сервер зафиксирует их как
+        // ручные; без флага часы tracked-строк авторитетны из базы.
+        hours_edited: bEl.dataset.hoursEdited === "1",
         labor_rate_code,
         labor_full_total,
         assigned_mechanics,
@@ -4496,6 +4503,14 @@
           `/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/update`,
           payload
         );
+
+        // Сервер выдал labor_id новым строкам — подхватываем, чтобы
+        // повторный Save не пересоздал id (иначе тайм-логи осиротеют).
+        if (Array.isArray(resp?.labor_ids)) {
+          Array.from(blocksContainer.querySelectorAll(".wo-labor")).forEach((bEl, i) => {
+            if (resp.labor_ids[i]) bEl.dataset.laborId = resp.labor_ids[i];
+          });
+        }
 
         // Update local status from server response if present
         if (resp && resp.status) {
