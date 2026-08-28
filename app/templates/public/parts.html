@@ -351,7 +351,6 @@
                         {% endif %}
                         <button type="button" class="btn btn-sm btn-outline-primary editOrderBtn"
                                 data-order-id="{{ o.id }}"
-                                data-order-json='{{ o | tojson | forceescape }}'
                                 data-bs-toggle="modal" data-bs-target="#orderModal">
                           <i class="bi bi-pencil me-1"></i> Edit
                         </button>

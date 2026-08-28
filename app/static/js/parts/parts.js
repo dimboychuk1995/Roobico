@@ -136,6 +136,10 @@
 		let orderItems = [];
 		let currentOrderStatus = null;
 		let currentVendorBill = "";
+		// Список заказов на странице рендерится сервером: после мутаций,
+		// сделанных из модалки (создание, платёж), помечаем список устаревшим
+		// и перезагружаем страницу при закрытии модалки.
+		let orderListNeedsRefresh = false;
 		let scannedInvoiceFile = null;
 		let scannedVendorData = null;
 
@@ -632,30 +636,6 @@
 			}
 		}
 
-		function parseJsonAttr(raw) {
-			if (!raw) return null;
-			const decodeHtml = function (s) {
-				const el = document.createElement("textarea");
-				el.innerHTML = String(s || "");
-				return el.value;
-			};
-			try {
-				return JSON.parse(raw);
-			} catch (e) {
-				try {
-					const d1 = decodeHtml(raw);
-					return JSON.parse(d1);
-				} catch (e2) {
-					try {
-						const d2 = decodeHtml(decodeHtml(raw));
-						return JSON.parse(d2);
-					} catch (e3) {
-						return null;
-					}
-				}
-			}
-		}
-
 		onDocument("click", async function (e) {
 			if (!isPartsPageAlive()) return;
 			const inlineDeleteBtn = e.target.closest(".js-delete-order-payment-inline");
@@ -678,6 +658,7 @@
 					if (!res.ok || !data || !data.ok) {
 						throw new Error((data && (data.message || data.error)) || "Failed to delete payment");
 					}
+					orderListNeedsRefresh = true;
 					await loadOrderIntoModal(orderId);
 					notifyWoPartsOrders();
 				} catch (err) {
@@ -757,6 +738,7 @@
 				if (modal) modal.hide();
 
 				if (openedOverOrderModal) {
+					orderListNeedsRefresh = true;
 					await loadOrderIntoModal(orderId);
 					notifyWoPartsOrders();
 				} else {
@@ -1219,7 +1201,19 @@
 					return;
 				}
 
+				if (isEdit) {
+					// Список на странице остаётся серверным HTML — после правки
+					// закрываем модалку и обновляем его, как receive/delete.
+					appAlert("Order updated", "success");
+					const modalEl = document.getElementById("orderModal");
+					const inst = window.bootstrap?.Modal?.getInstance(modalEl);
+					if (inst) inst.hide();
+					finishOrderMutation();
+					return;
+				}
+
 				if (!isEdit) {
+					orderListNeedsRefresh = true;
 					createdOrderId.value = data.order_id;
 
 					// Auto-attach scanned invoice file
@@ -1442,6 +1436,15 @@
 
 		// Reset form when modal is closed
 		orderModal?.addEventListener("hidden.bs.modal", function () {
+			if (orderListNeedsRefresh) {
+				orderListNeedsRefresh = false;
+				// В контексте WO страница не перезагружается (см. finishOrderMutation) —
+				// блок заказов уже обновлён событием.
+				if (!woLinkContext()) {
+					location.reload();
+					return;
+				}
+			}
 			vendorSelect.value = "";
 			vendorSelect.disabled = false;
 			vendorSearchInput.value = "";
@@ -2676,11 +2679,9 @@
 			}
 			const orderId = String(editBtn.getAttribute("data-order-id") || "").trim();
 			if (!orderId) return;
-			const inlineOrder = parseJsonAttr(editBtn.getAttribute("data-order-json"));
-			if (inlineOrder && typeof inlineOrder === "object") {
-				applyOrderToModal(inlineOrder, orderId);
-				return;
-			}
+			// Всегда грузим заказ с сервера: инлайновый JSON из строки списка
+			// устаревает после сохранения и не содержит core-полей — редактирование
+			// по нему молча откатывало предыдущие правки и терял core charge.
 			loadOrderIntoModal(orderId).catch(function () {
 				showError("Network error while loading order");
 			});
