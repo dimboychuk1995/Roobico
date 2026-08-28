@@ -99,7 +99,9 @@ def run_renewals(*, now: datetime | None = None, dry_run: bool = False,
         counts = count_billable(tenant["_id"])
         amount_cents, _ = apply_billing_discount(compute_amount_cents(counts), tenant)
         if amount_cents <= 0:
-            # Нет billable-юнитов либо админ поставил фикс $0 (бесплатный тенант).
+            # Бесплатный тир (1 локация + 1 юзер = $0), пустой тенант либо
+            # фикс $0 из админки — инвойс не создаём. Датовую «просрочку»
+            # такому тенанту лечит _rescue_free_tenant при первом же запросе.
             stats["skipped_no_billable"] += 1
             continue
 

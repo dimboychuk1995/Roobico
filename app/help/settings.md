@@ -51,6 +51,13 @@ Key permission to know: **"View part costs inside WO"**
 permission works in **mechanic mode** — no prices anywhere (see the mechanic
 doc). The default Mechanic and Senior mechanic roles are like this.
 
+**"Edit mechanics' actual tracked hours"** (work_orders.edit_time_logs)
+unlocks the pencil next to the tracked-time summary on a work order's job —
+correcting or deleting mechanics' timer sessions (forgotten timers,
+accidental starts). Owner always has it; for tenants created after this
+feature the Manager and General manager roles include it by default. For
+existing custom or manager roles tick it manually in Roles & Permissions.
+
 **"Edit / delete customer contacts in email dialogs"**
 (work_orders.manage_email_contacts) controls the pencil/trash icons next to
 contacts in the WO email dialogs (send work order, payment receipt,
@@ -71,8 +78,23 @@ still works).
 
 Reusable jobs: name, description, labor hours + rate ("— Use customer
 default —" possible), parts list, "Allow customer discount on parts" flag.
-Estimates on cards are live — preset prices always recompute from the
-current catalog. Inserted into WOs via the labor block menu.
+Inserted into WOs via the labor block menu.
+
+**Part prices in a template.** By default prices are live: each time a
+template is shown or applied, the price recomputes from the part's current
+selling price or the pricing matrix, so templates follow the catalog
+automatically. If you **edit a price by hand**, it becomes a *pinned price*:
+it is highlighted in the editor, saved with the template, and used in work
+orders exactly as you typed it — it wins over the part's selling price and
+the pricing matrix. Two things still beat a pinned price:
+
+- a customer whose pricing policy has "override part selling price" — such
+  customers always get prices computed from their own scale;
+- editing the price directly on the WO line after applying the template.
+
+To un-pin a price, clear the price field in the template editor and click
+away — the automatic price comes back and the row follows the catalog again.
+Costs always stay live regardless of pinning.
 
 ## PDF Design
 
@@ -114,19 +136,21 @@ operational data (customers, units, parts, WOs) are per shop.
 
 ## Subscription & Billing (owner)
 
-Usage-based pricing: the **$59/mo base plan includes your first active
-location and first active full user**. On top of that: $100/mo per extra
-active location + $50/mo per extra active full user + $25/mo per active
-mechanic (mechanic & senior mechanic roles). Example: 1 location with an
-owner and 2 mechanics = $59 + 2 × $25 = $109/mo; 2 locations with 3 office
-users and 4 mechanics = $59 + $100 + 2 × $50 + 4 × $25 = $359/mo. Only
-active locations and users count — deactivated staff is free. 30-day
-free trial.
+Usage-based pricing with a **free tier: your first active location and
+first active full user cost nothing — forever**. A solo shop (1 location,
+1 user, no mechanics) pays $0/mo and is never blocked. Beyond the free
+tier: $100/mo per extra active location + $50/mo per extra active full
+user + $25/mo per active mechanic (mechanic & senior mechanic roles).
+Example: 1 location with an owner and 2 mechanics = 2 × $25 = $50/mo;
+2 locations with 3 office users and 4 mechanics = $100 + 2 × $50 + 4 × $25
+= $300/mo. Only active locations and users count — deactivated staff is
+free. The 30-day free trial has no limits at all: any number of locations,
+users and mechanics is free until the trial ends.
 
 **Annual billing — save 20%.** On the billing page you can switch the
 billing period from monthly to annual ("Switch to annual" in the Monthly
 price card). An annual subscription is billed once a year at 12 × the
-monthly price minus 20% (e.g. $109/mo → $1,046.40/yr instead of $1,308),
+monthly price minus 20% (e.g. $50/mo → $480/yr instead of $600),
 and each payment extends the subscription by a full year. The price is
 recalculated from the currently active locations/users at each renewal.
 You can switch back to monthly at any time — the change applies to the

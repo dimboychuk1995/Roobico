@@ -67,9 +67,11 @@ invitation and set a password.
 
 ## Subscription
 
-Roobico billing starts at a $59/mo base plan that includes the first active
-location and first active full user; extra locations, users and mechanics
-are billed per unit, with a 30-day trial. Annual billing is available at a
-20% discount (12 × monthly − 20%, billed once a year). The account owner
-manages it in Settings → Subscription & Billing. When a subscription
-expires, only the owner can log in (to pay) until renewal.
+Roobico is **free forever for 1 location + 1 full user** — a solo shop pays
+nothing. Extra locations ($100/mo), extra full users ($50/mo) and mechanics
+($25/mo each) are billed per unit. The 30-day trial removes all limits —
+any number of locations, users and mechanics is free during the trial.
+Annual billing is available at a 20% discount (12 × monthly − 20%, billed
+once a year). The account owner manages it in Settings → Subscription &
+Billing. When a paid subscription expires, only the owner can log in (to
+pay) until renewal; a shop that fits the free tier is never blocked.

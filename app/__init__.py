@@ -37,6 +37,44 @@ def _is_tenant_subscription_blocked(tenant: dict) -> bool:
         return True
     return False
 
+
+def _rescue_free_tenant(tenant: dict) -> bool:
+    """
+    Бесплатный тир: 1 локация + 1 полный юзер = $0/мес — такой тенант не
+    блокируется никогда, даже с истёкшей датой подписки или статусом
+    expired. Проверяем текущую расчётную сумму (с учётом индивидуальной
+    цены) и, если она нулевая, «лечим» документ: продлеваем период на 30
+    дней вперёд, чтобы быстрый датовый чек проходил без пересчёта юнитов
+    на каждый запрос. Если тенант позже добавит юзеров/локации/механиков,
+    renewal-cron выставит инвойс по концу этого же периода обычным путём.
+
+    Возвращает True, если тенант бесплатный (и разблокирован).
+    """
+    from app.utils.stripe_client import (
+        apply_billing_discount, compute_amount_cents, count_billable,
+    )
+    try:
+        amount, _ = apply_billing_discount(
+            compute_amount_cents(count_billable(tenant["_id"])), tenant
+        )
+    except Exception:
+        from flask import current_app
+        current_app.logger.exception(
+            "free-tier check failed for tenant %s", tenant.get("slug")
+        )
+        return False
+    if amount > 0:
+        return False
+    get_master_db().tenants.update_one(
+        {"_id": tenant["_id"]},
+        {"$set": {
+            "subscription_status": "active",
+            "subscription_until": datetime.utcnow() + timedelta(days=30),
+            "updated_at": datetime.utcnow(),
+        }},
+    )
+    return True
+
 from app.config import Config
 from app.extensions import init_mongo, get_master_db, csrf
 from app.utils.auth import SESSION_USER_ID, SESSION_TENANT_ID
@@ -285,7 +323,9 @@ def create_app():
         # защита: подписка истекла. Owner'а не выкидываем, а запираем на
         # странице биллинга (там он может оплатить инвойс / привязать карту
         # и разблокироваться сам); остальные роли — из сессии на public login.
-        if _is_tenant_subscription_blocked(tenant):
+        # Бесплатный тир (1 локация + 1 юзер, $0/мес) не блокируется —
+        # _rescue_free_tenant продлевает ему период и пускает дальше.
+        if _is_tenant_subscription_blocked(tenant) and not _rescue_free_tenant(tenant):
             BILLING_SELF_SERVICE_ENDPOINTS = {
                 "billing.subscription_page",
                 "billing.setup_card",

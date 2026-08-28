@@ -43,7 +43,9 @@ def test_auth_pages_render(client):
     assert resp.status_code == 200
     body = resp.get_data(as_text=True)
     assert "css/landing.css" in body, "/: landing.css not linked"
-    assert "Start free 30-day trial" in body
+    # Free-forever вместо триала: на лендинге о trial ни слова.
+    assert "Register" in body
+    assert "trial" not in body.lower()
     assert "No credit card required" in body
     assert 'name="password_confirm"' in body
 

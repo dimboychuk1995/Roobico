@@ -4,8 +4,8 @@ Stripe integration for Roobico subscription billing.
 Architecture:
   * Roobico is the source of truth for the *amount*: we count active
     locations / full users / mechanics in the master DB and compute the
-    monthly total ourselves (BASE_PRICE_CENTS + PRICE_PER_* below: the
-    $59 base covers the first location and first full user).
+    monthly total ourselves (PRICE_PER_* below; the first location and
+    the first full user are free — a solo shop pays nothing).
   * Stripe is just the payment processor: we create one Customer per
     tenant, then per billing cycle we create a single Invoice with one
     line item describing the breakdown.
@@ -35,10 +35,10 @@ from app.extensions import get_master_db
 # Pricing — single source of truth (admin_panel.routes derives its dollar
 # constants from these).
 #
-# Model: base $59/mo covers the first active location and the first active
-# full user; everything beyond that is billed per unit.
+# Model: no base fee. The first active location and the first active full
+# user are FREE (a solo shop pays nothing); everything beyond that is
+# billed per unit. Mechanics are always billed per head.
 # ---------------------------------------------------------------------------
-BASE_PRICE_CENTS = 59_00            # $59/mo base — includes 1 location + 1 full user
 PRICE_PER_LOCATION_CENTS = 100_00   # $100/mo per additional active location
 PRICE_PER_FULL_USER_CENTS = 50_00   # $50/mo per additional active full user
 PRICE_PER_MECHANIC_CENTS = 25_00    # $25/mo per active mechanic
@@ -117,7 +117,7 @@ def count_billable(tenant_id) -> dict:
 
 
 def extra_counts(counts: dict) -> dict:
-    """Units billed on top of the base plan (base covers 1 location + 1 full user)."""
+    """Units billed beyond the free tier (1 location + 1 full user are free)."""
     return {
         "extra_locations": max(0, counts["locations_active"] - 1),
         "extra_full": max(0, counts["full_active"] - 1),
@@ -126,14 +126,11 @@ def extra_counts(counts: dict) -> dict:
 
 
 def compute_amount_cents(counts: dict) -> int:
-    # Совсем пустой тенант (ни локаций, ни пользователей) не биллим —
-    # renewal-cron пропустит его как skipped_no_billable.
-    if not (counts["locations_active"] or counts["full_active"] or counts["mech_active"]):
-        return 0
+    # Бесплатный тир: первая локация и первый полный юзер — $0. Тенант,
+    # укладывающийся в него (и без механиков), не биллится вовсе.
     extra = extra_counts(counts)
     return (
-        BASE_PRICE_CENTS
-        + extra["extra_locations"] * PRICE_PER_LOCATION_CENTS
+        extra["extra_locations"] * PRICE_PER_LOCATION_CENTS
         + extra["extra_full"] * PRICE_PER_FULL_USER_CENTS
         + extra["mech_active"] * PRICE_PER_MECHANIC_CENTS
     )
@@ -143,7 +140,7 @@ def describe_breakdown(counts: dict) -> str:
     if not (counts["locations_active"] or counts["full_active"] or counts["mech_active"]):
         return "no billable units"
     extra = extra_counts(counts)
-    parts = [f"base ${BASE_PRICE_CENTS // 100} (incl. 1 location + 1 user)"]
+    parts = []
     if extra["extra_locations"]:
         parts.append(
             f"{extra['extra_locations']} extra location(s) × ${PRICE_PER_LOCATION_CENTS // 100}"
@@ -156,7 +153,9 @@ def describe_breakdown(counts: dict) -> str:
         parts.append(
             f"{extra['mech_active']} mechanic(s) × ${PRICE_PER_MECHANIC_CENTS // 100}"
         )
-    return " + ".join(parts)
+    if not parts:
+        return "free plan (1 location + 1 user included)"
+    return "1 location + 1 user free + " + " + ".join(parts)
 
 
 def billing_period(tenant: dict) -> str:
@@ -316,8 +315,8 @@ def create_billing_invoice(
     amount, discount_desc = invoice_amount_for_period(tenant, counts, period_days)
     if amount <= 0:
         raise ValueError(
-            "Tenant has no billable amount (no active locations/users, "
-            "or the custom price is $0)."
+            "Tenant has no billable amount — the free plan covers 1 location "
+            "+ 1 user (or the custom price is $0)."
         )
 
     period_label = "1 year" if annual else f"{period_days} days"
@@ -568,8 +567,8 @@ def create_payment_checkout_session(
     amount, discount_desc = invoice_amount_for_period(tenant, counts, period_days)
     if amount <= 0:
         raise ValueError(
-            "Tenant has no billable amount (no active locations/users, "
-            "or the custom price is $0)."
+            "Tenant has no billable amount — the free plan covers 1 location "
+            "+ 1 user (or the custom price is $0)."
         )
     line_description = _line_description(
         counts, "1 year" if annual else f"{period_days} days", annual

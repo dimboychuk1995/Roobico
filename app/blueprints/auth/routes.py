@@ -107,8 +107,11 @@ def login():
     # Subscription gate. Owner'а с истёкшей подпиской ПУСКАЕМ — но только на
     # страницу биллинга (before_request держит его там), чтобы он мог сам
     # оплатить и разблокироваться. Остальные роли — от ворот поворот.
-    from app import _is_tenant_subscription_blocked
-    subscription_blocked = _is_tenant_subscription_blocked(tenant)
+    # Бесплатный тир (1 локация + 1 юзер = $0) не блокируется — rescue
+    # продлевает даты и пускает как обычно.
+    from app import _is_tenant_subscription_blocked, _rescue_free_tenant
+    subscription_blocked = _is_tenant_subscription_blocked(tenant) \
+        and not _rescue_free_tenant(tenant)
     if subscription_blocked and (user.get("role") or "").strip().lower() != "owner":
         flash(
             "Your subscription has expired. Please ask the account owner to renew it.",

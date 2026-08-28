@@ -404,10 +404,16 @@ def renewal_env(app, monkeypatch):
 
 
 def _make_billable_tenant(master, slug, **overrides):
+    """Тенант с ненулевой суммой: 1 локация (бесплатна) + 1 механик ($25)."""
     tenant = _make_tenant(master, slug, status="active", **overrides)
     master.shops.insert_one({
         "_id": ObjectId(), "tenant_id": tenant["_id"],
         "name": f"Shop {slug}", "db_name": f"roobico_test_billing_shop_{slug}",
+        "is_active": True, "created_at": datetime.utcnow(),
+    })
+    master.users.insert_one({
+        "_id": ObjectId(), "tenant_id": tenant["_id"],
+        "email": f"mech-{slug}@test.local", "role": "mechanic",
         "is_active": True, "created_at": datetime.utcnow(),
     })
     return tenant
@@ -551,9 +557,23 @@ def test_renewal_requires_stripe_config(app, seed):
 # ---------------------------------------------------------------------------
 
 def _expire_tenant_a(app, seed):
+    """Просроченный И billable тенант: бесплатный тир (1 локация + 1 юзер)
+    не блокируется вовсе, поэтому для блок-тестов добавляем второго
+    полного юзера ($50/мес > 0)."""
     from app.extensions import get_master_db
     with app.app_context():
-        get_master_db().tenants.update_one(
+        master = get_master_db()
+        master.users.update_one(
+            {"email": "billing-blocker-extra@test.local"},
+            {"$set": {
+                "email": "billing-blocker-extra@test.local",
+                "tenant_id": seed["tenant_a"]["_id"],
+                "role": "manager", "is_active": True,
+                "created_at": datetime.utcnow(),
+            }},
+            upsert=True,
+        )
+        master.tenants.update_one(
             {"_id": seed["tenant_a"]["_id"]},
             {"$set": {"subscription_status": "trial",
                       "subscription_until": datetime.utcnow() - timedelta(days=1)}},
@@ -564,7 +584,9 @@ def _restore_tenant_a(app, seed):
     """Seed-тенант живёт всю сессию — возвращаем как было (без подписки)."""
     from app.extensions import get_master_db
     with app.app_context():
-        get_master_db().tenants.update_one(
+        master = get_master_db()
+        master.users.delete_many({"email": "billing-blocker-extra@test.local"})
+        master.tenants.update_one(
             {"_id": seed["tenant_a"]["_id"]},
             {"$unset": {"subscription_status": "", "subscription_until": ""}},
         )
@@ -741,8 +763,8 @@ def test_blocked_owner_can_pay_now(client, app, seed, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
-# Формула цены: база $59 включает первую локацию и первого полного юзера,
-# сверх — поштучно ($100 локация, $50 юзер, $25 механик).
+# Формула цены: базы нет — первая локация и первый полный юзер бесплатны,
+# сверх — поштучно ($100 локация, $50 юзер, $25 механик — все).
 # ---------------------------------------------------------------------------
 
 def _cents(loc, full, mech):
@@ -751,51 +773,51 @@ def _cents(loc, full, mech):
         {"locations_active": loc, "full_active": full, "mech_active": mech})
 
 
-def test_compute_amount_base_covers_first_location_and_user():
-    # Минимальный сетап (1 локация + owner) — только база.
-    assert _cents(1, 1, 0) == 59_00
+def test_compute_amount_free_tier_covers_first_location_and_user():
+    # Минимальный сетап (1 локация + owner) — полностью бесплатно.
+    assert _cents(1, 1, 0) == 0
     # Доп. юниты — поштучно.
-    assert _cents(1, 2, 0) == 59_00 + 50_00
-    assert _cents(2, 1, 0) == 59_00 + 100_00
-    assert _cents(2, 3, 1) == 59_00 + 100_00 + 2 * 50_00 + 25_00
-    # Механики в базу не входят — каждый по $25.
-    assert _cents(1, 1, 2) == 59_00 + 2 * 25_00
+    assert _cents(1, 2, 0) == 50_00
+    assert _cents(2, 1, 0) == 100_00
+    assert _cents(2, 3, 1) == 100_00 + 2 * 50_00 + 25_00
+    # Механики в бесплатный тир не входят — каждый по $25.
+    assert _cents(1, 1, 2) == 2 * 25_00
 
 
 def test_compute_amount_edge_cases():
-    # Совсем пустой тенант не биллится (renewal скипнет как no_billable).
+    # Совсем пустой тенант — ноль (renewal скипнет как no_billable).
     assert _cents(0, 0, 0) == 0
-    # Хоть что-то активно — база начисляется, «лишних» юнитов нет.
-    assert _cents(0, 0, 1) == 59_00 + 25_00
-    assert _cents(1, 0, 0) == 59_00
-    assert _cents(0, 1, 0) == 59_00
+    # Первая локация/юзер бесплатны в любой комбинации.
+    assert _cents(1, 0, 0) == 0
+    assert _cents(0, 1, 0) == 0
+    assert _cents(0, 0, 1) == 25_00
 
 
-def test_describe_breakdown_mentions_base_and_extras():
+def test_describe_breakdown_mentions_free_tier_and_extras():
     from app.utils.stripe_client import describe_breakdown
     desc = describe_breakdown(
         {"locations_active": 2, "full_active": 3, "mech_active": 1})
-    assert "base $59 (incl. 1 location + 1 user)" in desc
+    assert desc.startswith("1 location + 1 user free")
     assert "1 extra location(s) × $100" in desc
     assert "2 extra user(s) × $50" in desc
     assert "1 mechanic(s) × $25" in desc
-    # Минимальный сетап — только база, без строк про экстры.
+    # Минимальный сетап — бесплатный план, без строк про экстры.
     assert describe_breakdown(
         {"locations_active": 1, "full_active": 1, "mech_active": 0}
-    ) == "base $59 (incl. 1 location + 1 user)"
+    ) == "free plan (1 location + 1 user included)"
     assert describe_breakdown(
         {"locations_active": 0, "full_active": 0, "mech_active": 0}
     ) == "no billable units"
 
 
-def test_tenant_billing_page_shows_base_plan(client, seed):
+def test_tenant_billing_page_shows_free_tier(client, seed):
     from tests.conftest import login
     login(client)
     resp = client.get("/settings/billing")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
-    assert "Base plan (includes 1 location + 1 user)" in html
-    assert "$59.00" in html
+    assert "1 location + 1 user included" in html
+    assert "free plan" in html.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -816,15 +838,16 @@ def test_annual_amount_is_12_months_minus_20_percent():
     from app.utils.stripe_client import (
         ANNUAL_PERIOD_DAYS, annual_amount_cents, invoice_amount_for_period,
     )
-    assert annual_amount_cents(59_00) == int(round(59_00 * 12 * 0.8))
+    assert annual_amount_cents(50_00) == int(round(50_00 * 12 * 0.8))
     assert annual_amount_cents(0) == 0
 
-    counts = {"locations_active": 1, "full_active": 1, "mech_active": 0}
+    # 1 локация + 1 юзер бесплатны, механик — $25/мес.
+    counts = {"locations_active": 1, "full_active": 1, "mech_active": 1}
     # Месячный период — обычная месячная сумма.
-    assert invoice_amount_for_period({}, counts, 30) == (59_00, None)
+    assert invoice_amount_for_period({}, counts, 30) == (25_00, None)
     # Годовой — ×12 −20%.
     assert invoice_amount_for_period({}, counts, ANNUAL_PERIOD_DAYS) \
-        == (int(round(59_00 * 12 * 0.8)), None)
+        == (int(round(25_00 * 12 * 0.8)), None)
     # Индивидуальная цена тенанта применяется ДО годового множителя.
     tenant = {"billing_discount": {"type": "fixed", "value": 100}}
     amount, desc = invoice_amount_for_period(tenant, counts, ANNUAL_PERIOD_DAYS)
@@ -959,8 +982,17 @@ def test_renewal_skips_free_custom_price_tenant(app, seed, renewal_env):
 def test_tenant_billing_page_shows_discount(client, app, seed):
     from tests.conftest import login
     from app.extensions import get_master_db
+    extra_uid = ObjectId()
     with app.app_context():
-        get_master_db().tenants.update_one(
+        master = get_master_db()
+        # Free-тир даёт $0 — скидке не от чего считаться; добавляем
+        # второго полного юзера, чтобы тенант стал billable.
+        master.users.insert_one({
+            "_id": extra_uid, "tenant_id": seed["tenant_a"]["_id"],
+            "email": "discount-extra@test.local", "role": "manager",
+            "is_active": True, "created_at": datetime.utcnow(),
+        })
+        master.tenants.update_one(
             {"_id": seed["tenant_a"]["_id"]},
             {"$set": {"billing_discount": {"type": "percent", "value": 25}}},
         )
@@ -971,7 +1003,9 @@ def test_tenant_billing_page_shows_discount(client, app, seed):
         assert "discount" in resp.get_data(as_text=True).lower()
     finally:
         with app.app_context():
-            get_master_db().tenants.update_one(
+            master = get_master_db()
+            master.users.delete_one({"_id": extra_uid})
+            master.tenants.update_one(
                 {"_id": seed["tenant_a"]["_id"]},
                 {"$unset": {"billing_discount": ""}},
             )
@@ -1034,6 +1068,71 @@ def test_admin_sets_and_clears_discount(client, app, seed):
     with app.app_context():
         t = get_master_db().tenants.find_one({"_id": seed["tenant_a"]["_id"]})
         assert "billing_discount" not in t
+
+
+# ---------------------------------------------------------------------------
+# Бесплатный тир: 1 локация + 1 юзер — тенант не блокируется никогда.
+# ---------------------------------------------------------------------------
+
+def test_rescue_free_tenant_heals_and_unblocks(app, seed):
+    from app import _rescue_free_tenant
+    from app.extensions import get_master_db
+    with app.app_context():
+        master = get_master_db()
+        tenant = _make_tenant(
+            master, "free-rescue", status="active",
+            subscription_status="trial",
+            subscription_until=datetime.utcnow() - timedelta(days=5),
+        )
+        master.shops.insert_one({
+            "_id": ObjectId(), "tenant_id": tenant["_id"],
+            "name": "Free Shop", "db_name": "roobico_test_billing_shop_free",
+            "is_active": True, "created_at": datetime.utcnow(),
+        })
+        master.users.insert_one({
+            "_id": ObjectId(), "tenant_id": tenant["_id"],
+            "email": "free-owner@test.local", "role": "owner",
+            "is_active": True, "created_at": datetime.utcnow(),
+        })
+
+        # 1 локация + 1 юзер = $0 → спасён, даты вылечены.
+        assert _rescue_free_tenant(tenant) is True
+        fresh = master.tenants.find_one({"_id": tenant["_id"]})
+        assert fresh["subscription_status"] == "active"
+        assert fresh["subscription_until"] > datetime.utcnow()
+
+        # Добавили второго полного юзера → billable, спасения нет.
+        master.users.insert_one({
+            "_id": ObjectId(), "tenant_id": tenant["_id"],
+            "email": "free-extra@test.local", "role": "manager",
+            "is_active": True, "created_at": datetime.utcnow(),
+        })
+        assert _rescue_free_tenant(fresh) is False
+
+
+def test_free_tenant_owner_not_blocked(client, app, seed):
+    """Истёкшие даты, но тенант в бесплатном тире (1 локация + owner) —
+    вход не блокируется, а даты подписки self-heal'ятся."""
+    from app.extensions import get_master_db
+    with app.app_context():
+        get_master_db().tenants.update_one(
+            {"_id": seed["tenant_a"]["_id"]},
+            {"$set": {"subscription_status": "trial",
+                      "subscription_until": datetime.utcnow() - timedelta(days=1)}},
+        )
+    try:
+        from tests.conftest import login
+        resp = login(client)
+        assert "/settings/billing" not in (resp.headers.get("Location") or "")
+        resp = client.get("/dashboard")
+        assert resp.status_code == 200
+
+        with app.app_context():
+            fresh = get_master_db().tenants.find_one({"_id": seed["tenant_a"]["_id"]})
+            assert fresh["subscription_status"] == "active"
+            assert fresh["subscription_until"] > datetime.utcnow()
+    finally:
+        _restore_tenant_a(app, seed)
 
 
 def test_blocked_non_owner_cannot_login(client, app, seed):

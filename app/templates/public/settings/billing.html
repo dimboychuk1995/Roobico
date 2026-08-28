@@ -20,7 +20,15 @@
 </div>
 {% endif %}
 
-{% if subscription.state in ('expired', 'grace', 'past_due') %}
+{% if price.is_free %}
+<div class="alert alert-success" role="alert">
+  You're on the <strong>free plan</strong> — your first location and first user
+  are free forever. Billing starts automatically when you add extra locations,
+  extra users, or mechanics.
+</div>
+{% endif %}
+
+{% if subscription.state in ('expired', 'grace', 'past_due') and not price.is_free %}
 <div class="alert alert-danger" role="alert">
   {% if subscription.state == 'expired' %}
     Your subscription has expired. Pay the invoice below or add a card to restore access for your team.
@@ -59,7 +67,12 @@
         {% if subscription.is_trial %}
           <span class="badge text-bg-info">Trial</span>
         {% endif %}
-        {% if subscription.until %}
+        {% if price.is_free %}
+          <div class="fs-5 fw-semibold mt-2">Free plan</div>
+          <div class="text-muted small">
+            1 location + 1 user — no payment required.
+          </div>
+        {% elif subscription.until %}
           <div class="fs-5 fw-semibold mt-2">Paid until {{ subscription.until_display }}</div>
           <div class="text-muted small">
             {% if subscription.days_left is not none and subscription.days_left >= 0 %}
@@ -70,13 +83,15 @@
         {% else %}
           <div class="text-muted small mt-2">No subscription period set.</div>
         {% endif %}
+        {% if not price.is_free or open_invoice %}
         <form method="post" action="{{ url_for('billing.pay_now') }}" class="mt-3">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="btn btn-primary btn-sm"
-                  {% if not stripe_ready or price.due_total <= 0 %}disabled{% endif %}>
+                  {% if not stripe_ready or (price.due_total <= 0 and not open_invoice) %}disabled{% endif %}>
             {{ 'Pay open invoice' if open_invoice else 'Pay now' }} — ${{ '%.2f'|format((open_invoice.amount_cents / 100) if open_invoice else price.due_total) }}{% if not open_invoice and price.period == 'annual' %} / year{% endif %}
           </button>
         </form>
+        {% endif %}
         <div class="text-muted small mt-2">
           Payments are processed securely by Stripe — we never store your card details.
         </div>
@@ -90,8 +105,8 @@
       <div class="card-body">
         <h2 class="h6 text-muted text-uppercase mb-2">Monthly price</h2>
         <div class="d-flex justify-content-between small">
-          <span>Base plan (includes 1 location + 1 user)</span>
-          <span>${{ '%.2f'|format(price.base_price) }}</span>
+          <span>1 location + 1 user included</span>
+          <span class="text-success fw-semibold">Free</span>
         </div>
         {% if price.extra_locations %}
         <div class="d-flex justify-content-between small">
@@ -155,10 +170,11 @@
           {% endif %}
         </div>
         <div class="text-muted small mt-2">
-          Based on currently active locations and users. The base plan
-          covers your first location and first user; extras are billed per
-          unit.{% if price.period == 'annual' %} Annual billing renews once a
-          year at 12&times; the monthly price minus {{ price.annual_discount_percent }}%.{% endif %}
+          Based on currently active locations and users. Your first location
+          and first user are free forever; extra locations, extra users and
+          mechanics are billed per unit.{% if price.period == 'annual' %} Annual
+          billing renews once a year at 12&times; the monthly price minus
+          {{ price.annual_discount_percent }}%.{% endif %}
         </div>
       </div>
     </div>

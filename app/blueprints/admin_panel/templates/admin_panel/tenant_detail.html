@@ -43,21 +43,17 @@
   <h3>Billing summary</h3>
   <div class="billing-grid">
     <div class="billing-card">
-      <div class="billing-label">Base plan</div>
-      <div class="billing-value">${{ billing.base_price }}</div>
+      <div class="billing-label">Free tier</div>
+      <div class="billing-value">$0</div>
       <div class="billing-sub">
-        {% if billing.base_cost %}
-          includes 1 location + 1 full user
-        {% else %}
-          <span style="color:#94a3b8;">not billed — nothing active</span>
-        {% endif %}
+        includes 1 location + 1 full user
       </div>
     </div>
     <div class="billing-card">
       <div class="billing-label">Locations</div>
       <div class="billing-value">{{ billing.locations_active }}</div>
       <div class="billing-sub">
-        first incl. in base · {{ billing.locations_extra }} extra × ${{ billing.price_per_location }}/mo = <strong>${{ '{:,}'.format(billing.locations_cost) }}</strong>
+        first free · {{ billing.locations_extra }} extra × ${{ billing.price_per_location }}/mo = <strong>${{ '{:,}'.format(billing.locations_cost) }}</strong>
         {% if billing.locations_inactive %}
           · <span style="color:#94a3b8;">{{ billing.locations_inactive }} inactive</span>
         {% endif %}
@@ -67,7 +63,7 @@
       <div class="billing-label">Full users</div>
       <div class="billing-value">{{ billing.full_active }}</div>
       <div class="billing-sub">
-        first incl. in base · {{ billing.full_extra }} extra × ${{ billing.price_per_full_user }}/mo = <strong>${{ '{:,}'.format(billing.full_cost) }}</strong>
+        first free · {{ billing.full_extra }} extra × ${{ billing.price_per_full_user }}/mo = <strong>${{ '{:,}'.format(billing.full_cost) }}</strong>
         {% if billing.full_inactive %}
           · <span style="color:#94a3b8;">{{ billing.full_inactive }} inactive</span>
         {% endif %}
@@ -374,7 +370,7 @@
       <div class="billing-sub" style="margin-bottom:.6rem;">
         Amount to bill:
         <strong style="color:#bbf7d0;">${{ '{:,.2f}'.format(billing.due_total) }}{{ '/yr' if billing.period == 'annual' else '/mo' }}</strong>
-        (base ${{ billing.base_price }} + {{ billing.locations_extra }} extra loc + {{ billing.full_extra }} extra full + {{ billing.mech_active }} mech{% if billing.discount_desc %}, {{ billing.discount_desc }}{% endif %}{% if billing.period == 'annual' %} · annual: 12 × monthly &minus;{{ billing.annual_discount_percent }}%{% endif %}).
+        (1 loc + 1 user free + {{ billing.locations_extra }} extra loc + {{ billing.full_extra }} extra full + {{ billing.mech_active }} mech{% if billing.discount_desc %}, {{ billing.discount_desc }}{% endif %}{% if billing.period == 'annual' %} · annual: 12 × monthly &minus;{{ billing.annual_discount_percent }}%{% endif %}).
       </div>
 
       <div class="sub-quick">

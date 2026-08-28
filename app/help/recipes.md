@@ -26,8 +26,18 @@ taxable misc only.
 **Part price didn't change after I changed the scale — why?**
 In order: (1) the part has a fixed Selling price — it wins unless the
 customer has "Override part selling price"; (2) the price was edited by hand
-on the WO — manual prices are never auto-overwritten; (3) the scale isn't
-the one assigned to that customer.
+on the WO — manual prices are never auto-overwritten; (3) the price came
+from a service template where it was pinned by hand — pinned template prices
+don't follow the scale; (4) the scale isn't the one assigned to that
+customer.
+
+**Special price for one service (template).** Settings → Service Templates →
+edit the template → type your price in the part's Price field. A hand-edited
+price is *pinned* (highlighted in the editor): it saves with the template
+and is used on WOs as typed, beating the part's selling price and the
+pricing scale. Untouched rows keep following the catalog automatically.
+Customers with "Override part selling price" still get their own scale.
+To go back to automatic pricing, clear the Price field and click away.
 
 **Customer paid one check for several invoices.** Work Orders →
 **Bulk Payment**: pick customer, enter the amount, "Auto-Distribute"
@@ -126,6 +136,20 @@ cannot deactivate yourself.
 enable, tick employees, set $/hr. Hours appear in Timecard / Salary, in
 General Revenue payroll, on the Dashboard hours chart and in the Mechanic
 Hours report (uAttend Hours column).
+
+**Mechanic created a WO on the wrong customer (with a new unit).** Open the
+work order → **Transfer** (top-right) → pick the right customer → confirm.
+The unit follows automatically: if the right customer already has a unit
+with that VIN, the WO is re-linked to it; otherwise the unit is deactivated
+for the wrong customer and recreated (with the same mileage) for the right
+one. Nothing else on the WO changes. Paid WOs can't be transferred —
+"Unpaid" first.
+
+**Mechanic forgot to stop the timer / hours look wrong.** On the work order,
+next to the "Mechanics: Xh Ym" line on the job, click the pencil (needs the
+"Edit mechanics' actual tracked hours" permission — owner and managers have
+it). Fix the session's duration or delete an accidental session. Tracked
+hours, the mechanics' split and payroll reports recalculate instantly.
 
 **See what mechanics are doing right now.** Open the work order — the
 details page is live: a red "● working" marker with the mechanic's name

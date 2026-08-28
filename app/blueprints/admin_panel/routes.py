@@ -15,7 +15,6 @@ from app.utils.admin_auth import (
 from app.utils.admin_audit import log_admin_action
 from app.utils.stripe_client import (
     ANNUAL_DISCOUNT_PERCENT,
-    BASE_PRICE_CENTS,
     PRICE_PER_FULL_USER_CENTS,
     PRICE_PER_LOCATION_CENTS,
     PRICE_PER_MECHANIC_CENTS,
@@ -26,10 +25,9 @@ from . import admin_panel_bp
 
 
 # Pricing (USD/month), derived from the cent constants in
-# app.utils.stripe_client — the single source of truth. The $59 base
-# includes the first active location and the first active full user;
-# extra units are billed per piece, mechanics are always per piece.
-BASE_PRICE = BASE_PRICE_CENTS // 100
+# app.utils.stripe_client — the single source of truth. No base fee: the
+# first active location and the first active full user are free; extra
+# units are billed per piece, mechanics are always per piece.
 PRICE_PER_LOCATION = PRICE_PER_LOCATION_CENTS // 100
 PRICE_PER_FULL_USER = PRICE_PER_FULL_USER_CENTS // 100
 PRICE_PER_MECHANIC = PRICE_PER_MECHANIC_CENTS // 100
@@ -183,15 +181,14 @@ def tenant_detail(tenant_id: str):
             else:
                 full_inactive += 1
 
-    # База $59 покрывает первую локацию и первого полного юзера; сверх —
-    # поштучно. Пустой тенант (ничего активного) не биллится вовсе.
+    # Бесплатный тир: первая локация и первый полный юзер — $0; сверх —
+    # поштучно, механики — все поштучно.
     locations_extra = max(0, locations_active - 1)
     full_extra = max(0, full_active - 1)
-    base_cost = BASE_PRICE if (locations_active or full_active or mech_active) else 0
     locations_cost = locations_extra * PRICE_PER_LOCATION
     full_cost = full_extra * PRICE_PER_FULL_USER
     mech_cost = mech_active * PRICE_PER_MECHANIC
-    monthly_total = base_cost + locations_cost + full_cost + mech_cost
+    monthly_total = locations_cost + full_cost + mech_cost
 
     # Индивидуальная цена (скидка % / фикс) — то, что реально уйдёт в инвойс.
     from app.utils.stripe_client import apply_billing_discount
@@ -220,8 +217,6 @@ def tenant_detail(tenant_id: str):
         "mech_active": mech_active,
         "mech_inactive": mech_inactive,
         "mech_total": mech_active + mech_inactive,
-        "base_price": BASE_PRICE,
-        "base_cost": base_cost,
         "locations_extra": locations_extra,
         "full_extra": full_extra,
         "price_per_location": PRICE_PER_LOCATION,

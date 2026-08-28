@@ -28,7 +28,6 @@ from app.utils.layout import render_internal_page
 from app.utils.permissions import filter_nav_items, permission_required
 from app.utils.stripe_client import (
     ANNUAL_DISCOUNT_PERCENT,
-    BASE_PRICE_CENTS,
     PRICE_PER_FULL_USER_CENTS,
     PRICE_PER_LOCATION_CENTS,
     PRICE_PER_MECHANIC_CENTS,
@@ -118,11 +117,11 @@ def subscription_page():
         "locations": counts["locations_active"],
         "full_users": counts["full_active"],
         "mechanics": counts["mech_active"],
-        # База $59 включает первую локацию и первого полного юзера;
+        # Бесплатный тир: первая локация и первый полный юзер — $0;
         # в строках разбивки показываем только «лишние» юниты.
         "extra_locations": extra["extra_locations"],
         "extra_full_users": extra["extra_full"],
-        "base_price": BASE_PRICE_CENTS / 100 if computed_cents else 0,
+        "is_free": effective_cents <= 0,
         "locations_cost": extra["extra_locations"] * PRICE_PER_LOCATION_CENTS / 100,
         "full_cost": extra["extra_full"] * PRICE_PER_FULL_USER_CENTS / 100,
         "mech_cost": counts["mech_active"] * PRICE_PER_MECHANIC_CENTS / 100,

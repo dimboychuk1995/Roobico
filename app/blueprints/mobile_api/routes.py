@@ -121,8 +121,8 @@ def mobile_login():
     if not tenant:
         return jsonify({"ok": False, "error": "tenant_inactive", "message": "Tenant not found or inactive."}), 403
 
-    from app import _is_tenant_subscription_blocked
-    if _is_tenant_subscription_blocked(tenant):
+    from app import _is_tenant_subscription_blocked, _rescue_free_tenant
+    if _is_tenant_subscription_blocked(tenant) and not _rescue_free_tenant(tenant):
         return jsonify({"ok": False, "error": "subscription_expired", "message": "Your subscription has expired."}), 403
 
     shop_ids = user.get("shop_ids") if isinstance(user.get("shop_ids"), list) else []
