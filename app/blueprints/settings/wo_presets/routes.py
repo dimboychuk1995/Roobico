@@ -256,6 +256,9 @@ def _parse_preset_form(form):
                 qty = 1
             cost = _f64(p.get("cost"))
             price = _f64(p.get("price"))
+            # Цена, введённая вручную: фиксируется в пресете и применяется в WO
+            # вместо динамической (selling price парта / прайс-матрица).
+            price_overridden = bool(p.get("price_overridden")) and price is not None
 
             # misc charges
             misc_charges = []
@@ -274,6 +277,7 @@ def _parse_preset_form(form):
                 "qty": qty,
                 "cost": cost,
                 "price": price,
+                "price_overridden": price_overridden,
                 "misc_charges": misc_charges,
             })
 
@@ -370,7 +374,8 @@ def wo_presets_index():
             live = live_parts.get(str(pt.get("part_id"))) if pt.get("part_id") else None
 
             # Dynamic price/cost/misc from the live part; fall back to the stored
-            # snapshot only when the part can't be resolved.
+            # snapshot only when the part can't be resolved. A manually overridden
+            # price is pinned to the preset and shown as stored.
             if live is not None:
                 price = _live_part_price(live, pricing_rules)
                 if price is None:
@@ -379,6 +384,8 @@ def wo_presets_index():
             else:
                 price = float(pt.get("price") or 0)
                 misc_items = pt.get("misc_charges") or []
+            if pt.get("price_overridden") and pt.get("price") is not None:
+                price = float(pt.get("price") or 0)
 
             # Reflect the dynamic price in the per-part list shown on the card.
             pt["price"] = round(price, 2)
@@ -549,9 +556,13 @@ def wo_presets_detail(preset_id: str):
             # otherwise compute from the pricing rule (markup/margin). This keeps
             # the editor in sync with the list view and the WO logic instead of
             # showing the snapshot stored when the preset was created.
+            # A manually overridden price keeps the stored value; auto_price is
+            # still returned so the editor can restore automatic pricing.
             live_price = _live_part_price(live, pricing_rules)
             if live_price is not None:
-                ep["price"] = round(live_price, 2)
+                ep["auto_price"] = round(live_price, 2)
+                if not p.get("price_overridden"):
+                    ep["price"] = round(live_price, 2)
         enriched_parts.append(ep)
 
     # Persist any healed part_id / part_number references back into the preset

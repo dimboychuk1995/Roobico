@@ -160,6 +160,20 @@
     partsJsonInput.value = JSON.stringify(partsState);
   }
 
+  /* Ручная цена: фиксируется в пресете и применяется в WO вместо
+     динамической (selling price парта / прайс-матрица). Пустое поле по blur
+     возвращает автоцену и снимает фиксацию. */
+  function markPriceOverridden(tr, on) {
+    var inp = tr.querySelector(".pp-price");
+    if (!inp) return;
+    if (on) tr.dataset.priceOverridden = "1";
+    else delete tr.dataset.priceOverridden;
+    inp.classList.toggle("border-warning", !!on);
+    inp.title = on
+      ? "Custom price — saved with the preset. Clear the field to return to automatic pricing."
+      : "";
+  }
+
   function collectPartsFromDOM() {
     partsState = [];
     var rows = partsTbody.querySelectorAll("tr.preset-part-row");
@@ -182,6 +196,7 @@
         qty: toNum(r.querySelector(".pp-qty").value) || 1,
         cost: toNum(r.querySelector(".pp-cost").value) || 0,
         price: toNum(r.querySelector(".pp-price").value) || 0,
+        price_overridden: r.dataset.priceOverridden === "1",
         misc_charges: miscCharges.length ? miscCharges : undefined,
       });
     }
@@ -215,12 +230,16 @@
       '<input class="form-control form-control-sm pp-part-number" value="' + escapeHtml(partNum) + '" maxlength="64" autocomplete="off" placeholder="Search parts\u2026"></td>' +
       '<td class="p-1"><input class="form-control form-control-sm pp-description" value="' + escapeHtml(desc) + '" maxlength="200" autocomplete="off"></td>' +
       '<td class="p-1"><input class="form-control form-control-sm pp-qty" value="' + qty + '" inputmode="numeric" min="1"></td>' +
-      '<td class="p-1"><input class="form-control form-control-sm pp-cost bg-light" value="' + (cost || '') + '" readonly tabindex="-1"></td>' +
+      '<td class="p-1"><input class="form-control form-control-sm pp-cost" value="' + (cost || '') + '" readonly tabindex="-1"></td>' +
       '<td class="p-1"><input class="form-control form-control-sm pp-price" value="' + (price || '') + '" inputmode="decimal" step="0.01" min="0" placeholder="0.00"></td>' +
       '<td class="p-1 align-middle pp-line-total">$' + money(lineTotal) + '</td>' +
       '<td class="p-1 text-center"><button type="button" class="btn btn-sm btn-outline-danger pp-delete">&times;</button></td>';
 
     partsTbody.appendChild(tr);
+
+    var autoPrice = (data && data.auto_price != null) ? toNum(data.auto_price) : null;
+    if (autoPrice !== null) tr.dataset.autoPrice = String(autoPrice);
+    if (data && data.price_overridden) markPriceOverridden(tr, true);
 
     // Render misc charge rows for this part
     var miscCharges = (data && data.misc_charges) || [];
@@ -298,8 +317,22 @@
       if (tr) updateMiscRowsQty(tr);
       updatePartsFromTable();
     } else if (e.target.classList.contains("pp-price")) {
+      var priceTr = e.target.closest("tr.preset-part-row");
+      if (priceTr) markPriceOverridden(priceTr, true);
       updatePartsFromTable();
     }
+  });
+
+  /* Пустая цена по blur — вернуться к автоцене и снять фиксацию */
+  partsTbody.addEventListener("focusout", function (e) {
+    if (!e.target.classList.contains("pp-price")) return;
+    if (e.target.value.trim() !== "") return;
+    var tr = e.target.closest("tr.preset-part-row");
+    if (!tr) return;
+    var autoPrice = toNum(tr.dataset.autoPrice);
+    if (autoPrice !== null) e.target.value = money(autoPrice);
+    markPriceOverridden(tr, false);
+    updatePartsFromTable();
   });
 
   /* ── recalc estimate on labor hours/rate change ── */
@@ -334,7 +367,7 @@
 
   function renderSearchResults(items) {
     if (!items.length) {
-      dropdown.innerHTML = '<div style="padding:10px; color:#6c757d;">No matches</div>';
+      dropdown.innerHTML = '<div class="list-group-item text-muted small">No matches</div>';
       return;
     }
     dropdown.innerHTML = items.map(function (it, idx) {
@@ -343,10 +376,10 @@
       if (it.misc_has_charge && Array.isArray(it.misc_charges) && it.misc_charges.length) {
         meta += " \u00b7 Misc charges: " + it.misc_charges.length;
       }
-      return '<div class="pp-dd-item" data-idx="' + idx + '" style="padding:8px 12px; cursor:pointer; border-bottom:1px solid rgba(0,0,0,.06);">' +
-        '<div style="font-weight:600; line-height:1.2;">' + escapeHtml(title) + '</div>' +
-        '<div style="font-size:12px; color:#6c757d; margin-top:2px;">' + escapeHtml(meta) + '</div>' +
-        '</div>';
+      return '<button type="button" class="list-group-item list-group-item-action pp-dd-item" data-idx="' + idx + '">' +
+        '<div class="fw-semibold">' + escapeHtml(title) + '</div>' +
+        '<div class="text-muted small">' + escapeHtml(meta) + '</div>' +
+        '</button>';
     }).join("");
     dropdown._items = items;
   }
@@ -368,7 +401,7 @@
 
     searchTimer = setTimeout(function () {
       placeDropdown(inp);
-      dropdown.innerHTML = '<div style="padding:10px; color:#6c757d;">Searching\u2026</div>';
+      dropdown.innerHTML = '<div class="list-group-item text-muted small">Searching\u2026</div>';
       fetchParts(q).then(renderSearchResults);
     }, 200);
   });
@@ -407,7 +440,12 @@
       }
       if (autoPrice !== null) {
         priceInput.value = money(autoPrice);
+        activeSearchRow.dataset.autoPrice = String(autoPrice);
+      } else {
+        delete activeSearchRow.dataset.autoPrice;
       }
+      // Новый парт в строке — цена снова автоматическая.
+      markPriceOverridden(activeSearchRow, false);
     }
 
     // Add misc charge rows if part has them

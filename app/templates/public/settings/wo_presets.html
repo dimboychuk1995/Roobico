@@ -138,6 +138,12 @@
           <div class="mt-2">
             <button type="button" class="btn btn-sm btn-outline-secondary" id="addPresetPartBtn">+ Add Part</button>
           </div>
+          <div class="form-text mt-2">
+            Prices follow the part's selling price or the pricing matrix automatically.
+            Edit a price to pin your own — it is saved with the preset and used in work orders
+            (customers whose pricing overrides part prices still get their own).
+            Clear the field to return to automatic pricing.
+          </div>
           <div class="form-check form-switch mt-3">
             <input class="form-check-input" type="checkbox" role="switch" id="presetAllowDiscount" name="allow_discount" value="1" checked>
             <label class="form-check-label" for="presetAllowDiscount">
@@ -179,7 +185,7 @@
 </div>
 
 <!-- Parts search dropdown (reused from WO) -->
-<div id="presetPartsDropdown" class="position-absolute bg-white border rounded shadow-sm dd-scroll"
+<div id="presetPartsDropdown" class="list-group position-absolute shadow-sm dd-scroll"
      style="display:none; min-width:320px;"></div>
 
 <script>
