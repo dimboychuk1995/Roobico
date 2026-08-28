@@ -242,3 +242,9 @@
   max-height: 85vh;
   overflow: auto;
 }
+
+  /* Edit-hours pencil on the "Mechanics:" line: clickable in view mode too.
+     The editor container gets inline pointer-events:none outside Edit mode;
+     the button re-enables events for itself (viewing tracked sessions and
+     fixing hours must not require entering Edit). */
+  .laborTimeEditBtn { pointer-events: auto; }

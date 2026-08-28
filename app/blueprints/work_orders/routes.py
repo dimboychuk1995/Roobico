@@ -3347,9 +3347,14 @@ def api_preset_detail(preset_id):
             ep["misc_charges"] = misc_items
 
             # Dynamic pricing: always reflect the part's current cost/price.
+            # A price manually pinned in the preset wins over the part's selling
+            # price and the pricing matrix (customer-level override_part_selling_price
+            # still takes precedence — the WO front-end nulls the price then).
             if live.get("average_cost") is not None:
                 ep["cost"] = float(live["average_cost"])
-            if bool(live.get("has_selling_price")):
+            if bool(p.get("price_overridden")) and p.get("price") is not None:
+                ep["price"] = float(p.get("price") or 0)
+            elif bool(live.get("has_selling_price")):
                 ep["price"] = float(live.get("selling_price") or 0)
             else:
                 # No fixed selling price -> let the WO markup recompute from cost.
@@ -3367,7 +3372,7 @@ def api_preset_detail(preset_id):
     # Механик-режим: пресет отдаём без денег (цены проставит сервер при
     # сохранении WO) — только парт/описание/количество.
     if not has_permission("work_orders.view_costs"):
-        money_keys = ("cost", "price", "core_has_charge", "core_cost", "misc_has_charge", "misc_charges")
+        money_keys = ("cost", "price", "price_overridden", "core_has_charge", "core_cost", "misc_has_charge", "misc_charges")
         enriched_parts = [
             {k: v for k, v in ep.items() if k not in money_keys}
             for ep in enriched_parts
@@ -3776,6 +3781,249 @@ def api_mechanic_timer_stop():
             shop_db, shop["_id"], log.get("work_order_id"), user_id=user_id
         ),
         "server_now": _server_now_iso(),
+    }), 200
+
+
+# ─── Перенос WO на другого клиента ───────────────────────────────────────────
+
+@work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/transfer")
+@login_required
+@permission_required("work_orders.edit")
+def api_work_order_transfer(work_order_id):
+    """
+    Перенос WO на другого клиента (кейс: механик завёл WO на нового клиента
+    с новым юнитом, а WO должен принадлежать существующему клиенту).
+
+    Юнит следует за WO:
+      - у целевого клиента уже есть юнит с тем же VIN → WO перевешивается на
+        него (деактивированный дубль реактивируется), всё остальное не трогаем;
+      - нет → юнит «переезжает»: у исходного клиента деактивируется, целевому
+        создаётся копия со всеми полями (включая пробег).
+    """
+    if is_mechanic_mode():
+        return jsonify({"ok": False, "error": "forbidden"}), 403
+
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return jsonify({"ok": False, "error": "invalid_work_order_id"}), 400
+    wo = shop_db.work_orders.find_one(
+        {"_id": wo_id, "shop_id": shop["_id"], "is_active": True}
+    )
+    if not wo:
+        return jsonify({"ok": False, "error": "work_order_not_found"}), 404
+    if (wo.get("status") or "open") == "paid":
+        return jsonify({"ok": False, "error": "paid_cannot_edit"}), 400
+
+    data = request.get_json(silent=True) or {}
+    target_id = oid(data.get("customer_id"))
+    if not target_id:
+        return jsonify({"ok": False, "error": "customer_required"}), 400
+    target = shop_db.customers.find_one(
+        {"_id": target_id, "shop_id": shop["_id"], "is_active": True}, {"_id": 1}
+    )
+    if not target:
+        return jsonify({"ok": False, "error": "customer_not_found"}), 400
+    if wo.get("customer_id") == target_id:
+        return jsonify({"ok": False, "error": "same_customer"}), 400
+
+    unit = None
+    if wo.get("unit_id"):
+        unit = shop_db.units.find_one(
+            {"_id": wo["unit_id"], "shop_id": shop["_id"]}
+        )
+
+    now = utcnow()
+    user_id = current_user_id()
+    wo_set = {"customer_id": target_id, "updated_at": now, "updated_by": user_id}
+    unit_action = "none"
+
+    if unit is None:
+        # WO без юнита (или юнит потерян) — просто меняем клиента.
+        run_atomically(
+            get_mongo_client(),
+            lambda session: shop_db.work_orders.update_one(
+                {"_id": wo_id}, {"$set": wo_set}, session=session
+            ),
+        )
+        return jsonify({"ok": True, "unit_action": unit_action}), 200
+
+    vin = str(unit.get("vin") or "").strip()
+    existing = find_duplicate_unit(shop_db, shop["_id"], target_id, vin) if vin else None
+
+    if existing is not None:
+        # У целевого клиента этот юнит уже есть — перевешиваем WO на него.
+        wo_set["unit_id"] = existing["_id"]
+        unit_action = "linked_existing"
+        reactivate = existing.get("is_active") is False
+
+        def _tx(session):
+            if reactivate:
+                unit_set = {"is_active": True, "updated_at": now, "updated_by": user_id}
+                # Реактивированному дублю подтягиваем пробег из переносимого
+                # юнита — он свежее (WO только что откатали).
+                if unit.get("mileage"):
+                    unit_set["mileage"] = unit.get("mileage")
+                shop_db.units.update_one(
+                    {"_id": existing["_id"]}, {"$set": unit_set}, session=session
+                )
+            shop_db.work_orders.update_one({"_id": wo_id}, {"$set": wo_set}, session=session)
+
+        run_atomically(get_mongo_client(), _tx)
+        if reactivate:
+            unit_action = "reactivated_existing"
+    else:
+        # Юнит «переезжает»: копия у целевого клиента, исходник деактивируется.
+        new_unit = {
+            k: v for k, v in unit.items()
+            if k not in ("_id", "customer_id", "search_terms",
+                         "created_at", "created_by", "updated_at", "updated_by")
+        }
+        new_unit.update({
+            "_id": ObjectId(),
+            "customer_id": target_id,
+            "is_active": True,
+            "created_at": now,
+            "created_by": user_id,
+            "updated_at": now,
+            "updated_by": user_id,
+        })
+        new_unit["search_terms"] = build_unit_search_terms(new_unit)
+        wo_set["unit_id"] = new_unit["_id"]
+        unit_action = "moved"
+
+        def _tx(session):
+            shop_db.units.update_one(
+                {"_id": unit["_id"]},
+                {"$set": {"is_active": False, "updated_at": now, "updated_by": user_id}},
+                session=session,
+            )
+            shop_db.units.insert_one(new_unit, session=session)
+            shop_db.work_orders.update_one({"_id": wo_id}, {"$set": wo_set}, session=session)
+
+        run_atomically(get_mongo_client(), _tx)
+
+    return jsonify({
+        "ok": True,
+        "unit_action": unit_action,
+        "customer_id": str(target_id),
+        "unit_id": str(wo_set.get("unit_id") or ""),
+    }), 200
+
+
+# ─── Правка фактических часов механиков (менеджерская, отдельное право) ─────
+# Механик забыл остановить таймер / случайный старт — менеджер с правом
+# work_orders.edit_time_logs корректирует или удаляет завершённые сессии.
+# После каждой правки пересчитываются производные поля WO (назначения,
+# tracked-часы, totals). Оплаченные WO не трогаем.
+
+def _refresh_after_time_log_change(shop_db, shop, work_order_id):
+    from app.blueprints.work_orders.services.mechanic_editor import refresh_time_derived_fields
+
+    refresh_time_derived_fields(
+        shop_db, shop, work_order_id,
+        mechanics_by_id={m["id"]: m for m in get_assignable_mechanics(shop)},
+    )
+
+
+def _load_time_log_for_edit(shop_db, shop, log_id):
+    """(log, wo, error): завершённый лог + его WO, с guard'ом на paid."""
+    lid = oid(log_id)
+    log = shop_db.wo_time_logs.find_one({"_id": lid, "shop_id": shop["_id"]}) if lid else None
+    if not log:
+        return None, None, "log_not_found"
+    wo = shop_db.work_orders.find_one(
+        {"_id": log.get("work_order_id"), "shop_id": shop["_id"]},
+        {"status": 1},
+    )
+    if wo and (wo.get("status") or "") == "paid":
+        return None, None, "paid_wo_locked"
+    return log, wo, None
+
+
+@work_orders_bp.get("/work_orders/api/work_orders/<work_order_id>/time_logs")
+@login_required
+@permission_required("work_orders.edit_time_logs")
+def api_wo_time_logs(work_order_id):
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return jsonify({"ok": False, "error": "invalid_work_order_id"}), 400
+    wo = shop_db.work_orders.find_one(
+        {"_id": wo_id, "shop_id": shop["_id"], "is_active": True},
+        {"status": 1},
+    )
+    if not wo:
+        return jsonify({"ok": False, "error": "work_order_not_found"}), 404
+
+    sessions = time_tracking.list_wo_time_sessions(
+        shop_db, shop["_id"], wo_id,
+        labor_id=(request.args.get("labor_id") or "").strip() or None,
+    )
+    return jsonify({
+        "ok": True,
+        "sessions": sessions,
+        "wo_status": wo.get("status") or "open",
+    }), 200
+
+
+@work_orders_bp.post("/work_orders/api/time_logs/<log_id>/update")
+@login_required
+@permission_required("work_orders.edit_time_logs")
+def api_time_log_update(log_id):
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    log, _, error = _load_time_log_for_edit(shop_db, shop, log_id)
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
+
+    data = request.get_json(silent=True) or {}
+    log, error = time_tracking.update_time_log_seconds(
+        shop_db, shop["_id"], log_id, data.get("seconds"), current_user_id(),
+    )
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
+
+    _refresh_after_time_log_change(shop_db, shop, log.get("work_order_id"))
+    return jsonify({
+        "ok": True,
+        "log": time_tracking._log_payload(log),
+        "time_summary": time_tracking.summarize_wo_time(
+            shop_db, shop["_id"], log.get("work_order_id"), user_id=current_user_id()
+        ),
+    }), 200
+
+
+@work_orders_bp.post("/work_orders/api/time_logs/<log_id>/delete")
+@login_required
+@permission_required("work_orders.edit_time_logs")
+def api_time_log_delete(log_id):
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    log, _, error = _load_time_log_for_edit(shop_db, shop, log_id)
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
+
+    log, error = time_tracking.delete_time_log(shop_db, shop["_id"], log_id)
+    if error:
+        return jsonify({"ok": False, "error": error}), 400
+
+    _refresh_after_time_log_change(shop_db, shop, log.get("work_order_id"))
+    return jsonify({
+        "ok": True,
+        "time_summary": time_tracking.summarize_wo_time(
+            shop_db, shop["_id"], log.get("work_order_id"), user_id=current_user_id()
+        ),
     }), 200
 
 

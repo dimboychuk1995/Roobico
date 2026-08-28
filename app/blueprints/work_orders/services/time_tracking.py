@@ -378,6 +378,82 @@ def active_timers(shop_db, shop, user_id=None):
     return items
 
 
+# ─── Правка фактических часов (permission work_orders.edit_time_logs) ───────
+# Менеджер корректирует завершённые сессии: механик забыл остановить таймер,
+# случайный старт и т.п. Идущие сессии не правятся — сначала stop. started_at
+# остаётся якорем (по нему сессия попадает в день для payroll-отчётов),
+# stopped_at пересчитывается как started_at + seconds.
+
+def list_wo_time_sessions(shop_db, shop_id, work_order_id, labor_id=None):
+    """Сессии времени по WO (для модалки правки): завершённые + идущие."""
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return []
+    query: dict = {"shop_id": shop_id, "work_order_id": wo_id}
+    if labor_id:
+        query["labor_id"] = str(labor_id).strip()
+    out = []
+    for log in shop_db.wo_time_logs.find(query).sort("started_at", 1):
+        payload = _log_payload(log)
+        payload["running"] = log.get("stopped_at") is None
+        payload["edited"] = bool(log.get("edited_at"))
+        out.append(payload)
+    return out
+
+
+def update_time_log_seconds(shop_db, shop_id, log_id, seconds, editor_id):
+    """
+    Установить длительность завершённой сессии. Возвращает (log, error).
+    """
+    lid = oid(log_id)
+    if not lid:
+        return None, "invalid_log_id"
+    try:
+        seconds = int(seconds)
+    except (TypeError, ValueError):
+        return None, "invalid_seconds"
+    if seconds <= 0:
+        return None, "invalid_seconds"
+
+    log = shop_db.wo_time_logs.find_one({"_id": lid, "shop_id": shop_id})
+    if not log:
+        return None, "log_not_found"
+    if log.get("stopped_at") is None:
+        return None, "log_running"
+
+    from datetime import timedelta
+
+    now = utcnow()
+    update = {
+        "seconds": seconds,
+        "stopped_at": (log.get("started_at") or now) + timedelta(seconds=seconds),
+        "edited_at": now,
+        "edited_by": editor_id,
+        "updated_at": now,
+    }
+    # Исходную длительность сохраняем один раз — след для разбора «кто и что
+    # поменял» (сам факт правки виден по edited_at/edited_by).
+    if "original_seconds" not in log:
+        update["original_seconds"] = int(log.get("seconds") or 0)
+    shop_db.wo_time_logs.update_one({"_id": lid}, {"$set": update})
+    log.update(update)
+    return log, None
+
+
+def delete_time_log(shop_db, shop_id, log_id):
+    """Удалить завершённую сессию. Возвращает (log, error)."""
+    lid = oid(log_id)
+    if not lid:
+        return None, "invalid_log_id"
+    log = shop_db.wo_time_logs.find_one({"_id": lid, "shop_id": shop_id})
+    if not log:
+        return None, "log_not_found"
+    if log.get("stopped_at") is None:
+        return None, "log_running"
+    shop_db.wo_time_logs.delete_one({"_id": lid})
+    return log, None
+
+
 def summarize_mechanic_hours(shop_db, shop_id, date_from=None, date_to_exclusive=None):
     """
     Для отчёта mechanic_hours: {user_id_str: {user_name, seconds}} по

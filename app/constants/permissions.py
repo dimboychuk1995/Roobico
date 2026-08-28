@@ -62,6 +62,7 @@ PERMISSIONS: dict[str, str] = {
     "work_orders.manage_email_contacts": "Edit / delete customer contacts in email dialogs",
     "work_orders.export_pdf": "Export work order PDF",
     "work_orders.view_costs": "View part costs inside WO",
+    "work_orders.edit_time_logs": "Edit mechanics' actual tracked hours",
 
     # ── Attachments ─────────────────────────────────────────
     "attachments.view": "View attachments",
@@ -179,6 +180,7 @@ PERMISSION_GROUPS: list[dict] = [
             "work_orders.manage_email_contacts",
             "work_orders.export_pdf",
             "work_orders.view_costs",
+            "work_orders.edit_time_logs",
         ],
     },
     {

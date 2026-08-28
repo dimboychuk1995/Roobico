@@ -64,6 +64,26 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
    **"📷 Recognize WO"** — upload a photo/PDF of a handwritten work order and
    AI fills the jobs and parts (review before applying).
 
+## Transfer to another customer
+
+The **Transfer** button (top-right of an existing work order's page, for
+users who can edit WOs) moves the work order to a different customer — the
+typical case is a mechanic who created the WO on a brand-new customer with a
+new unit, when it really belongs to an existing customer. Pick the new
+customer in the dialog and confirm. The unit follows the work order
+automatically:
+
+- If the new customer **already has a unit with the same VIN**, the work
+  order is simply re-linked to that unit — nothing else changes (a
+  deactivated duplicate gets reactivated with the fresh mileage).
+- If not, the unit **moves**: it is deactivated for the old customer and an
+  identical unit (same VIN, unit number, make/model/year, mileage) is
+  created for the new customer.
+
+Jobs, parts, totals, payments history and tracked mechanic time are not
+touched — only the customer (and the unit link) changes. Paid work orders
+cannot be transferred; unpay first.
+
 ## Statuses
 
 - **Open (Unpaid)** — default after creation.
@@ -149,6 +169,17 @@ your screen.
 - **Assign** button → "Assign Mechanics" modal: pick one or several
   mechanics. One mechanic = 100%; several = percentages auto-split evenly and
   can be edited. This split drives the Mechanic Hours report.
+- **Edit mechanic hours (✎ on the "Mechanics:" line).** Users with the
+  "Edit mechanics' actual tracked hours" permission (owner and managers by
+  default) see a small pencil next to the tracked-time summary. It opens a
+  list of the job's timer sessions — who, when started, how long. Change a
+  session's duration (hours/minutes) or delete a wrong session entirely
+  (e.g. the mechanic forgot to stop the timer overnight, or started it by
+  accident). After saving, everything derived from time recalculates
+  automatically: the job's tracked Hours, the mechanics' percentage split,
+  work order totals, and the payroll/Timecard reports. Sessions edited by
+  hand get an "edited" badge; a running session must be stopped before it
+  can be edited. Paid work orders are locked — unpay first.
 - **Shop supply** is a percentage of labor (default 5%, configurable), shown
   as an editable "Shop supply: $" field with a reset (↺) button. It is part
   of the Labor total.

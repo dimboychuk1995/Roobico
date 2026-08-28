@@ -157,6 +157,9 @@
 
   // Сводка времени по строкам (wo_time_logs) — заполняется в applyTrackedTime.
   let woTimeSummaryMap = {};
+  // Право на правку фактических часов (work_orders.edit_time_logs) —
+  // проставляется в init из woPermissionsData.
+  let canEditTimeLogs = false;
 
   function fmtTrackedShort(seconds) {
     const s = Math.max(0, Math.floor(Number(seconds) || 0));
@@ -192,10 +195,14 @@
         })
         .join(", ");
       const runningNames = runningUsers.map((u) => u.user_name || "—").join(", ");
+      const editHoursBtn = (canEditTimeLogs && (bucket.completed_seconds > 0 || runningUsers.length))
+        ? ` <button type="button" class="btn btn-link btn-sm p-0 align-baseline laborTimeEditBtn" title="Edit mechanic hours"><i class="bi bi-pencil-square"></i></button>`
+        : "";
       summaryEl.innerHTML =
         `Mechanics: <strong>${fmtTrackedShort(bucket.total_seconds)}</strong>` +
         (perUser ? ` — ${perUser}` : "") +
-        (runningNames ? ` <span class="text-danger">&#9679; ${escText(runningNames)} working</span>` : "");
+        (runningNames ? ` <span class="text-danger">&#9679; ${escText(runningNames)} working</span>` : "") +
+        editHoursBtn;
       if (assignBtn) assignBtn.style.display = "none";
       return;
     }
@@ -2660,6 +2667,7 @@
     const salesTaxData = readJsonScript("salesTaxData", { rate: 0, zip_code: "" });
     const coreChargeData = readJsonScript("coreChargeDefaultData", { enabled: true });
     const totalsSnapshot = readJsonScript("workOrderInitialTotalsData", {});
+    canEditTimeLogs = !!readJsonScript("woPermissionsData", {}).edit_time_logs;
 
     const shopSupplyPct = toNum(shopSupplyData?.percentage ?? shopSupplyData) || 0;
     currentSalesTaxRate = Math.max(0, toNum(salesTaxData?.rate) || 0);
@@ -3630,6 +3638,244 @@
       if (addPresetModalEl && window.bootstrap && window.bootstrap.Modal) {
         const modal = window.bootstrap.Modal.getInstance(addPresetModalEl);
         if (modal) modal.hide();
+      }
+    });
+
+    // ── Transfer WO на другого клиента ──
+    const transferWoModalEl = $("transferWoModal");
+    const transferCustomerSelect = $("transferCustomerSelect");
+    const transferWoSubmitBtn = $("transferWoSubmitBtn");
+
+    function populateTransferCustomers() {
+      if (!transferCustomerSelect || !customerSel) return;
+      const currentId = String(customerSel.value || "");
+      transferCustomerSelect.innerHTML = '<option value=""></option>';
+      Array.from(customerSel.options).forEach((opt) => {
+        if (!opt.value || opt.value === currentId) return;
+        const clone = document.createElement("option");
+        clone.value = opt.value;
+        clone.textContent = opt.textContent;
+        transferCustomerSelect.appendChild(clone);
+      });
+    }
+
+    transferWoModalEl?.addEventListener("show.bs.modal", function () {
+      populateTransferCustomers();
+      if (transferWoSubmitBtn) transferWoSubmitBtn.disabled = true;
+      if (hasSelect2()) {
+        const $sel = window.jQuery(transferCustomerSelect);
+        try { $sel.select2("destroy"); } catch {}
+        $sel.select2({
+          placeholder: "Search customer...",
+          allowClear: true,
+          width: "100%",
+          dropdownParent: window.jQuery(transferWoModalEl),
+        });
+        $sel.off(".woTransfer").on("change.woTransfer", function () {
+          if (transferWoSubmitBtn) transferWoSubmitBtn.disabled = !transferCustomerSelect.value;
+        });
+      } else {
+        transferCustomerSelect?.addEventListener("change", function () {
+          if (transferWoSubmitBtn) transferWoSubmitBtn.disabled = !transferCustomerSelect.value;
+        });
+      }
+    });
+
+    transferWoSubmitBtn?.addEventListener("click", async function () {
+      const targetId = String(transferCustomerSelect?.value || "").trim();
+      if (!targetId || !workOrderId) return;
+
+      const targetLabel = transferCustomerSelect.selectedOptions?.[0]?.textContent || "the selected customer";
+      const confirmed = window.appConfirm
+        ? await window.appConfirm(`Transfer this work order (and its unit) to ${targetLabel.trim()}?`)
+        : window.confirm(`Transfer this work order (and its unit) to ${targetLabel.trim()}?`);
+      if (!confirmed) return;
+
+      transferWoSubmitBtn.disabled = true;
+      try {
+        const res = await fetch(`/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/transfer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify({ customer_id: targetId }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data || !data.ok) {
+          throw new Error((data && data.error) || "Transfer failed");
+        }
+        toast("Work order transferred", "success");
+        window.location.reload();
+      } catch (err) {
+        toast(err.message || "Transfer failed", "error");
+        transferWoSubmitBtn.disabled = false;
+      }
+    });
+
+    // ── Правка фактических часов механиков (work_orders.edit_time_logs) ──
+    const woTimeLogsModalEl = $("woTimeLogsModal");
+    const woTimeLogsBody = $("woTimeLogsBody");
+    const woTimeLogsSaveBtn = $("woTimeLogsSaveBtn");
+    const woTimeLogsLaborLabel = $("woTimeLogsLaborLabel");
+    let timeLogsLaborId = "";
+
+    function fmtSessionStart(iso) {
+      if (!iso) return "-";
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return "-";
+      return new Intl.DateTimeFormat("en-US", {
+        timeZone: APP_TIMEZONE,
+        month: "2-digit", day: "2-digit", year: "numeric",
+        hour: "2-digit", minute: "2-digit",
+      }).format(d);
+    }
+
+    function renderTimeLogRows(sessions) {
+      if (!woTimeLogsBody) return;
+      const escText = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => (
+        { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+      ));
+      if (!sessions.length) {
+        woTimeLogsBody.innerHTML = `<tr><td colspan="4" class="text-center text-muted small py-3">No time sessions on this labor line yet.</td></tr>`;
+        return;
+      }
+      woTimeLogsBody.innerHTML = sessions.map((s) => {
+        if (s.running) {
+          return `<tr>
+            <td>${escText(s.user_name || "—")}</td>
+            <td class="small">${escText(fmtSessionStart(s.started_at))}</td>
+            <td colspan="2"><span class="badge text-bg-danger">Running</span>
+              <span class="text-muted small ms-1">stop the timer to edit</span></td>
+          </tr>`;
+        }
+        const secs = Math.max(0, Number(s.seconds) || 0);
+        const h = Math.floor(secs / 3600);
+        const m = Math.round((secs % 3600) / 60);
+        return `<tr data-log-id="${escText(s.id)}" data-orig-seconds="${secs}">
+          <td>${escText(s.user_name || "—")}${s.edited ? ' <span class="badge text-bg-warning ms-1" title="Duration was edited manually">edited</span>' : ""}</td>
+          <td class="small">${escText(fmtSessionStart(s.started_at))}</td>
+          <td>
+            <div class="d-flex align-items-center gap-1">
+              <input type="number" class="form-control form-control-sm text-end wo-time-log-hours" min="0" step="1" value="${h}" style="width:70px;"> <span class="small text-muted">h</span>
+              <input type="number" class="form-control form-control-sm text-end wo-time-log-minutes" min="0" max="59" step="1" value="${m}" style="width:70px;"> <span class="small text-muted">m</span>
+            </div>
+          </td>
+          <td class="text-end">
+            <button type="button" class="btn btn-sm btn-outline-danger woTimeLogDeleteBtn" title="Delete this session">&times;</button>
+          </td>
+        </tr>`;
+      }).join("");
+    }
+
+    async function loadTimeLogs() {
+      if (!workOrderId || !timeLogsLaborId) return;
+      const res = await fetch(
+        `/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/time_logs?labor_id=${encodeURIComponent(timeLogsLaborId)}`,
+        { headers: { "Accept": "application/json" } }
+      );
+      const data = await res.json();
+      if (!res.ok || !data || !data.ok) {
+        throw new Error((data && data.error) || "Failed to load time sessions");
+      }
+      renderTimeLogRows(data.sessions || []);
+    }
+
+    blocksContainer.addEventListener("click", async function (e) {
+      const btn = e.target.closest(".laborTimeEditBtn");
+      if (!btn) return;
+      e.preventDefault();
+
+      const blockEl = btn.closest(".wo-labor");
+      timeLogsLaborId = String(blockEl?.dataset.laborId || "");
+      if (!timeLogsLaborId || !woTimeLogsModalEl) return;
+
+      if (woTimeLogsLaborLabel) {
+        const desc = String(blockEl.querySelector(".labor-description")?.value || "").trim();
+        woTimeLogsLaborLabel.textContent = desc ? `— ${desc}` : "";
+      }
+
+      try {
+        await loadTimeLogs();
+      } catch (err) {
+        toast(err.message || "Failed to load time sessions", "error");
+        return;
+      }
+      if (window.bootstrap && window.bootstrap.Modal) {
+        window.bootstrap.Modal.getOrCreateInstance(woTimeLogsModalEl).show();
+      }
+    });
+
+    woTimeLogsBody?.addEventListener("click", async function (e) {
+      const delBtn = e.target.closest(".woTimeLogDeleteBtn");
+      if (!delBtn) return;
+      const tr = delBtn.closest("tr");
+      const logId = String(tr?.dataset.logId || "");
+      if (!logId) return;
+
+      const confirmed = window.appConfirm
+        ? await window.appConfirm("Delete this time session? The mechanic's tracked hours will decrease.")
+        : window.confirm("Delete this time session? The mechanic's tracked hours will decrease.");
+      if (!confirmed) return;
+
+      delBtn.disabled = true;
+      try {
+        const res = await fetch(`/work_orders/api/time_logs/${encodeURIComponent(logId)}/delete`, {
+          method: "POST",
+          headers: { "Accept": "application/json" },
+        });
+        const data = await res.json();
+        if (!res.ok || !data || !data.ok) {
+          throw new Error((data && data.error) || "Failed to delete session");
+        }
+        await loadTimeLogs();
+        toast("Session deleted", "success");
+      } catch (err) {
+        toast(err.message || "Failed to delete session", "error");
+        delBtn.disabled = false;
+      }
+    });
+
+    woTimeLogsSaveBtn?.addEventListener("click", async function () {
+      if (!woTimeLogsBody) return;
+      const changes = [];
+      Array.from(woTimeLogsBody.querySelectorAll("tr[data-log-id]")).forEach((tr) => {
+        const h = Math.max(0, parseInt(tr.querySelector(".wo-time-log-hours")?.value || "0", 10) || 0);
+        const m = Math.max(0, parseInt(tr.querySelector(".wo-time-log-minutes")?.value || "0", 10) || 0);
+        const seconds = h * 3600 + m * 60;
+        const orig = parseInt(tr.dataset.origSeconds || "0", 10) || 0;
+        // Сохранённая длительность держит и секунды исходной сессии —
+        // сравниваем в минутах, чтобы не слать «правки» от одного округления.
+        if (Math.round(seconds / 60) === Math.round(orig / 60)) return;
+        changes.push({ id: String(tr.dataset.logId || ""), seconds });
+      });
+
+      if (!changes.length) {
+        toast("Nothing changed", "info");
+        return;
+      }
+      if (changes.some((c) => c.seconds <= 0)) {
+        toast("Duration must be greater than 0 — use the delete button to remove a session.", "warning");
+        return;
+      }
+
+      woTimeLogsSaveBtn.disabled = true;
+      try {
+        for (const change of changes) {
+          const res = await fetch(`/work_orders/api/time_logs/${encodeURIComponent(change.id)}/update`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Accept": "application/json" },
+            body: JSON.stringify({ seconds: change.seconds }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data || !data.ok) {
+            throw new Error((data && data.error) || "Failed to update session");
+          }
+        }
+        toast("Hours updated", "success");
+        // Производные поля WO (часы, назначения, totals) пересчитаны на
+        // сервере — перезагружаем страницу, чтобы показать свежие данные.
+        window.location.reload();
+      } catch (err) {
+        toast(err.message || "Failed to update hours", "error");
+        woTimeLogsSaveBtn.disabled = false;
       }
     });
 
