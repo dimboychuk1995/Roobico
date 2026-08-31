@@ -177,7 +177,7 @@
       <td width="35%">
         <table class="wo-box" cellpadding="0" cellspacing="0">
           <tr>
-            <td class="lbl">Work Order:</td>
+            <td class="lbl">{{ doc_type_label or 'Work Order' }}:</td>
             <td class="val">{{ wo_number }}</td>
           </tr>
           {% if wo_date_label %}
@@ -242,6 +242,9 @@
         <td>Labor</td>
         <td>
           {{ labor.labor_desc }}
+          {% if labor.issue_description %}
+          <span class="labor-note" style="font-style: italic;">Reported issue: {{ labor.issue_description }}</span>
+          {% endif %}
           {% if (labor.hours and pdf_cfg.get('show_labor_hours', true)) or (labor.rate_code and pdf_cfg.get('show_labor_rate', true)) %}
           <span class="labor-note">
             {% if labor.hours and pdf_cfg.get('show_labor_hours', true) %}Hours: {{ labor.hours }}{% endif %}

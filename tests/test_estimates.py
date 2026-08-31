@@ -161,6 +161,65 @@ def test_estimate_rejects_payments(logged_in, env):
     assert env["db"].work_order_payments.count_documents({"work_order_id": wo["_id"]}) == 0
 
 
+def _download_pdf_html(client, wo_id, monkeypatch):
+    """GET download-pdf с перехватом HTML, из которого рендерится PDF."""
+    import app.blueprints.work_orders.routes as wo_routes
+
+    captured = {}
+
+    def fake_render(html):
+        captured["html"] = html
+        return b"%PDF-fake"
+
+    monkeypatch.setattr(wo_routes, "render_html_to_pdf", fake_render)
+    resp = client.get(f"/work_orders/api/work_orders/{wo_id}/download-pdf")
+    assert resp.status_code == 200
+    return resp, captured["html"]
+
+
+def test_estimate_pdf_says_estimate_and_shows_issue(logged_in, env, monkeypatch):
+    """PDF сметы подписан Estimate (не Work Order) и содержит описание
+    проблемы клиента (issue_description) из лейбора."""
+    wo = _create_estimate(logged_in, env)
+
+    labor = _flat_labor()
+    labor["issue_description"] = "Grinding noise when braking"
+    token = get_csrf_token(logged_in)
+    resp = logged_in.post(
+        f"/work_orders/api/work_orders/{wo['_id']}/update",
+        json={"labors": [labor], "totals": {}, "save_status": "estimate"},
+        headers={"X-CSRFToken": token},
+    )
+    assert resp.get_json()["ok"] is True
+
+    resp, html = _download_pdf_html(logged_in, wo["_id"], monkeypatch)
+    assert "Estimate-" in resp.headers["Content-Disposition"]
+    assert "Estimate:" in html
+    assert "Work Order:" not in html
+    assert "Reported issue: Grinding noise when braking" in html
+
+
+def test_wo_pdf_says_work_order_and_shows_issue(logged_in, env, monkeypatch):
+    """После конверсии в WO PDF снова подписан Work Order; described issue
+    печатается и там."""
+    wo = _create_estimate(logged_in, env)
+
+    labor = _flat_labor()
+    labor["issue_description"] = "Check engine light on"
+    token = get_csrf_token(logged_in)
+    resp = logged_in.post(
+        f"/work_orders/api/work_orders/{wo['_id']}/update",
+        json={"labors": [labor], "totals": {}, "save_status": "open"},
+        headers={"X-CSRFToken": token},
+    )
+    assert resp.get_json()["ok"] is True
+
+    resp, html = _download_pdf_html(logged_in, wo["_id"], monkeypatch)
+    assert "WorkOrder-" in resp.headers["Content-Disposition"]
+    assert "Work Order:" in html
+    assert "Reported issue: Check engine light on" in html
+
+
 def test_estimate_authorization_flow(logged_in, env, app, monkeypatch):
     """Смета отправляется клиенту тем же флоу, что WO; аппрув пишет
     authorizations[] — на странице это тот же бейдж Authorized."""

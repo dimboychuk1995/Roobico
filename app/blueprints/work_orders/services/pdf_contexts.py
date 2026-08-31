@@ -105,6 +105,10 @@ def _build_annual_inspection_pdf_context(shop_db, inspection):
 
 def _build_wo_pdf_context(shop_db, shop, wo):
     """Build the template context dict used by work_order_pdf.html."""
+    # Смета печатается тем же шаблоном, но подписывается "Estimate".
+    wo_status = str(wo.get("status") or "open").strip().lower()
+    is_estimate = wo_status in ("estimate", "estimated", "quote", "quoted")
+
     customer = shop_db.customers.find_one({"_id": wo.get("customer_id")}) or {}
     cust_name = customer_label(customer)
     customer_email_val = get_main_contact_email(customer, entity_type="customer")
@@ -256,6 +260,8 @@ def _build_wo_pdf_context(shop_db, shop, wo):
         shop_billing_address=shop_billing_address,
         wo_number=wo_number,
         wo_date_label=wo_date_label,
+        is_estimate=is_estimate,
+        doc_type_label="Estimate" if is_estimate else "Work Order",
         cust_name=cust_name,
         customer_email=customer_email_val,
         customer_phone=customer_phone,

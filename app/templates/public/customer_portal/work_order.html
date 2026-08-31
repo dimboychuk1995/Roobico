@@ -15,7 +15,7 @@
       {% if brand.shop_address %}<div class="shop-meta">{{ brand.shop_address }}</div>{% endif %}
     </div>
     <div class="text-end">
-      <div class="shop-meta">Work Order</div>
+      <div class="shop-meta">{{ ctx.doc_type_label or 'Work Order' }}</div>
       <div class="shop-number">#{{ ctx.wo_number }}</div>
       <div class="shop-meta">{{ ctx.wo_date_label }}</div>
     </div>

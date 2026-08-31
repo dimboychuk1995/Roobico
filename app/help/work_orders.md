@@ -278,7 +278,11 @@ invoices; adjust per-WO amounts if needed and record all at once.
 ## PDF, email, inspections
 
 - **Download PDF** — the invoice PDF (WorkOrder-<number>.pdf). Layout
-  (logo etc.) is configured in Settings → PDF design.
+  (logo etc.) is configured in Settings → PDF design. For an estimate the
+  same document is titled **Estimate** (file Estimate-<number>.pdf) and
+  switches back to Work Order automatically after conversion. If a labor
+  has a **Described Issue** filled in, the PDF prints it under the labor
+  description as "Reported issue: …" — on both work orders and estimates.
 - **Email Work Order** — sends the PDF to chosen customer contacts (you can
   add a new contact on the fly and save it to the customer). The email also
   includes a customer portal link.

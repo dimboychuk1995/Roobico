@@ -791,7 +791,8 @@ def work_order_pdf(token, wo_id):
     pdf_bytes = render_html_to_pdf(pdf_html)
     if not pdf_bytes:
         abort(500)
-    filename = f"WorkOrder-{ctx.get('wo_number') or wo_id}.pdf"
+    doc_prefix = "Estimate" if ctx.get("is_estimate") else "WorkOrder"
+    filename = f"{doc_prefix}-{ctx.get('wo_number') or wo_id}.pdf"
     return send_file(
         io.BytesIO(pdf_bytes),
         mimetype="application/pdf",

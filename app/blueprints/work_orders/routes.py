@@ -2708,9 +2708,10 @@ def api_download_work_order_pdf(work_order_id):
         return jsonify({"ok": False, "error": "PDF generation failed"}), 500
 
     wo_number = ctx["wo_number"]
+    doc_prefix = "Estimate" if ctx.get("is_estimate") else "WorkOrder"
     resp = make_response(pdf_bytes)
     resp.headers["Content-Type"] = "application/pdf"
-    resp.headers["Content-Disposition"] = f'inline; filename="WorkOrder-{wo_number}.pdf"'
+    resp.headers["Content-Disposition"] = f'inline; filename="{doc_prefix}-{wo_number}.pdf"'
     return resp
 
 
@@ -2770,7 +2771,8 @@ def api_send_work_order_email(work_order_id):
     html_body = render_template("emails/work_order_email.html", **shared_ctx)
     pdf_html = render_template("emails/work_order_pdf.html", **shared_ctx)
 
-    subject = f"Work Order #{wo_number} — {shop_name}" if shop_name else f"Work Order #{wo_number}"
+    doc_label = shared_ctx.get("doc_type_label") or "Work Order"
+    subject = f"{doc_label} #{wo_number} — {shop_name}" if shop_name else f"{doc_label} #{wo_number}"
 
     try:
         pdf_bytes = render_html_to_pdf(pdf_html)
@@ -2779,8 +2781,9 @@ def api_send_work_order_email(work_order_id):
 
     attachments = None
     if pdf_bytes:
+        doc_prefix = "Estimate" if shared_ctx.get("is_estimate") else "WorkOrder"
         attachments = [{
-            "filename": f"WorkOrder-{wo_number}.pdf",
+            "filename": f"{doc_prefix}-{wo_number}.pdf",
             "data": pdf_bytes,
             "content_type": "application/pdf",
         }]
@@ -2967,8 +2970,9 @@ def api_send_authorization_email(work_order_id):
         pdf_html = render_template("emails/work_order_pdf.html", **ctx)
         pdf_bytes = render_html_to_pdf(pdf_html)
         if pdf_bytes:
+            doc_prefix = "Estimate" if ctx.get("is_estimate") else "WorkOrder"
             pdf_attachment = {
-                "filename": f"WorkOrder-{wo_number}.pdf",
+                "filename": f"{doc_prefix}-{wo_number}.pdf",
                 "data": pdf_bytes,
                 "content_type": "application/pdf",
             }
