@@ -2393,7 +2393,8 @@
     // application-level failures. Treat that as an error so callers don't
     // silently report success while nothing was persisted.
     if (data && typeof data === "object" && data.ok === false) {
-      const msg = data.error || data.message || "Request failed.";
+      // message — человекочитаемый текст для toast, error — машинный код.
+      const msg = data.message || data.error || "Request failed.";
       throw new Error(msg);
     }
 
@@ -4793,9 +4794,25 @@
       if (badge) badge.classList.toggle("d-none", !isEst);
       const convItem = document.getElementById("convertEstimateItem");
       if (convItem) convItem.classList.toggle("d-none", !isEst);
+      const toEstItem = document.getElementById("saveAsEstimateItem");
+      if (toEstItem) toEstItem.classList.toggle("d-none", isEst);
       if (isEst && paidBtn) paidBtn.classList.add("d-none");
     }
     applyEstimateUi();
+
+    // Обратная конверсия WO → смета: парты возвращаются на склад.
+    document.getElementById("saveAsEstimateBtn")?.addEventListener("click", async () => {
+      const confirmFn = window.appConfirm
+        ? (m, o) => window.appConfirm(m, o)
+        : (m) => Promise.resolve(window.confirm(m));
+      const ok = await confirmFn(
+        "Save this work order as an estimate? All its parts will be returned to inventory.",
+        { confirmText: "Save as Estimate", icon: "question" }
+      );
+      if (!ok) return;
+      await saveWorkOrderEdits("estimate");
+      if (workOrderStatus === "estimate") window.location.reload();
+    });
 
     document.getElementById("convertEstimateBtn")?.addEventListener("click", async () => {
       const confirmFn = window.appConfirm

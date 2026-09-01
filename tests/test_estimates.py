@@ -87,11 +87,11 @@ def _flat_labor(parts=None):
     }
 
 
-def _update(client, wo_id, save_status):
+def _update(client, wo_id, save_status, totals=None):
     token = get_csrf_token(client)
     return client.post(
         f"/work_orders/api/work_orders/{wo_id}/update",
-        json={"labors": [_flat_labor()], "totals": {}, "save_status": save_status},
+        json={"labors": [_flat_labor()], "totals": totals or {}, "save_status": save_status},
         headers={"X-CSRFToken": token},
     )
 
@@ -136,14 +136,51 @@ def test_convert_estimate_deducts_stock(logged_in, env):
     assert len(fresh.get("inventory_deductions") or []) == 1
 
 
-def test_normal_wo_cannot_become_estimate(logged_in, env):
+def test_wo_converts_back_to_estimate_and_restores_stock(logged_in, env):
+    """Обратная конверсия WO → estimate: статус меняется, парты
+    возвращаются на склад, флаги списания сбрасываются."""
     wo = _create_estimate(logged_in, env)
-    _update(logged_in, wo["_id"], "open")          # конверсия (склад 8)
-    resp = _update(logged_in, wo["_id"], "estimate")  # попытка обратно
+    _update(logged_in, wo["_id"], "open")             # конверсия (склад 8)
+    assert _stock(env) == 8
+
+    resp = _update(logged_in, wo["_id"], "estimate")  # обратно в смету
     data = resp.get_json()
-    assert data["ok"] is True
+    assert data["ok"] is True, data
+    assert data["status"] == "estimate"
     fresh = env["db"].work_orders.find_one({"_id": wo["_id"]})
-    assert fresh["status"] == "open", "обратной конверсии WO → estimate нет"
+    assert fresh["status"] == "estimate"
+    assert fresh.get("inventory_deducted") is False
+    assert fresh.get("inventory_deductions") == []
+    assert _stock(env) == 10, "парты вернулись на склад"
+
+    # Повторная конверсия в WO снова списывает склад — цикл работает.
+    resp = _update(logged_in, wo["_id"], "open")
+    assert resp.get_json()["ok"] is True
+    assert _stock(env) == 8
+
+
+def test_wo_with_payments_cannot_become_estimate(logged_in, env):
+    wo = _create_estimate(logged_in, env)
+    # Реальные totals, чтобы платёж $10 был частичным и WO не стал paid.
+    _update(logged_in, wo["_id"], "open", totals={
+        "labor_total": 100, "parts_total": 10, "grand_total": 110,
+        "labors": [{"labor": 100, "labor_total": 100,
+                    "parts_total": 10, "labor_full_total": 110}],
+    })
+    token = get_csrf_token(logged_in)
+    resp = logged_in.post(
+        f"/work_orders/api/work_orders/{wo['_id']}/payment",
+        json={"amount": 10, "payment_method": "cash"},
+        headers={"X-CSRFToken": token},
+    )
+    assert resp.get_json()["ok"] is True
+
+    resp = _update(logged_in, wo["_id"], "estimate")
+    data = resp.get_json()
+    assert data["ok"] is False
+    assert data["error"] == "wo_has_payments_cannot_become_estimate"
+    fresh = env["db"].work_orders.find_one({"_id": wo["_id"]})
+    assert fresh["status"] == "open", "WO с платежами остаётся WO"
     assert _stock(env) == 8, "склад не двинулся"
 
 

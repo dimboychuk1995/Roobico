@@ -50,9 +50,14 @@ editing.
 **Overpayment / deposit.** Recording more than the balance is blocked, on
 work orders and vendor orders alike. There is no deposit/credit feature.
 
-**Estimates.** The Estimates tabs list work orders in an estimate/quote
-status, but the current UI has no button to create one — treat an unpaid WO
-as your quote, or ask support about the estimates workflow.
+**Estimates.** Create a quote via Create Work Order dropdown → "Save as
+Estimate" — it lives on the Estimates tab, takes no parts from stock and
+cannot receive payments. Send it for customer approval like a WO (same
+email + PDF, titled Estimate). When the job is approved, open it and use
+Save dropdown → "Convert to Work Order" (parts are deducted at that
+moment). The reverse works too: on an unpaid WO, Save dropdown → "Save as
+Estimate" returns its parts to inventory and turns it back into a quote;
+WOs with recorded payments must have the payments deleted first.
 
 ## Parts & inventory
 

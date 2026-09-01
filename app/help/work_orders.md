@@ -97,7 +97,12 @@ cannot be transferred; unpay first.
   open estimate shows an **Estimate** badge on its page; a plain Save keeps
   it an estimate. **Convert to Work Order** (Save dropdown) turns it into a
   normal open WO — at that moment all its parts are deducted from stock and
-  core tracking starts. There is no reverse conversion.
+  core tracking starts. The reverse also works: on a normal (unpaid) work
+  order the Save dropdown has **Save as Estimate** — the WO becomes an
+  estimate, all its parts are returned to inventory and pending cores are
+  removed. A work order with recorded payments cannot become an estimate —
+  delete its payments first. You can convert back and forth as many times
+  as needed; stock moves accordingly each time.
 - **Estimates can be sent for customer approval** exactly like a WO: the
   same "Send for approval" flow, the same email with the PDF, and the same
   green **✓ Authorized** badge when the customer approves — approval does

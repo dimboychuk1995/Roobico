@@ -601,6 +601,9 @@
               <ul class="dropdown-menu dropdown-menu-end">
                 <li><button type="button" class="dropdown-item" id="saveInProgressWorkOrderBtn">Save In Progress</button></li>
                 <li><button type="button" class="dropdown-item" id="saveAnnualInspectionMenuBtn">Create Annual Inspection</button></li>
+                <li id="saveAsEstimateItem" class="{% if work_order_status == 'estimate' %}d-none{% endif %}">
+                  <button type="button" class="dropdown-item" id="saveAsEstimateBtn">Save as Estimate</button>
+                </li>
                 <li id="convertEstimateItem" class="{% if work_order_status != 'estimate' %}d-none{% endif %}">
                   <button type="button" class="dropdown-item" id="convertEstimateBtn">Convert to Work Order</button>
                 </li>

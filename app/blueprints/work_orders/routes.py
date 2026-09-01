@@ -1670,12 +1670,18 @@ def api_work_order_update(work_order_id):
     user_id = current_user_id()
 
     # Статусный контекст: estimate живёт без движения склада. Смета остаётся
-    # сметой, пока явно не конвертирована (save_status open/in_progress);
-    # обратной конверсии WO → estimate нет.
+    # сметой, пока явно не конвертирована (save_status open/in_progress).
+    # Обратная конверсия WO → estimate возвращает парты на склад и снимает
+    # ожидающие коры; возможна только пока по WO нет платежей.
     was_estimate = (wo.get("status") or "open") == "estimate"
     save_status = enforce_mechanic_status((data.get("save_status") or "").strip().lower())
-    if save_status == "estimate" and not was_estimate:
-        save_status = ""  # обычный WO нельзя превратить в смету
+    converting_to_estimate = save_status == "estimate" and not was_estimate
+    if converting_to_estimate and _sum_active_work_order_payments(shop_db, wo_id) > 0:
+        return jsonify({
+            "ok": False,
+            "error": "wo_has_payments_cannot_become_estimate",
+            "message": "This work order has recorded payments — an estimate cannot have payments. Delete the payments first.",
+        }), 200
     converting_estimate = was_estimate and save_status in ("open", "in_progress")
     stays_estimate = was_estimate and not converting_estimate
 
@@ -1685,7 +1691,18 @@ def api_work_order_update(work_order_id):
     # blocking the save here prevents users from editing WOs that contain
     # one-off / legacy / preset parts not present in the inventory catalog.
     old_labors = wo.get("labors") or []
-    if stays_estimate:
+    if converting_to_estimate:
+        # WO → смета: возвращаем на склад всё, что было в WO; дальше склад
+        # не трогается, пока смету не конвертируют обратно.
+        restore = restore_parts_to_inventory(
+            shop_db, old_labors, user_id,
+            ref={"kind": "work_order", "id": wo["_id"], "label": str(wo.get("wo_number") or "")},
+        )
+        inventory_adjustment = {
+            "adjusted": restore.get("restored") or [],
+            "errors": restore.get("errors") or [],
+        }
+    elif stays_estimate:
         # Смета: склад не трогался и не трогается.
         inventory_adjustment = {"adjusted": [], "errors": []}
     elif converting_estimate:
@@ -1725,7 +1742,10 @@ def api_work_order_update(work_order_id):
             except Exception:
                 pass  # Silently ignore mileage update errors
 
-    if stays_estimate:
+    if converting_to_estimate:
+        # У сметы нет коров — снимаем всё, что числилось за WO.
+        core_sync = sync_work_order_cores(shop_db, shop, old_labors, [], user_id)
+    elif stays_estimate:
         core_sync = {"changes": []}
     elif converting_estimate:
         core_sync = sync_work_order_cores(shop_db, shop, [], labors, user_id)
@@ -1749,12 +1769,17 @@ def api_work_order_update(work_order_id):
     if converting_estimate:
         set_fields["inventory_deducted"] = len(inventory_adjustment.get("deducted") or []) > 0
         set_fields["inventory_deductions"] = inventory_adjustment.get("deducted") or []
+    elif converting_to_estimate:
+        set_fields["inventory_deducted"] = False
+        set_fields["inventory_deductions"] = []
 
-    # ✅ Optional explicit status transition: "open" (completed) / "in_progress";
-    # смета может остаться сметой (save_status="estimate" при was_estimate).
+    # ✅ Optional explicit status transition: "open" (completed) / "in_progress" /
+    # "estimate" (смета остаётся сметой, либо WO → estimate без платежей).
     # В механик-режиме статус форсится в in_progress независимо от клиента.
     if save_status in ("open", "in_progress"):
         set_fields["status"] = save_status
+    elif converting_to_estimate:
+        set_fields["status"] = "estimate"
 
     shop_db.work_orders.update_one(
         {"_id": wo_id},
