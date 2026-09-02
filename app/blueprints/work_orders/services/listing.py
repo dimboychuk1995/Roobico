@@ -193,7 +193,8 @@ def get_work_orders_list(
     )
 
     # Тоталы считаем ДО исключения in-work строк: сводка за период должна
-    # включать и те WO, что вынесены в закреплённую группу сверху.
+    # включать и те WO, что вынесены в закреплённую группу сверху (если они
+    # попадают в выбранный диапазон дат; сама группа In Work даты игнорирует).
     totals_summary = get_work_orders_totals(shop_db, query)
 
     if exclude_in_work:
@@ -233,21 +234,18 @@ def get_in_work_orders(
     shop_id: ObjectId,
     q: str = "",
     paid_status: str = "all",
-    created_from=None,
-    created_to_exclusive=None,
 ):
     """
     WO, которые механики взяли в работу и ещё не отметили «done» — верхняя
-    выделенная группа списка. Уважает те же фильтры (поиск/даты/статус),
-    что и основной список; без пагинации — таких WO единицы.
+    выделенная группа списка. Уважает поиск и статус-фильтр, но НЕ фильтр
+    дат: то, что сейчас в работе на полу цеха, видно всегда, даже если WO
+    старше выбранного диапазона. Без пагинации — таких WO единицы.
     """
     base_query = _build_work_orders_query(
         shop_db,
         shop_id,
         q=q,
         paid_status=paid_status,
-        created_from=created_from,
-        created_to_exclusive=created_to_exclusive,
     )
     rows = list(
         shop_db.work_orders.find({"$and": [base_query, IN_WORK_FILTER]})

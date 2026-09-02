@@ -448,13 +448,12 @@ def work_orders_page():
         created_to_exclusive=created_to_exclusive,
         exclude_in_work=True,
     )
+    # Группа In Work — без фильтра дат: текущая работа цеха видна всегда.
     in_work_orders = get_in_work_orders(
         shop_db,
         shop["_id"],
         q=q,
         paid_status=paid_status,
-        created_from=created_from,
-        created_to_exclusive=created_to_exclusive,
     )
 
     return _render_app_page(

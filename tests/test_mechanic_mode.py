@@ -1035,6 +1035,16 @@ def test_in_work_block_only_taken_not_done(client, mech_seed, mongo):
     d1_number = shop_db.work_orders.find_one({"_id": ObjectId(d1["id"])})["wo_number"]
     assert html.count(f'>{d1_number}</span>') == 1
 
+    # Группа In Work игнорирует фильтр дат: WO с датой далеко в прошлом
+    # всё равно виден, какой бы диапазон ни был выбран.
+    from datetime import datetime, timezone
+    shop_db.work_orders.update_one(
+        {"_id": ObjectId(d1["id"])},
+        {"$set": {"work_order_date": datetime(2020, 1, 1, tzinfo=timezone.utc)}},
+    )
+    html = client.get("/work_orders?date_preset=today").get_data(as_text=True)
+    assert html.count(f'>{d1_number}</span>') == 1, "in-work WO виден вне диапазона дат"
+
     _deactivate_wos(mongo, d1["id"], d2["id"])
 
 

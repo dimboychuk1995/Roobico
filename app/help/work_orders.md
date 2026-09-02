@@ -22,7 +22,11 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
   yet are grouped at the top of the table under an "In Work · taken by
   mechanics, not marked done yet" header, highlighted with the in-progress
   color, so the shop floor status is visible at a glance. They are not
-  duplicated below — each WO appears once.
+  duplicated below — each WO appears once. The group **ignores the date
+  filter**: whatever range is selected, everything currently in work is
+  always shown, even a WO dated weeks ago (search and the paid-status
+  dropdown still apply). Note the footer totals still follow the selected
+  date range, so an old in-work WO shown on top may not be counted there.
 - **The list is live** — no manual refresh needed. Every few seconds the
   page checks the server and reloads itself when anything changes: a
   mechanic starts or stops a timer (the green "● working" names and the
