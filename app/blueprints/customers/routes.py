@@ -1485,6 +1485,13 @@ def customers_deactivate(customer_id):
         flash("Customer not found.", "error")
         return redirect(url_for("customers.customers_page"))
 
+    # "NEW Customer" — системный клиент для юнитов, отсканированных
+    # механиком по VIN до выбора компании. Деактивировать его нельзя.
+    if existing.get("is_system"):
+        flash("This is a system customer used for VIN-scanned units — it cannot be deactivated. "
+              "Move its units to real customers instead.", "error")
+        return redirect(url_for("customers.customer_details_page", customer_id=str(cid)))
+
     if existing.get("is_active") is False:
         flash("Customer is already deactivated.", "info")
         return redirect(url_for("customers.customers_page"))
@@ -1749,6 +1756,11 @@ def customers_api_deactivate(customer_id):
     customer = coll.find_one({"_id": cid, "shop_id": shop["_id"]})
     if not customer:
         return jsonify({"ok": False, "error": "Customer not found"}), 404
+
+    # Системный "NEW Customer" (VIN-сканы механиков) не деактивируется.
+    if customer.get("is_system"):
+        return jsonify({"ok": False,
+                        "error": "This is a system customer used for VIN-scanned units — it cannot be deactivated."}), 400
 
     if customer.get("is_active") is False:
         return jsonify({"ok": False, "error": "Customer is already deactivated"}), 400

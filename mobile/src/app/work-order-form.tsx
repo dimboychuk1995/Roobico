@@ -22,6 +22,7 @@ import { Field, SubmitButton } from "@/components/form";
 import { LaborTimer } from "@/components/labor-timer";
 import { SearchPickerModal } from "@/components/search-picker";
 import { Badge, RowCard } from "@/components/ui";
+import { VinScannerModal } from "@/components/vin-scanner";
 import { WoAuthorizationModal } from "@/components/wo-authorization-modal";
 import { useIsMechanic } from "@/context/auth";
 import { useToast } from "@/context/toast";
@@ -33,6 +34,7 @@ import {
   PartSearchItem,
   PresetListItem,
   TimerResponse,
+  VinMatch,
   WoFormLabor,
   WoFormPart,
   createWorkOrder,
@@ -51,6 +53,7 @@ import {
   money,
   parseHandwrittenWo,
   polishIssueText,
+  resolveVin,
   searchParts,
 } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
@@ -89,6 +92,10 @@ export default function WorkOrderFormScreen() {
 
   const [customerModal, setCustomerModal] = useState(false);
   const [unitModal, setUnitModal] = useState(false);
+  const [vinScannerOpen, setVinScannerOpen] = useState(false);
+  const [vinBusy, setVinBusy] = useState(false);
+  // VIN найден на нескольких компаниях — механик выбирает, какую поставить.
+  const [vinChoices, setVinChoices] = useState<VinMatch[] | null>(null);
   const [partModalLabor, setPartModalLabor] = useState<number | null>(null);
   const [presetModal, setPresetModal] = useState(false);
   // Issue description свёрнуто по умолчанию — раскрывается по кнопке.
@@ -327,6 +334,41 @@ export default function WorkOrderFormScreen() {
       setUnits(await loadUnitsForCustomer(c.id));
     } catch {
       setUnits([]);
+    }
+  };
+
+  // ── VIN-скан: юнит+клиент подставляются по отсканированному VIN ───
+  const applyVinMatch = async (m: VinMatch) => {
+    setVinChoices(null);
+    setCustomer({ id: m.customer_id, label: m.customer_label });
+    setUnit({ id: m.unit_id, label: m.unit_label });
+    try {
+      setUnits(await loadUnitsForCustomer(m.customer_id));
+    } catch {
+      setUnits([]);
+    }
+  };
+
+  const onVinScanned = async (vin: string) => {
+    setVinScannerOpen(false);
+    setVinBusy(true);
+    try {
+      const res = await resolveVin(vin);
+      if (res.created) {
+        // Юнита не было — создан автоматически под системным "NEW Customer";
+        // офис позже перевесит его на настоящую компанию (Transfer на WO).
+        toast.show(`VIN ${vin}: new unit created under "${res.matches[0].customer_label}".`, "success");
+        await applyVinMatch(res.matches[0]);
+      } else if (res.matches.length === 1) {
+        toast.show(`VIN ${vin}: ${res.matches[0].unit_label} — ${res.matches[0].customer_label}.`, "success");
+        await applyVinMatch(res.matches[0]);
+      } else {
+        setVinChoices(res.matches);
+      }
+    } catch (e) {
+      toast.show(e instanceof ApiError ? e.message : "VIN lookup failed.", "error");
+    } finally {
+      setVinBusy(false);
     }
   };
 
@@ -761,6 +803,24 @@ export default function WorkOrderFormScreen() {
 
         {/* Клиент и юнит */}
         <Text style={[styles.sectionTitle, { color: theme.muted }]}>CUSTOMER & UNIT</Text>
+        {!isEdit ? (
+          <Pressable
+            style={[styles.scanVinBtn, { borderColor: theme.primary, backgroundColor: theme.surface }]}
+            onPress={() => setVinScannerOpen(true)}
+            disabled={vinBusy}
+          >
+            {vinBusy ? (
+              <ActivityIndicator size="small" color={theme.primary} />
+            ) : (
+              <>
+                <Ionicons name="barcode-outline" size={20} color={theme.primary} />
+                <Text style={{ color: theme.primary, fontWeight: "700", fontSize: 15 }}>
+                  Scan VIN — barcode or text
+                </Text>
+              </>
+            )}
+          </Pressable>
+        ) : null}
         <Pressable
           style={pickerStyle}
           onPress={() => !isEdit && setCustomerModal(true)}
@@ -1212,7 +1272,59 @@ export default function WorkOrderFormScreen() {
       />
       <PickPartModal visible={partModalLabor !== null} onClose={() => setPartModalLabor(null)} onPick={addPart} />
       <PickPresetModal visible={presetModal} onClose={() => setPresetModal(false)} onPick={applyPreset} />
+      <VinScannerModal
+        visible={vinScannerOpen}
+        onClose={() => setVinScannerOpen(false)}
+        onVin={onVinScanned}
+      />
+      <VinCompanyChoiceModal
+        matches={vinChoices}
+        onClose={() => setVinChoices(null)}
+        onPick={applyVinMatch}
+      />
     </KeyboardAvoidingView>
+  );
+}
+
+// VIN активен на нескольких компаниях — механик выбирает нужную.
+function VinCompanyChoiceModal({
+  matches,
+  onClose,
+  onPick,
+}: {
+  matches: VinMatch[] | null;
+  onClose: () => void;
+  onPick: (m: VinMatch) => void;
+}) {
+  const theme = useTheme();
+  return (
+    <Modal visible={!!matches} animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.choiceBackdrop}>
+        <View style={[styles.choiceSheet, { backgroundColor: theme.bg, borderColor: theme.border }]}>
+          <View style={styles.modalHeader}>
+            <Text style={{ color: theme.text, fontSize: 16, fontWeight: "800" }}>
+              This unit is on several companies
+            </Text>
+            <Pressable onPress={onClose} hitSlop={8}>
+              <Ionicons name="close" size={24} color={theme.muted} />
+            </Pressable>
+          </View>
+          <Text style={{ color: theme.muted, fontSize: 13, paddingHorizontal: 16, marginBottom: 6 }}>
+            Pick the company this work order belongs to:
+          </Text>
+          {(matches || []).map((m) => (
+            <Pressable
+              key={m.unit_id}
+              style={[styles.modalItem, { borderBottomColor: theme.border }]}
+              onPress={() => onPick(m)}
+            >
+              <Text style={{ color: theme.text, fontSize: 15, fontWeight: "700" }}>{m.customer_label}</Text>
+              <Text style={{ color: theme.muted, fontSize: 13, marginTop: 2 }}>{m.unit_label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1529,4 +1641,27 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   modalItem: { paddingHorizontal: 16, paddingVertical: 14, borderBottomWidth: 1 },
+  scanVinBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderRadius: 12,
+    paddingVertical: 13,
+    marginTop: 6,
+  },
+  choiceBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  choiceSheet: {
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    borderWidth: 1,
+    paddingTop: 14,
+    paddingBottom: 34,
+  },
 });

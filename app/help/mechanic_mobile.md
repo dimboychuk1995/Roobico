@@ -24,6 +24,24 @@ What a mechanic sees and can do:
   ("What was done..."), add parts by search (quantities only; a non-catalog
   entry becomes "one-time part — manager fills the price"), apply presets
   ("From preset").
+- **Scan VIN** (new WO screen, before picking anything): the
+  **"Scan VIN — barcode or text"** button opens the camera. It reads the
+  VIN **barcode** (door-jamb sticker, dashboard plate — Code 39/128,
+  DataMatrix, QR) live, or — if there is no barcode — tap **"Read VIN
+  text"** to photograph the VIN characters and AI reads them. What happens
+  next:
+  - the VIN belongs to an existing unit → the customer AND unit are filled
+    in automatically and the work order starts right away;
+  - the same VIN is active on **several companies** → the app asks which
+    company this job is for;
+  - the VIN is **not in the system** → a new unit is created automatically
+    under the technical customer **"NEW Customer"** (make/model/year are
+    decoded from the VIN via NHTSA) and the WO starts on it. The office
+    later moves the WO to the real company with the **Transfer** button on
+    the WO page — the unit follows automatically. "NEW Customer" is created
+    per shop on first scan and **cannot be deactivated**.
+  The same scanner is available on the **New unit** form (barcode icon next
+  to the VIN field) — it fills the VIN and decodes Year/Make/Model/Type.
 - Mechanics' saves are always **In Progress** — a mechanic can never mark a
   WO complete, open or paid, and paid WOs are locked entirely. On mobile
   there is no separate "view" screen or Save button for mechanics: opening a

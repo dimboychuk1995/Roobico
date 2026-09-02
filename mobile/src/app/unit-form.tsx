@@ -11,7 +11,10 @@ import {
   View,
 } from "react-native";
 
+import Ionicons from "@expo/vector-icons/Ionicons";
+
 import { Field, SubmitButton } from "@/components/form";
+import { VinScannerModal } from "@/components/vin-scanner";
 import { useToast } from "@/context/toast";
 import {
   ApiError,
@@ -32,6 +35,7 @@ export default function UnitFormScreen() {
   const [loading, setLoading] = useState(isEdit);
   const [busy, setBusy] = useState(false);
   const [vinBusy, setVinBusy] = useState(false);
+  const [scannerOpen, setScannerOpen] = useState(false);
 
   const [unitNumber, setUnitNumber] = useState("");
   const [vin, setVin] = useState("");
@@ -60,8 +64,8 @@ export default function UnitFormScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  const onDecodeVin = async () => {
-    const v = vin.trim().toUpperCase();
+  const onDecodeVin = async (vinOverride?: string) => {
+    const v = (vinOverride || vin).trim().toUpperCase();
     if (v.length !== 17) {
       toast.show("VIN must be exactly 17 characters.", "error");
       return;
@@ -152,7 +156,14 @@ export default function UnitFormScreen() {
           </View>
           <Pressable
             style={[styles.vinBtn, { backgroundColor: theme.primary, opacity: vinBusy ? 0.7 : 1 }]}
-            onPress={onDecodeVin}
+            onPress={() => setScannerOpen(true)}
+            disabled={vinBusy}
+          >
+            <Ionicons name="barcode-outline" size={18} color="#fff" />
+          </Pressable>
+          <Pressable
+            style={[styles.vinBtn, { backgroundColor: theme.primary, opacity: vinBusy ? 0.7 : 1 }]}
+            onPress={() => onDecodeVin()}
             disabled={vinBusy}
           >
             {vinBusy ? (
@@ -171,6 +182,17 @@ export default function UnitFormScreen() {
 
         <SubmitButton title={isEdit ? "Save changes" : "Create unit"} onPress={onSubmit} busy={busy} />
       </ScrollView>
+
+      {/* Скан VIN: баркод или фото таблички → поле VIN + автодекод NHTSA. */}
+      <VinScannerModal
+        visible={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onVin={(v) => {
+          setScannerOpen(false);
+          setVin(v);
+          onDecodeVin(v);
+        }}
+      />
     </KeyboardAvoidingView>
   );
 }

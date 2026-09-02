@@ -821,6 +821,50 @@ export function decodeVin(vin: string) {
   return request<VinDecoded>(`/work_orders/api/vin?vin=${encodeURIComponent(vin)}`);
 }
 
+// ── VIN scanning (баркод/фото) ──────────────────────────────────────
+
+/** Сырая строка со сканера → валидный 17-символьный VIN или null.
+ *  VIN-баркоды (Code 39) часто несут ведущий служебный "I" — срезаем. */
+export function normalizeVin(raw: string): string | null {
+  let s = (raw || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (s.length === 18 && "IOQ".includes(s[0])) s = s.slice(1);
+  if (s.length !== 17 || /[IOQ]/.test(s)) return null;
+  return s;
+}
+
+export interface VinMatch {
+  unit_id: string;
+  unit_label: string;
+  customer_id: string;
+  customer_label: string;
+  is_system_customer: boolean;
+}
+
+export interface VinResolveResult {
+  ok: boolean;
+  vin: string;
+  /** true — юнита не было, создан автоматически под "NEW Customer". */
+  created: boolean;
+  matches: VinMatch[];
+}
+
+export function resolveVin(vin: string) {
+  return request<VinResolveResult>("/api/mobile/vin/resolve", {
+    method: "POST",
+    body: JSON.stringify({ vin }),
+  });
+}
+
+/** Фото VIN-таблички → OCR на сервере → VIN. */
+export function scanVinImage(file: { uri: string; name: string; type: string }) {
+  const form = new FormData();
+  form.append("file", file as unknown as Blob);
+  return request<{ ok: boolean; vin: string }>("/api/mobile/vin/scan-image", {
+    method: "POST",
+    body: form,
+  });
+}
+
 // ── WO editor ───────────────────────────────────────────────────────
 
 export interface LaborRate {

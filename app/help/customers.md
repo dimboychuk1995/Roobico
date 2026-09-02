@@ -91,3 +91,13 @@ Header buttons: **"Back"**, **"Portal Link"**, **"Create Work Order"**.
 
 Customers and units are deactivated (soft), never deleted — history stays.
 There is no customer merge feature.
+
+## "NEW Customer" (system customer)
+
+If mechanics use VIN scanning in the mobile app, the shop gets a technical
+customer named **"NEW Customer"**. When a mechanic scans a VIN that is not
+in the system yet, the unit is created under it automatically so work can
+start immediately. This customer **cannot be deactivated** — instead, move
+its work orders to the real company with the **Transfer** button on the WO
+page (the unit follows the work order automatically), and its stray units
+can be edited/deactivated like any others once they are re-homed.
