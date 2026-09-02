@@ -815,7 +815,7 @@ export default function WorkOrderFormScreen() {
               <>
                 <Ionicons name="barcode-outline" size={20} color={theme.primary} />
                 <Text style={{ color: theme.primary, fontWeight: "700", fontSize: 15 }}>
-                  Scan VIN — barcode or text
+                  Scan VIN
                 </Text>
               </>
             )}

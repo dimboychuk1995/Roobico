@@ -855,16 +855,6 @@ export function resolveVin(vin: string) {
   });
 }
 
-/** Фото VIN-таблички → OCR на сервере → VIN. */
-export function scanVinImage(file: { uri: string; name: string; type: string }) {
-  const form = new FormData();
-  form.append("file", file as unknown as Blob);
-  return request<{ ok: boolean; vin: string }>("/api/mobile/vin/scan-image", {
-    method: "POST",
-    body: form,
-  });
-}
-
 // ── WO editor ───────────────────────────────────────────────────────
 
 export interface LaborRate {

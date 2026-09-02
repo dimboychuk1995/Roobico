@@ -1,23 +1,16 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { BarcodeScanningResult, CameraView, useCameraPermissions } from "expo-camera";
 import { useEffect, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Modal,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { useToast } from "@/context/toast";
-import { ApiError, normalizeVin, scanVinImage } from "@/lib/api";
+import { normalizeVin } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
 
 /**
- * Сканер VIN: живой баркод-скан камерой (Code 39/128, DataMatrix, QR,
- * PDF417) + кнопка «прочитать текст» — фото таблички уходит на сервер
- * в OCR. Наружу отдаёт только валидный 17-символьный VIN.
+ * Сканер VIN-баркода: механик просто наводит камеру на штрихкод
+ * (Code 39/128, DataMatrix, QR, PDF417) — VIN подхватывается сам,
+ * без кнопок. Чужие штрихкоды в кадре игнорируются, пока не увидим
+ * валидный 17-символьный VIN.
  */
 export function VinScannerModal({
   visible,
@@ -29,17 +22,13 @@ export function VinScannerModal({
   onVin: (vin: string) => void;
 }) {
   const theme = useTheme();
-  const toast = useToast();
   const [permission, requestPermission] = useCameraPermissions();
-  const [busy, setBusy] = useState(false);
   const [torch, setTorch] = useState(false);
   const scannedRef = useRef(false);
-  const camRef = useRef<CameraView>(null);
 
   useEffect(() => {
     if (visible) {
       scannedRef.current = false;
-      setBusy(false);
       setTorch(false);
     }
   }, [visible]);
@@ -52,28 +41,11 @@ export function VinScannerModal({
   }, [visible, permission?.granted]);
 
   const handleBarcode = (res: BarcodeScanningResult) => {
-    if (scannedRef.current || busy) return;
+    if (scannedRef.current) return;
     const vin = normalizeVin(res.data || "");
-    if (!vin) return; // не VIN (чужой штрихкод в кадре) — продолжаем сканировать
+    if (!vin) return; // не VIN — продолжаем сканировать
     scannedRef.current = true;
     onVin(vin);
-  };
-
-  const takeTextPhoto = async () => {
-    if (!camRef.current || busy || scannedRef.current) return;
-    setBusy(true);
-    try {
-      const photo = await camRef.current.takePictureAsync({ quality: 0.7 });
-      if (!photo?.uri) throw new Error("no photo");
-      const res = await scanVinImage({ uri: photo.uri, name: "vin.jpg", type: "image/jpeg" });
-      if (scannedRef.current) return;
-      scannedRef.current = true;
-      onVin(res.vin);
-    } catch (e) {
-      toast.show(e instanceof ApiError ? e.message : "Couldn't read the VIN — try again.", "error");
-    } finally {
-      setBusy(false);
-    }
   };
 
   return (
@@ -81,7 +53,6 @@ export function VinScannerModal({
       <View style={{ flex: 1, backgroundColor: "#000" }}>
         {permission?.granted ? (
           <CameraView
-            ref={camRef}
             style={StyleSheet.absoluteFill}
             facing="back"
             enableTorch={torch}
@@ -111,9 +82,7 @@ export function VinScannerModal({
         {/* Рамка прицела + подсказка */}
         <View pointerEvents="none" style={styles.overlay}>
           <View style={styles.frame} />
-          <Text style={styles.hint}>
-            Point at the VIN barcode — or line up the VIN text{"\n"}and tap "Read VIN text"
-          </Text>
+          <Text style={styles.hint}>Point the camera at the VIN barcode</Text>
         </View>
 
         {/* Верхняя панель: закрыть + фонарик */}
@@ -125,26 +94,6 @@ export function VinScannerModal({
             <Ionicons name={torch ? "flashlight" : "flashlight-outline"} size={24} color="#fff" />
           </Pressable>
         </View>
-
-        {/* Нижняя кнопка: OCR по фото */}
-        {permission?.granted ? (
-          <View style={styles.bottomBar}>
-            <Pressable
-              style={[styles.photoBtn, { backgroundColor: theme.primary, opacity: busy ? 0.7 : 1 }]}
-              onPress={takeTextPhoto}
-              disabled={busy}
-            >
-              {busy ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="text-outline" size={20} color="#fff" />
-                  <Text style={{ color: "#fff", fontWeight: "800", fontSize: 15 }}>Read VIN text</Text>
-                </>
-              )}
-            </Pressable>
-          </View>
-        ) : null}
       </View>
     </Modal>
   );
@@ -182,15 +131,6 @@ const styles = StyleSheet.create({
     height: 44,
     alignItems: "center",
     justifyContent: "center",
-  },
-  bottomBar: { position: "absolute", bottom: 44, left: 0, right: 0, alignItems: "center" },
-  photoBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    borderRadius: 999,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
   },
   permBox: { flex: 1, alignItems: "center", justifyContent: "center", gap: 14, padding: 32 },
   permText: { color: "#fff", fontSize: 14, textAlign: "center" },
