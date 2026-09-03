@@ -38,8 +38,10 @@ What a mechanic sees and can do:
     under the technical customer **"NEW Customer"** (make/model/year are
     decoded from the VIN via NHTSA) and the WO starts on it. The office
     later moves the WO to the real company with the **Transfer** button on
-    the WO page — the unit follows automatically. "NEW Customer" is created
-    per shop on first scan and **cannot be deactivated**.
+    the WO page — the unit follows automatically and the office's prices
+    (labor rates, part prices, tax) are re-applied for the real company;
+    you can keep working on the WO while this happens. "NEW Customer" is
+    created per shop on first scan and **cannot be deactivated**.
   The same scanner is available on the **New unit** form (barcode icon next
   to the VIN field) — it fills the VIN and decodes Year/Make/Model/Type.
   If the vehicle has no scannable barcode, type the VIN manually on the

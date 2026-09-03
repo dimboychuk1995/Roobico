@@ -3824,9 +3824,15 @@ def api_work_order_transfer(work_order_id):
 
     Юнит следует за WO:
       - у целевого клиента уже есть юнит с тем же VIN → WO перевешивается на
-        него (деактивированный дубль реактивируется), всё остальное не трогаем;
+        него (деактивированный дубль реактивируется);
       - нет → юнит «переезжает»: у исходного клиента деактивируется, целевому
         создаётся копия со всеми полями (включая пробег).
+
+    Деньги переоцениваются под нового клиента (reprice_wo_for_customer):
+    ставки работ, цены запчастей по его прайс-матрице и флаг налога —
+    иначе WO, заведённый под "NEW Customer", уехал бы с чужими ценами.
+    Механик может продолжать работать: его сохранения читают WO заново и
+    подхватывают новые ставки/цены.
     """
     if is_mechanic_mode():
         return jsonify({"ok": False, "error": "forbidden"}), 403
@@ -3864,9 +3870,16 @@ def api_work_order_transfer(work_order_id):
             {"_id": wo["unit_id"], "shop_id": shop["_id"]}
         )
 
+    from app.blueprints.work_orders.services.mechanic_editor import reprice_wo_for_customer
+
     now = utcnow()
     user_id = current_user_id()
-    wo_set = {"customer_id": target_id, "updated_at": now, "updated_by": user_id}
+    wo_set = {
+        "customer_id": target_id,
+        "updated_at": now,
+        "updated_by": user_id,
+        **reprice_wo_for_customer(shop_db, shop, wo, target_id),
+    }
     unit_action = "none"
 
     if unit is None:

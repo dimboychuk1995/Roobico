@@ -3687,9 +3687,10 @@
       if (!targetId || !workOrderId) return;
 
       const targetLabel = transferCustomerSelect.selectedOptions?.[0]?.textContent || "the selected customer";
+      const transferMsg = `Transfer this work order (and its unit) to ${targetLabel.trim()}? Labor rates and part prices will be recalculated for the new customer.`;
       const confirmed = window.appConfirm
-        ? await window.appConfirm(`Transfer this work order (and its unit) to ${targetLabel.trim()}?`)
-        : window.confirm(`Transfer this work order (and its unit) to ${targetLabel.trim()}?`);
+        ? await window.appConfirm(transferMsg)
+        : window.confirm(transferMsg);
       if (!confirmed) return;
 
       transferWoSubmitBtn.disabled = true;

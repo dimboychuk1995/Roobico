@@ -216,6 +216,125 @@ def test_transfer_guards(client, app, wo_seed, mongo):
         shop_db.work_orders.update_one({"_id": wo_oid}, {"$set": {"status": "open"}})
 
 
+def test_transfer_reprices_for_target_customer(client, app, wo_seed, mongo):
+    """Перенос переоценивает WO под нового клиента: его дефолтная ставка,
+    его прайс-матрица на запчасти, его флаг налога. Часы, qty, ручной total
+    и ставка из пресета не трогаются."""
+    shop_db = mongo[SHOP_A_DB]
+    shop_id = wo_seed["cust_a"]["shop_id"]
+    now = _now()
+
+    fleet_rate_id = shop_db.labor_rates.insert_one({
+        "shop_id": shop_id, "code": "fleet", "name": "Fleet",
+        "hourly_rate": 85.0, "is_active": True,
+    }).inserted_id
+    # Дефолт магазина — без наценки (иначе fallback подставил бы правило
+    # клиента-цели и исходному клиенту); у цели — своя матрица +50%.
+    default_rules_id = shop_db.parts_pricing_rules.insert_one({
+        "shop_id": shop_id, "name": "Shop default", "mode": "markup",
+        "rules": [{"from": 0, "to": None, "value_percent": 0}],
+        "is_default": True, "is_active": True, "created_at": now,
+    }).inserted_id
+    rules_id = shop_db.parts_pricing_rules.insert_one({
+        "shop_id": shop_id, "name": "Fleet markup", "mode": "markup",
+        "rules": [{"from": 0, "to": None, "value_percent": 50}],
+        "is_default": False, "is_active": True, "created_at": now,
+    }).inserted_id
+    src = {
+        "_id": ObjectId(), "shop_id": shop_id, "company_name": "Reprice Source LLC",
+        "taxable": False, "is_active": True, "created_at": now,
+    }
+    target = {
+        "_id": ObjectId(), "shop_id": shop_id, "company_name": "Reprice Target LLC",
+        "taxable": True, "default_labor_rate": fleet_rate_id,
+        "pricing_rule_id": rules_id, "is_active": True, "created_at": now,
+    }
+    shop_db.customers.insert_many([src, target])
+    unit = {
+        "_id": ObjectId(), "shop_id": shop_id, "customer_id": src["_id"],
+        "vin": "TRFVIN00000000009", "unit_number": "T-9", "mileage": 1000,
+        "is_active": True, "created_at": now,
+    }
+    shop_db.units.insert_one(unit)
+
+    try:
+        # Механик: работа с запчастью из каталога (cost 10, без матрицы → цена 10).
+        login(client, email=MECH_EMAIL, password=MECH_PASSWORD)
+        resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
+            "customer_id": str(src["_id"]),
+            "unit_id": str(unit["_id"]),
+            "labors": [
+                {"description": "Tracked job",
+                 "parts": [{"part_id": str(wo_seed["part"]["_id"]), "qty": 2}]},
+                {"description": "Preset job", "parts": []},
+                {"description": "Manual total job", "parts": []},
+            ],
+        })
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        wo_oid = ObjectId(resp.get_json()["id"])
+        before = shop_db.work_orders.find_one({"_id": wo_oid})
+        assert before["labors"][0]["parts"][0]["price"] == 10.0
+        assert before["labors"][0]["labor"]["rate_code"] == "standard"
+
+        # Имитируем состояние «в работе»: затреканные 2 часа по standard ($200),
+        # работа из пресета со своей ставкой, ручной total менеджера без часов.
+        shop_db.work_orders.update_one({"_id": wo_oid}, {"$set": {
+            "labors.0.labor.hours": "2", "labors.0.labor.hours_source": "tracked",
+            "totals.labors.0.labor": 200.0,
+            "labors.1.labor.hours": "1", "labors.1.labor.hours_source": "preset",
+            "labors.1.labor.rate_code": "standard", "totals.labors.1.labor": 100.0,
+            "labors.2.labor.hours": "", "totals.labors.2.labor": 50.0,
+        }})
+
+        login(client)
+        resp = _post_json(
+            client, f"/work_orders/api/work_orders/{wo_oid}/transfer",
+            {"customer_id": str(target["_id"])},
+        )
+        assert resp.get_json()["ok"] is True, resp.get_json()
+
+        after = shop_db.work_orders.find_one({"_id": wo_oid})
+        labors, blocks = after["labors"], after["totals"]["labors"]
+        # Затреканная работа: ставка клиента, сумма из часов по новой ставке.
+        assert labors[0]["labor"]["rate_code"] == "fleet"
+        assert labors[0]["labor"]["hours"] == "2"
+        assert blocks[0]["labor"] == 170.0
+        # Запчасть из каталога — по матрице клиента (+50%), qty как было.
+        assert labors[0]["parts"][0]["price"] == 15.0
+        assert labors[0]["parts"][0]["qty"] == 2
+        # Ставка пресета сохраняется.
+        assert labors[1]["labor"]["rate_code"] == "standard"
+        assert blocks[1]["labor"] == 100.0
+        # Ручной total без часов не пересчитывается, ставка — клиента.
+        assert labors[2]["labor"]["rate_code"] == "fleet"
+        assert blocks[2]["labor"] == 50.0
+        # Налог — по клиенту.
+        assert after["totals"]["is_taxable"] is True
+        assert after["customer_id"] == target["_id"]
+
+        # Механик продолжает: его сохранение подхватывает новые цены, а не
+        # возвращает старые.
+        login(client, email=MECH_EMAIL, password=MECH_PASSWORD)
+        resp = _post_json(client, f"/work_orders/api/mechanic/work_orders/{wo_oid}", {
+            "labors": [
+                {"labor_id": labors[0]["labor_id"], "description": "Tracked job",
+                 "parts": [{"part_id": str(wo_seed["part"]["_id"]), "qty": 3}]},
+                {"labor_id": labors[1]["labor_id"], "description": "Preset job", "parts": []},
+                {"labor_id": labors[2]["labor_id"], "description": "Manual total job", "parts": []},
+            ],
+        })
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        saved = shop_db.work_orders.find_one({"_id": wo_oid})
+        assert saved["labors"][0]["parts"][0]["price"] == 15.0
+        assert saved["labors"][0]["parts"][0]["qty"] == 3
+        assert saved["labors"][0]["labor"]["rate_code"] == "fleet"
+        assert saved["totals"]["labors"][0]["labor"] == 170.0
+        assert saved["totals"]["is_taxable"] is True
+    finally:
+        shop_db.labor_rates.delete_one({"_id": fleet_rate_id})
+        shop_db.parts_pricing_rules.delete_many({"_id": {"$in": [rules_id, default_rules_id]}})
+
+
 # ─────────────────── Правка фактических часов ───────────────────────
 
 def _make_completed_session(client, wo_seed, mongo):

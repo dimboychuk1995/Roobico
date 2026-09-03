@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 
-from app.blueprints.work_orders.services.common import i32, round2
+from app.blueprints.work_orders.services.common import f64, i32, round2
 from app.blueprints.work_orders.services.mobile_editor import suggest_part_price
 
 
@@ -468,3 +468,82 @@ def refresh_time_derived_fields(shop_db, shop, work_order_id, mechanics_by_id=No
         {"$set": {"labors": labors, "totals": totals, "updated_at": utcnow()}},
     )
     return True
+
+
+def reprice_wo_for_customer(shop_db, shop, wo: dict, customer_id) -> dict:
+    """
+    Переоценка WO под другого клиента (transfer): все «клиентские» деньги
+    берутся заново от целевого клиента, а не остаются от исходного.
+
+      - ставка каждой работы → дефолтная ставка нового клиента (ставка из
+        пресета сохраняется — она задана пресетом, а не клиентом);
+      - labor base пересчитывается из часов × новая ставка; ручной total
+        менеджера (сумма без часов) не трогается;
+      - цена каждой запчасти из каталога → по прайс-матрице нового клиента
+        (cost, core, misc не меняются); ручные строки без part_id — как были;
+      - налог — по флагу taxable нового клиента, ставка налога WO остаётся
+        зафиксированной.
+
+    Возвращает {"labors": ..., "totals": ...} для $set в документ WO.
+    """
+    from app.blueprints.work_orders.services.common import oid
+    from app.blueprints.work_orders.services.mobile_editor import compute_labors_and_totals
+    from app.blueprints.work_orders.services.totals import (
+        _apply_sales_tax_to_totals,
+        _get_shop_sales_tax_context,
+        _is_customer_taxable,
+        align_totals_with_labors,
+        normalize_totals_payload,
+    )
+
+    shop_id = shop["_id"]
+    default_rate_code = _default_rate_code(shop_db, shop_id, customer_id)
+    totals_doc = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
+    totals_blocks = totals_doc.get("labors") if isinstance(totals_doc.get("labors"), list) else []
+
+    part_cache: dict = {}
+
+    def _catalog_part(part_id_raw):
+        pid = oid(part_id_raw)
+        if not pid:
+            return None
+        if pid not in part_cache:
+            part_cache[pid] = shop_db.parts.find_one(
+                {"_id": pid, "shop_id": shop_id, "is_active": True}
+            )
+        return part_cache[pid]
+
+    payload = []
+    for i, block in enumerate(wo.get("labors") or []):
+        if not isinstance(block, dict):
+            continue
+        block_totals = (
+            totals_blocks[i]
+            if i < len(totals_blocks) and isinstance(totals_blocks[i], dict)
+            else {}
+        )
+        base = _stored_block_to_payload(block, block_totals)
+
+        if base.get("hours_source") != "preset" or not base.get("rate_code"):
+            base["rate_code"] = default_rate_code
+        if f64(base.get("hours")):
+            # Есть часы — сумма считается из них по новой ставке.
+            base["labor_total"] = None
+
+        for p in base["parts"]:
+            part_doc = _catalog_part(p.get("part_id"))
+            if part_doc is not None:
+                p["price"] = suggest_part_price(shop_db, shop_id, customer_id, part_doc)
+
+        payload.append(base)
+
+    labors, totals_raw = compute_labors_and_totals(shop_db, shop, payload)
+    totals = align_totals_with_labors(normalize_totals_payload(totals_raw), labors)
+
+    locked_tax_rate = totals_doc.get("sales_tax_rate")
+    if locked_tax_rate is None:
+        locked_tax_rate = _get_shop_sales_tax_context(shop, shop_db).get("rate") or 0
+    totals = _apply_sales_tax_to_totals(
+        totals, locked_tax_rate, _is_customer_taxable(shop_db, customer_id)
+    )
+    return {"labors": labors, "totals": totals}

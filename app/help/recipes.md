@@ -147,8 +147,14 @@ work order → **Transfer** (top-right) → pick the right customer → confirm.
 The unit follows automatically: if the right customer already has a unit
 with that VIN, the WO is re-linked to it; otherwise the unit is deactivated
 for the wrong customer and recreated (with the same mileage) for the right
-one. Nothing else on the WO changes. Paid WOs can't be transferred —
-"Unpaid" first.
+one. Money is re-priced for the right customer: every job gets that
+customer's default labor rate (jobs from a preset keep the preset rate) and
+its amount is recalculated from the hours, catalog parts get the price from
+that customer's pricing matrix, and the sales-tax flag follows the customer's
+"Taxable" setting. Hours, quantities, manually entered parts and the WO's
+locked tax rate don't change. The mechanic can keep working during the
+transfer — their next save picks up the new rates and prices. Paid WOs
+can't be transferred — "Unpaid" first.
 
 **Mechanic forgot to stop the timer / hours look wrong.** On the work order,
 next to the "Mechanics: Xh Ym" line on the job, click the pencil (needs the

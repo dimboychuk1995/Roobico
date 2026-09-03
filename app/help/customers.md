@@ -99,5 +99,6 @@ customer named **"NEW Customer"**. When a mechanic scans a VIN that is not
 in the system yet, the unit is created under it automatically so work can
 start immediately. This customer **cannot be deactivated** — instead, move
 its work orders to the real company with the **Transfer** button on the WO
-page (the unit follows the work order automatically), and its stray units
-can be edited/deactivated like any others once they are re-homed.
+page (the unit follows the work order automatically, and labor rates, part
+prices and the tax flag are recalculated for the real company), and its
+stray units can be edited/deactivated like any others once they are re-homed.
