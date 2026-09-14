@@ -806,6 +806,8 @@ def _report_vendor_balances(shop_db, shop_id, date_ctx):
     query = {
         "shop_id": shop_id,
         "is_active": {"$ne": False},
+        # Заказы из почты до подтверждения человеком — ещё не долг вендору.
+        "needs_confirmation": {"$ne": True},
     }
     query = _append_and(query, _build_date_filter(date_ctx, field="order_date", fallback_field="created_at"))
 

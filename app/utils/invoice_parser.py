@@ -27,6 +27,7 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
   "vendor_contact_last_name": "string — contact person last name",
   "invoice_number": "string — invoice or bill number",
   "invoice_date": "string — date in MM/DD/YYYY format",
+  "document_kind": "invoice" | "order_confirmation" | "packing_slip" | "quote" | "statement" | "receipt" | "other",
   "items": [
     {
       "part_number": "string — part number / SKU (e.g. DR 8600310, PEXR955337)",
@@ -47,8 +48,14 @@ Rules:
 - vendor_address is the seller/remit-to address, NOT the bill-to or ship-to address.
 - vendor_phone and vendor_email are the seller's contact info, NOT the buyer's.
 - If you cannot determine a field, use empty string or 0.
+- document_kind: what the document IS. "invoice" (bill for parts), "order_confirmation" (vendor acknowledges an
+  order), "packing_slip" (shipment contents). A "quote"/"estimate" is an offer, not an order. "statement" is an
+  account summary listing several invoices. "receipt" is a payment receipt without part lines. Anything that is
+  not about parts (fuel, meals, software, utilities, marketing) is "other".
 - Always return the JSON object, even if you can only partially extract data.
 """
+
+DOCUMENT_KINDS = {"invoice", "order_confirmation", "packing_slip", "quote", "statement", "receipt", "other"}
 
 
 def _get_openai_client():
@@ -60,17 +67,21 @@ def _get_openai_client():
     return OpenAI(api_key=api_key)
 
 
-def _pdf_pages_to_images(pdf_bytes: bytes) -> list[str]:
+def _pdf_pages_to_images(pdf_bytes: bytes, max_pages: int | None = None) -> list[str]:
     """
-    Convert PDF bytes to list of base64-encoded PNG images (one per page).
-    Uses pdf2image if available, otherwise falls back to sending PDF directly.
+    Convert PDF bytes to list of base64-encoded PNG images (one per page,
+    first `max_pages` pages when given — long statements are not worth
+    a vision call per page). Uses PyMuPDF if available, otherwise falls
+    back to sending the PDF directly.
     """
     try:
         import fitz  # PyMuPDF
 
         doc = fitz.open(stream=pdf_bytes, filetype="pdf")
         images = []
-        for page in doc:
+        for index, page in enumerate(doc):
+            if max_pages is not None and index >= max_pages:
+                break
             pix = page.get_pixmap(dpi=200)
             img_bytes = pix.tobytes("png")
             images.append(base64.standard_b64encode(img_bytes).decode("ascii"))
@@ -81,12 +92,13 @@ def _pdf_pages_to_images(pdf_bytes: bytes) -> list[str]:
         return [base64.standard_b64encode(pdf_bytes).decode("ascii")]
 
 
-def parse_invoice(file_bytes: bytes, content_type: str) -> dict[str, Any]:
+def parse_invoice(file_bytes: bytes, content_type: str, *, max_pages: int | None = None) -> dict[str, Any]:
     """
     Parse an invoice file (PDF or image) and return extracted data.
 
-    Returns dict with keys: vendor_name, invoice_number, invoice_date, items, total
-    Raises ValueError on configuration or parsing errors.
+    Returns dict with keys: vendor_name, invoice_number, invoice_date,
+    document_kind, items, total. Raises ValueError on configuration or
+    parsing errors.
     """
     client = _get_openai_client()
 
@@ -95,7 +107,7 @@ def parse_invoice(file_bytes: bytes, content_type: str) -> dict[str, Any]:
 
     if content_type == "application/pdf":
         # Convert PDF to images
-        page_images = _pdf_pages_to_images(file_bytes)
+        page_images = _pdf_pages_to_images(file_bytes, max_pages=max_pages)
         for img_b64 in page_images:
             image_parts.append({
                 "type": "image_url",
@@ -171,6 +183,12 @@ def parse_invoice(file_bytes: bytes, content_type: str) -> dict[str, Any]:
         "vendor_contact_last_name": str(result.get("vendor_contact_last_name") or "").strip(),
         "invoice_number": str(result.get("invoice_number") or "").strip(),
         "invoice_date": str(result.get("invoice_date") or "").strip(),
+        "document_kind": _document_kind(result.get("document_kind")),
         "items": normalized_items,
         "total": round(float(result.get("total") or 0), 2),
     }
+
+
+def _document_kind(value) -> str:
+    kind = str(value or "").strip().lower()
+    return kind if kind in DOCUMENT_KINDS else "other"

@@ -691,7 +691,8 @@ def _uattend_employee_names(shop_db, shop_id):
 
 def _compute_parts_orders_metrics(shop_db, shop, created_from, created_to_exclusive):
     preferred_filter = _build_preferred_date_filter("order_date", created_from, created_to_exclusive)
-    parts_orders_query = {"shop_id": shop["_id"], "is_active": {"$ne": False}}
+    # Заказы из почты до подтверждения человеком в метрики закупок не входят.
+    parts_orders_query = {"shop_id": shop["_id"], "is_active": {"$ne": False}, "needs_confirmation": {"$ne": True}}
     if preferred_filter:
         parts_orders_query = {"$and": [parts_orders_query, preferred_filter]}
 

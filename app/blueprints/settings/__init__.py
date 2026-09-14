@@ -10,3 +10,4 @@ from .work_orders.routes import *  # noqa
 from .wo_presets.routes import *  # noqa
 from .roles.routes import *  # noqa
 from .integrations.routes import *  # noqa
+from .integrations.email_orders_routes import *  # noqa

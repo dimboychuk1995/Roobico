@@ -76,6 +76,31 @@ locations" (From / To / Qty). Totals don't change.
 Reader**: upload the invoice PDF/photo; review matched parts, create missing
 ones ("Create & Add"), then Create order.
 
+**Get vendor orders into Roobico automatically from email.** Settings →
+Integrations → **Email orders inbox** → enable → Save → copy the location's
+address (`orders-…@roobico.com`). Then either set auto-forwarding in the
+mailbox where vendors write you (Gmail: Settings → Forwarding; Outlook:
+Settings → Mail → Forwarding; instructions for every provider are in that
+window) or add the address as an extra notification email in the vendors'
+portals. Forwarding everything is fine — non-orders are ignored. Each
+confirmation/invoice becomes a parts order with the red **Not confirmed**
+badge; open it (Confirm button), add unmatched lines with "Create & Add",
+check prices, press **Confirm order**. Not an order? **Reject**. Gmail asks
+for a confirmation code first — it is the subject of the email in
+**Inbox history** in the same window.
+
+**AI made an order that is wrong / missed one.** Wrong order → **Reject**
+on the order (Parts Orders tab) — it disappears, the email stays in the
+history as Rejected. Missed one → Settings → Integrations → Email orders
+inbox → Inbox history → find the email (status Ignored) → **Create order**.
+Vendor got created twice? Reject the order (an auto-created vendor used
+nowhere else is deactivated) and add the sender address as a contact email
+on the right vendor — next time the sender is matched to it.
+
+**Why can't I receive / pay an order?** It still has the **Not confirmed**
+badge (came from email). Confirm it first; unconfirmed orders are also
+excluded from vendor balances and dashboard purchases on purpose.
+
 **Order parts for a specific job.** Open the work order (or the create
 screen — even before saving) → **Parts orders** under the unit → Create
 parts order. It's the same dialog as Parts → Order, AI Order Reader

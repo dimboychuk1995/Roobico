@@ -112,6 +112,8 @@ def ensure_master_collections_indexes(master_db):
 
     _safe_create_index(master_db.shops, [("tenant_id", ASCENDING)], name="idx_shop_tenant_id")
     _safe_create_index(master_db.shops, [("tenant_id", ASCENDING), ("created_at", ASCENDING)], name="idx_shop_tenant_created")
+    # Inbound email inbox per location: webhook resolves token → shop.
+    _safe_create_index(master_db.shops, [("inbound_email_token", ASCENDING)], unique=True, sparse=True, name="uniq_shop_inbound_email_token")
 
     # Centralized ZIP -> sales tax lookup data for all shops.
     _safe_create_index(master_db.zip_sales_tax_rates, [("zip_code", ASCENDING)], unique=True, name="uniq_zip_sales_tax_rates_zip")
@@ -190,6 +192,16 @@ def ensure_shop_collections_indexes(shop_db):
     _safe_create_index(shop_db.parts_orders, [("shop_id", ASCENDING), ("work_order_id", ASCENDING)], name="idx_parts_orders_shop_work_order")
     _safe_create_index(shop_db.parts_orders, [("payment_status", ASCENDING)], name="idx_parts_orders_payment_status")
     _safe_create_index(shop_db.parts_orders, [("status", ASCENDING)], name="idx_parts_orders_status")
+    # Orders created from the email inbox waiting for a human ("Not confirmed" filter + counter).
+    _safe_create_index(shop_db.parts_orders, [("shop_id", ASCENDING), ("needs_confirmation", ASCENDING), ("is_active", ASCENDING)], name="idx_parts_orders_shop_needs_confirmation")
+    _safe_create_index(shop_db.parts_orders, [("shop_id", ASCENDING), ("vendor_id", ASCENDING), ("vendor_bill", ASCENDING)], name="idx_parts_orders_shop_vendor_bill")
+
+    # Inbound emails (AI-monitored inbox → parts orders).
+    _safe_create_index(shop_db.inbound_emails, [("shop_id", ASCENDING), ("message_id", ASCENDING)], unique=True, name="uniq_inbound_emails_shop_message")
+    _safe_create_index(shop_db.inbound_emails, [("shop_id", ASCENDING), ("status", ASCENDING), ("received_at", ASCENDING)], name="idx_inbound_emails_shop_status_received")
+    _safe_create_index(shop_db.inbound_emails, [("shop_id", ASCENDING), ("received_at", DESCENDING)], name="idx_inbound_emails_shop_received_desc")
+    _safe_create_index(shop_db.vendors, [("shop_id", ASCENDING), ("email_senders", ASCENDING)], name="idx_vendors_shop_email_senders")
+    _safe_create_index(shop_db.vendors, [("shop_id", ASCENDING), ("email_domains", ASCENDING)], name="idx_vendors_shop_email_domains")
 
     # Parts order payments
     _safe_create_index(shop_db.parts_order_payments, [("parts_order_id", ASCENDING), ("is_active", ASCENDING)], name="idx_parts_order_payments_order_active")

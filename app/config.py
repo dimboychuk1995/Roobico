@@ -117,6 +117,19 @@ class Config:
 
     # ── OpenAI (Invoice AI parsing) ───────────────────────────────────────────
     OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+
+    # ── Inbound email → parts orders (AI-monitored inbox per location) ───────
+    # Every location gets a unique address `orders-<token>@INBOUND_EMAIL_DOMAIN`.
+    # A Cloudflare Email Worker (deploy/cloudflare_email_worker.js) POSTs the
+    # raw message to /inbound/email with the shared secret in the
+    # X-Inbound-Secret header. Without the secret the endpoint rejects
+    # everything. See deploy/email_orders_inbox.md.
+    INBOUND_EMAIL_WEBHOOK_SECRET = os.environ.get("INBOUND_EMAIL_WEBHOOK_SECRET", "")
+    INBOUND_EMAIL_DOMAIN = os.environ.get("INBOUND_EMAIL_DOMAIN", "roobico.com")
+    INBOUND_EMAIL_LOCAL_PREFIX = os.environ.get("INBOUND_EMAIL_LOCAL_PREFIX", "orders-")
+    # Process a freshly received email in a background thread right away
+    # (cron `app.scripts.process_inbound_emails` is the safety net).
+    INBOUND_EMAIL_PROCESS_INLINE = os.environ.get("INBOUND_EMAIL_PROCESS_INLINE", "true").lower() == "true"
     # ── Mapbox (Address autocomplete) ───────────────────────────────────────────
     # Public token (pk.*) — exposed to the browser for the Search Box API.
     MAPBOX_ACCESS_TOKEN = os.environ.get("MAPBOX_ACCESS_TOKEN", "")

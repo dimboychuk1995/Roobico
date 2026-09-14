@@ -1,0 +1,261 @@
+{# ── Settings → Integrations → Email orders inbox (per location) ────────
+   Карточка + модалка. Состояние приходит из
+   settings/integrations/email_orders_routes.build_email_orders_state,
+   логика — static/js/settings/integrations_email_orders.js. #}
+
+{% macro email_orders_card(state, no_active_shop) %}
+<div class="col-12 col-md-6 col-xl-4">
+  <div class="card h-100">
+    <div class="card-body d-flex flex-column gap-2">
+      <div class="d-flex align-items-start gap-3">
+        <div class="flex-shrink-0 icon-tile icon-tile-green">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>
+          </svg>
+        </div>
+        <div class="flex-grow-1">
+          <div class="d-flex align-items-center gap-2 flex-wrap">
+            <h2 class="h6 mb-0">Email orders inbox</h2>
+            {% if state and state.enabled %}
+              <span class="badge text-bg-success">Active</span>
+            {% elif state and state.configured %}
+              <span class="badge text-bg-secondary">Paused</span>
+            {% else %}
+              <span class="badge text-bg-secondary">Not configured</span>
+            {% endif %}
+          </div>
+          <p class="text-muted mb-0 small">
+            A private mailbox for this location. Forward vendor emails to it and AI turns
+            order confirmations and invoices into parts orders marked <strong>Not confirmed</strong>.
+          </p>
+        </div>
+      </div>
+
+      {% if state and state.has_address %}
+      <dl class="row small text-muted mb-0 mt-1">
+        <dt class="col-4">Address</dt>
+        <dd class="col-8 text-body text-break"><code class="js-email-orders-address">{{ state.address }}</code></dd>
+        <dt class="col-4">Mode</dt>
+        <dd class="col-8 text-body">{{ 'Create orders automatically' if state.mode == 'auto' else 'Suggest only (manual create)' }}</dd>
+        <dt class="col-4">Emails</dt>
+        <dd class="col-8 text-body">{{ state.emails_received }} received · {{ state.orders_created }} orders</dd>
+      </dl>
+      {% endif %}
+
+      <div class="mt-auto pt-2">
+        <button type="button" class="btn btn-sm btn-primary"
+                data-bs-toggle="modal" data-bs-target="#integration-modal-email-orders"
+                {% if no_active_shop %}disabled{% endif %}>
+          {{ 'Configure' if state and state.configured else 'Set up' }}
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro email_orders_modal(state) %}
+<div class="modal fade integration-modal" id="integration-modal-email-orders" tabindex="-1" aria-hidden="true"
+     data-state-url="{{ url_for('settings.integrations_email_orders_state') }}"
+     data-save-url="{{ url_for('settings.integrations_email_orders_save') }}"
+     data-rotate-url="{{ url_for('settings.integrations_email_orders_rotate') }}"
+     data-inbox-url="{{ url_for('settings.integrations_email_orders_inbox') }}"
+     data-parts-orders-url="{{ url_for('parts.parts_page', tab='orders', date_preset='all_time') }}">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Email orders inbox</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <p class="text-muted small mb-3">
+          Every location gets its own mailbox that only the AI reads. Forward the location's vendor
+          mail there (or give the address to vendors as a CC). Each incoming email is checked:
+          order confirmations, invoices and packing slips become parts orders with the
+          <strong>Not confirmed</strong> flag; everything else stays in the history below as
+          <em>Ignored</em>. Nothing is received, paid or counted in vendor balances until a person
+          confirms the order on the Parts Orders tab.
+        </p>
+
+        <div class="row g-3">
+          <div class="col-12 col-lg-6">
+            <label class="form-label">Location mailbox address</label>
+            <div class="input-group">
+              <input type="text" class="form-control font-monospace" id="email-orders-address" readonly
+                     value="{{ state.address if state and state.has_address else '' }}"
+                     placeholder="Enable the inbox to get an address">
+              <button class="btn btn-outline-secondary" type="button" id="email-orders-copy" title="Copy address"
+                      {% if not (state and state.has_address) %}disabled{% endif %}>
+                <i class="bi bi-clipboard"></i>
+              </button>
+            </div>
+            <div class="form-text">
+              Lost it to spammers? <button type="button" class="btn btn-link btn-sm p-0 align-baseline" id="email-orders-rotate"
+              {% if not (state and state.has_address) %}disabled{% endif %}>Issue a new address</button>
+              — the old one stops working immediately (update your forwarding rule).
+            </div>
+          </div>
+          <div class="col-12 col-lg-6">
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" id="email-orders-enabled"
+                     {% if state and state.enabled %}checked{% endif %}>
+              <label class="form-check-label" for="email-orders-enabled">Inbox enabled</label>
+            </div>
+            <label class="form-label mb-1">What to do with recognized orders</label>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="email-orders-mode" id="email-orders-mode-auto" value="auto"
+                     {% if not state or state.mode == 'auto' %}checked{% endif %}>
+              <label class="form-check-label" for="email-orders-mode-auto">
+                <strong>Create orders automatically</strong> <span class="text-muted">(marked Not confirmed; you confirm or reject)</span>
+              </label>
+            </div>
+            <div class="form-check">
+              <input class="form-check-input" type="radio" name="email-orders-mode" id="email-orders-mode-suggest" value="suggest"
+                     {% if state and state.mode == 'suggest' %}checked{% endif %}>
+              <label class="form-check-label" for="email-orders-mode-suggest">
+                <strong>Suggest only</strong> <span class="text-muted">(AI reads the email, you click "Create order" below)</span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div id="email-orders-feedback" class="mt-3"></div>
+
+        <hr>
+
+        <div id="email-orders-howto">
+          <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse"
+                  data-bs-target="#howto-general" aria-expanded="false" aria-controls="howto-general">
+            <i class="bi bi-question-circle me-1"></i>
+            How to forward your mail here (Gmail, Outlook, Yahoo, iCloud, Zoho, cPanel, ...)
+          </button>
+          <div id="howto-general" class="collapse mt-2">
+            <div class="card">
+              <div class="card-body small">
+                <p class="mb-2">
+                  Two ways. <strong>A. Forward everything</strong> from the mailbox where vendors write you —
+                  the AI ignores what is not an order, so forwarding the whole inbox is fine.
+                  <strong>B. Give the address to vendors</strong> and ask them to CC it on confirmations and
+                  invoices (or add it as a second contact email in their portal).
+                  Some services send a <em>confirmation code or link</em> to the new forwarding address
+                  first — it lands in the history below: open the email (<em>View</em>) to read it.
+                </p>
+
+                <div class="row g-3">
+                  <div class="col-12 col-md-6">
+                    <div class="fw-semibold">Gmail / Google Workspace</div>
+                    <ol class="mb-1 ps-3">
+                      <li>Gmail → gear → <em>See all settings</em> → <em>Forwarding and POP/IMAP</em>.</li>
+                      <li><em>Add a forwarding address</em> → paste the address above → <em>Next</em>.</li>
+                      <li>Gmail sends a confirmation: the code is in the email <em>subject</em> in the history below. Enter it and choose <em>Forward a copy of incoming mail</em> (keep Gmail's copy in the Inbox).</li>
+                      <li>To forward only vendor mail instead: <em>Filters and Blocked Addresses</em> → <em>Create a new filter</em> → From: vendor addresses (separate with OR) → <em>Forward it to</em> → the address above.</li>
+                    </ol>
+                    <div class="text-muted">Workspace: if forwarding is greyed out, the Google Admin must allow "Automatic forwarding" (Apps → Gmail → End user access).</div>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <div class="fw-semibold">Outlook.com / Microsoft 365</div>
+                    <ol class="mb-1 ps-3">
+                      <li>Outlook on the web → gear → <em>Mail</em> → <em>Forwarding</em>.</li>
+                      <li><em>Enable forwarding</em> → paste the address → tick <em>Keep a copy of forwarded messages</em> → Save.</li>
+                      <li>Only vendor mail: <em>Mail</em> → <em>Rules</em> → <em>Add new rule</em> → Condition <em>From</em> vendor → Action <em>Forward to</em> → the address.</li>
+                    </ol>
+                    <div class="text-muted">Microsoft 365 business: the admin may need to allow external forwarding (Exchange admin → Mail flow → Remote domains, or Defender outbound spam policy).</div>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <div class="fw-semibold">Yahoo Mail</div>
+                    <ol class="mb-1 ps-3">
+                      <li>Settings → <em>More Settings</em> → <em>Mailboxes</em> → your address → <em>Forwarding</em>.</li>
+                      <li>Enter the address → <em>Verify</em>; open the verification email in the history below (<em>View</em>) and follow the link.</li>
+                    </ol>
+                    <div class="text-muted">Automatic forwarding in Yahoo may require a paid plan; alternative: ask vendors to CC the address.</div>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <div class="fw-semibold">iCloud Mail</div>
+                    <ol class="mb-1 ps-3">
+                      <li>icloud.com → Mail → gear → <em>Settings</em> → <em>General</em>.</li>
+                      <li>Tick <em>Forward my email to</em> → paste the address → keep a copy → Done.</li>
+                      <li>Only vendor mail: <em>Rules</em> → <em>Add a Rule</em> → "is from" vendor → <em>Forward to</em>.</li>
+                    </ol>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <div class="fw-semibold">Zoho Mail</div>
+                    <ol class="mb-1 ps-3">
+                      <li>Settings → <em>Mail Accounts</em> → your account → <em>Forwarding</em> → <em>Add email address</em>.</li>
+                      <li>Confirm with the code from the verification email (history below, <em>View</em>).</li>
+                    </ol>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <div class="fw-semibold">GoDaddy / cPanel / hosting mailboxes</div>
+                    <ol class="mb-1 ps-3">
+                      <li>Hosting panel → <em>Email</em> → <em>Forwarders</em> (cPanel) or <em>Forwarding</em> (GoDaddy Workspace / Microsoft 365 from GoDaddy).</li>
+                      <li>Add a forwarder from your mailbox to the address above; keep a local copy if the option exists.</li>
+                    </ol>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <div class="fw-semibold">Apple Mail / Outlook desktop app / phone</div>
+                    <div>Desktop and phone apps forward only while the app is open. Set forwarding on the
+                    <em>web</em> side of the account (see the provider above) so it works 24/7.</div>
+                  </div>
+                  <div class="col-12 col-md-6">
+                    <div class="fw-semibold">Vendors' portals (FleetPride, NAPA, Vander Haag's, ...)</div>
+                    <div>Most vendor portals allow several notification emails per account. Add the
+                    address above as an extra recipient for order confirmations and invoices — then no
+                    forwarding is needed at all.</div>
+                  </div>
+                </div>
+
+                <div class="mt-3">
+                  <strong>Test it:</strong> forward any vendor invoice you already have to the address. Within a
+                  minute it appears in the history below and — if it is an order — on the Parts Orders tab
+                  with the <em>Not confirmed</em> badge.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <hr>
+
+        <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap mb-2">
+          <strong class="small">Inbox history</strong>
+          <div class="d-flex align-items-center gap-2 small">
+            <span class="text-muted" id="email-orders-inbox-counts"></span>
+            <button type="button" class="btn btn-link btn-sm p-0" id="email-orders-inbox-refresh">Refresh</button>
+          </div>
+        </div>
+        <div class="text-muted small mb-2">
+          Every email that reached the mailbox. <em>Ignored</em> = AI decided it is not an order (use
+          <em>Create order</em> if it is wrong). <em>Needs review</em> = suggest mode, waiting for you.
+        </div>
+        <div id="email-orders-inbox" class="small">
+          <div class="text-muted">Loading…</div>
+        </div>
+      </div>
+      <div class="modal-footer d-flex justify-content-between">
+        <div class="text-muted small" id="email-orders-status-line"></div>
+        <div class="d-flex gap-2">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+          <button type="button" class="btn btn-primary" id="email-orders-save">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# Просмотр одного письма (текст + распознанные строки) #}
+<div class="modal fade" id="email-orders-view-modal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Email</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body small" id="email-orders-view-body"></div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endmacro %}

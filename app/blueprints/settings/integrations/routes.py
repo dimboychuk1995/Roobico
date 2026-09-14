@@ -110,11 +110,18 @@ def integrations_index():
     shop_db, shop_oid = _resolve_shop_db(master)
 
     providers = []
+    email_orders_state = None
     if shop_db is not None and shop_oid is not None:
         ensure_indexes(shop_db)
         for key, meta in SUPPORTED_PROVIDERS.items():
             state = get_integration_public(shop_db, shop_oid, key)
             providers.append({"key": key, **meta, "state": state})
+        # Ящик локации для парт-ордеров (без API-ключа — свой state).
+        from .email_orders_routes import build_email_orders_state
+
+        shop_doc = master.shops.find_one({"_id": shop_oid})
+        if shop_doc:
+            email_orders_state = build_email_orders_state(master, shop_db, shop_doc)
     else:
         empty_state = {
             "configured": False, "enabled": False, "label": "",
@@ -128,6 +135,7 @@ def integrations_index():
     return _render_integrations_page(
         "public/settings/integrations.html",
         providers=providers,
+        email_orders=email_orders_state,
         no_active_shop=(shop_db is None),
     )
 

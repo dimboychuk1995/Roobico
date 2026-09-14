@@ -700,6 +700,17 @@ html[data-theme="dark"] .dropdown-divider {
   border-color: var(--border);
 }
 
+/* ── Code / preformatted text (email view, addresses) ─────────────── */
+html[data-theme="dark"] pre {
+  background: var(--surface-soft);
+  color: var(--text);
+  border-color: var(--border) !important;
+}
+
+html[data-theme="dark"] code {
+  color: #f472b6;
+}
+
 /* ── Alerts / badges ─────────────────────────────────────────────── */
 html[data-theme="dark"] .alert {
   background: #232323;

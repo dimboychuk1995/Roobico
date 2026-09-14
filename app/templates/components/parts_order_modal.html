@@ -25,6 +25,20 @@
       </div>
 
       <div class="modal-body">
+        {# Заказ, созданный AI из письма в ящике локации: контекст письма +
+           строки, не найденные в каталоге. Показывается только пока
+           needs_confirmation (js/parts/parts.js → renderEmailOrderReview). #}
+        <div id="emailOrderReviewBox" class="alert alert-warning d-none mb-3">
+          <div class="d-flex align-items-start gap-2">
+            <i class="bi bi-envelope-paper fs-5"></i>
+            <div class="flex-grow-1">
+              <div class="fw-semibold mb-1">Created from email — not confirmed yet</div>
+              <div class="small" id="emailOrderReviewInfo"></div>
+              <div class="small" id="emailOrderReviewLines"></div>
+            </div>
+          </div>
+        </div>
+
         <div class="row g-3 mb-3">
           <div class="col-md-5 position-relative">
             <label class="form-label">Vendor <span class="text-danger">*</span></label>
@@ -209,6 +223,14 @@
           </button>
           <button type="button" class="btn btn-sm btn-outline-primary" id="payOrderModalBtn" style="display:none;">
             <i class="bi bi-cash-stack me-1"></i> Paid
+          </button>
+          <button type="button" class="btn btn-sm btn-success" id="confirmEmailOrderBtn" style="display:none;"
+                  title="Save changes and turn this email order into a regular parts order">
+            <i class="bi bi-check2-circle me-1"></i> Confirm order
+          </button>
+          <button type="button" class="btn btn-sm btn-outline-danger" id="rejectEmailOrderBtn" style="display:none;"
+                  title="This email is not an order for us — remove the order">
+            <i class="bi bi-x-circle me-1"></i> Reject
           </button>
         </div>
         <label class="btn btn-outline-info" id="scanInvoiceBtn" title="Upload vendor invoice PDF or image for AI recognition">

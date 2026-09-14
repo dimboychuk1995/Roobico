@@ -148,6 +148,8 @@ def vendors_api_balances():
                 "shop_id": shop["_id"],
                 "vendor_id": {"$in": oids},
                 "is_active": {"$ne": False},
+                # Заказы из почты до подтверждения человеком — ещё не долг.
+                "needs_confirmation": {"$ne": True},
             }
         },
         {

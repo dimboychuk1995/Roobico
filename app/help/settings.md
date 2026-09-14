@@ -120,6 +120,35 @@ payroll in General Revenue; employees are AI-matched to Roobico users so
 nobody is double-counted. Keys are stored encrypted; each shop configures
 its own integration.
 
+**Email orders inbox** — a private mailbox per location that only the AI
+reads; vendor order confirmations / invoices forwarded there become parts
+orders marked **Not confirmed**. In the window:
+
+- **Location mailbox address** (`orders-<code>@roobico.com`) appears when
+  you enable the inbox and press Save; **copy** it. **Issue a new address**
+  if it leaked to spammers — the old one stops working at once, update
+  the forwarding rule.
+- **Inbox enabled** switch — pause/resume without losing the address.
+- **Mode**: *Create orders automatically* (recommended: orders appear with
+  the Not confirmed badge, you confirm/reject on the Parts Orders tab) or
+  *Suggest only* (AI reads, you press "Create order" in the history).
+- **How to forward your mail here** — step-by-step instructions for
+  Gmail / Google Workspace, Outlook.com / Microsoft 365, Yahoo, iCloud,
+  Zoho, GoDaddy / cPanel mailboxes, plus the alternative of adding the
+  address as a notification email in vendors' portals. Forwarding the whole
+  mailbox is fine: everything that is not an order is simply ignored.
+  Providers that send a confirmation code / link to the new address (Gmail,
+  Yahoo, iCloud, Zoho) — open that email with **View** in the history.
+- **Inbox history** — every email that reached the mailbox with its result
+  (*Order created* → link, *Linked to order*, *Ignored* + reason, *Needs
+  review*, *Error*, *Rejected*) and actions: **View** (text + lines AI
+  read), **Create order** (force an order from an ignored/failed email),
+  **Retry**, **Ignore**.
+
+Requires the "Manage 3rd-party integrations" permission. Confirming and
+rejecting the orders themselves needs "edit parts". Details of matching,
+duplicates and the confirm flow: Parts Orders help → "Orders from email".
+
 ## Shops (multi-shop)
 
 Settings → Shops: **"+ Add shop"** (name, email, address, phone, billing

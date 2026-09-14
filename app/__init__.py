@@ -532,6 +532,7 @@ def create_app():
     from app.blueprints.mechanic import mechanic_bp
     from app.blueprints.assistant import assistant_bp
     from app.blueprints.perks import perks_bp
+    from app.blueprints.inbound_email import inbound_email_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(reports_bp)
@@ -553,5 +554,6 @@ def create_app():
     app.register_blueprint(mechanic_bp)
     app.register_blueprint(assistant_bp)
     app.register_blueprint(perks_bp)
+    app.register_blueprint(inbound_email_bp)
 
     return app

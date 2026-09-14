@@ -542,6 +542,143 @@
 			applyOrderToModal(order, orderId);
 		}
 
+		// ── Заказ из почты (AI inbox): блок "From email" + несматченные строки ──
+		// Несматченные строки рисуются теми же классами, что и панель AI Order
+		// Reader (tr[data-scan-unmatched] / .create-scanned-part-btn), поэтому
+		// кнопка "Create & Add" работает без отдельного кода.
+		const emailReviewBox = document.getElementById("emailOrderReviewBox");
+		const emailReviewInfo = document.getElementById("emailOrderReviewInfo");
+		const emailReviewLines = document.getElementById("emailOrderReviewLines");
+		const confirmEmailOrderBtn = document.getElementById("confirmEmailOrderBtn");
+		const rejectEmailOrderBtn = document.getElementById("rejectEmailOrderBtn");
+
+		function renderEmailOrderReview(order, orderId) {
+			if (!emailReviewBox) return;
+			const needsConfirmation = !!(order && order.needs_confirmation);
+			if (receiveOrderModalBtn && needsConfirmation) receiveOrderModalBtn.style.display = "none";
+			if (confirmEmailOrderBtn) confirmEmailOrderBtn.style.display = needsConfirmation ? "inline-flex" : "none";
+			if (rejectEmailOrderBtn) rejectEmailOrderBtn.style.display = needsConfirmation ? "inline-flex" : "none";
+			if (!needsConfirmation) {
+				emailReviewBox.classList.add("d-none");
+				if (emailReviewLines) emailReviewLines.innerHTML = "";
+				return;
+			}
+
+			const src = order.source || {};
+			const unmatched = Array.isArray(order.unmatched_items) ? order.unmatched_items : [];
+			const receivedAt = src.received_at ? formatDateTime(src.received_at) : "";
+			let info = `<div><strong>From:</strong> ${escapeHtml(src.from_name ? `${src.from_name} <${src.from_email}>` : (src.from_email || "-"))}</div>`;
+			info += `<div><strong>Subject:</strong> ${escapeHtml(src.subject || "-")}</div>`;
+			if (receivedAt) info += `<div><strong>Received:</strong> ${escapeHtml(receivedAt)}</div>`;
+			if (src.vendor_ref) info += `<div><strong>Vendor order / invoice #:</strong> ${escapeHtml(src.vendor_ref)}</div>`;
+			if (src.vendor_created) info += `<div class="text-warning-emphasis"><i class="bi bi-exclamation-triangle me-1"></i>The vendor was created automatically from this email — check its name and contacts.</div>`;
+			if (emailReviewInfo) emailReviewInfo.innerHTML = info;
+
+			let lines = "";
+			if (unmatched.length > 0) {
+				lines += `<div class="mt-2"><strong>Lines from the email not found in the parts catalog:</strong> <span class="text-muted">create them as parts (they are added to the order), or leave them and they will be dropped on confirm.</span></div>`;
+				lines += `<div class="table-responsive mt-1"><table class="table table-sm table-bordered mb-0"><thead><tr>`;
+				lines += `<th style="min-width:140px;">Part #</th><th style="min-width:200px;">Description</th><th style="width:80px;">Qty</th><th style="width:110px;">Price</th><th style="width:130px;">Action</th>`;
+				lines += `</tr></thead><tbody>`;
+				for (const item of unmatched) {
+					lines += `<tr data-scan-unmatched="1" data-email-unmatched="1">
+						<td><input type="text" class="form-control form-control-sm scan-new-pn" value="${escapeHtml(item.part_number || "")}" placeholder="Part number"></td>
+						<td><input type="text" class="form-control form-control-sm scan-new-desc" value="${escapeHtml(item.description || "")}" placeholder="Description"></td>
+						<td><input type="number" class="form-control form-control-sm scan-new-qty" min="1" step="1" value="${Number(item.quantity || 1)}"></td>
+						<td><input type="number" class="form-control form-control-sm scan-new-price" min="0" step="0.01" value="${Number(item.price || 0).toFixed(2)}"></td>
+						<td><button type="button" class="btn btn-sm btn-outline-primary create-scanned-part-btn"><i class="bi bi-plus-lg me-1"></i>Create & Add</button></td>
+					</tr>`;
+				}
+				lines += `</tbody></table></div>`;
+			} else {
+				lines += `<div class="mt-2 text-muted small">All lines from the email were matched to existing parts. Check quantities and prices, then confirm.</div>`;
+			}
+			if (emailReviewLines) emailReviewLines.innerHTML = lines;
+			emailReviewBox.classList.remove("d-none");
+		}
+
+		function countUnresolvedEmailLines() {
+			if (!emailReviewLines) return 0;
+			let n = 0;
+			emailReviewLines.querySelectorAll("tr[data-email-unmatched]").forEach((tr) => {
+				const btn = tr.querySelector(".create-scanned-part-btn");
+				if (btn && !btn.disabled) n += 1;
+			});
+			return n;
+		}
+
+		async function saveOrderChanges(orderId) {
+			const collected = collectOrderPayload();
+			if (collected.error) { showError(collected.error); return false; }
+			const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/update`, {
+				method: "PUT",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify(collected.payload),
+			});
+			const data = await res.json();
+			if (!data.ok) { showError(data.error || "Update order failed."); return false; }
+			return true;
+		}
+
+		async function confirmEmailOrder(orderId) {
+			clearError();
+			const unresolved = countUnresolvedEmailLines();
+			const question = unresolved > 0
+				? `${unresolved} line(s) from the email were not added as parts and will be dropped. Confirm the order anyway?`
+				: "Confirm this order? It becomes a regular parts order (receivable and payable).";
+			if (!(await appConfirm(question))) return;
+
+			if (confirmEmailOrderBtn) confirmEmailOrderBtn.disabled = true;
+			try {
+				if (!(await saveOrderChanges(orderId))) return;
+				const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/confirm`, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ drop_unmatched: true }),
+				});
+				const data = await res.json();
+				if (!data.ok) { showError(data.error || "Failed to confirm order."); return; }
+				appAlert("Order confirmed", "success");
+				const modalEl = document.getElementById("orderModal");
+				const inst = window.bootstrap?.Modal?.getInstance(modalEl);
+				if (inst) inst.hide();
+				finishOrderMutation();
+			} catch (err) {
+				showError("Network error while confirming order.");
+			} finally {
+				if (confirmEmailOrderBtn) confirmEmailOrderBtn.disabled = false;
+			}
+		}
+
+		async function rejectEmailOrder(orderId) {
+			if (!(await appConfirm("Reject this order? It will be removed from the list; the email stays in the inbox history as rejected."))) return;
+			try {
+				const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/reject`, { method: "POST" });
+				const data = await res.json();
+				if (!data.ok) { appAlert(data.error || "Failed to reject order", "error"); return false; }
+				appAlert("Order rejected", "success");
+				return true;
+			} catch (err) {
+				appAlert("Network error while rejecting order", "error");
+				return false;
+			}
+		}
+
+		confirmEmailOrderBtn?.addEventListener("click", function () {
+			const orderId = createdOrderId.value;
+			if (orderId) confirmEmailOrder(orderId);
+		});
+		rejectEmailOrderBtn?.addEventListener("click", async function () {
+			const orderId = createdOrderId.value;
+			if (!orderId) return;
+			if (await rejectEmailOrder(orderId)) {
+				const modalEl = document.getElementById("orderModal");
+				const inst = window.bootstrap?.Modal?.getInstance(modalEl);
+				if (inst) inst.hide();
+				finishOrderMutation();
+			}
+		});
+
 		async function openOrderEditModal(orderId) {
 			if (!orderId) return;
 			clearError();
@@ -569,8 +706,9 @@
 				).toLowerCase();
 				const remaining = Number((paymentSummary && paymentSummary.remaining_balance) || order.remaining_balance || 0);
 				const isPaid = paymentStatus === "paid" || remaining <= 0.01;
-				payOrderModalBtn.style.display = (!isPaid && orderId) ? "inline-flex" : "none";
+				payOrderModalBtn.style.display = (!isPaid && orderId && !order.needs_confirmation) ? "inline-flex" : "none";
 			}
+			renderEmailOrderReview(order, orderId);
 
 			if (isReceived) {
 				vendorSelect.disabled = true;
@@ -1132,28 +1270,27 @@
 			calculateOrderTotal();
 		});
 
-		async function createOrderAjax() {
-			clearError();
-
+		// Собирает vendor/date/items/non-inventory из модалки. Возвращает
+		// { error } либо { payload, rows } — общий код для Create/Update и
+		// для "Confirm order" (сохранить, потом подтвердить).
+		function collectOrderPayload() {
 			const vendorId = vendorSelect.value || "";
 			const orderDate = String(orderDateInput?.value || "").trim();
-			if (!vendorId) { showError("Select vendor."); return; }
-			if (!orderDate) { showError("Select order date."); return; }
+			if (!vendorId) return { error: "Select vendor." };
+			if (!orderDate) return { error: "Select order date." };
 
 			const rows = Array.from(itemsBody.querySelectorAll("tr[data-part-id]"));
 
 			const nonInventoryPayload = collectNonInventoryAmounts();
-			if (nonInventoryPayload.error) { showError(nonInventoryPayload.error); return; }
+			if (nonInventoryPayload.error) return { error: nonInventoryPayload.error };
 
 			if (rows.length === 0 && nonInventoryPayload.lines.length === 0) {
-				showError("Add at least one item or non inventory amount.");
-				return;
+				return { error: "Add at least one item or non inventory amount." };
 			}
 
 			// Check if order is received
 			if (vendorSelect.disabled) {
-				showError("Cannot update received orders. Click 'Unreceive' first.");
-				return;
+				return { error: "Cannot update received orders. Click 'Unreceive' first." };
 			}
 
 			const items = [];
@@ -1166,11 +1303,24 @@
 				const includeCore = coreHasCharge && (coreToggle ? !!coreToggle.checked : true);
 
 				if (!pid) continue;
-				if (!qty || qty <= 0) { showError("Qty must be > 0."); return; }
-				if (price < 0) { showError("Price cannot be negative."); return; }
+				if (!qty || qty <= 0) return { error: "Qty must be > 0." };
+				if (price < 0) return { error: "Price cannot be negative." };
 
 				items.push({ part_id: pid, quantity: qty, price: price, include_core: includeCore });
 			}
+
+			return {
+				rows,
+				payload: { vendor_id: vendorId, order_date: orderDate, items, non_inventory_amounts: nonInventoryPayload.lines },
+			};
+		}
+
+		async function createOrderAjax() {
+			clearError();
+
+			const collected = collectOrderPayload();
+			if (collected.error) { showError(collected.error); return; }
+			const rows = collected.rows;
 
 			createOrderBtn.disabled = true;
 
@@ -1181,7 +1331,7 @@
 					: "/parts/api/orders/create";
 				const method = isEdit ? "PUT" : "POST";
 
-				const payload = { vendor_id: vendorId, order_date: orderDate, items, non_inventory_amounts: nonInventoryPayload.lines };
+				const payload = collected.payload;
 				const woLink = woLinkContext();
 				if (!isEdit && woLink) {
 					if (woLink.workOrderId) payload.work_order_id = woLink.workOrderId;
@@ -1468,6 +1618,7 @@
 			if (receiveOrderModalBtn) receiveOrderModalBtn.style.display = "none";
 			if (unreceiveOrderModalBtn) unreceiveOrderModalBtn.style.display = "none";
 			if (payOrderModalBtn) payOrderModalBtn.style.display = "none";
+			renderEmailOrderReview(null, "");
 			currentVendorBill = "";
 			if (receiveBtn) receiveBtn.disabled = false;
 			if (orderDatesBlock) orderDatesBlock.classList.add("d-none");
@@ -2800,6 +2951,23 @@
 				} catch (err) {
 					appAlert("Network error while creating return", "error");
 				}
+				return;
+			}
+
+			// Заказ из почты: "Confirm" в колонке статуса открывает модалку ревью
+			const confirmBtn = e.target.closest(".confirmOrderBtn");
+			if (confirmBtn) {
+				const orderId = confirmBtn.getAttribute("data-order-id");
+				if (orderId) openOrderEditModal(orderId);
+				return;
+			}
+
+			// Заказ из почты: отклонить прямо из списка
+			const rejectBtn = e.target.closest(".rejectOrderBtn");
+			if (rejectBtn) {
+				const orderId = rejectBtn.getAttribute("data-order-id");
+				if (!orderId) return;
+				if (await rejectEmailOrder(orderId)) finishOrderMutation();
 				return;
 			}
 

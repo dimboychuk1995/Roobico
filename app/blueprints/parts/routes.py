@@ -42,6 +42,13 @@ from app.blueprints.parts.services.stock import (
     transfer_stock,
     set_location_qty,
 )
+from app.blueprints.parts.services.email_orders import (
+    confirm_email_order,
+    count_unconfirmed as count_unconfirmed_email_orders,
+    reject_email_order,
+    serialize_source as serialize_email_order_source,
+    serialize_unmatched as serialize_email_order_unmatched,
+)
 
 from . import parts_bp
 
@@ -567,7 +574,7 @@ def parts_page():
     q = (request.args.get("q") or "").strip()
 
     paid_status = (request.args.get("paid_status") or "all").strip().lower()
-    if paid_status not in ("all", "paid", "unpaid", "returns"):
+    if paid_status not in ("all", "paid", "unpaid", "returns", "not_confirmed"):
         paid_status = "all"
 
     date_filters = _get_date_range_filters(request.args)
@@ -816,6 +823,7 @@ def parts_page():
     # Get orders list for Orders tab
     orders_list = []
     orders_pagination = None
+    unconfirmed_orders_count = 0
     orders_totals = {
         "total": 0.0,
         "shop_supply": 0.0,
@@ -835,6 +843,9 @@ def parts_page():
         elif paid_status == "returns":
             # Только возвраты вендору (кредиты).
             orders_query["is_return"] = True
+        elif paid_status == "not_confirmed":
+            # Заказы, созданные AI из почты и ещё не подтверждённые человеком.
+            orders_query["needs_confirmation"] = True
 
         created_filter = _build_preferred_date_filter(
             "order_date",
@@ -886,9 +897,14 @@ def parts_page():
                 "notes": 1,
                 "work_order_id": 1,
                 "work_order_number": 1,
+                "needs_confirmation": 1,
+                "unmatched_items": 1,
+                "source": 1,
             },
         )
-        
+
+        unconfirmed_orders_count = count_unconfirmed_email_orders(orders_coll, shop["_id"])
+
         # Get vendor names for orders
         vendor_ids = [o.get("vendor_id") for o in orders_rows if o.get("vendor_id")]
         vendors_map = {}
@@ -969,6 +985,9 @@ def parts_page():
                 "notes": str(order.get("notes") or ""),
                 "work_order_id": str(order.get("work_order_id")) if order.get("work_order_id") else "",
                 "work_order_number": order.get("work_order_number"),
+                "needs_confirmation": bool(order.get("needs_confirmation")),
+                "unmatched_count": len([u for u in (order.get("unmatched_items") or []) if isinstance(u, dict)]),
+                "source_from": str(((order.get("source") or {}).get("from_email")) or "") if isinstance(order.get("source"), dict) else "",
             })
 
     # Payments tab list
@@ -1346,6 +1365,7 @@ def parts_page():
         date_from=date_from,
         date_to=date_to,
         paid_status=paid_status,
+        unconfirmed_orders_count=unconfirmed_orders_count,
         today_date_input_value=get_active_shop_today_iso(),
         sort_by=(request.args.get("sort_by") or "").strip(),
         sort_dir=(request.args.get("sort_dir") or "").strip(),
@@ -2154,6 +2174,9 @@ def parts_api_orders_get(order_id: str):
             "return_for_order_number": order.get("return_for_order_number"),
             "credit_total": float(_parse_float(order.get("credit_total"), default=0.0)),
             "notes": str(order.get("notes") or ""),
+            "needs_confirmation": bool(order.get("needs_confirmation")),
+            "unmatched_items": serialize_email_order_unmatched(order),
+            "source": serialize_email_order_source(order),
             "items": items,
             "non_inventory_amounts": [
                 {
@@ -2306,6 +2329,9 @@ def parts_api_orders_payment(order_id: str):
 
     if order.get("is_return"):
         return jsonify({"ok": False, "error": "Returns are vendor credits — payments are not applicable."}), 400
+
+    if order.get("needs_confirmation"):
+        return jsonify({"ok": False, "error": "This order came from email and is not confirmed yet. Confirm it before recording payments."}), 400
 
     data = request.get_json(silent=True) or {}
     amount = _parse_float(data.get("amount"), default=-1.0)
@@ -2657,6 +2683,9 @@ def parts_api_orders_receive(order_id: str):
     if order.get("is_return"):
         return jsonify({"ok": False, "error": "Return orders cannot be received."}), 400
 
+    if order.get("needs_confirmation"):
+        return jsonify({"ok": False, "error": "This order came from email and is not confirmed yet. Confirm it first."}), 400
+
     if order.get("status") == "received":
         return jsonify({"ok": True, "updated_parts": 0, "message": "Order already received."})
 
@@ -2896,7 +2925,7 @@ def _order_returnable_map(orders_coll, order) -> dict:
 
 def _order_return_allowed(order) -> bool:
     """Возврат разрешён по принятому или оплаченному заказу (не по возврату)."""
-    if order.get("is_return"):
+    if order.get("is_return") or order.get("needs_confirmation"):
         return False
     return order.get("status") == "received" or order.get("payment_status") == "paid"
 
@@ -3192,6 +3221,58 @@ def parts_api_orders_unreceive(order_id: str):
     )
 
     return jsonify({"ok": True, "updated_parts": updated})
+
+
+def _load_email_order(order_id: str):
+    """(order, shop, orders_coll, error_response) for the confirm/reject/unmatched endpoints."""
+    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
+    if parts_coll is None or orders_coll is None or shop is None:
+        return None, None, None, (jsonify({"ok": False, "error": "Shop database not configured for this shop."}), 400)
+    oid = _oid(order_id)
+    if not oid:
+        return None, None, None, (jsonify({"ok": False, "error": "Invalid order id."}), 400)
+    order = orders_coll.find_one({"_id": oid, "shop_id": shop["_id"], "is_active": {"$ne": False}})
+    if not order:
+        return None, None, None, (jsonify({"ok": False, "error": "Order not found."}), 404)
+    return order, shop, orders_coll, None
+
+
+@parts_bp.post("/api/orders/<order_id>/confirm")
+@login_required
+@permission_required("parts.edit")
+def parts_api_orders_confirm(order_id: str):
+    """Human confirmation of an order the AI created from the email inbox.
+    Body: {"drop_unmatched": bool} — drop email lines that were never matched
+    to catalog parts instead of refusing."""
+    order, shop, orders_coll, err = _load_email_order(order_id)
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    ok, message = confirm_email_order(
+        orders_coll.database, shop, order,
+        actor_user_id=_oid(session.get(SESSION_USER_ID)),
+        drop_unmatched=bool(data.get("drop_unmatched")),
+    )
+    if not ok:
+        return jsonify({"ok": False, "error": message}), 400
+    return jsonify({"ok": True, "message": message})
+
+
+@parts_bp.post("/api/orders/<order_id>/reject")
+@login_required
+@permission_required("parts.edit")
+def parts_api_orders_reject(order_id: str):
+    """Reject (soft-delete) an unconfirmed email order. The inbox entry is
+    marked rejected; a vendor auto-created for this email only is deactivated."""
+    order, shop, orders_coll, err = _load_email_order(order_id)
+    if err:
+        return err
+    ok, message = reject_email_order(
+        orders_coll.database, shop, order, actor_user_id=_oid(session.get(SESSION_USER_ID)),
+    )
+    if not ok:
+        return jsonify({"ok": False, "error": message}), 400
+    return jsonify({"ok": True, "message": message})
 
 
 @parts_bp.route("/api/orders/<order_id>", methods=["DELETE"])

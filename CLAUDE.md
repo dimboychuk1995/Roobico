@@ -34,6 +34,13 @@ Roobico — мультитенантный SaaS для автосервисов 
 - Сервер `198.199.122.49`:
   - порт **27017 — база DEVELOP** (локальный `.env` смотрит сюда);
   - порт **27018 — база PROD**. **В прод лезем ТОЛЬКО когда пользователь явно об этом говорит.**
+- **Develop — ночная копия прода.** Cron root'а ежедневно в 04:00 UTC запускает
+  `/usr/local/bin/mongo_sync_dev.sh` (исходник — `deploy/mongo_sync_dev.sh`):
+  свежий дамп прода восстанавливается в 27017 с заменой, базы, которых нет
+  на проде, на dev удаляются. Всё, что создано на dev за день, ночью
+  пропадает. Лог: `/var/log/mongo_sync_dev.log`. Dev-данные = реальные
+  клиенты и push-токены: локальные ключи Resend/push в `.env` могут отправить
+  настоящие письма и пуши.
 - Тесты используют локальный Mongo `127.0.0.1:27017` — `tests/conftest.py` жёстко
   подменяет URI и работает только с тестовыми базами; серверные базы не трогает.
 - Устройство: `master_db` (tenants, users, shops, audit_journal) + отдельная база
@@ -48,6 +55,9 @@ Roobico — мультитенантный SaaS для автосервисов 
 - SSH-ключи для подключения к серверу: `C:\Users\User\Desktop\roobico\`.
 - После деплоя фич, меняющих поисковые поля, прогнать бэкфилл на нужной базе:
   `python -m app.scripts.backfill_search_terms`.
+- Ящик локации для парт-ордеров (email → AI → заказы «not confirmed»):
+  установка Cloudflare Email Worker + cron `app.scripts.process_inbound_emails`
+  — `deploy/email_orders_inbox.md`.
 - Включение транзакций Mongo на сервере: `deploy/enable_replica_set.md`.
   Gunicorn-конфиг: `deploy/gunicorn.conf.py` (systemd-юнит должен запускать с `-c`).
 - Мобильное приложение (TestFlight): из `mobile/` —

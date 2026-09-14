@@ -227,6 +227,7 @@
               <option value="paid" {% if paid_status == 'paid' %}selected{% endif %}>Paid</option>
               <option value="unpaid" {% if paid_status == 'unpaid' %}selected{% endif %}>Unpaid</option>
               <option value="returns" {% if paid_status == 'returns' %}selected{% endif %}>Returns</option>
+              <option value="not_confirmed" {% if paid_status == 'not_confirmed' %}selected{% endif %}>Not confirmed (from email)</option>
             </select>
           </div>
           <div class="col-12">
@@ -261,6 +262,17 @@
             </div>
           </div>
         </form>
+
+        {% if unconfirmed_orders_count and paid_status != 'not_confirmed' %}
+          <div class="alert alert-warning d-flex align-items-center justify-content-between gap-2 flex-wrap py-2">
+            <div>
+              <i class="bi bi-envelope-paper me-1"></i>
+              <strong>{{ unconfirmed_orders_count }}</strong> order{{ 's' if unconfirmed_orders_count != 1 else '' }}
+              created from the email inbox {{ 'are' if unconfirmed_orders_count != 1 else 'is' }} waiting for your confirmation.
+            </div>
+            <a class="btn btn-sm btn-warning" href="{{ url_for('parts.parts_page', tab='orders', paid_status='not_confirmed', date_preset='all_time') }}">Review</a>
+          </div>
+        {% endif %}
 
         {% if orders and orders|length > 0 %}
           <div class="table-responsive">
@@ -297,6 +309,12 @@
                           WO #{{ o.work_order_number }}
                         </a>
                       {% endif %}
+                      {% if o.needs_confirmation %}
+                        <span class="badge text-bg-danger"
+                              title="Created by AI from an email{% if o.source_from %} from {{ o.source_from }}{% endif %}{% if o.unmatched_count %} · {{ o.unmatched_count }} line(s) not matched to parts{% endif %}. Confirm or reject it.">
+                          <i class="bi bi-envelope-paper me-1"></i>Not confirmed
+                        </span>
+                      {% endif %}
                     </td>
                     <td>{{ o.vendor_bill or '-' }}</td>
                     <td>{{ o.vendor }}</td>
@@ -322,6 +340,12 @@
                         <span class="badge text-bg-warning">returned</span>
                       {% elif o.status == 'received' %}
                         <span class="badge text-bg-success">{{ o.status or 'ordered' }}</span>
+                      {% elif o.needs_confirmation %}
+                        <button type="button" class="btn btn-sm btn-danger confirmOrderBtn"
+                                data-order-id="{{ o.id }}"
+                                title="Review the order created from email and confirm it">
+                          <i class="bi bi-check2-circle me-1"></i>Confirm
+                        </button>
                       {% else %}
                         <button type="button" class="btn btn-sm btn-warning receiveStatusBtn"
                                 data-order-id="{{ o.id }}"
@@ -334,7 +358,13 @@
                     <td>{{ o.created_at }}</td>
                     <td class="text-end">
                       {% if not o.is_return %}
-                        {% if (o.payment_status or '')|lower != 'paid' %}
+                        {% if o.needs_confirmation %}
+                          <button type="button" class="btn btn-sm btn-outline-danger rejectOrderBtn"
+                                  data-order-id="{{ o.id }}"
+                                  title="Not an order for us — remove it">
+                            <i class="bi bi-x-circle me-1"></i> Reject
+                          </button>
+                        {% elif (o.payment_status or '')|lower != 'paid' %}
                           <button type="button" class="btn btn-sm btn-outline-success js-order-payment"
                                   data-order-id="{{ o.id }}" data-order-number="{{ o.order_number or '-' }}"
                                   data-payment-status="{{ o.payment_status or 'unpaid' }}"
