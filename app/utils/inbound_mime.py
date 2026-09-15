@@ -89,6 +89,34 @@ def _addresses(msg: EmailMessage, header: str) -> list[str]:
     return out
 
 
+_FORWARD_SUBJECT_RE = re.compile(r"^\s*(fwd?|fw|wg|tr)\s*:", re.IGNORECASE)
+_FORWARD_MARKER_RE = re.compile(r"forwarded message|begin forwarded message|original message", re.IGNORECASE)
+_FROM_LINE_RE = re.compile(
+    r"^\s*(?:\*+\s*)?from\s*:\s*\*?\s*(?:\"?([^\"<\n]*?)\"?\s*)?<?\s*([\w.+-]+@[\w-]+(?:\.[\w-]+)+)\s*>?",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def extract_forwarded_sender(subject: str, text: str) -> tuple[str, str]:
+    """(email, name) of the ORIGINAL sender when the message is a manual
+    forward ("Fwd: ..." + a "---------- Forwarded message ----------
+    From: Vendor <x@vendor.com>" block in the body). Empty strings when the
+    message does not look forwarded. Only the first 4000 characters are
+    scanned — the block sits at the top."""
+    head = (text or "")[:4000]
+    is_forward = bool(_FORWARD_SUBJECT_RE.match(subject or "")) or bool(_FORWARD_MARKER_RE.search(head))
+    if not is_forward:
+        return "", ""
+    marker = _FORWARD_MARKER_RE.search(head)
+    scan = head[marker.end():] if marker else head
+    m = _FROM_LINE_RE.search(scan)
+    if not m:
+        return "", ""
+    email_addr = (m.group(2) or "").strip().lower()
+    name = (m.group(1) or "").strip().strip("*").strip()
+    return email_addr, name
+
+
 def _decode_str(value: Any) -> str:
     if value is None:
         return ""
@@ -176,11 +204,15 @@ def parse_inbound_mime(raw: bytes) -> dict:
         for v in msg.get_all(h, []):
             routing_headers.append(_decode_str(v))
 
+    fwd_email, fwd_name = extract_forwarded_sender(subject, text)
+
     return {
         "message_id": message_id,
         "subject": subject,
         "from_email": (from_email or "").strip().lower(),
         "from_name": (from_name or "").strip(),
+        "forwarded_from_email": fwd_email,
+        "forwarded_from_name": fwd_name,
         "to": _addresses(msg, "To"),
         "cc": _addresses(msg, "Cc"),
         "date": date_value,

@@ -139,6 +139,9 @@ def store_inbound_email(
         "envelope_to": str(envelope_to or "").strip().lower()[:320],
         "from_email": str(parsed.get("from_email") or "")[:320],
         "from_name": str(parsed.get("from_name") or "")[:200],
+        # Manual "Fwd:" by the shop: the vendor is in the forwarded block, not in From.
+        "forwarded_from_email": str(parsed.get("forwarded_from_email") or "")[:320],
+        "forwarded_from_name": str(parsed.get("forwarded_from_name") or "")[:200],
         "to": list(parsed.get("to") or [])[:20],
         "cc": list(parsed.get("cc") or [])[:20],
         "subject": str(parsed.get("subject") or "")[:500],
@@ -195,6 +198,48 @@ def serialize_inbound_email(doc: dict, *, orders_map: dict | None = None) -> dic
 # ─────────────────────────────────────────────────────────────────────────────
 # Matching helpers
 # ─────────────────────────────────────────────────────────────────────────────
+
+def own_addresses(master, shop: dict) -> tuple[set[str], set[str]]:
+    """Emails and (non-generic) domains that belong to the shop itself:
+    tenant users, the shop and tenant contact emails. Mail coming from these
+    is the shop forwarding something — never a vendor."""
+    from app.blueprints.work_orders.services.lookups import _tenant_variants_from_shop
+
+    emails: set[str] = set()
+    variants = _tenant_variants_from_shop(shop)
+    if variants:
+        for u in master.users.find({"tenant_id": {"$in": variants}}, {"email": 1}):
+            if u.get("email"):
+                emails.add(str(u["email"]).strip().lower())
+        tenant = master.tenants.find_one({"_id": {"$in": variants}}, {"email": 1, "contact_email": 1})
+        for key in ("email", "contact_email"):
+            if tenant and tenant.get(key):
+                emails.add(str(tenant[key]).strip().lower())
+    for key in ("email", "contact_email"):
+        if shop.get(key):
+            emails.add(str(shop[key]).strip().lower())
+    domains = {_sender_domain(e) for e in emails}
+    domains = {d for d in domains if d and d not in GENERIC_EMAIL_DOMAINS}
+    return emails, domains
+
+
+def vendor_sender_for(email_doc: dict, own_emails: set[str], own_domains: set[str]) -> tuple[str, str]:
+    """(email, name) of the party that actually wrote the message — the
+    original sender of a manual forward, or From — unless it is the shop
+    itself, in which case ('', '') so the sender is not used for matching
+    or learning."""
+    candidates = [
+        (str(email_doc.get("forwarded_from_email") or "").strip().lower(), str(email_doc.get("forwarded_from_name") or "")),
+        (str(email_doc.get("from_email") or "").strip().lower(), str(email_doc.get("from_name") or "")),
+    ]
+    for addr, name in candidates:
+        if not addr:
+            continue
+        if addr in own_emails or _sender_domain(addr) in own_domains:
+            continue
+        return addr, name
+    return "", ""
+
 
 def match_vendor(vendors_coll, shop_id: ObjectId, *, sender_email: str, vendor_name: str) -> Optional[dict]:
     """Vendor by learned sender → sender domain → name (exact, then words)."""
@@ -579,14 +624,15 @@ def process_inbound_email(
 
         # 3. vendor ------------------------------------------------------------
         vendor_name = extracted.get("vendor_name") or classification.get("vendor_name") or ""
-        vendor = match_vendor(vendors_coll, shop["_id"], sender_email=email_doc.get("from_email") or "",
-                              vendor_name=vendor_name)
+        own_emails, own_domains = own_addresses(master, shop)
+        vendor_sender, vendor_sender_name = vendor_sender_for(email_doc, own_emails, own_domains)
+        vendor = match_vendor(vendors_coll, shop["_id"], sender_email=vendor_sender, vendor_name=vendor_name)
         vendor_created = False
         if not vendor:
             vendor = create_vendor_from_email(
                 vendors_coll, shop, extracted,
-                sender_email=email_doc.get("from_email") or "",
-                sender_name=email_doc.get("from_name") or "",
+                sender_email=vendor_sender,
+                sender_name=vendor_sender_name,
                 vendor_name=vendor_name,
             )
             vendor_created = True
@@ -616,7 +662,7 @@ def process_inbound_email(
             orders_coll.update_one({"_id": existing["_id"]}, update)
             _attach_email_files(shop_db, shop["_id"], existing["_id"], email_doc)
             _drop_attachment_bytes(shop_db, email_id)
-            learn_vendor_sender(vendors_coll, vendor["_id"], email_doc.get("from_email") or "")
+            learn_vendor_sender(vendors_coll, vendor["_id"], vendor_sender)
             _finish(shop_db, email_id, STATUS_LINKED, classification=classification, extracted=extracted,
                     extraction_source=extraction_source, attachment_summary=attachment_summary,
                     vendor=vendor_info, parts_order_id=existing["_id"])
@@ -664,6 +710,8 @@ def process_inbound_email(
                 "inbound_email_id": email_id,
                 "from_email": email_doc.get("from_email"),
                 "from_name": email_doc.get("from_name"),
+                "vendor_sender": vendor_sender,
+                "vendor_sender_name": vendor_sender_name,
                 "subject": email_doc.get("subject"),
                 "received_at": email_doc.get("received_at"),
                 "vendor_ref": vendor_ref,
@@ -813,8 +861,9 @@ def confirm_email_order(shop_db, shop: dict, order: dict, *, actor_user_id: Obje
     shop_db.parts_orders.update_one({"_id": order["_id"]}, update)
 
     source = order.get("source") or {}
-    if order.get("vendor_id") and source.get("from_email"):
-        learn_vendor_sender(shop_db.vendors, order["vendor_id"], source.get("from_email"))
+    # Learn only the real vendor sender (never the shop's own forwarding address).
+    if order.get("vendor_id") and source.get("vendor_sender"):
+        learn_vendor_sender(shop_db.vendors, order["vendor_id"], source.get("vendor_sender"))
     return True, "Order confirmed."
 
 
@@ -878,6 +927,8 @@ def serialize_source(order: dict) -> dict | None:
         "kind": "email",
         "from_email": src.get("from_email") or "",
         "from_name": src.get("from_name") or "",
+        "vendor_sender": src.get("vendor_sender") or "",
+        "vendor_sender_name": src.get("vendor_sender_name") or "",
         "subject": src.get("subject") or "",
         "received_at": received.isoformat() if isinstance(received, datetime) else None,
         "vendor_ref": src.get("vendor_ref") or "",

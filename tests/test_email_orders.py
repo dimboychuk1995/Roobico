@@ -350,6 +350,43 @@ def test_unreadable_pdf_falls_back_to_body(client, app, inbox_env, fake_ai):
     assert "error" in email["attachment_summary"][0]
 
 
+def test_manual_forward_by_shop_uses_original_vendor_sender(client, app, inbox_env, fake_ai):
+    """Владелец пересылает письмо руками: From = его собственный адрес.
+    Вендор берётся из блока Forwarded message, а адрес магазина не
+    запоминается за вендором (иначе следующее пересланное письмо от другого
+    вендора матчится на первого)."""
+    from tests.conftest import OWNER_EMAIL
+
+    fake_ai.vendor_name = "Liberty Tires Inc"
+    fake_ai.invoice_number = "LT-500"
+    fake_ai.attachment_items = [{"part_number": "ACME-100", "description": "Tire", "quantity": 1, "price": 100.0}]
+    # Первое письмо ACME запомнило бы адрес магазина — имитируем такое загрязнение:
+    inbox_env["db_a"].vendors.update_one({"_id": inbox_env["vendor_id"]},
+                                         {"$set": {"email_senders": [OWNER_EMAIL]}})
+    body = ("\n---------- Forwarded message ---------\nFrom: Liberty Tires <ar@libertytire.com>\n"
+            "Date: Mon, Sep 14, 2026\nSubject: Invoice LT-500\nTo: <%s>\n\nPlease see attached." % OWNER_EMAIL)
+    _post_webhook(client, _mime(subject="Fwd: Invoice LT-500", sender=f"Owner <{OWNER_EMAIL}>", body=body,
+                                message_id="<fwd-2@test.local>", attach_pdf=True))
+    email = inbox_env["db_a"].inbound_emails.find_one({"message_id": "fwd-2@test.local"})
+    assert email["forwarded_from_email"] == "ar@libertytire.com"
+
+    result = _process(app, inbox_env, email["_id"])
+    assert result["status"] == "order_created", result
+    order = inbox_env["db_a"].parts_orders.find_one({"_id": ObjectId(result["order_id"])})
+    vendor = inbox_env["db_a"].vendors.find_one({"_id": order["vendor_id"]})
+    assert vendor["name"] == "Liberty Tires Inc" and vendor["_id"] != inbox_env["vendor_id"]
+    assert order["source"]["vendor_sender"] == "ar@libertytire.com"
+
+    login(client)
+    token = get_csrf_token(client)
+    resp = client.post(f"/parts/api/orders/{order['_id']}/confirm", json={"drop_unmatched": True},
+                       headers={"X-CSRFToken": token})
+    assert resp.status_code == 200
+    vendor = inbox_env["db_a"].vendors.find_one({"_id": order["vendor_id"]})
+    assert vendor["email_senders"] == ["ar@libertytire.com"]
+    assert OWNER_EMAIL not in vendor.get("email_senders", [])
+
+
 def test_process_ignores_non_orders(client, app, inbox_env, fake_ai):
     fake_ai.is_order = False
     _post_webhook(client, _mime(subject="20% off this week!", message_id="<junk-1@acmetruck.com>"))

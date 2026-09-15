@@ -568,6 +568,9 @@
 			const unmatched = Array.isArray(order.unmatched_items) ? order.unmatched_items : [];
 			const receivedAt = src.received_at ? formatDateTime(src.received_at) : "";
 			let info = `<div><strong>From:</strong> ${escapeHtml(src.from_name ? `${src.from_name} <${src.from_email}>` : (src.from_email || "-"))}</div>`;
+			if (src.vendor_sender && src.vendor_sender !== src.from_email) {
+				info += `<div><strong>Vendor email:</strong> ${escapeHtml(src.vendor_sender_name ? `${src.vendor_sender_name} <${src.vendor_sender}>` : src.vendor_sender)}</div>`;
+			}
 			info += `<div><strong>Subject:</strong> ${escapeHtml(src.subject || "-")}</div>`;
 			if (receivedAt) info += `<div><strong>Received:</strong> ${escapeHtml(receivedAt)}</div>`;
 			if (src.vendor_ref) info += `<div><strong>Vendor order / invoice #:</strong> ${escapeHtml(src.vendor_ref)}</div>`;
