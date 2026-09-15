@@ -591,7 +591,7 @@ def test_settings_enable_issues_address_and_lists_inbox(client, app, inbox_env, 
     assert resp.status_code == 200 and resp.get_json()["email"]["status"] == "ignored"
 
     html = client.get("/settings/integrations").get_data(as_text=True)
-    assert "Email orders inbox" in html and new_address in html
+    assert "Parts orders from email" in html and new_address in html
 
 
 def test_settings_inbox_is_tenant_scoped(client, app, inbox_env):

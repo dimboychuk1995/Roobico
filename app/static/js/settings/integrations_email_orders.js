@@ -1,5 +1,7 @@
-// Settings → Integrations → Email orders inbox (per location).
+// Settings → Integrations → Parts orders from email (per location).
 // Markup: templates/components/integration_email_orders_modal.html.
+// One switch: toggling saves immediately; the address + instructions appear
+// once enabled. Mode stays "auto" (backend still supports "suggest").
 (function () {
   const modalEl = document.getElementById("integration-modal-email-orders");
   if (!modalEl) return;
@@ -12,18 +14,19 @@
     partsOrders: modalEl.dataset.partsOrdersUrl,
   };
 
+  const enabledCb = document.getElementById("email-orders-enabled");
+  const setupBox = document.getElementById("email-orders-setup");
   const addressInput = document.getElementById("email-orders-address");
   const copyBtn = document.getElementById("email-orders-copy");
   const rotateBtn = document.getElementById("email-orders-rotate");
-  const enabledCb = document.getElementById("email-orders-enabled");
-  const saveBtn = document.getElementById("email-orders-save");
   const feedback = document.getElementById("email-orders-feedback");
-  const statusLine = document.getElementById("email-orders-status-line");
   const inboxBox = document.getElementById("email-orders-inbox");
   const inboxCounts = document.getElementById("email-orders-inbox-counts");
   const inboxRefreshBtn = document.getElementById("email-orders-inbox-refresh");
+  const inboxWrap = document.getElementById("email-orders-inbox-wrap");
   const viewModalEl = document.getElementById("email-orders-view-modal");
   const viewBody = document.getElementById("email-orders-view-body");
+  const cardBadge = document.querySelector(".js-email-orders-badge");
 
   function escapeHtml(s) {
     return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({
@@ -34,8 +37,8 @@
   function notify(message, type) {
     if (typeof window.appAlert === "function") {
       window.appAlert(message, type || "info");
-    } else {
-      feedback.innerHTML = `<div class="alert alert-${type === "error" ? "danger" : "success"} py-2 mb-0">${escapeHtml(message)}</div>`;
+    } else if (feedback) {
+      feedback.innerHTML = `<div class="alert alert-${type === "error" ? "danger" : "success"} py-2">${escapeHtml(message)}</div>`;
     }
   }
 
@@ -44,36 +47,24 @@
     return window.confirm(message);
   }
 
-  function selectedMode() {
-    const checked = modalEl.querySelector('input[name="email-orders-mode"]:checked');
-    return checked ? checked.value : "auto";
-  }
-
-  function applyState(state) {
-    if (!state) return;
-    if (addressInput) addressInput.value = state.address || "";
-    if (copyBtn) copyBtn.disabled = !state.has_address;
-    if (rotateBtn) rotateBtn.disabled = !state.has_address;
-    if (enabledCb) enabledCb.checked = !!state.enabled;
-    const modeInput = modalEl.querySelector(`input[name="email-orders-mode"][value="${state.mode || "auto"}"]`);
-    if (modeInput) modeInput.checked = true;
-    const addrEls = document.querySelectorAll(".js-email-orders-address");
-    addrEls.forEach((el) => { el.textContent = state.address || ""; });
-    if (statusLine) {
-      const parts = [];
-      parts.push(state.enabled ? "Inbox enabled" : "Inbox paused");
-      parts.push(`${state.emails_received || 0} email(s) received`);
-      parts.push(`${state.orders_created || 0} order(s) created`);
-      if (state.last_email_at) parts.push("last email " + formatDate(state.last_email_at));
-      statusLine.textContent = parts.join(" · ");
-    }
-  }
-
   function formatDate(iso) {
     if (!iso) return "";
     const d = new Date(iso);
     if (isNaN(d.getTime())) return String(iso);
     return d.toLocaleString();
+  }
+
+  function applyState(state) {
+    if (!state) return;
+    const on = !!state.enabled && !!state.has_address;
+    if (enabledCb) enabledCb.checked = !!state.enabled;
+    if (addressInput) addressInput.value = state.address || "";
+    if (setupBox) setupBox.hidden = !on;
+    if (cardBadge) {
+      cardBadge.textContent = state.enabled ? "On" : "Off";
+      cardBadge.classList.toggle("text-bg-success", !!state.enabled);
+      cardBadge.classList.toggle("text-bg-secondary", !state.enabled);
+    }
   }
 
   async function postJson(url, payload) {
@@ -88,31 +79,40 @@
     return data;
   }
 
-  // ── settings ─────────────────────────────────────────────────────────
-  saveBtn?.addEventListener("click", async function () {
-    saveBtn.disabled = true;
+  // ── the switch (saves on change) ─────────────────────────────────────
+  enabledCb?.addEventListener("change", async function () {
+    const wanted = enabledCb.checked;
+    enabledCb.disabled = true;
     try {
-      const data = await postJson(urls.save, { enabled: !!enabledCb?.checked, mode: selectedMode() });
-      if (!data.ok) { notify(data.error || "Failed to save", "error"); return; }
+      const data = await postJson(urls.save, { enabled: wanted });
+      if (!data.ok) {
+        notify(data.error || "Failed to save", "error");
+        enabledCb.checked = !wanted;
+        return;
+      }
       applyState(data.state);
-      notify(data.state.enabled ? "Inbox enabled. Forward your vendor mail to the address shown." : "Settings saved.", "success");
-      // Карточка на странице показывает адрес/статус — перерисовать проще перезагрузкой.
-      setTimeout(() => window.location.reload(), 900);
+      if (wanted) {
+        notify("Turned on. Forward your vendor emails to the address shown.", "success");
+        loadInbox();
+      } else {
+        notify("Turned off. Emails sent to the address are no longer read.", "success");
+      }
     } catch (e) {
       notify("Network error: " + e.message, "error");
+      enabledCb.checked = !wanted;
     } finally {
-      saveBtn.disabled = false;
+      enabledCb.disabled = false;
     }
   });
 
   rotateBtn?.addEventListener("click", async function () {
-    if (!(await confirmDialog("Issue a new mailbox address? The current address stops working immediately and you will need to update your forwarding rule."))) return;
+    if (!(await confirmDialog("Issue a new address? The current one stops working immediately and you will need to update your forwarding rule."))) return;
     rotateBtn.disabled = true;
     try {
       const data = await postJson(urls.rotate, {});
       if (!data.ok) { notify(data.error || "Failed to issue a new address", "error"); return; }
       applyState(data.state);
-      notify("New address issued: " + data.state.address, "success");
+      notify("New address: " + data.state.address, "success");
     } catch (e) {
       notify("Network error: " + e.message, "error");
     } finally {
@@ -125,15 +125,14 @@
     if (!value) return;
     try {
       await navigator.clipboard.writeText(value);
-      notify("Address copied", "success");
     } catch (e) {
       addressInput.select();
       document.execCommand("copy");
-      notify("Address copied", "success");
     }
+    notify("Address copied", "success");
   });
 
-  // ── inbox history ────────────────────────────────────────────────────
+  // ── recent emails ────────────────────────────────────────────────────
   const STATUS_META = {
     order_created: { label: "Order created", cls: "text-bg-success" },
     linked: { label: "Linked to order", cls: "text-bg-info" },
@@ -152,15 +151,13 @@
     const meta = STATUS_META[e.status] || { label: e.status, cls: "text-bg-light border" };
     const who = e.from_name ? `${e.from_name} <${e.from_email}>` : (e.from_email || "—");
     const hint = [];
-    if (e.kind) hint.push(e.kind.replace(/_/g, " "));
-    if (typeof e.confidence === "number") hint.push(Math.round(e.confidence * 100) + "%");
     if (e.reason) hint.push(e.reason);
     if (e.error) hint.push("Error: " + e.error);
     const attachments = (e.attachments || []).map((a) => escapeHtml(a.filename)).join(", ");
 
     let result = "";
     if (e.parts_order_id && e.order_number != null) {
-      const href = urls.partsOrders + "&open_order=" + encodeURIComponent(e.parts_order_id) + (e.order_active === false ? "" : "&paid_status=all");
+      const href = urls.partsOrders + "&open_order=" + encodeURIComponent(e.parts_order_id);
       result = e.order_active === false
         ? `<span class="badge text-bg-secondary">Order #${escapeHtml(e.order_number)} removed</span>`
         : `<a class="badge text-bg-secondary text-decoration-none" href="${href}">Order #${escapeHtml(e.order_number)}</a>`;
@@ -171,7 +168,7 @@
     const actions = [];
     actions.push(`<button type="button" class="btn btn-sm btn-outline-secondary js-email-view" data-id="${e.id}">View</button>`);
     if (FORCEABLE.has(e.status)) {
-      actions.push(`<button type="button" class="btn btn-sm btn-primary js-email-process" data-id="${e.id}" data-force="1" title="Treat this email as an order and create it">Create order</button>`);
+      actions.push(`<button type="button" class="btn btn-sm btn-primary js-email-process" data-id="${e.id}" data-force="1" title="This is an order — create it">Create order</button>`);
     }
     if (RETRYABLE.has(e.status)) {
       actions.push(`<button type="button" class="btn btn-sm btn-outline-primary js-email-process" data-id="${e.id}" data-force="0" title="Run the AI check again">Retry</button>`);
@@ -207,10 +204,10 @@
         return;
       }
       if (inboxCounts) {
-        inboxCounts.textContent = data.counts ? `${data.counts.total} email(s) · ${data.counts.orders} became orders` : "";
+        inboxCounts.textContent = data.counts ? `(${data.counts.total} · ${data.counts.orders} became orders)` : "";
       }
       if (!data.emails || !data.emails.length) {
-        inboxBox.innerHTML = '<div class="text-muted">No emails yet. Forward a vendor invoice to the address above to test.</div>';
+        inboxBox.innerHTML = '<div class="text-muted">Nothing yet. Forward a vendor invoice to the address above to test.</div>';
         return;
       }
       inboxBox.innerHTML =
@@ -226,22 +223,19 @@
   }
 
   inboxRefreshBtn?.addEventListener("click", loadInbox);
+  inboxWrap?.addEventListener("show.bs.collapse", loadInbox);
 
   inboxBox?.addEventListener("click", async function (e) {
     const processBtn = e.target.closest(".js-email-process");
     if (processBtn) {
       const id = processBtn.dataset.id;
       const force = processBtn.dataset.force === "1";
-      if (force && !(await confirmDialog("Create a parts order from this email? AI will read the vendor and the lines; the order gets the Not confirmed flag for you to review."))) return;
+      if (force && !(await confirmDialog("Create a parts order from this email? It gets the Not confirmed flag for you to review."))) return;
       processBtn.disabled = true;
       processBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
       try {
         const data = await postJson(`${urls.inbox}/${encodeURIComponent(id)}/process`, { force });
-        if (!data.ok) {
-          notify(data.error || "Processing failed", "error");
-        } else {
-          notify(data.message || "Done", "success");
-        }
+        notify(data.ok ? (data.message || "Done") : (data.error || "Processing failed"), data.ok ? "success" : "error");
       } catch (err) {
         notify("Network error: " + err.message, "error");
       }
@@ -251,10 +245,9 @@
 
     const ignoreBtn = e.target.closest(".js-email-ignore");
     if (ignoreBtn) {
-      const id = ignoreBtn.dataset.id;
       ignoreBtn.disabled = true;
       try {
-        const data = await postJson(`${urls.inbox}/${encodeURIComponent(id)}/ignore`, {});
+        const data = await postJson(`${urls.inbox}/${encodeURIComponent(ignoreBtn.dataset.id)}/ignore`, {});
         if (!data.ok) notify(data.error || "Failed", "error");
       } catch (err) {
         notify("Network error: " + err.message, "error");
@@ -264,10 +257,7 @@
     }
 
     const viewBtn = e.target.closest(".js-email-view");
-    if (viewBtn) {
-      const id = viewBtn.dataset.id;
-      openView(id);
-    }
+    if (viewBtn) openView(viewBtn.dataset.id);
   });
 
   async function openView(id) {
@@ -283,7 +273,6 @@
       const meta = STATUS_META[e.status] || { label: e.status, cls: "text-bg-light border" };
       let html = `<dl class="row mb-2">
         <dt class="col-sm-3">From</dt><dd class="col-sm-9 text-break">${escapeHtml(e.from_name ? `${e.from_name} <${e.from_email}>` : e.from_email)}</dd>
-        <dt class="col-sm-3">To</dt><dd class="col-sm-9 text-break">${escapeHtml((e.to || []).join(", "))}</dd>
         <dt class="col-sm-3">Subject</dt><dd class="col-sm-9 text-break">${escapeHtml(e.subject || "(no subject)")}</dd>
         <dt class="col-sm-3">Received</dt><dd class="col-sm-9">${escapeHtml(formatDate(e.received_at))}</dd>
         <dt class="col-sm-3">Result</dt><dd class="col-sm-9"><span class="badge ${meta.cls}">${escapeHtml(meta.label)}</span> ${e.reason ? escapeHtml(e.reason) : ""}${e.error ? `<div class="text-danger">${escapeHtml(e.error)}</div>` : ""}</dd>
@@ -306,10 +295,13 @@
   }
 
   modalEl.addEventListener("shown.bs.modal", function () {
-    loadInbox();
     fetch(urls.state, { headers: { "Accept": "application/json" } })
       .then((r) => r.json())
-      .then((d) => { if (d && d.ok) applyState(d.state); })
+      .then((d) => {
+        if (!d || !d.ok) return;
+        applyState(d.state);
+        if (d.state.enabled) loadInbox();
+      })
       .catch(() => {});
   });
 })();

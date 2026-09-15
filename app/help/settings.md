@@ -120,30 +120,28 @@ payroll in General Revenue; employees are AI-matched to Roobico users so
 nobody is double-counted. Keys are stored encrypted; each shop configures
 its own integration.
 
-**Email orders inbox** — a private mailbox per location that only the AI
-reads; vendor order confirmations / invoices forwarded there become parts
-orders marked **Not confirmed**. In the window:
+**Parts orders from email** — one switch: *Create parts orders from vendor
+emails*. Turning it on (it saves immediately, no Save button) shows the
+location's private address (`orders-<code>@roobico.com`) that only the AI
+reads. Forward the mailbox where vendors write you to that address, or ask
+vendors to CC it — **How to set up forwarding** under the address has
+step-by-step instructions for Gmail / Google Workspace, Outlook.com /
+Microsoft 365, Yahoo, iCloud, Zoho, GoDaddy / cPanel mailboxes and vendors'
+portals. Forwarding the whole mailbox is fine: everything that is not an
+order is ignored. Providers that send a confirmation code / link to the
+new address (Gmail, Yahoo, iCloud, Zoho) — open that email with **View**
+under *Recent emails*. Vendor order confirmations / invoices become parts
+orders marked **Not confirmed** (Parts Orders tab).
 
-- **Location mailbox address** (`orders-<code>@roobico.com`) appears when
-  you enable the inbox and press Save; **copy** it. **Issue a new address**
-  if it leaked to spammers — the old one stops working at once, update
+- **Recent emails** (collapsed link) — every email that reached the
+  address with its result (*Order created* → link, *Linked to order*,
+  *Ignored* + reason, *Error*, *Rejected*) and actions: **View** (text and
+  the lines AI read), **Create order** (force an order from an
+  ignored/failed email), **Retry**, **Ignore**.
+- **Issue a new address** (inside the forwarding instructions) — if the
+  address leaked to spammers; the old one stops working at once, update
   the forwarding rule.
-- **Inbox enabled** switch — pause/resume without losing the address.
-- **Mode**: *Create orders automatically* (recommended: orders appear with
-  the Not confirmed badge, you confirm/reject on the Parts Orders tab) or
-  *Suggest only* (AI reads, you press "Create order" in the history).
-- **How to forward your mail here** — step-by-step instructions for
-  Gmail / Google Workspace, Outlook.com / Microsoft 365, Yahoo, iCloud,
-  Zoho, GoDaddy / cPanel mailboxes, plus the alternative of adding the
-  address as a notification email in vendors' portals. Forwarding the whole
-  mailbox is fine: everything that is not an order is simply ignored.
-  Providers that send a confirmation code / link to the new address (Gmail,
-  Yahoo, iCloud, Zoho) — open that email with **View** in the history.
-- **Inbox history** — every email that reached the mailbox with its result
-  (*Order created* → link, *Linked to order*, *Ignored* + reason, *Needs
-  review*, *Error*, *Rejected*) and actions: **View** (text + lines AI
-  read), **Create order** (force an order from an ignored/failed email),
-  **Retry**, **Ignore**.
+- Turning the switch off pauses reading; the address is kept.
 
 Requires the "Manage 3rd-party integrations" permission. Confirming and
 rejecting the orders themselves needs "edit parts". Details of matching,
