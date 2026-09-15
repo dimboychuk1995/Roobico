@@ -36,6 +36,9 @@ MATCH_MODEL = _model("EMAIL_ORDERS_MATCH_MODEL", "gpt-4o")
 
 ORDER_KINDS = {"order_confirmation", "invoice", "packing_slip"}
 ALL_KINDS = ORDER_KINDS | {"quote", "shipping_notice", "statement", "promo", "other"}
+# Document kinds (from the invoice parser) that say "definitely NOT an order":
+# a PDF of this kind decides the email is ignored even if the body sounds like an order.
+NON_ORDER_DOCUMENT_KINDS = {"quote", "statement", "receipt", "credit_memo"}
 
 MAX_CLASSIFY_CHARS = 6_000
 MAX_EXTRACT_CHARS = 30_000
@@ -59,6 +62,13 @@ Rules:
   software, utilities, meals, payroll etc. are NOT parts orders.
 - Attachments named like invoice/order/packing-slip PDFs strongly suggest a parts order even if the
   body is short ("please see attached invoice").
+- The shop often FORWARDS vendor mail here ("Fwd:", "FW:", a "Forwarded message" block). That is normal:
+  judge the forwarded content, and vendor_name / order_reference refer to the original vendor, never to
+  the shop or the person who forwarded it.
+- Dealer / OEM portals (RepairLink, PartsTrader, NAPA PROLink, FleetPride, Vander Haag's, Grainger, Amazon
+  Business) send confirmations and invoices with the line items as an HTML table in the body — those ARE
+  parts orders when the lines are present.
+- A credit memo / return credit is NOT a parts order (kind "statement" or "other").
 - When unsure, prefer is_parts_order=false with low confidence.
 """
 
@@ -219,7 +229,7 @@ def _normalize_extraction(result: dict) -> dict:
         total = 0.0
     kind = str(result.get("document_kind") or "").strip().lower()
     return {
-        "document_kind": kind if kind in ALL_KINDS or kind in ("receipt",) else "other",
+        "document_kind": kind if kind in ALL_KINDS or kind in NON_ORDER_DOCUMENT_KINDS else "other",
         "vendor_name": str(result.get("vendor_name") or "").strip(),
         "vendor_address": str(result.get("vendor_address") or "").strip(),
         "vendor_phone": str(result.get("vendor_phone") or "").strip(),

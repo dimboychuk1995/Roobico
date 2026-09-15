@@ -13,24 +13,24 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-SYSTEM_PROMPT = """You are an expert invoice data extractor for a truck parts and repair shop.
-Given an invoice image, extract the following data as JSON.
+SYSTEM_PROMPT = """You are an expert at reading parts documents (invoices, order confirmations, packing slips)
+for a heavy-duty truck and fleet repair shop. The shop is the BUYER. Extract the data below as JSON.
 
 Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
 {
-  "vendor_name": "string — the company that issued the invoice (seller / supplier)",
-  "vendor_address": "string — full address of the vendor/seller (street, city, state, zip)",
-  "vendor_phone": "string — vendor phone number",
-  "vendor_email": "string — vendor email address",
-  "vendor_website": "string — vendor website URL if visible",
-  "vendor_contact_first_name": "string — contact person first name (e.g. from Invoiced By or salesperson field)",
-  "vendor_contact_last_name": "string — contact person last name",
-  "invoice_number": "string — invoice or bill number",
-  "invoice_date": "string — date in MM/DD/YYYY format",
-  "document_kind": "invoice" | "order_confirmation" | "packing_slip" | "quote" | "statement" | "receipt" | "other",
+  "vendor_name": "string — the SELLER's trade name as printed in the header/logo (e.g. 'Hawk Ford of St. Charles', 'FleetPride')",
+  "vendor_address": "string — the seller's own street address (city, state, zip)",
+  "vendor_phone": "string — the seller's phone",
+  "vendor_email": "string — the seller's email",
+  "vendor_website": "string — the seller's website if printed",
+  "vendor_contact_first_name": "string — seller-side contact person first name (Salesperson / Invoiced By / Counterman / Rep)",
+  "vendor_contact_last_name": "string — seller-side contact person last name",
+  "invoice_number": "string — the document's own number: Invoice #, Order #, Confirmation #, Packing Slip #",
+  "invoice_date": "string — the document date in MM/DD/YYYY",
+  "document_kind": "invoice" | "order_confirmation" | "packing_slip" | "quote" | "statement" | "receipt" | "credit_memo" | "other",
   "items": [
     {
-      "part_number": "string — part number / SKU (e.g. DR 8600310, PEXR955337)",
+      "part_number": "string — the part number as invoiced (e.g. 'DR 8600310', 'F81Z-6B209-AB', 'PEXR955337')",
       "description": "string — part description",
       "quantity": 1,
       "price": 0.00
@@ -39,23 +39,76 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
   "total": 0.00
 }
 
-Rules:
-- QUANTITY: Look carefully at the Qty / Quantity / Ord / Ship / QTY Shipped columns. Each line item has a quantity — it is NOT always 1. Read the actual number from the invoice. If there are separate "Ordered" and "Shipped" columns, use the "Shipped" quantity.
-- PRICE: Use the UNIT price, NOT the extended/total price for the line. If the invoice shows both "List Price" and "Net Price" (or "Your Price", "Sale Price", "Disc Price"), always use the NET / discounted price as the unit price. The net price is the actual price the buyer pays after discounts.
-- If a line has a Supplier column, ignore it — it's internal to the vendor.
-- Combine part prefix and number into one part_number field (e.g. "DR 8600310").
-- Do NOT include tax lines, freight lines, payment info, or signature blocks.
-- vendor_address is the seller/remit-to address, NOT the bill-to or ship-to address.
-- vendor_phone and vendor_email are the seller's contact info, NOT the buyer's.
-- If you cannot determine a field, use empty string or 0.
-- document_kind: what the document IS. "invoice" (bill for parts), "order_confirmation" (vendor acknowledges an
-  order), "packing_slip" (shipment contents). A "quote"/"estimate" is an offer, not an order. "statement" is an
-  account summary listing several invoices. "receipt" is a payment receipt without part lines. Anything that is
-  not about parts (fuel, meals, software, utilities, marketing) is "other".
-- Always return the JSON object, even if you can only partially extract data.
+WHO IS WHO
+- The seller/supplier is the vendor. The buyer (Bill To / Sold To / Ship To / Customer / Account) is the shop —
+  never put the buyer's name, address, phone or email into vendor fields.
+- vendor_name is the trade name in the header or logo, not a "Remit To" lockbox or bank entity and not a parent
+  holding company. Keep the dealership name as printed ("Hawk Ford of St. Charles"), do not shorten it.
+- vendor_address is the seller's own address, not Bill To, Ship To or Remit To (unless Remit To is the only
+  seller address printed).
+
+DOCUMENT NUMBER AND DATE
+- invoice_number is the document's own number. NOT the buyer's PO #, account #, customer #, RO #, VIN or unit #.
+  For an order confirmation use the vendor order / confirmation number; for a packing slip the packing slip #
+  (or the order # if that is the only one).
+- invoice_date is the document date (Invoice Date / Order Date), not Due Date, Ship Date or Printed Date.
+
+LINE ITEMS — what to include
+- One entry per parts line. Include only physical parts/supplies the shop is buying.
+- EXCLUDE these lines entirely: core charges / core deposits / core credits (CORE, CORE CHG, CORE RETURN),
+  sales tax, freight / shipping / delivery / fuel surcharge, environmental / hazmat / disposal fees, shop
+  supplies, restocking fees, labor, deposits, discounts as separate lines, subtotal / total / balance lines,
+  payment info, signature blocks, page headers and footers.
+- Backordered or cancelled lines with 0 shipped (B/O, BACKORDER, CANCELLED) are excluded on invoices and
+  packing slips; on order confirmations and quotes every ordered line counts.
+- Multi-page documents: continue across pages, do not duplicate lines repeated in "continued" headers,
+  and take totals once.
+
+PART NUMBER
+- The primary part number column as invoiced. Combine a manufacturer/line prefix with the number into ONE string
+  when they are printed as one code ("DR 8600310", "MOT 12345", "FLT AF25550").
+- NOT a part number: the line/sequence number (1, 2, 3…), UPC/barcode digits, bin/location, the buyer's PO #,
+  and superseded / replaced / "was" / interchange numbers — when a line shows "12345 supersedes 67890" or
+  "replaced by", use the number that was actually invoiced (usually the new one).
+- Descriptions may wrap to a second line: merge it into the same item.
+
+QUANTITY
+- Every line has a quantity. Read the number from the Qty / Quantity / Ord / Ship / Shipped / QTY SHP / Units /
+  Each column. It is NOT always 1 — never default to 1 when a number is printed.
+- With separate Ordered and Shipped columns use Shipped (on invoices and packing slips); with Ordered and
+  Backordered columns use Ordered − Backordered. On order confirmations use the Ordered quantity.
+- Quantity is the count of sale units (EA, PC, SET, KIT, BOX, GAL, QT). "2 EA" = 2; a "BOX of 4" sold as
+  1 box = 1. Use whole numbers.
+
+PRICE
+- price is the NET UNIT price the buyer pays for one unit, after discounts.
+- Columns: prefer Net / Net Price / Net Each / Your Price / Your Cost / Cost / Sale / Disc Price / Dealer Price /
+  Unit Price. NEVER use List, MSRP, Retail, Suggested, Jobber or Core columns.
+- NEVER use the extended / amount / total column as the unit price. If only quantity and extended amount are
+  printed, unit price = extended ÷ quantity, rounded to cents.
+- If a Discount % column applies to List: price = List × (1 − discount). If a line shows a unit price and a
+  separate core price, price is the unit price only (the core is tracked separately).
+- Ignore a Supplier / Vendor / Source column inside the line — it is internal to the seller.
+
+TOTAL
+- total is the document's grand total as printed (including tax and freight), used only as a sanity check.
+
+document_kind — what the document IS:
+- "invoice": a bill for parts with line items. "order_confirmation": the vendor acknowledges an order
+  (Order Confirmation, Order Acknowledgement, Sales Order, "Thank you for your order"). "packing_slip":
+  shipment contents (Packing Slip / Pick Ticket / Delivery Note).
+- "quote": Quote / Estimate / Proposal — an offer, NOT an order. "statement": an account summary listing several
+  invoices and balances. "receipt": a payment receipt without part lines. "credit_memo": a credit / return
+  document with negative amounts. Anything not about parts (fuel, meals, software, utilities, tolls,
+  marketing) is "other".
+
+- If you cannot determine a field, use an empty string or 0. Always return the JSON object, even if only
+  part of the data could be read.
 """
 
-DOCUMENT_KINDS = {"invoice", "order_confirmation", "packing_slip", "quote", "statement", "receipt", "other"}
+DOCUMENT_KINDS = {
+    "invoice", "order_confirmation", "packing_slip", "quote", "statement", "receipt", "credit_memo", "other",
+}
 
 
 def _get_openai_client():

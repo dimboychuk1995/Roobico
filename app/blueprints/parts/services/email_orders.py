@@ -605,7 +605,7 @@ def _decide_and_extract(email_doc: dict, *, force: bool) -> tuple[dict, dict, st
                 "decided_by": "attachment",
             }
             return classification, best, src, summary
-        if kind in ("quote", "statement", "receipt") and not force:
+        if kind in ai.NON_ORDER_DOCUMENT_KINDS and not force:
             # The PDF says clearly what it is: not an order. Do not let the
             # body ("your order", "thanks for your business") override it.
             classification = {
