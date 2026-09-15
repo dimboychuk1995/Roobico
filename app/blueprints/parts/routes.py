@@ -48,6 +48,7 @@ from app.blueprints.parts.services.email_orders import (
     reject_email_order,
     serialize_source as serialize_email_order_source,
     serialize_unmatched as serialize_email_order_unmatched,
+    vendor_changed_on_email_order,
 )
 
 from . import parts_bp
@@ -2307,6 +2308,10 @@ def parts_api_orders_update(order_id: str):
 
     updated_order = orders_coll.find_one({"_id": oid})
     _sync_parts_order_payment_state(orders_coll, payments_coll, updated_order or {}, user_oid, now)
+
+    # Заказ из почты, пользователь выбрал другого вендора: автосозданный
+    # вендор удаляется, отправитель запоминается за выбранным.
+    vendor_changed_on_email_order(orders_coll.database, order, vendor_oid, actor_user_id=user_oid)
 
     return jsonify({"ok": True})
 

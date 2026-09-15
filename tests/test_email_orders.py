@@ -158,6 +158,15 @@ class FakeAI:
             raise ValueError("unreadable")
         return self._extraction(self.attachment_items, self.attachment_kind)
 
+    ai_match_answer = None  # name from the candidate list the "AI" picks, or None
+    match_calls = 0
+
+    def match_vendor_ai(self, *, vendor_name, sender_email, candidates):
+        self.match_calls += 1
+        if self.ai_match_answer and self.ai_match_answer in candidates:
+            return candidates.index(self.ai_match_answer)
+        return None
+
 
 @pytest.fixture()
 def fake_ai(monkeypatch):
@@ -167,6 +176,7 @@ def fake_ai(monkeypatch):
     monkeypatch.setattr(email_orders.ai, "classify_email", fake.classify_email)
     monkeypatch.setattr(email_orders.ai, "extract_order_from_text", fake.extract_order_from_text)
     monkeypatch.setattr(email_orders.ai, "extract_order_from_attachment", fake.extract_order_from_attachment)
+    monkeypatch.setattr(email_orders.ai, "match_vendor_ai", fake.match_vendor_ai)
     return fake
 
 
@@ -387,6 +397,67 @@ def test_manual_forward_by_shop_uses_original_vendor_sender(client, app, inbox_e
     assert OWNER_EMAIL not in vendor.get("email_senders", [])
 
 
+def test_vendor_matched_by_short_name_inside_long_name(client, app, inbox_env, fake_ai):
+    """«Hawk Ford» в базе, «Hawk Ford of St. Charles Pro Elite…» в инвойсе — один вендор."""
+    hawk_id = inbox_env["db_a"].vendors.insert_one({
+        "shop_id": inbox_env["shop_a"]["_id"], "name": "Hawk Ford", "is_active": True, "created_at": _now(),
+    }).inserted_id
+    fake_ai.vendor_name = "Hawk Ford of St. Charles Pro Elite Commercial Vehicle Center"
+    fake_ai.invoice_number = "HF-1"
+    _post_webhook(client, _mime(sender="RepairLink <repairlink@oeconnection.com>", message_id="<hf-1@x.com>"))
+    email = inbox_env["db_a"].inbound_emails.find_one({"message_id": "hf-1@x.com"})
+    result = _process(app, inbox_env, email["_id"])
+    order = inbox_env["db_a"].parts_orders.find_one({"_id": ObjectId(result["order_id"])})
+    assert order["vendor_id"] == hawk_id and order["source"]["vendor_created"] is False
+    assert fake_ai.match_calls == 0
+
+
+def test_shared_portal_sender_is_not_a_match_and_ai_picks_vendor(client, app, inbox_env, fake_ai):
+    """Один портал шлёт за многих дилеров: адрес, известный у двух вендоров,
+    не определяет вендора; решает AI по списку вендоров магазина."""
+    db = inbox_env["db_a"]
+    shop_id = inbox_env["shop_a"]["_id"]
+    hawk_id = db.vendors.insert_one({"shop_id": shop_id, "name": "Hawk Ford", "is_active": True,
+                                     "email_senders": ["repairlink@oeconnection.com"], "created_at": _now()}).inserted_id
+    db.vendors.insert_one({"shop_id": shop_id, "name": "Roesch Ford", "is_active": True,
+                           "email_senders": ["repairlink@oeconnection.com"], "created_at": _now()})
+    fake_ai.vendor_name = "H. FORD COMMERCIAL VEHICLE CENTER - ST CHARLES"  # по вхождению не найти
+    fake_ai.invoice_number = "HF-2"
+    fake_ai.ai_match_answer = "Hawk Ford"
+    _post_webhook(client, _mime(sender="RepairLink <repairlink@oeconnection.com>", message_id="<hf-2@x.com>"))
+    email = db.inbound_emails.find_one({"message_id": "hf-2@x.com"})
+    result = _process(app, inbox_env, email["_id"])
+    order = db.parts_orders.find_one({"_id": ObjectId(result["order_id"])})
+    assert order["vendor_id"] == hawk_id and fake_ai.match_calls == 1
+
+
+def test_picking_another_vendor_removes_auto_created_one(client, app, inbox_env, fake_ai):
+    db = inbox_env["db_a"]
+    fake_ai.vendor_name = "Totally Unknown Supply"
+    fake_ai.invoice_number = "TU-1"
+    _post_webhook(client, _mime(sender="orders@totallyunknown.com", message_id="<tu-1@x.com>"))
+    email = db.inbound_emails.find_one({"message_id": "tu-1@x.com"})
+    result = _process(app, inbox_env, email["_id"])
+    order = db.parts_orders.find_one({"_id": ObjectId(result["order_id"])})
+    auto_vendor_id = order["vendor_id"]
+    assert db.vendors.find_one({"_id": auto_vendor_id})["created_from_email"] is True
+
+    # Пользователь в модалке выбрал существующего вендора ACME и сохранил.
+    login(client)
+    token = get_csrf_token(client)
+    resp = client.put(f"/parts/api/orders/{order['_id']}/update", json={
+        "vendor_id": str(inbox_env["vendor_id"]), "order_date": "2026-09-15",
+        "items": [{"part_id": str(inbox_env["part_id"]), "quantity": 1, "price": 5}],
+    }, headers={"X-CSRFToken": token})
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
+    assert db.vendors.find_one({"_id": auto_vendor_id}) is None            # мусор удалён
+    order = db.parts_orders.find_one({"_id": order["_id"]})
+    assert order["vendor_id"] == inbox_env["vendor_id"] and order["source"]["vendor_created"] is False
+    acme = db.vendors.find_one({"_id": inbox_env["vendor_id"]})
+    assert "orders@totallyunknown.com" in acme["email_senders"]           # запомнили за выбранным
+
+
 def test_process_ignores_non_orders(client, app, inbox_env, fake_ai):
     fake_ai.is_order = False
     _post_webhook(client, _mime(subject="20% off this week!", message_id="<junk-1@acmetruck.com>"))
@@ -535,7 +606,7 @@ def test_confirm_requires_resolving_unmatched_then_clears_flag(client, app, inbo
     assert resp.status_code == 200
 
 
-def test_reject_soft_deletes_and_deactivates_auto_vendor(client, app, inbox_env, fake_ai):
+def test_reject_soft_deletes_order_and_removes_auto_vendor(client, app, inbox_env, fake_ai):
     fake_ai.vendor_name = "One Off Vendor"
     _post_webhook(client, _mime(sender="x@oneoffvendor.com", message_id="<r-1@x.com>"))
     email = inbox_env["db_a"].inbound_emails.find_one({"message_id": "r-1@x.com"})
@@ -550,7 +621,7 @@ def test_reject_soft_deletes_and_deactivates_auto_vendor(client, app, inbox_env,
     order = inbox_env["db_a"].parts_orders.find_one({"_id": order_id})
     assert order["is_active"] is False and order["rejected_by"] is not None
     assert inbox_env["db_a"].inbound_emails.find_one({"_id": email["_id"]})["status"] == "rejected"
-    assert inbox_env["db_a"].vendors.find_one({"_id": vendor_id})["is_active"] is False
+    assert inbox_env["db_a"].vendors.find_one({"_id": vendor_id}) is None  # автосозданный мусор удалён
 
     # Подтверждённый (обычный) заказ отклонить нельзя.
     manual_id = inbox_env["db_a"].parts_orders.insert_one({

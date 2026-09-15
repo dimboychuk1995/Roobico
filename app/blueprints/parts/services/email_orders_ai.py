@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any
 
 from app.utils.invoice_parser import SYSTEM_PROMPT as INVOICE_SYSTEM_PROMPT
@@ -23,8 +24,15 @@ from app.utils.invoice_parser import _get_openai_client, parse_invoice
 
 logger = logging.getLogger(__name__)
 
-CLASSIFY_MODEL = "gpt-4o-mini"
-EXTRACT_MODEL = "gpt-4o"
+def _model(env_name: str, default: str) -> str:
+    """Models are overridable per step via .env (e.g. a stronger model for
+    text extraction) without touching code."""
+    return os.environ.get(env_name, "").strip() or default
+
+
+CLASSIFY_MODEL = _model("EMAIL_ORDERS_CLASSIFY_MODEL", "gpt-4o-mini")
+EXTRACT_MODEL = _model("EMAIL_ORDERS_EXTRACT_MODEL", "gpt-4o")
+MATCH_MODEL = _model("EMAIL_ORDERS_MATCH_MODEL", "gpt-4o")
 
 ORDER_KINDS = {"order_confirmation", "invoice", "packing_slip"}
 ALL_KINDS = ORDER_KINDS | {"quote", "shipping_notice", "statement", "promo", "other"}
@@ -58,9 +66,70 @@ TEXT_EXTRACT_SUFFIX = """
 
 You are given the TEXT of a vendor email (order confirmation / invoice / packing slip), not an image.
 Still fill document_kind for the email itself.
-Read the line items from the text tables. Column layouts vary (tabs, pipes, multiple spaces).
-Use the same rules as above. Treat the email sender company as the vendor when the body does
-not spell out a vendor name. invoice_number is the vendor's order / invoice / confirmation number."""
+The text was converted from an HTML email: table cells are separated by TABs or several spaces,
+rows by newlines; a single line item may be split over 2-3 consecutive lines (part number on one
+line, description and numbers on the next). Reassemble each line item before extracting it.
+
+QUANTITY — mandatory: every line has a quantity in a column such as Qty / Quantity / Ord / Ordered /
+Shipped / Ship / Qty Ship / Units. Read the actual number; NEVER default to 1 when a number is present.
+Prefer the Shipped/Ship quantity over Ordered when both exist. If a line shows "2 @ 55.00" or
+"2 x 55.00", the quantity is 2.
+
+PRICE — mandatory: price is the NET UNIT price the buyer pays. Dealer / OEM portal emails
+(RepairLink, PartsTrader, NAPA PROLink, FleetPride, etc.) typically show List, Net (or Your Price /
+Cost / Dealer Price / Sale) and Extended (Total / Amount) columns:
+  - use Net / Your Price / Cost / Sale / Dealer Price — NEVER List / MSRP / Retail;
+  - never use the extended line total as the unit price; if only quantity and extended total are
+    shown, unit price = extended total / quantity;
+  - a discount % column applies to List: net = list × (1 − discount);
+  - ignore core charges, tax, freight and environmental fees as line items.
+
+Treat the email sender company as the vendor when the body does not spell out a vendor name.
+invoice_number is the vendor's order / invoice / confirmation number."""
+
+MATCH_VENDOR_PROMPT = """You match a supplier name from an invoice to the shop's vendor list.
+The same company appears under different names: the invoice may carry the long legal name
+("Hawk Ford of St. Charles Pro Elite Commercial Vehicle Center", "NAPA Auto Parts - Genuine Parts
+Company #4471") while the list has the short everyday name ("Hawk Ford", "NAPA"), or vice versa;
+abbreviations, "Inc"/"LLC", store numbers and city suffixes differ.
+Return ONLY JSON: {"index": <number from the list or -1>, "confidence": 0.0-1.0}.
+Pick an index only when it is the SAME business (same brand/dealership/store chain). Different
+dealers of the same make (e.g. "Hawk Ford" vs "Roesch Ford") are NOT the same. When unsure, -1."""
+
+
+def match_vendor_ai(*, vendor_name: str, sender_email: str, candidates: list[str]) -> int | None:
+    """Ask the model which of the shop's vendors (numbered list) the invoice
+    supplier is. Returns an index into ``candidates`` or None."""
+    if not vendor_name or not candidates:
+        return None
+    client = _get_openai_client()
+    listing = "\n".join(f"{i}. {name}" for i, name in enumerate(candidates))
+    user_msg = (
+        f"Supplier on the invoice: {vendor_name}\n"
+        f"Sender email: {sender_email or '(unknown)'}\n\n"
+        f"Shop vendor list:\n{listing}"
+    )
+    response = client.chat.completions.create(
+        model=MATCH_MODEL,
+        messages=[
+            {"role": "system", "content": MATCH_VENDOR_PROMPT},
+            {"role": "user", "content": user_msg},
+        ],
+        max_tokens=60,
+        temperature=0,
+        response_format={"type": "json_object"},
+    )
+    raw = response.choices[0].message.content or ""
+    try:
+        data = _json_from_model(raw)
+        index = int(data.get("index", -1))
+        confidence = float(data.get("confidence") or 0.0)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        logger.error("match_vendor_ai: unusable model answer: %s", raw[:200])
+        return None
+    if index < 0 or index >= len(candidates) or confidence < 0.6:
+        return None
+    return index
 
 
 def _json_from_model(raw: str) -> dict:

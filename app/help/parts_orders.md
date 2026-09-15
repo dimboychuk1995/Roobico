@@ -91,10 +91,17 @@ What happens with every email that arrives:
    fuel or software and anything else are marked **Ignored**. They are not
    deleted: the whole history is visible in the integration window, and an
    ignored email can be turned into an order with one click if AI was wrong.
-3. **Vendor** is matched by the sender address (learned from previous
-   confirmed orders), then by name. If nobody matches, the vendor is
-   **created automatically** with the contacts from the email — check it
-   when confirming (the order dialog says so).
+3. **Vendor** is matched by name first — exact, or one name inside the
+   other ("Hawk Ford" in the list vs "Hawk Ford of St. Charles Pro Elite
+   Commercial Vehicle Center" on the invoice count as the same vendor) —
+   then by the sender address learned from earlier orders (only when that
+   address belongs to a single vendor: dealer portals like RepairLink send
+   for many dealers from one address), and finally AI compares the invoice
+   name against the whole vendor list. If nobody matches, the vendor is
+   **created automatically** with the contacts from the email — the order
+   dialog says so. Pick the right vendor in the dialog and save: the
+   auto-created one is deleted and the sender is remembered for the vendor
+   you chose, so the next email from it matches straight away.
 4. **Parts** are matched by part number (separators like spaces/dashes are
    ignored). Lines that do not exist in the catalog are kept on the order as
    **unmatched lines** for you to resolve.
@@ -134,7 +141,7 @@ is a normal order: receive it, pay it, return items.
 **Reject** (in the dialog or in the row) removes the order when the email was
 not an order for this shop. The email is kept in the inbox history as
 *Rejected*; a vendor that was auto-created only for this email is
-deactivated again.
+deleted again.
 
 ### Suggest-only mode
 

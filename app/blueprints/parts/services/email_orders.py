@@ -241,42 +241,116 @@ def vendor_sender_for(email_doc: dict, own_emails: set[str], own_domains: set[st
     return "", ""
 
 
-def match_vendor(vendors_coll, shop_id: ObjectId, *, sender_email: str, vendor_name: str) -> Optional[dict]:
-    """Vendor by learned sender → sender domain → name (exact, then words)."""
-    base = {"shop_id": shop_id, "is_active": {"$ne": False}}
-    sender = str(sender_email or "").strip().lower()
-    if sender:
-        doc = vendors_coll.find_one({**base, "email_senders": sender})
-        if doc:
-            return doc
-        domain = _sender_domain(sender)
-        if domain and domain not in GENERIC_EMAIL_DOMAINS:
-            doc = vendors_coll.find_one({**base, "email_domains": domain})
-            if doc:
-                return doc
-            domain_re = {"$regex": "@" + re.escape(domain) + "$", "$options": "i"}
-            doc = vendors_coll.find_one({**base, "$or": [{"email": domain_re}, {"contacts.email": domain_re}]})
-            if doc:
-                return doc
-        doc = vendors_coll.find_one({**base, "$or": [{"email": sender}, {"contacts.email": sender}]})
-        if doc:
-            return doc
+_NAME_NOISE = {"inc", "llc", "ltd", "co", "corp", "company", "the", "and", "of"}
+MAX_AI_VENDOR_CANDIDATES = 300
 
+
+def _norm_name(value: str) -> str:
+    s = re.sub(r"[^a-z0-9 ]+", " ", str(value or "").lower())
+    return " ".join(w for w in s.split() if w not in _NAME_NOISE)
+
+
+def _unique(vendors_coll, query: dict) -> Optional[dict]:
+    """The match only when exactly one vendor satisfies it — a portal address
+    (repairlink@oeconnection.com) shared by several dealers is ambiguous."""
+    docs = list(vendors_coll.find(query).limit(2))
+    return docs[0] if len(docs) == 1 else None
+
+
+def match_vendor(vendors_coll, shop_id: ObjectId, *, sender_email: str, vendor_name: str) -> Optional[dict]:
+    """Vendor for an email: exact name → one name contained in the other
+    ("Hawk Ford" ⊂ "Hawk Ford of St. Charles Pro Elite…") → unique learned
+    sender / domain → AI over the shop's vendor list. Name beats sender
+    because dealer portals send for many vendors from one address."""
+    base = {"shop_id": shop_id, "is_active": {"$ne": False}}
     name = str(vendor_name or "").strip()
+    sender = str(sender_email or "").strip().lower()
+
+    vendors = list(vendors_coll.find(base, {"name": 1}).limit(5000))
     if name:
         doc = vendors_coll.find_one({**base, "name": _ci_exact(name)})
         if doc:
             return doc
-        doc = vendors_coll.find_one({**base, "name": {"$regex": re.escape(name), "$options": "i"}})
+        wanted = _norm_name(name)
+        if len(wanted) >= 4:
+            contained: list[tuple[int, ObjectId]] = []
+            for v in vendors:
+                have = _norm_name(v.get("name"))
+                if len(have) < 4:
+                    continue
+                if have == wanted:
+                    return vendors_coll.find_one({"_id": v["_id"]})
+                if f" {have} " in f" {wanted} " or f" {wanted} " in f" {have} ":
+                    contained.append((abs(len(have) - len(wanted)), v["_id"]))
+            if contained:
+                contained.sort(key=lambda t: t[0])
+                return vendors_coll.find_one({"_id": contained[0][1]})
+
+    if sender:
+        doc = _unique(vendors_coll, {**base, "email_senders": sender})
         if doc:
             return doc
-        words = [w for w in re.split(r"\s+", name) if len(w) >= 3 and w.lower() not in ("inc", "llc", "ltd", "the", "and", "corp")]
-        if words:
-            pattern = ".*".join(re.escape(w) for w in words[:3])
-            doc = vendors_coll.find_one({**base, "name": {"$regex": pattern, "$options": "i"}})
+        doc = _unique(vendors_coll, {**base, "$or": [{"email": sender}, {"contacts.email": sender}]})
+        if doc:
+            return doc
+        domain = _sender_domain(sender)
+        if domain and domain not in GENERIC_EMAIL_DOMAINS:
+            doc = _unique(vendors_coll, {**base, "email_domains": domain})
             if doc:
                 return doc
+            domain_re = {"$regex": "@" + re.escape(domain) + "$", "$options": "i"}
+            doc = _unique(vendors_coll, {**base, "$or": [{"email": domain_re}, {"contacts.email": domain_re}]})
+            if doc:
+                return doc
+
+    if name and vendors:
+        candidates = vendors[:MAX_AI_VENDOR_CANDIDATES]
+        try:
+            index = ai.match_vendor_ai(
+                vendor_name=name, sender_email=sender,
+                candidates=[str(v.get("name") or "") for v in candidates],
+            )
+        except Exception:  # noqa: BLE001 — AI matching is best effort; fall through to "create"
+            logger.exception("email_orders: AI vendor matching failed for %r", name)
+            index = None
+        if index is not None:
+            return vendors_coll.find_one({"_id": candidates[index]["_id"]})
     return None
+
+
+def remove_auto_vendor_if_unused(shop_db, vendor_id, *, exclude_order_id=None) -> bool:
+    """Hard-delete a vendor the inbox created automatically, once nothing
+    references it (the user picked another vendor, or rejected the order).
+    Only vendors flagged created_from_email are ever removed."""
+    if not vendor_id:
+        return False
+    vendor = shop_db.vendors.find_one({"_id": vendor_id, "created_from_email": True}, {"_id": 1})
+    if not vendor:
+        return False
+    orders_q: dict = {"vendor_id": vendor_id, "is_active": {"$ne": False}}
+    if exclude_order_id is not None:
+        orders_q["_id"] = {"$ne": exclude_order_id}
+    if shop_db.parts_orders.find_one(orders_q, {"_id": 1}):
+        return False
+    if shop_db.parts.find_one({"vendor_id": vendor_id, "is_active": True}, {"_id": 1}):
+        return False
+    shop_db.vendors.delete_one({"_id": vendor_id, "created_from_email": True})
+    return True
+
+
+def vendor_changed_on_email_order(shop_db, order: dict, new_vendor_id, *, actor_user_id=None) -> None:
+    """Called after a user saved an email-created order with another vendor:
+    the auto-created one is removed and the sender is learned for the vendor
+    the user chose (so the next email from it matches straight away)."""
+    source = order.get("source") or {}
+    old_vendor_id = order.get("vendor_id")
+    if source.get("kind") != "email" or not new_vendor_id or new_vendor_id == old_vendor_id:
+        return
+    if source.get("vendor_created"):
+        remove_auto_vendor_if_unused(shop_db, old_vendor_id, exclude_order_id=order["_id"])
+        shop_db.parts_orders.update_one({"_id": order["_id"]}, {"$set": {"source.vendor_created": False}})
+    if source.get("vendor_sender"):
+        learn_vendor_sender(shop_db.vendors, new_vendor_id, source.get("vendor_sender"))
 
 
 def learn_vendor_sender(vendors_coll, vendor_id: ObjectId, sender_email: str) -> None:
@@ -886,16 +960,8 @@ def reject_email_order(shop_db, shop: dict, order: dict, *, actor_user_id: Objec
             {"_id": inbound_id},
             {"$set": {"status": STATUS_REJECTED, "updated_at": now, "rejected_by": actor_user_id}},
         )
-    vendor_id = order.get("vendor_id")
-    if source.get("vendor_created") and vendor_id:
-        still_used = shop_db.parts_orders.find_one(
-            {"vendor_id": vendor_id, "is_active": {"$ne": False}, "_id": {"$ne": order["_id"]}}, {"_id": 1}
-        ) or shop_db.parts.find_one({"vendor_id": vendor_id, "is_active": True}, {"_id": 1})
-        if not still_used:
-            shop_db.vendors.update_one(
-                {"_id": vendor_id, "created_from_email": True},
-                {"$set": {"is_active": False, "deactivated_at": now, "deactivated_by": actor_user_id, "updated_at": now}},
-            )
+    if source.get("vendor_created"):
+        remove_auto_vendor_if_unused(shop_db, order.get("vendor_id"), exclude_order_id=order["_id"])
     return True, "Order rejected."
 
 

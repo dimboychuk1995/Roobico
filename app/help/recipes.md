@@ -93,9 +93,10 @@ for a confirmation code first — it is the subject of the email in
 on the order (Parts Orders tab) — it disappears, the email stays in the
 history as Rejected. Missed one → Settings → Integrations → Email orders
 inbox → Inbox history → find the email (status Ignored) → **Create order**.
-Vendor got created twice? Reject the order (an auto-created vendor used
-nowhere else is deactivated) and add the sender address as a contact email
-on the right vendor — next time the sender is matched to it.
+Vendor got created twice? Open the order, pick the right vendor from the
+list and save (or Confirm): the auto-created duplicate is deleted and the
+sender is remembered for the vendor you chose, so the next email from it
+matches straight away.
 
 **Why can't I receive / pay an order?** It still has the **Not confirmed**
 badge (came from email). Confirm it first; unconfirmed orders are also
