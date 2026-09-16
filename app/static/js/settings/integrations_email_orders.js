@@ -154,6 +154,10 @@
     if (e.reason) hint.push(e.reason);
     if (e.error) hint.push("Error: " + e.error);
     const attachments = (e.attachments || []).map((a) => escapeHtml(a.filename)).join(", ");
+    // Files that arrived but could not be read — say why, right in the row.
+    const skipped = (e.skipped_attachments || [])
+      .map((a) => `${escapeHtml(a.filename)} (${escapeHtml(a.reason || "not read")})`)
+      .join(", ");
 
     let result = "";
     if (e.parts_order_id && e.order_number != null) {
@@ -183,6 +187,7 @@
         <div class="fw-semibold text-break">${escapeHtml(e.subject || "(no subject)")}</div>
         <div class="text-muted text-break">${escapeHtml(who)}</div>
         ${attachments ? `<div class="text-muted"><i class="bi bi-paperclip"></i> ${attachments}</div>` : ""}
+        ${skipped ? `<div class="text-warning"><i class="bi bi-exclamation-triangle"></i> Not read: ${skipped}</div>` : ""}
       </td>
       <td>
         <span class="badge ${meta.cls}">${escapeHtml(meta.label)}</span>
@@ -279,6 +284,9 @@
       </dl>`;
       if (e.attachments && e.attachments.length) {
         html += `<div class="mb-2"><strong>Attachments:</strong> ${e.attachments.map((a) => escapeHtml(a.filename)).join(", ")}</div>`;
+      }
+      if (e.skipped_attachments && e.skipped_attachments.length) {
+        html += `<div class="mb-2 text-warning"><strong>Attachments not read:</strong> ${e.skipped_attachments.map((a) => `${escapeHtml(a.filename)} — ${escapeHtml(a.reason || "not read")}`).join("; ")}</div>`;
       }
       if (e.extracted_items && e.extracted_items.length) {
         html += '<div class="mb-1"><strong>Lines the AI read:</strong></div><div class="table-responsive mb-2"><table class="table table-sm table-bordered mb-0"><thead><tr><th>Part #</th><th>Description</th><th class="text-end">Qty</th><th class="text-end">Price</th></tr></thead><tbody>';

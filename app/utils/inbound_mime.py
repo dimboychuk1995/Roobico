@@ -25,6 +25,68 @@ EXTRACTABLE_TYPES = {
     "image/bmp",
     "image/tiff",
 }
+# Dealer ERPs often send a PDF as application/octet-stream (or an odd alias)
+# with a ".PDF" name — the declared Content-Type is a hint, not the truth.
+# The real type is taken from the file signature first, then the extension.
+_TYPE_ALIASES = {
+    "application/x-pdf": "application/pdf",
+    "application/acrobat": "application/pdf",
+    "application/vnd.pdf": "application/pdf",
+    "text/pdf": "application/pdf",
+    "image/jpg": "image/jpeg",
+    "image/pjpeg": "image/jpeg",
+    "image/x-png": "image/png",
+    "image/x-ms-bmp": "image/bmp",
+    "image/tif": "image/tiff",
+}
+_EXTENSION_TYPES = {
+    ".pdf": "application/pdf",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".jpe": "image/jpeg",
+    ".png": "image/png",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".bmp": "image/bmp",
+    ".tif": "image/tiff",
+    ".tiff": "image/tiff",
+}
+
+
+def sniff_extractable_type(ctype: str, filename: str, data: bytes) -> str | None:
+    """Real type of an attachment we can read (PDF/image) or None.
+
+    Order: file signature (magic bytes) → declared type / known alias →
+    file extension. A ".PDF" sent as application/octet-stream and a PDF
+    sent with an image/* label both come back as application/pdf."""
+    head = bytes(data[:16] or b"")
+    if head.startswith(b"%PDF-"):
+        return "application/pdf"
+    if head.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if head.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if head.startswith((b"GIF87a", b"GIF89a")):
+        return "image/gif"
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        return "image/webp"
+    if head.startswith(b"BM") and len(data) > 14:
+        return "image/bmp"
+    if head.startswith((b"II*\x00", b"MM\x00*")):
+        return "image/tiff"
+
+    ctype = (ctype or "").strip().lower()
+    ctype = _TYPE_ALIASES.get(ctype, ctype)
+    if ctype in EXTRACTABLE_TYPES:
+        return ctype
+
+    name = (filename or "").strip().lower()
+    dot = name.rfind(".")
+    if dot >= 0:
+        return _EXTENSION_TYPES.get(name[dot:])
+    return None
+
+
 # The whole raw message must fit Flask's MAX_CONTENT_LENGTH (16 MB) with
 # base64 overhead, so keep the kept-attachment budget well below that.
 MAX_ATTACHMENT_BYTES = 6 * 1024 * 1024
@@ -157,7 +219,12 @@ def parse_inbound_mime(raw: bytes) -> dict:
         disposition = (part.get_content_disposition() or "").lower()
         filename = part.get_filename() or ""
 
-        is_attachment = disposition == "attachment" or bool(filename) and ctype not in ("text/plain", "text/html")
+        # Attachment = declared as one, or any named non-text part, or an
+        # inline PDF/image without a name (some ERPs embed the invoice that way).
+        is_attachment = (
+            disposition == "attachment"
+            or (ctype not in ("text/plain", "text/html") and (bool(filename) or ctype in EXTRACTABLE_TYPES))
+        )
         if not is_attachment and ctype == "text/plain":
             try:
                 text_parts.append(part.get_content())
@@ -180,13 +247,14 @@ def parse_inbound_mime(raw: bytes) -> dict:
         except Exception:  # noqa: BLE001
             data = b""
         size = len(data)
-        meta = {"filename": filename or "attachment", "content_type": ctype, "size": size}
-        if ctype not in EXTRACTABLE_TYPES:
-            meta["reason"] = "unsupported type"
+        real_type = sniff_extractable_type(ctype, filename, data)
+        meta = {"filename": filename or "attachment", "content_type": real_type or ctype, "size": size}
+        if not real_type:
+            meta["reason"] = f"unsupported type ({ctype or 'unknown'}) — only PDF and images are read"
             skipped.append(meta)
             continue
         if size > MAX_ATTACHMENT_BYTES or total_bytes + size > MAX_TOTAL_ATTACHMENT_BYTES:
-            meta["reason"] = "too large"
+            meta["reason"] = f"too large ({size // (1024 * 1024)} MB; limit {MAX_ATTACHMENT_BYTES // (1024 * 1024)} MB per file)"
             skipped.append(meta)
             continue
         total_bytes += size

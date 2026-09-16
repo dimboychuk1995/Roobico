@@ -82,7 +82,13 @@ What happens with every email that arrives:
    itemized lines, the email IS an order and the lines are taken **from the
    PDF**, never from the text. If the PDF is a quote, a statement or a
    payment receipt, the email is NOT an order, even if the text sounds like
-   one. Only the first six pages of a PDF are read.
+   one. Only the first six pages of a PDF are read. The file type is
+   recognised by the file itself, not by how the sender labelled it — a
+   `.PDF` that a dealer's system sends as a generic binary attachment is
+   still read as a PDF. What is **not** read: other file types (Excel, Word,
+   ZIP…) and files over 6 MB. Such files are listed in the inbox row and in
+   the email details as **"Not read: <file> (reason)"**, so an "ignored — no
+   attachments" verdict always shows what arrived and why it was skipped.
 2. **Then the text.** Only when there is no decisive attachment does AI look
    at the email itself: is it an order document with lines? If yes, vendor,
    vendor order/invoice number, date and the lines (part number,

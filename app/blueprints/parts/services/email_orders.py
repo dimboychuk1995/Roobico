@@ -187,6 +187,13 @@ def serialize_inbound_email(doc: dict, *, orders_map: dict | None = None) -> dic
             {"filename": a.get("filename"), "content_type": a.get("content_type"), "size": a.get("size")}
             for a in (doc.get("attachments") or [])
         ],
+        # Files that arrived but were not read (unsupported type / too large):
+        # shown in the inbox so a "no attachments" verdict is never a mystery.
+        "skipped_attachments": [
+            {"filename": a.get("filename"), "content_type": a.get("content_type"),
+             "size": a.get("size"), "reason": a.get("reason") or ""}
+            for a in (doc.get("skipped_attachments") or [])
+        ],
         "parts_order_id": str(doc.get("parts_order_id")) if doc.get("parts_order_id") else "",
         "order_number": (order or {}).get("order_number") if order else None,
         "order_active": bool((order or {}).get("is_active", True)) if order else None,

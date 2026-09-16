@@ -712,3 +712,92 @@ def test_settings_inbox_is_tenant_scoped(client, app, inbox_env):
     ids = [e["id"] for e in resp.get_json()["emails"]]
     assert str(email_b["_id"]) not in ids
     assert client.get(f"/settings/integrations/email_orders/inbox/{email_b['_id']}").status_code == 404
+
+
+# ── Тип вложения определяется по файлу, а не по заголовку отправителя ──
+
+
+def _mime_with_part(payload: bytes, *, maintype, subtype, filename=None, disposition="attachment") -> bytes:
+    msg = EmailMessage()
+    msg["From"] = "CIT Trucks <parts@cittrucks.com>"
+    msg["To"] = "orders-" + TOKEN_A + "@roobico.com"
+    msg["Subject"] = "PSP60200-1"
+    msg["Message-ID"] = f"<{ObjectId()}@cittrucks.com>"
+    msg.set_content("See attached.")
+    msg.add_attachment(payload, maintype=maintype, subtype=subtype, filename=filename, disposition=disposition)
+    return msg.as_bytes()
+
+
+def test_pdf_sent_as_octet_stream_is_kept():
+    """Дилерская ERP шлёт .PDF как application/octet-stream — читаем как PDF."""
+    from app.utils.inbound_mime import parse_inbound_mime
+
+    parsed = parse_inbound_mime(_mime_with_part(
+        b"%PDF-1.4 fake invoice", maintype="application", subtype="octet-stream",
+        filename="110P967534_20260916_133725-1.PDF",
+    ))
+    assert parsed["skipped_attachments"] == []
+    assert len(parsed["attachments"]) == 1
+    att = parsed["attachments"][0]
+    assert att["content_type"] == "application/pdf"
+    assert att["filename"] == "110P967534_20260916_133725-1.PDF"
+    assert bytes(att["data"]).startswith(b"%PDF-")
+
+
+def test_attachment_type_by_extension_and_by_signature():
+    from app.utils.inbound_mime import parse_inbound_mime, sniff_extractable_type
+
+    # Без сигнатуры, но с расширением: верим расширению.
+    parsed = parse_inbound_mime(_mime_with_part(
+        b"not really a pdf but named so", maintype="application", subtype="octet-stream", filename="scan.pdf",
+    ))
+    assert [a["content_type"] for a in parsed["attachments"]] == ["application/pdf"]
+
+    # JPEG с неправильной меткой и без расширения: верим сигнатуре.
+    parsed = parse_inbound_mime(_mime_with_part(
+        b"\xff\xd8\xff\xe0" + b"\x00" * 32, maintype="application", subtype="octet-stream", filename="photo",
+    ))
+    assert [a["content_type"] for a in parsed["attachments"]] == ["image/jpeg"]
+
+    # Алиасы типов.
+    assert sniff_extractable_type("application/x-pdf", "", b"") == "application/pdf"
+    assert sniff_extractable_type("image/jpg", "", b"") == "image/jpeg"
+    # Ничего не подходит — не читаем.
+    assert sniff_extractable_type("application/octet-stream", "data.bin", b"\x00\x01") is None
+
+
+def test_inline_pdf_without_filename_is_kept():
+    """PDF, встроенный inline без имени файла, тоже вложение."""
+    from app.utils.inbound_mime import parse_inbound_mime
+
+    parsed = parse_inbound_mime(_mime_with_part(
+        b"%PDF-1.7 inline", maintype="application", subtype="pdf", filename=None, disposition="inline",
+    ))
+    assert len(parsed["attachments"]) == 1
+    assert parsed["attachments"][0]["content_type"] == "application/pdf"
+
+
+def test_unsupported_attachment_is_listed_with_reason(client, app, inbox_env):
+    """Excel и прочее — не читаем, но причина видна в инбоксе."""
+    from app.utils.inbound_mime import parse_inbound_mime
+
+    raw = _mime_with_part(
+        b"PK\x03\x04 xlsx", maintype="application",
+        subtype="vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename="order.xlsx",
+    )
+    parsed = parse_inbound_mime(raw)
+    assert parsed["attachments"] == []
+    assert len(parsed["skipped_attachments"]) == 1
+    assert parsed["skipped_attachments"][0]["filename"] == "order.xlsx"
+    assert "unsupported type" in parsed["skipped_attachments"][0]["reason"]
+
+    # Через вебхук → в списке инбокса видно «не прочитано» с причиной.
+    _post_webhook(client, raw)
+    login(client)
+    res = client.get("/settings/integrations/email_orders/inbox", headers={"Accept": "application/json"})
+    assert res.status_code == 200, res.get_data(as_text=True)
+    rows = [r for r in res.get_json()["emails"] if r["subject"] == "PSP60200-1"]
+    assert rows, "email not in inbox"
+    skipped = rows[-1]["skipped_attachments"]
+    assert skipped[0]["filename"] == "order.xlsx"
+    assert "unsupported type" in skipped[0]["reason"]
