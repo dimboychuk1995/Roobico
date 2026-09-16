@@ -49,9 +49,12 @@ function statusBadge(item: WorkOrderRow, isMechanic: boolean) {
 function WorkOrderCard({ item }: { item: WorkOrderRow }) {
   const theme = useTheme();
   const isMechanic = useIsMechanic();
-  // Сейчас за работой — зелёным ●; взятые, но простаивающие — серым.
+  // Сейчас за работой — зелёным ●; взятые, но простаивающие — серым;
+  // ✓ — уже поставили Done и ждут остальных механиков.
   const working = new Set(item.working_now || []);
-  const idleMechanics = (item.mechanics || []).filter((m) => !working.has(m));
+  const doneMechanics = item.mechanic_done ? [] : item.mechanics_done || [];
+  const done = new Set(doneMechanics);
+  const idleMechanics = (item.mechanics || []).filter((m) => !working.has(m) && !done.has(m));
   return (
     <RowCard>
       <View style={styles.topRow}>
@@ -68,7 +71,7 @@ function WorkOrderCard({ item }: { item: WorkOrderRow }) {
         {item.unit !== "-" ? `${item.unit} · ` : ""}
         {item.date}
       </Text>
-      {working.size || idleMechanics.length ? (
+      {working.size || idleMechanics.length || doneMechanics.length ? (
         <Text style={[styles.meta, { color: theme.muted }]} numberOfLines={1}>
           <Ionicons name="construct-outline" size={12} color={theme.muted} />{" "}
           {item.working_now && item.working_now.length ? (
@@ -76,6 +79,10 @@ function WorkOrderCard({ item }: { item: WorkOrderRow }) {
           ) : null}
           {item.working_now && item.working_now.length && idleMechanics.length ? ", " : ""}
           {idleMechanics.join(", ")}
+          {(working.size || idleMechanics.length) && doneMechanics.length ? ", " : ""}
+          {doneMechanics.length ? (
+            <Text style={{ color: theme.primary }}>✓ {doneMechanics.join(", ")}</Text>
+          ) : null}
         </Text>
       ) : null}
       {!isMechanic ? (

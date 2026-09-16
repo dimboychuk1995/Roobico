@@ -156,6 +156,14 @@ date). WOs without a customer are excluded from per-customer reports.
 mechanic mode with job timers; their saves always go to "In Progress" for a
 manager to finish. No prices appear for them anywhere, web or mobile.
 
+**Two mechanics on one job — when is it "done"?** Each mechanic presses
+**Done** in their own app. The WO leaves the **In Work** group, gets the
+"Mechanic done" badge and sends the "finished" push only after the last
+mechanic who worked on it (timer or assignment) has pressed Done; until
+then the WO list shows "✓ Name" for those already finished. Sent it back
+to the floor? Open the WO and click **Save In Progress** — all Done marks
+are cleared and the WO is back in In Work.
+
 **Give one user an extra right (or take one away).** Users → Permissions →
 Allow/Deny overrides. Deny always wins. For many users — create/clone a
 role in Roles & Permissions.

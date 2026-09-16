@@ -90,7 +90,7 @@ def start_timer(shop_db, shop, user_id, user_name, work_order_id, labor_id):
 
     wo = shop_db.work_orders.find_one(
         {"_id": wo_id, "shop_id": shop["_id"], "is_active": True},
-        {"labors": 1, "status": 1, "wo_number": 1},
+        {"labors": 1, "status": 1, "wo_number": 1, "mechanic_done": 1},
     )
     if not wo:
         return None, [], "work_order_not_found"
@@ -130,15 +130,16 @@ def start_timer(shop_db, shop, user_id, user_name, work_order_id, labor_id):
         {"_id": wo_id, "shop_id": shop["_id"], "status": {"$ne": "in_progress"}},
         {"$set": {"status": "in_progress", "updated_at": now}},
     )
-    # Механик снова взялся за работу — флаг «закончил» больше не актуален.
-    res_done = shop_db.work_orders.update_one(
-        {"_id": wo_id, "shop_id": shop["_id"], "mechanic_done": True},
-        {"$set": {"mechanic_done": False, "mechanic_done_at": None, "mechanic_done_by": None, "updated_at": now}},
-    )
+    # Механик снова взялся за работу — его отметка Done снимается, WO-уровневый
+    # флаг «все закончили» больше не актуален.
+    from app.blueprints.work_orders.services.mechanic_done import release_mechanic_done_mark
+
+    was_done = bool(wo.get("mechanic_done"))
+    done_changed = release_mechanic_done_mark(shop_db, shop, wo_id, user_id, now)
 
     # WO-уровневый переход «взят в работу» (не каждый старт таймера, а только
     # когда сам WO поменял состояние) — пуш офисным пользователям.
-    if res_status.modified_count or res_done.modified_count:
+    if res_status.modified_count or (was_done and done_changed):
         from app.blueprints.work_orders.services.push_events import notify_wo_event
 
         notify_wo_event(shop, wo_id, wo.get("wo_number"), user_id, "taken")

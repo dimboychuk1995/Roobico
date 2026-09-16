@@ -247,9 +247,11 @@ def mobile_work_orders():
     )
 
     if not has_permission("work_orders.view_costs"):
+        from app.blueprints.work_orders.services.mechanic_done import personalize_wo_list_item
         from app.blueprints.work_orders.services.mechanic_view import strip_wo_list_item
 
-        items = [strip_wo_list_item(i) for i in items]
+        user_id = oid(session.get("user_id"))
+        items = [personalize_wo_list_item(strip_wo_list_item(i), user_id) for i in items]
         totals = {}
 
     # Пометка деактивированного клиента прямо в имени — видна и в текущих
@@ -600,9 +602,9 @@ def mobile_work_order_create():
         "updated_by": user_id,
     }
     if is_mechanic:
-        from app.blueprints.work_orders.services.mechanic_editor import mechanic_done_fields
+        from app.blueprints.work_orders.services.mechanic_done import mechanic_done_fields
 
-        doc.update(mechanic_done_fields(data, user_id, now))
+        doc.update(mechanic_done_fields(shop_db, shop, None, data, user_id, now))
 
     unit_mileage = _i32_or_none(data.get("unit_mileage"))
     if unit_mileage is not None:
@@ -723,9 +725,15 @@ def mobile_work_order_edit(work_order_id):
     if save_status in ("open", "in_progress"):
         set_fields["status"] = save_status
     if is_mechanic:
-        from app.blueprints.work_orders.services.mechanic_editor import mechanic_done_fields
+        from app.blueprints.work_orders.services.mechanic_done import mechanic_done_fields
 
-        set_fields.update(mechanic_done_fields(data, user_id, now))
+        set_fields.update(mechanic_done_fields(shop_db, shop, wo, data, user_id, now))
+    elif save_status == "in_progress":
+        # Менеджерское «Save In Progress»: отметки Done механиков снимаются,
+        # WO снова в группе In Work (как в веб-редакторе).
+        from app.blueprints.work_orders.services.mechanic_done import clear_mechanic_done_fields
+
+        set_fields.update(clear_mechanic_done_fields())
 
     # Обновление пробега юнита из формы WO (как в веб-редакторе).
     unit_mileage = _i32_or_none(data.get("unit_mileage"))

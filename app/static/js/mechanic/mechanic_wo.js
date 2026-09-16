@@ -181,19 +181,18 @@
       var running = item.my_timer_running
         ? '<span class="mech-wo-running"><span class="mech-timer-dot"></span>My timer running</span>'
         : "";
+      // ✓ — механики, уже поставившие Done (ждут остальных).
+      var doneMechanics = item.mechanic_done ? [] : (item.mechanics_done || []);
       var idleMechanics = (item.mechanics || []).filter(function (m) {
-        return workingNow.indexOf(m) === -1;
+        return workingNow.indexOf(m) === -1 && doneMechanics.indexOf(m) === -1;
       });
       var mechanicsLine = "";
-      if (workingNow.length || idleMechanics.length) {
-        mechanicsLine =
-          '<div class="mech-wo-meta">' +
-            "<span>" +
-            (workingNow.length ? '<span class="text-success">&#9679; ' + esc(workingNow.join(", ")) + "</span>" : "") +
-            (workingNow.length && idleMechanics.length ? ", " : "") +
-            (idleMechanics.length ? '<span class="text-muted">' + esc(idleMechanics.join(", ")) + "</span>" : "") +
-            "</span>" +
-          "</div>";
+      if (workingNow.length || idleMechanics.length || doneMechanics.length) {
+        var parts = [];
+        if (workingNow.length) parts.push('<span class="text-success">&#9679; ' + esc(workingNow.join(", ")) + "</span>");
+        if (idleMechanics.length) parts.push('<span class="text-muted">' + esc(idleMechanics.join(", ")) + "</span>");
+        if (doneMechanics.length) parts.push('<span class="text-success" title="Marked done — waiting for the other mechanics">&#10003; ' + esc(doneMechanics.join(", ")) + "</span>");
+        mechanicsLine = '<div class="mech-wo-meta"><span>' + parts.join(", ") + "</span></div>";
       }
       return (
         '<a class="mech-wo-card" href="/mechanic/work_orders/' + encodeURIComponent(item.id) + '">' +

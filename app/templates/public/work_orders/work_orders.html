@@ -39,10 +39,21 @@
       {% else %}
         {{ wo_status_badge('paid' if w.is_paid else 'unpaid') }}
       {% endif %}
-      {% if w.working_now %}
-        <div class="small text-success text-nowrap mt-1" title="Working on it right now">&#9679; {{ w.working_now | join(', ') }}</div>
-      {% elif w.is_in_progress and not w.mechanic_done and w.mechanics %}
-        <div class="small text-muted text-nowrap mt-1" title="Assigned mechanics — idle right now">&#9679; {{ w.mechanics | join(', ') }}</div>
+      {# Механики WO: зелёный ● — работают сейчас; серый ● — простаивают;
+         ✓ — уже поставили Done и ждут остальных (частичный Done). #}
+      {% set done_names = w.mechanics_done or [] %}
+      {% set idle_names = [] %}
+      {% if w.is_in_progress and not w.mechanic_done %}
+        {% for m in w.mechanics or [] %}
+          {% if m not in (w.working_now or []) and m not in done_names %}{% set _ = idle_names.append(m) %}{% endif %}
+        {% endfor %}
+      {% endif %}
+      {% if w.working_now or idle_names or (w.is_in_progress and not w.mechanic_done and done_names) %}
+        <div class="small text-nowrap mt-1">
+          {% if w.working_now %}<span class="text-success" title="Working on it right now">&#9679; {{ w.working_now | join(', ') }}</span>{% endif %}
+          {% if idle_names %}{% if w.working_now %}, {% endif %}<span class="text-muted" title="Assigned mechanics — idle right now">&#9679; {{ idle_names | join(', ') }}</span>{% endif %}
+          {% if w.is_in_progress and not w.mechanic_done and done_names %}{% if w.working_now or idle_names %}, {% endif %}<span class="text-success" title="Marked done — waiting for the other mechanics">&#10003; {{ done_names | join(', ') }}</span>{% endif %}
+        </div>
       {% endif %}
     </td>
     <td class="text-end text-nowrap">

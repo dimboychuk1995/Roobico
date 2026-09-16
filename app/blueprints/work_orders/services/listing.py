@@ -25,6 +25,7 @@ from app.blueprints.work_orders.services.common import (
     round2,
 )
 from app.blueprints.work_orders.services.lookups import customer_label, unit_label
+from app.blueprints.work_orders.services.mechanic_done import done_marks, done_mechanic_names
 from app.blueprints.work_orders.services.payments import _sum_active_work_order_payments
 
 
@@ -367,7 +368,13 @@ def _build_work_order_items(shop_db, shop_id: ObjectId, rows: list) -> list:
                 "parts_orders": parts_orders_map.get(x.get("_id")) or [],
                 "mechanics": _wo_mechanic_names(x),
                 # Флаг «механик закончил» имеет смысл только пока WO в работе.
+                # mechanic_done — все работавшие механики поставили Done;
+                # mechanics_done — кто уже поставил (частичный Done).
                 "mechanic_done": bool(x.get("mechanic_done")) and status == "in_progress",
+                "mechanics_done": done_mechanic_names(x) if status == "in_progress" else [],
+                "mechanic_done_user_ids": (
+                    [str(m.get("user_id")) for m in done_marks(x)] if status == "in_progress" else []
+                ),
                 "manager_confirmed": bool(x.get("manager_confirmed")),
             }
         )

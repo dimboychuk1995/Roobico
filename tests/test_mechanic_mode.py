@@ -1950,3 +1950,183 @@ def test_live_signature_changes_on_wo_delete(client, mech_seed, mongo):
     assert resp.status_code == 200
     sig1 = client.get("/work_orders/api/work_orders/live_signature").get_json()["signature"]
     assert sig1 != sig0
+
+
+# ── Done при нескольких механиках ───────────────────────────────────
+
+
+def _done_ids(shop_db, wo_id):
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(wo_id)})
+    return [m["user_id"] for m in wo.get("mechanic_done_marks") or []]
+
+
+def test_done_requires_all_mechanics(app, client, mech_seed, second_mechanic, mongo):
+    """WO становится done только когда Done поставили ВСЕ работавшие механики;
+    старт таймера снимает отметку только своего механика."""
+    from app.blueprints.work_orders.services.listing import get_in_work_orders
+
+    shop_db = mongo[SHOP_A_DB]
+    shop_id = mech_seed["customer"]["shop_id"]
+
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Team done")
+    wo_id = data["id"]
+    labor_id = shop_db.work_orders.find_one({"_id": ObjectId(wo_id)})["labors"][0]["labor_id"]
+    done_payload = _wo_update_payload(mech_seed, labor_id, "Team done", {"mechanic_state": "done"})
+
+    # Второй механик поработал по WO (таймер) — теперь он тоже «работавший».
+    client2 = app.test_client()
+    login(client2, email=MECHANIC2_EMAIL, password=MECHANIC_PASSWORD)
+    token2 = get_csrf_token(client2)
+    resp = client2.post("/work_orders/api/mechanic/timers/start",
+                        json={"work_order_id": wo_id, "labor_id": labor_id},
+                        headers={"X-CSRFToken": token2})
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    resp = client2.post("/work_orders/api/mechanic/timers/stop", json={}, headers={"X-CSRFToken": token2})
+    assert resp.status_code == 200
+
+    # Первый ставит Done — WO ещё не done: второй не закончил.
+    resp = _post_json(client, f"/work_orders/api/mechanic/work_orders/{wo_id}", done_payload)
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(wo_id)})
+    assert wo["mechanic_done"] is False
+    assert wo["mechanic_done_by"] is None
+    assert _done_ids(shop_db, wo_id) == [mech_seed["user"]["_id"]]
+    assert wo["mechanic_done_marks"][0]["name"] == "Mike Wrench"
+    assert wo_id in {r["id"] for r in get_in_work_orders(shop_db, shop_id)}
+
+    # Для первого его WO уже «Done», для второго — ещё In Progress; в
+    # списке видно, кто поставил Done.
+    assert client.get(f"/work_orders/api/mechanic/work_orders/{wo_id}").get_json()["mechanic_done"] is True
+    assert client2.get(f"/work_orders/api/mechanic/work_orders/{wo_id}").get_json()["mechanic_done"] is False
+    rows = {i["id"]: i for i in client.get("/work_orders/api/mechanic/work_orders").get_json()["items"]}
+    assert rows[wo_id]["mechanic_done"] is True
+    assert rows[wo_id]["mechanics_done"] == ["Mike Wrench"]
+    assert "mechanic_done_user_ids" not in rows[wo_id]
+    rows2 = {i["id"]: i for i in client2.get("/work_orders/api/mechanic/work_orders").get_json()["items"]}
+    assert rows2[wo_id]["mechanic_done"] is False
+    mobile_rows = {i["id"]: i for i in client2.get("/api/mobile/work_orders").get_json()["items"]}
+    assert mobile_rows[wo_id]["mechanic_done"] is False
+    assert mobile_rows[wo_id]["mechanics_done"] == ["Mike Wrench"]
+
+    # Менеджерский список: WO в In Work, бейджа «Mechanic done» нет, ✓ у первого.
+    login(client)
+    html = client.get("/work_orders").get_data(as_text=True)
+    assert "&#10003; Mike Wrench" in html
+
+    # Второй ставит Done — теперь WO done для всех.
+    resp = client2.post(f"/work_orders/api/mechanic/work_orders/{wo_id}", json=done_payload,
+                        headers={"X-CSRFToken": token2})
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(wo_id)})
+    assert wo["mechanic_done"] is True
+    assert wo["mechanic_done_by"] == second_mechanic["_id"]
+    assert set(_done_ids(shop_db, wo_id)) == {mech_seed["user"]["_id"], second_mechanic["_id"]}
+    assert wo_id not in {r["id"] for r in get_in_work_orders(shop_db, shop_id)}
+
+    # Первый снова стартует таймер — снимается только ЕГО отметка.
+    login_mechanic(client)
+    resp = _post_json(client, "/work_orders/api/mechanic/timers/start",
+                      {"work_order_id": wo_id, "labor_id": labor_id})
+    assert resp.status_code == 200
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(wo_id)})
+    assert wo["mechanic_done"] is False
+    assert _done_ids(shop_db, wo_id) == [second_mechanic["_id"]]
+    _post_json(client, "/work_orders/api/mechanic/timers/stop", {})
+
+    # Автосейв второго (обычное сохранение) снимает его отметку, чужую не трогает.
+    resp = _post_json(client, f"/work_orders/api/mechanic/work_orders/{wo_id}", done_payload)
+    assert resp.status_code == 200
+    assert wo_id not in {r["id"] for r in get_in_work_orders(shop_db, shop_id)}
+    resp = client2.post(f"/work_orders/api/mechanic/work_orders/{wo_id}",
+                        json=_wo_update_payload(mech_seed, labor_id, "Team done"),
+                        headers={"X-CSRFToken": token2})
+    assert resp.status_code == 200
+    wo = shop_db.work_orders.find_one({"_id": ObjectId(wo_id)})
+    assert wo["mechanic_done"] is False
+    assert _done_ids(shop_db, wo_id) == [mech_seed["user"]["_id"]]
+
+    _deactivate_wos(mongo, wo_id)
+
+
+def test_manager_in_progress_save_clears_all_done_marks(app, client, mech_seed, second_mechanic, mongo):
+    """Менеджерское «Save In Progress» (веб-редактор, статус-эндпоинт,
+    мобильный редактор) снимает отметки Done всех механиков — WO снова
+    в группе In Work."""
+    from app.blueprints.work_orders.services.listing import get_in_work_orders
+
+    shop_db = mongo[SHOP_A_DB]
+    shop_id = mech_seed["customer"]["shop_id"]
+
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Manager reopen")
+    wo_id = data["id"]
+    labor_id = shop_db.work_orders.find_one({"_id": ObjectId(wo_id)})["labors"][0]["labor_id"]
+    done_payload = _wo_update_payload(mech_seed, labor_id, "Manager reopen", {"mechanic_state": "done"})
+
+    def all_done():
+        login_mechanic(client)
+        resp = _post_json(client, f"/work_orders/api/mechanic/work_orders/{wo_id}", done_payload)
+        assert resp.status_code == 200
+        wo = shop_db.work_orders.find_one({"_id": ObjectId(wo_id)})
+        assert wo["mechanic_done"] is True
+        assert wo_id not in {r["id"] for r in get_in_work_orders(shop_db, shop_id)}
+
+    def assert_reopened():
+        wo = shop_db.work_orders.find_one({"_id": ObjectId(wo_id)})
+        assert wo["status"] == "in_progress"
+        assert wo["mechanic_done"] is False
+        assert wo["mechanic_done_marks"] == []
+        assert wo_id in {r["id"] for r in get_in_work_orders(shop_db, shop_id)}
+
+    # 1) Веб-редактор менеджера: Save In Progress.
+    all_done()
+    login(client)
+    resp = _post_json(client, f"/work_orders/api/work_orders/{wo_id}/update", {
+        "labors": [{"labor_id": labor_id, "labor_description": "Manager reopen", "labor_hours": 1,
+                    "labor_rate_code": "", "labor_full_total": 0, "assigned_mechanics": [],
+                    "issue_description": "", "parts": []}],
+        "totals": {},
+        "save_status": "in_progress",
+    })
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert_reopened()
+
+    # Обычный Save менеджера (completed) — не «в работу»: статус open,
+    # WO не в In Work; отметки для open-WO не важны.
+    all_done()
+    login(client)
+    resp = _post_json(client, f"/work_orders/api/work_orders/{wo_id}/update", {
+        "labors": [{"labor_id": labor_id, "labor_description": "Manager reopen", "labor_hours": 1,
+                    "labor_rate_code": "", "labor_full_total": 0, "assigned_mechanics": [],
+                    "issue_description": "", "parts": []}],
+        "totals": {},
+        "save_status": "open",
+    })
+    assert resp.status_code == 200
+    assert shop_db.work_orders.find_one({"_id": ObjectId(wo_id)})["status"] == "open"
+
+    # 2) Статус-эндпоинт: менеджер ставит in_progress.
+    all_done()
+    login(client)
+    resp = _post_json(client, f"/work_orders/api/work_orders/{wo_id}/status", {"status": "in_progress"})
+    assert resp.status_code == 200
+    assert_reopened()
+
+    # 3) Мобильный редактор менеджера: Save In Progress.
+    all_done()
+    login(client)
+    resp = _post_json(client, f"/api/mobile/work_orders/{wo_id}", {
+        "status": "in_progress",
+        "labors": [{"labor_id": labor_id, "description": "Manager reopen", "parts": []}],
+    })
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert_reopened()
+
+    # Механик тем же статус-эндпоинтом отметки НЕ сбрасывает (форс in_progress).
+    all_done()
+    resp = _post_json(client, f"/work_orders/api/work_orders/{wo_id}/status", {"status": "in_progress"})
+    assert resp.status_code == 200
+    assert shop_db.work_orders.find_one({"_id": ObjectId(wo_id)})["mechanic_done"] is True
+
+    _deactivate_wos(mongo, wo_id)

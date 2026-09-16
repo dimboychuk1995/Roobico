@@ -56,6 +56,17 @@ What a mechanic sees and can do:
   managers a green **"Mechanic done"** badge (WO list web + mobile, WO
   details) meaning the mechanic finished and the job awaits review. Any new
   change or a restarted job timer clears the Done badge.
+- **Several mechanics on one WO — Done is per mechanic.** Everyone who
+  worked on the WO (started a job timer on it, or is assigned to one of its
+  jobs) has to press Done themselves. Until the last one does, the WO stays
+  in the manager's **"In Work"** group, shows no "Mechanic done" badge and
+  sends no "finished" push; the WO list shows who has already finished as a
+  green **"✓ Name"** next to the working (●) and idle names. In your own
+  app the WO shows **"Done"** as soon as *you* pressed it — that is your
+  mark, not the whole job. Pressing Done, changing anything, or restarting
+  a timer affects only your own mark; a colleague's mark stays. When a
+  manager saves the WO as **In Progress**, all marks are cleared — every
+  mechanic has to press Done again.
 - The mechanic form has a **Unit mileage** field — saving (incl. autosave)
   records the mileage on the unit itself and on the WO.
 - Prices/hours/rates that the office already entered are preserved when a
@@ -145,7 +156,9 @@ when a mechanic **takes a work order into work** and when a mechanic
   they started their first job timer on it, or saved it from mechanic mode,
   or picked a finished WO back up after Done.
 - **"WO #… finished"** — the mechanic pressed **Done**: the WO is waiting
-  for a manager's review/confirmation.
+  for a manager's review/confirmation. With several mechanics on the WO
+  this arrives once, when the **last** of them presses Done (the push
+  names that mechanic).
 
 Tapping the notification opens that work order in the app (switching the
 active shop first if the WO belongs to another shop). Notifications are per

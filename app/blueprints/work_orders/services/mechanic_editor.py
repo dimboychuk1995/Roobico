@@ -27,20 +27,6 @@ def parse_mileage(value):
     return n if n >= 0 else None
 
 
-def mechanic_done_fields(data: dict, user_id, now) -> dict:
-    """
-    $set-поля флага «механик закончил работу» из mechanic_state сохранения.
-
-    Работа механика всегда остаётся in_progress до утверждения менеджером;
-    mechanic_state = "done" лишь помечает для менеджера, что механик закончил.
-    Любое другое сохранение механика сбрасывает флаг (он снова в работе).
-    """
-    state = str((data or {}).get("mechanic_state") or "").strip().lower()
-    if state == "done":
-        return {"mechanic_done": True, "mechanic_done_at": now, "mechanic_done_by": user_id}
-    return {"mechanic_done": False, "mechanic_done_at": None, "mechanic_done_by": None}
-
-
 def _resolve_part_doc(shop_db, shop_id, part_id_raw, part_number):
     from app.blueprints.work_orders.services.common import oid
 

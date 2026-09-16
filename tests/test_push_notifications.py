@@ -309,3 +309,64 @@ def test_dead_tokens_are_cleaned_up(app, push_seed, monkeypatch):
 
     assert master.push_tokens.count_documents({"token": dead}) == 0
     master.push_tokens.delete_many({})
+
+
+# ── Done при нескольких механиках: пуш «finished» ждёт всех ─────────
+
+MECHANIC2_EMAIL = "pushmech2@test.local"
+
+
+@pytest.fixture(scope="module")
+def push_second_mechanic(seed, push_seed):
+    user = {
+        "_id": ObjectId(),
+        "email": MECHANIC2_EMAIL,
+        "password_hash": generate_password_hash(MECHANIC_PASSWORD),
+        "first_name": "Sam",
+        "last_name": "Bolt",
+        "name": "Sam Bolt",
+        "is_active": True,
+        "tenant_id": seed["tenant_a"]["_id"],
+        "shop_ids": [str(seed["shop_a"]["_id"])],
+        "role": "mechanic",
+        "created_at": _now(),
+    }
+    push_seed["master"].users.insert_one(user)
+    return user
+
+
+def test_finished_push_waits_for_all_mechanics(app, client, push_seed, push_second_mechanic, push_capture):
+    """Два механика на WO: Done первого — без пуша и без «ready for review»;
+    Done второго — WO закончен, офис получает «finished»."""
+    wo = _insert_wo(push_seed, status="in_progress", labor_id="PL5", wo_number=910050)
+    now = _now()
+    # Второй механик реально работал по WO — завершённая тайм-сессия.
+    push_seed["shop_db"].wo_time_logs.insert_one({
+        "shop_id": push_seed["customer"]["shop_id"],
+        "work_order_id": wo["_id"], "wo_number": wo["wo_number"], "labor_id": "PL5",
+        "user_id": push_second_mechanic["_id"], "user_name": "Sam Bolt",
+        "started_at": now, "stopped_at": now, "seconds": 60, "stop_source": "manual",
+        "created_at": now, "updated_at": now,
+    })
+    save_payload = {
+        "labors": [{"labor_id": "PL5", "description": "Job", "parts": []}],
+        "mechanic_state": "done",
+    }
+
+    _login_mechanic(client)
+    resp = _post_json(client, f"/work_orders/api/mechanic/work_orders/{wo['_id']}", save_payload)
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert push_capture == []  # частичный Done — офису рано сообщать
+    doc = push_seed["shop_db"].work_orders.find_one({"_id": wo["_id"]})
+    assert doc["mechanic_done"] is False
+
+    client2 = app.test_client()
+    login(client2, email=MECHANIC2_EMAIL, password=MECHANIC_PASSWORD)
+    resp = client2.post(f"/work_orders/api/mechanic/work_orders/{wo['_id']}", json=save_payload,
+                        headers={"X-CSRFToken": get_csrf_token(client2)})
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert [m["data"]["type"] for m in push_capture] == ["wo_finished"]
+    assert [m["to"] for m in push_capture] == [OWNER_TOKEN]
+    assert "Sam Bolt" in push_capture[0]["body"]
+    doc = push_seed["shop_db"].work_orders.find_one({"_id": wo["_id"]})
+    assert doc["mechanic_done"] is True

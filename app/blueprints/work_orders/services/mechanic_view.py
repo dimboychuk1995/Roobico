@@ -11,8 +11,9 @@ from __future__ import annotations
 
 from bson import ObjectId
 
-from app.blueprints.work_orders.services.common import i32
+from app.blueprints.work_orders.services.common import i32, oid
 from app.blueprints.work_orders.services.lookups import customer_label, unit_label
+from app.blueprints.work_orders.services.mechanic_done import done_user_ids
 from app.blueprints.work_orders.services.time_tracking import summarize_wo_time
 
 # Денежные ключи в элементах поиска запчастей (/work_orders/api/parts/search).
@@ -149,7 +150,8 @@ def mechanic_wo_payload(shop_db, shop, wo: dict, user_id) -> dict:
         },
         # Email клиента нужен механику для «Send for approval» (авторизация).
         "customer_email": get_main_contact_email(customer, entity_type="customer") if customer else "",
-        "mechanic_done": bool(wo.get("mechanic_done")),
+        # Для механика «Done» — его собственная отметка (или WO целиком done).
+        "mechanic_done": bool(wo.get("mechanic_done")) or oid(user_id) in done_user_ids(wo),
         "unit": {
             "id": str(wo.get("unit_id") or ""),
             "label": unit_label(unit) if unit else "-",

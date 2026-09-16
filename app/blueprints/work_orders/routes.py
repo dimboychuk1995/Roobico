@@ -1779,6 +1779,10 @@ def api_work_order_update(work_order_id):
         set_fields["status"] = save_status
     elif converting_to_estimate:
         set_fields["status"] = "estimate"
+    # Менеджерское «Save In Progress» возвращает WO в работу: отметки Done
+    # всех механиков снимаются, WO снова в группе In Work.
+    if save_status == "in_progress" and not is_mechanic_mode():
+        set_fields.update(clear_mechanic_done_fields())
 
     shop_db.work_orders.update_one(
         {"_id": wo_id},
@@ -2392,16 +2396,11 @@ def api_work_order_set_status(work_order_id):
     if status in ("open", "in_progress"):
         shop_db.work_order_payments.delete_many({"work_order_id": wo_id})
 
-    shop_db.work_orders.update_one(
-        {"_id": wo_id},
-        {
-            "$set": {
-                "status": status,
-                "updated_at": now,
-                "updated_by": user_id,
-            }
-        }
-    )
+    status_fields = {"status": status, "updated_at": now, "updated_by": user_id}
+    # Менеджер вернул WO в работу — отметки Done механиков снимаются.
+    if status == "in_progress" and not is_mechanic_mode():
+        status_fields.update(clear_mechanic_done_fields())
+    shop_db.work_orders.update_one({"_id": wo_id}, {"$set": status_fields})
 
     return jsonify({"ok": True, "status": status}), 200
 
@@ -3430,9 +3429,13 @@ from app.blueprints.work_orders.services.mechanic_view import (
 )
 from app.blueprints.work_orders.services.mechanic_editor import (
     build_mechanic_labors_payload,
-    mechanic_done_fields,
     merge_mechanic_edit,
     parse_mileage,
+)
+from app.blueprints.work_orders.services.mechanic_done import (
+    clear_mechanic_done_fields,
+    mechanic_done_fields,
+    personalize_wo_list_item,
 )
 from app.blueprints.work_orders.services import time_tracking
 
@@ -3478,7 +3481,7 @@ def api_mechanic_work_orders():
 
     out_items = []
     for item in items:
-        stripped = strip_wo_list_item(item)
+        stripped = personalize_wo_list_item(strip_wo_list_item(item), current_user_id())
         stripped["my_timer_running"] = bool(running_wo_id) and item.get("id") == running_wo_id
         out_items.append(stripped)
 
@@ -3609,7 +3612,7 @@ def api_mechanic_work_order_create():
         "updated_at": now,
         "created_by": user_id,
         "updated_by": user_id,
-        **mechanic_done_fields(data, user_id, now),
+        **mechanic_done_fields(shop_db, shop, None, data, user_id, now),
     }
     res = shop_db.work_orders.insert_one(doc)
     core_sync = sync_work_order_cores(shop_db, shop, [], labors, user_id)
@@ -3693,7 +3696,7 @@ def api_mechanic_work_order_update(work_order_id):
         "inventory_adjusted_at": now,
         "updated_at": now,
         "updated_by": user_id,
-        **mechanic_done_fields(data, user_id, now),
+        **mechanic_done_fields(shop_db, shop, wo, data, user_id, now),
     }
 
     unit_mileage = parse_mileage(data.get("unit_mileage"))

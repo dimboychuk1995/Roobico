@@ -142,7 +142,10 @@ export interface WorkOrderRow {
   working_now?: string[];
   // Механики WO — из assigned_mechanics всех строк (кто фактически делает).
   mechanics?: string[];
+  // Все работавшие механики поставили Done (для механика — его собственный Done).
   mechanic_done?: boolean;
+  // Кто уже поставил Done, пока остальные ещё работают (частичный Done).
+  mechanics_done?: string[];
   // Менеджер подтвердил работу механика: WO для механика закрыт.
   manager_confirmed?: boolean;
 }
