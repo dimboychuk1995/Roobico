@@ -18,7 +18,9 @@
 
 <div class="card">
   <div class="card-body">
-    {{ search_bar(q, placeholder="Search vendors by any field...") }}
+    {{ search_bar(q, placeholder="Search vendors by any field...", status=status,
+                  status_labels={"active": "Active vendors", "inactive": "Inactive vendors", "all": "All vendors"},
+                  status_title="Inactive vendors are hidden from parts orders; use Restore to bring one back") }}
 
     {% if vendors and vendors|length > 0 %}
       <div class="table-responsive">

@@ -211,7 +211,15 @@
           <div class="col-12 col-md-8 col-lg-6">
             <input type="text" name="q" class="form-control form-control-sm" placeholder="Search units by any field..." value="{{ q or '' }}" />
           </div>
-          {% if q %}
+          <div class="col-auto">
+            <select name="status" class="form-select form-select-sm" aria-label="Unit status filter" onchange="this.form.submit()"
+                    title="Inactive units are hidden from work orders; open one to activate it back">
+              <option value="active" {% if (unit_status or 'active') == 'active' %}selected{% endif %}>Active units</option>
+              <option value="inactive" {% if unit_status == 'inactive' %}selected{% endif %}>Inactive units</option>
+              <option value="all" {% if unit_status == 'all' %}selected{% endif %}>All units</option>
+            </select>
+          </div>
+          {% if q or (unit_status and unit_status != 'active') %}
             <div class="col-auto">
               <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='units') }}">Reset</a>
             </div>
@@ -238,6 +246,9 @@
                       <a href="{{ url_for('customers.customer_unit_details_page', customer_id=customer_id, unit_id=item.id) }}" class="text-decoration-none">
                         {{ item.unit_number }}
                       </a>
+                      {% if item.is_active is defined and not item.is_active %}
+                        <span class="badge text-bg-secondary ms-1" title="Deactivated unit — open it and press Activate to bring it back">Inactive</span>
+                      {% endif %}
                     </td>
                     <td>{{ item.label }}</td>
                     <td>{{ item.vin }}</td>
@@ -609,9 +620,9 @@
           </div>
           <div class="btn-group btn-group-sm" role="group" aria-label="Customer tab pagination">
             <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-              href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab=active_tab, page=pagination.prev_page, per_page=pagination.per_page, q=q) }}">Prev</a>
+              href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab=active_tab, page=pagination.prev_page, per_page=pagination.per_page, q=q, status=unit_status) }}">Prev</a>
             <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-              href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab=active_tab, page=pagination.next_page, per_page=pagination.per_page, q=q) }}">Next</a>
+              href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab=active_tab, page=pagination.next_page, per_page=pagination.per_page, q=q, status=unit_status) }}">Next</a>
           </div>
         </div>
       {% endif %}

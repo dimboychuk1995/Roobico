@@ -20,7 +20,7 @@ import os
 from typing import Any
 
 from app.utils.invoice_parser import SYSTEM_PROMPT as INVOICE_SYSTEM_PROMPT
-from app.utils.invoice_parser import _get_openai_client, parse_invoice
+from app.utils.invoice_parser import _get_openai_client, normalize_line_item, parse_invoice
 
 logger = logging.getLogger(__name__)
 
@@ -85,12 +85,14 @@ Shipped / Ship / Qty Ship / Units. Read the actual number; NEVER default to 1 wh
 Prefer the Shipped/Ship quantity over Ordered when both exist. If a line shows "2 @ 55.00" or
 "2 x 55.00", the quantity is 2.
 
-PRICE — mandatory: price is the NET UNIT price the buyer pays. Dealer / OEM portal emails
+PRICE — mandatory: price is the NET UNIT price the buyer pays for ONE unit; line_total is the
+extended amount of the whole line (quantity × unit price) as printed. Dealer / OEM portal emails
 (RepairLink, PartsTrader, NAPA PROLink, FleetPride, etc.) typically show List, Net (or Your Price /
 Cost / Dealer Price / Sale) and Extended (Total / Amount) columns:
-  - use Net / Your Price / Cost / Sale / Dealer Price — NEVER List / MSRP / Retail;
-  - never use the extended line total as the unit price; if only quantity and extended total are
-    shown, unit price = extended total / quantity;
+  - price = Net / Your Price / Cost / Sale / Dealer Price — NEVER List / MSRP / Retail;
+  - line_total = Extended / Total / Amount of that line; price × quantity must equal line_total.
+    Never put the extended total into price; if only quantity and extended total are shown,
+    price = extended total / quantity;
   - a discount % column applies to List: net = list × (1 − discount);
   - ignore core charges, tax, freight and environmental fees as line items.
 
@@ -206,23 +208,17 @@ def classify_email(
 
 
 def _normalize_extraction(result: dict) -> dict:
+    """Same line normalization as the vision parser (unit price reconciled
+    with the printed line amount); lines without a part number AND a
+    description are noise and dropped."""
     items = []
     for item in result.get("items") or []:
-        if not isinstance(item, dict):
+        normalized = normalize_line_item(item)
+        if normalized is None:
             continue
-        try:
-            qty = max(int(float(item.get("quantity") or 1)), 1)
-        except (TypeError, ValueError):
-            qty = 1
-        try:
-            price = round(float(item.get("price") or 0), 2)
-        except (TypeError, ValueError):
-            price = 0.0
-        pn = str(item.get("part_number") or "").strip()
-        desc = str(item.get("description") or "").strip()
-        if not pn and not desc:
+        if not normalized["part_number"] and not normalized["description"]:
             continue
-        items.append({"part_number": pn, "description": desc, "quantity": qty, "price": price})
+        items.append(normalized)
     try:
         total = round(float(result.get("total") or 0), 2)
     except (TypeError, ValueError):

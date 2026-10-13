@@ -33,7 +33,8 @@ Return ONLY valid JSON (no markdown, no explanation) with this exact structure:
       "part_number": "string — the part number as invoiced (e.g. 'DR 8600310', 'F81Z-6B209-AB', 'PEXR955337')",
       "description": "string — part description",
       "quantity": 1,
-      "price": 0.00
+      "price": 0.00,
+      "line_total": 0.00
     }
   ],
   "total": 0.00
@@ -80,14 +81,19 @@ QUANTITY
 - Quantity is the count of sale units (EA, PC, SET, KIT, BOX, GAL, QT). "2 EA" = 2; a "BOX of 4" sold as
   1 box = 1. Use whole numbers.
 
-PRICE
-- price is the NET UNIT price the buyer pays for one unit, after discounts.
-- Columns: prefer Net / Net Price / Net Each / Your Price / Your Cost / Cost / Sale / Disc Price / Dealer Price /
-  Unit Price. NEVER use List, MSRP, Retail, Suggested, Jobber or Core columns.
-- NEVER use the extended / amount / total column as the unit price. If only quantity and extended amount are
-  printed, unit price = extended ÷ quantity, rounded to cents.
+PRICE — two separate numbers per line
+- price is the NET UNIT price the buyer pays for ONE unit, after discounts.
+- line_total is the EXTENDED amount printed for the whole line (Amount / Ext / Extended / Total / Net Amount
+  column) = quantity × unit price. Always fill it when the document prints it; 0 if the line has no extended
+  amount.
+- The two must agree: price × quantity = line_total. When a line shows quantity 3 and amount 150.00, the
+  unit price is 50.00 — never 150.00. If only quantity and the extended amount are printed, price =
+  line_total ÷ quantity, rounded to cents.
+- Unit price columns: prefer Net / Net Price / Net Each / Your Price / Your Cost / Cost / Sale / Disc Price /
+  Dealer Price / Unit Price / Each. NEVER use List, MSRP, Retail, Suggested, Jobber or Core columns.
 - If a Discount % column applies to List: price = List × (1 − discount). If a line shows a unit price and a
-  separate core price, price is the unit price only (the core is tracked separately).
+  separate core price, price is the unit price only (the core is tracked separately) and line_total excludes
+  the core.
 - Ignore a Supplier / Vendor / Source column inside the line — it is internal to the seller.
 
 TOTAL
@@ -109,6 +115,90 @@ document_kind — what the document IS:
 DOCUMENT_KINDS = {
     "invoice", "order_confirmation", "packing_slip", "quote", "statement", "receipt", "credit_memo", "other",
 }
+
+# Cents rounding slack when comparing price × qty with the printed extended amount.
+PRICE_TOLERANCE = 0.011
+
+
+def _money(value) -> float:
+    try:
+        number = float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
+    if number != number or number in (float("inf"), float("-inf")):  # NaN / inf
+        return 0.0
+    return round(number, 2)
+
+
+def _qty(value) -> int:
+    try:
+        number = int(float(value or 1))
+    except (TypeError, ValueError):
+        number = 1
+    return max(number, 1)
+
+
+def reconcile_line_price(quantity: int, price: float, line_total: float) -> tuple[float, str]:
+    """Return ``(unit_price, note)`` for one invoice line.
+
+    The model is asked for both the unit price and the printed extended
+    amount; this is the deterministic guard for the classic mistake where
+    the extended amount lands in ``price`` (qty 3, amount 150.00 → "price"
+    150.00). Rules, in order:
+
+    - no extended amount (0) → unit price as given;
+    - price × qty ≈ line_total → consistent, keep price;
+    - price missing (0) → line_total ÷ qty;
+    - qty > 1 and price ≈ line_total → the extended amount was used as the
+      unit price → line_total ÷ qty;
+    - qty > 1, numbers disagree → trust the extended amount (it is the
+      column vendors sum into the subtotal): line_total ÷ qty;
+    - qty == 1 and price > line_total → a List/MSRP column slipped in →
+      line_total;
+    - qty == 1 and price < line_total → keep price (the extended amount may
+      include a core or tax on that line).
+
+    ``note`` is "" when nothing changed, otherwise a short machine tag.
+    """
+    quantity = max(int(quantity or 1), 1)
+    price = _money(price)
+    line_total = _money(line_total)
+
+    if line_total <= 0:
+        return price, ""
+    if abs(price * quantity - line_total) <= PRICE_TOLERANCE:
+        return price, ""
+
+    derived = round(line_total / quantity, 2)
+    if price <= 0:
+        return derived, "price_from_line_total"
+    if quantity > 1:
+        if abs(price - line_total) <= PRICE_TOLERANCE:
+            return derived, "extended_used_as_unit"
+        return derived, "price_from_line_total"
+    if price > line_total:
+        return derived, "price_from_line_total"
+    return price, ""
+
+
+def normalize_line_item(item) -> dict | None:
+    """One raw model line → ``{part_number, description, quantity, price,
+    line_total, price_note}`` with the unit price reconciled against the
+    printed extended amount. ``None`` for non-dict input."""
+    if not isinstance(item, dict):
+        return None
+    quantity = _qty(item.get("quantity"))
+    raw_price = _money(item.get("price"))
+    raw_total = _money(item.get("line_total"))
+    price, note = reconcile_line_price(quantity, raw_price, raw_total)
+    return {
+        "part_number": str(item.get("part_number") or "").strip(),
+        "description": str(item.get("description") or "").strip(),
+        "quantity": quantity,
+        "price": price,
+        "line_total": round(price * quantity, 2),
+        "price_note": note,
+    }
 
 
 def _get_openai_client():
@@ -195,11 +285,14 @@ def parse_invoice(file_bytes: bytes, content_type: str, *, max_pages: int | None
     response = client.chat.completions.create(
         model="gpt-4o",
         messages=messages,
-        max_tokens=2000,
+        max_tokens=2500,
         temperature=0,
+        # JSON mode: a refusal ("I can't read this image") comes back as a JSON
+        # object without items instead of prose that breaks json.loads.
+        response_format={"type": "json_object"},
     )
 
-    raw = response.choices[0].message.content.strip()
+    raw = (response.choices[0].message.content or "").strip()
 
     # Strip markdown fences if present
     if raw.startswith("```"):
@@ -211,20 +304,17 @@ def parse_invoice(file_bytes: bytes, content_type: str, *, max_pages: int | None
         result = json.loads(raw)
     except json.JSONDecodeError as exc:
         logger.error("OpenAI returned invalid JSON: %s", raw[:500])
-        raise ValueError(f"AI returned invalid response. Please try again.") from exc
+        raise ValueError("AI returned invalid response. Please try again.") from exc
+    if not isinstance(result, dict):
+        logger.error("OpenAI returned non-object JSON: %s", raw[:200])
+        raise ValueError("AI returned invalid response. Please try again.")
 
-    # Normalize items
-    items = result.get("items") or []
+    # Normalize items (unit price reconciled with the printed line amount)
     normalized_items = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        normalized_items.append({
-            "part_number": str(item.get("part_number") or "").strip(),
-            "description": str(item.get("description") or "").strip(),
-            "quantity": max(int(item.get("quantity") or 1), 1),
-            "price": round(float(item.get("price") or 0), 2),
-        })
+    for item in result.get("items") or []:
+        normalized = normalize_line_item(item)
+        if normalized is not None:
+            normalized_items.append(normalized)
 
     return {
         "vendor_name": str(result.get("vendor_name") or "").strip(),
@@ -238,7 +328,7 @@ def parse_invoice(file_bytes: bytes, content_type: str, *, max_pages: int | None
         "invoice_date": str(result.get("invoice_date") or "").strip(),
         "document_kind": _document_kind(result.get("document_kind")),
         "items": normalized_items,
-        "total": round(float(result.get("total") or 0), 2),
+        "total": _money(result.get("total")),
     }
 
 

@@ -113,6 +113,10 @@ def duplicate_message(kind: str, display_name, existing) -> str:
     """Текст ошибки; для неактивного дубля — подсказка реактивировать."""
     name = str(display_name or "").strip()
     if existing.get("is_active") is False:
+        if kind == "Part":
+            # Партам нет кнопки Restore: активируются только через парт-ордер.
+            return (f'{kind} "{name}" already exists but is inactive. '
+                    f"Add it to a parts order — it becomes active again automatically.")
         return (f'{kind} "{name}" already exists but is deactivated. '
                 f"Reactivate it instead of creating a new one.")
     return f'{kind} "{name}" already exists.'

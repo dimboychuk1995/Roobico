@@ -16,9 +16,35 @@ Categories, storage locations and pricing scales are configured on
   stock is split ("Shelf A × 3, Shelf B × 1"); stock without a location shows
   "Unassigned".
 - Row actions: **Cross refs**, **History**, **Locations** (tracked parts
-  only), **Edit**, **Deactivate** (soft delete; **Restore** brings it back).
+  only), **Edit**, **Deactivate**.
+- Status filter next to the search box: **Active parts** (default),
+  **Inactive parts**, **All parts**. Inactive parts carry a grey
+  **Inactive** badge and have only the **History** button.
 - Footer: **"Total inventory cost"** (Σ stock × avg cost) and **"Total core
-  cost"**.
+  cost"** — they count the parts shown by the current filter (inactive parts
+  are not in the default totals).
+
+### Inactive parts (and how a part becomes active again)
+
+- **Deactivate** hides the part everywhere it could be picked: work order
+  part search, the mobile app, stocktakes and inventory totals. Nothing is
+  deleted — history, stock quantity and locations stay on the part. If it
+  still has stock, the confirmation says so; the quantity simply stays
+  hidden until the part is active again.
+- There is **no Restore button**. A part becomes active again **only through
+  a parts order**: in the order dialog the part search also finds inactive
+  parts (marked **Inactive**); add the part to the order and click
+  **Create order** — the part is active again at that moment. The same
+  happens when an inactive part is in an order you **Receive**, in an order
+  you save (Update), or in an email order you **Confirm**. The AI Order
+  Reader matches inactive parts too, so scanning an invoice with that part
+  and adding the line reactivates it.
+- Creating a new part with the number of an inactive one is blocked with
+  "already exists but is inactive. Add it to a parts order…" — order it
+  instead of creating a copy, so the stock history continues.
+- The part's edit data keeps **reactivated_at / reactivated_by** and the
+  order number that brought it back (visible to admins in the database;
+  not shown in the UI).
 - There is no low-stock/min-quantity feature — no reorder points exist.
 
 ## Part fields
@@ -27,12 +53,28 @@ Categories, storage locations and pricing scales are configured on
   number), **Description**. Part numbers are unique within the shop
   (case-insensitive): creating or renaming a part to an existing number is
   blocked with "already exists". If the message says the existing part is
-  deactivated, reactivate it (its stock history comes back with it) instead
-  of creating a copy.
+  inactive, add that part to a parts order instead of creating a copy — the
+  order makes it active again and its stock history continues (see
+  "Inactive parts" above).
 - **In stock** — starting quantity; afterwards stock changes only through
   orders, work orders, transfers, stocktakes and manual adjustments.
-- **Average cost** — weighted average, recalculated on every receiving:
+- **Average cost** — the weighted average cost of what is in stock,
+  recalculated on every receiving:
   (old avg × old qty + received price × received qty) / total qty.
+  Example: 2 in stock at $100, you receive 2 at $200 → 4 in stock at $150.
+  Two rules keep it sane: if stock is zero or negative (a work order used
+  parts before they were received) or the average is 0 (cost unknown), the
+  received price simply becomes the average; and **Unreceive** / deleting a
+  received order takes that batch back out of the average, so re-receiving
+  does not count it twice. Work orders never change the average. You can
+  still type it by hand in the part form.
+- **Last price** — the price on the **latest parts order** with this part
+  (by order date; returns and unconfirmed email orders don't count). Set
+  automatically when an order is created, saved, deleted or an email order
+  is confirmed; shown in the Parts list ("Last price" column, hover for the
+  order #) and read-only in the part form. It is the **default price when
+  you add the part to a new parts order** (average cost is used only while
+  the part has never been ordered). "-" means no orders yet.
 - **"This part has selling price"** → fixed **Selling price** that overrides
   the pricing scale (unless the customer has "Override part selling price").
 - **"Do not track inventory for this part"** — part stays usable on WOs and
@@ -42,8 +84,15 @@ Categories, storage locations and pricing scales are configured on
   unit).
 - **"Add Misc charge for this part"** → a list of misc charges (description,
   price, taxable) automatically added when the part is put on a work order.
-- Vendor, Category, **Location** (the part's primary/default storage
-  location). Attachments available in edit mode.
+- **Vendor** — follows the purchases: every time a parts order with this
+  part is created, saved, confirmed (email order) or the latest one is
+  deleted, the part's vendor becomes the vendor of its **latest** parts
+  order, together with Last price. There is no separate "last vendor" field
+  — the Vendor you see is where you bought it last. You can still pick a
+  vendor by hand for a part that has never been ordered (or until the next
+  order overrides it).
+- Category, **Location** (the part's primary/default storage location).
+  Attachments available in edit mode.
 
 ## Cross references (interchangeable parts)
 

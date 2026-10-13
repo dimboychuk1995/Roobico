@@ -523,6 +523,22 @@ def _customers_collection():
     return db.customers, shop, master
 
 
+def _parse_status_filter(raw) -> str:
+    """Общий фильтр списков: active (по умолчанию) / inactive / all."""
+    status = (raw or "active").strip().lower()
+    return status if status in ("active", "inactive", "all") else "active"
+
+
+def _status_query(status: str) -> dict:
+    """Mongo-условие по is_active для значения фильтра. Документы без поля
+    is_active считаются активными."""
+    if status == "inactive":
+        return {"is_active": False}
+    if status == "all":
+        return {}
+    return {"is_active": {"$ne": False}}
+
+
 @customers_bp.get("/customers")
 @login_required
 @permission_required("customers.view")
@@ -535,7 +551,9 @@ def customers_page():
     q = (request.args.get("q") or "").strip()
     page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
 
-    query = {}
+    # Общий фильтр статуса: active (по умолчанию) / inactive / all.
+    status = _parse_status_filter(request.args.get("status"))
+    query = _status_query(status)
     search_filter = build_regex_search_filter(
         q,
         text_fields=[
@@ -580,6 +598,7 @@ def customers_page():
         customers=customers,
         pagination=pagination,
         q=q,
+        status=status,
         sort_by=sort_by,
         sort_dir=sort_dir,
         pricing_scales=pricing_scales,
@@ -659,6 +678,8 @@ def customer_details_page(customer_id):
 
     tab = (request.args.get("tab") or "work_orders").strip().lower()
     allowed_tabs = {"work_orders", "units", "payments", "estimates", "details"}
+    # Фильтр статуса для вкладки Units: active (по умолчанию) / inactive / all.
+    unit_status = _parse_status_filter(request.args.get("status"))
     if tab not in allowed_tabs:
         tab = "work_orders"
 
@@ -813,7 +834,7 @@ def customer_details_page(customer_id):
         units_query = {
             "shop_id": shop["_id"],
             "customer_id": cid,
-            "is_active": True,
+            **_status_query(unit_status),
         }
         units_search = build_regex_search_filter(
             q,
@@ -838,6 +859,7 @@ def customer_details_page(customer_id):
                 "vin": 1,
                 "mileage": 1,
                 "created_at": 1,
+                "is_active": 1,
             },
         )
 
@@ -850,6 +872,7 @@ def customer_details_page(customer_id):
                     "vin": u.get("vin") or "-",
                     "mileage": u.get("mileage") if u.get("mileage") is not None else "-",
                     "created_at": _fmt_dt_label(u.get("created_at")),
+                    "is_active": u.get("is_active") is not False,
                 }
             )
 
@@ -1010,6 +1033,7 @@ def customer_details_page(customer_id):
         can_create_inspection=has_permission("work_orders.create"),
         active_tab=tab,
         q=q,
+        unit_status=unit_status,
         tab_items=tab_items,
         pagination=tab_pagination,
         work_orders_totals=work_orders_totals,

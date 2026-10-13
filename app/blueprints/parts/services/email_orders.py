@@ -42,6 +42,8 @@ from app.utils.push_notifications import office_user_ids_for_shop, send_push_to_
 from app.utils.tenant import shop_db_name
 
 from . import email_orders_ai as ai
+from .activation import ORDERABLE_PART_FILTER, reactivate_parts_for_order
+from .costing import order_part_ids, refresh_last_price
 
 logger = logging.getLogger(__name__)
 
@@ -410,8 +412,10 @@ def match_part(parts_coll, shop_id: ObjectId, part_number: str) -> Optional[dict
     pn = str(part_number or "").strip()
     if not pn:
         return None
-    base = {"shop_id": shop_id, "is_active": True}
-    doc = parts_coll.find_one({**base, "part_number": _ci_exact(pn)})
+    # Неактивные парты тоже матчатся: заказ поставщика их реактивирует при
+    # подтверждении (см. services/activation.py). Слитые дубли — никогда.
+    base = {"shop_id": shop_id, **ORDERABLE_PART_FILTER}
+    doc = parts_coll.find_one({**base, "part_number": _ci_exact(pn)}, sort=[("is_active", -1)])
     if doc:
         return doc
     norm = _norm_pn(pn)
@@ -941,6 +945,15 @@ def confirm_email_order(shop_db, shop: dict, order: dict, *, actor_user_id: Obje
         update["$set"]["dropped_unmatched_items"] = unmatched
     shop_db.parts_orders.update_one({"_id": order["_id"]}, update)
 
+    # Подтверждённый заказ возвращает в оборот неактивные парты из своих строк
+    # и становится источником last_price.
+    reactivate_parts_for_order(
+        shop_db.parts, order_part_ids(order),
+        order_id=order["_id"], order_number=order.get("order_number"),
+        user_id=actor_user_id, now=now,
+    )
+    refresh_last_price(shop_db, shop["_id"], order_part_ids(order), now=now)
+
     source = order.get("source") or {}
     # Learn only the real vendor sender (never the shop's own forwarding address).
     if order.get("vendor_id") and source.get("vendor_sender"):
@@ -960,6 +973,9 @@ def reject_email_order(shop_db, shop: dict, order: dict, *, actor_user_id: Objec
         {"$set": {"is_active": False, "rejected_at": now, "rejected_by": actor_user_id,
                   "updated_at": now, "updated_by": actor_user_id}},
     )
+    # Неподтверждённый заказ в last_price не входит, но на всякий случай
+    # пересчитываем — вдруг он был подтверждён и откатан.
+    refresh_last_price(shop_db, shop["_id"], order_part_ids(order), now=now)
     source = order.get("source") or {}
     inbound_id = source.get("inbound_email_id")
     if inbound_id:

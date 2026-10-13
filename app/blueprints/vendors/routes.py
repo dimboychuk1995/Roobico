@@ -84,7 +84,16 @@ def vendors_page():
     q = (request.args.get("q") or "").strip()
     page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
 
-    query = {}
+    # Общий фильтр статуса: active (по умолчанию) / inactive / all.
+    status = (request.args.get("status") or "active").strip().lower()
+    if status not in ("active", "inactive", "all"):
+        status = "active"
+    if status == "active":
+        query = {"is_active": {"$ne": False}}
+    elif status == "inactive":
+        query = {"is_active": False}
+    else:
+        query = {}
     search_filter = build_regex_search_filter(
         q,
         text_fields=[
@@ -123,6 +132,7 @@ def vendors_page():
         vendors=vendors,
         pagination=pagination,
         q=q,
+        status=status,
         sort_by=(request.args.get("sort_by") or "").strip(),
         sort_dir=(request.args.get("sort_dir") or "").strip(),
     )

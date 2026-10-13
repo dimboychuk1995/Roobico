@@ -19,7 +19,9 @@
 <div class="card">
   <div class="card-body">
 
-    {{ search_bar(q, placeholder="Search customers by any field...") }}
+    {{ search_bar(q, placeholder="Search customers by any field...", status=status,
+                  status_labels={"active": "Active customers", "inactive": "Inactive customers", "all": "All customers"},
+                  status_title="Inactive customers are hidden from work orders; open one to activate it back") }}
 
     {% if customers and customers|length > 0 %}
       <div class="table-responsive">

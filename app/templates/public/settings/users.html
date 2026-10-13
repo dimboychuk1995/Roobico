@@ -27,7 +27,9 @@
 
 <div class="card">
   <div class="card-body">
-    {{ search_bar(q, placeholder="Search users by name, email, role, phone or ID...") }}
+    {{ search_bar(q, placeholder="Search users by name, email, role, phone or ID...", status=status,
+                  status_labels={"active": "Active users", "inactive": "Inactive users", "all": "All users"},
+                  status_title="Inactive users cannot log in; use Activate to bring one back") }}
 
     {% if users %}
       <div class="table-responsive">
@@ -111,10 +113,23 @@
                             onsubmit="return appConfirmSubmit(this, 'Deactivate this user?');">
                         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                         <input type="hidden" name="q" value="{{ q or '' }}">
+                        <input type="hidden" name="status" value="{{ status or 'active' }}">
                         <input type="hidden" name="page" value="{{ pagination.page if pagination else 1 }}">
                         <input type="hidden" name="per_page" value="{{ pagination.per_page if pagination else 20 }}">
                         <button class="btn btn-sm btn-outline-danger">
                           Deactivate
+                        </button>
+                      </form>
+                    {% endif %}
+                    {% if not u.get('is_active', True) %}
+                      <form method="post" action="{{ url_for('settings.users_activate', user_id=u.get('_id_str')) }}" class="d-inline">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <input type="hidden" name="q" value="{{ q or '' }}">
+                        <input type="hidden" name="status" value="{{ status or 'active' }}">
+                        <input type="hidden" name="page" value="{{ pagination.page if pagination else 1 }}">
+                        <input type="hidden" name="per_page" value="{{ pagination.per_page if pagination else 20 }}">
+                        <button class="btn btn-sm btn-outline-success" title="The user can log in again">
+                          Activate
                         </button>
                       </form>
                     {% endif %}

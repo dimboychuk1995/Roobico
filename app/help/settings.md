@@ -26,7 +26,11 @@ deactivated user also goes through a fresh invitation (the old password is
 cleared).
 
 - **Deactivate** blocks login but keeps history; you cannot deactivate
-  yourself.
+  yourself. Deactivated users disappear from the default list — switch the
+  status filter next to the search box to **Inactive users** / **All
+  users** to see them; each inactive row has an **Activate** button (same as
+  the "Active user" checkbox in the edit form) that lets the person log in
+  again with their existing password.
 - **Re-hiring**: creating a user with the email of a *deactivated* user of
   your company reactivates that user with the data you enter in the form (a
   fresh profile — name, role, shops, password are overwritten). If the email

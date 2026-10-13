@@ -188,6 +188,8 @@ def ensure_shop_collections_indexes(shop_db):
     _safe_create_index(shop_db.parts_orders, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_parts_orders_shop_active_created_desc")
     _safe_create_index(shop_db.parts_orders, [("shop_id", ASCENDING), ("vendor_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_parts_orders_shop_vendor_active_created_desc")
     _safe_create_index(shop_db.parts_orders, [("shop_id", ASCENDING), ("order_number", ASCENDING)], name="idx_parts_orders_shop_order_number")
+    # last_price: последний по дате заказ с конкретным партом (services/costing.py)
+    _safe_create_index(shop_db.parts_orders, [("shop_id", ASCENDING), ("items.part_id", ASCENDING), ("order_date", DESCENDING)], name="idx_parts_orders_shop_item_part_order_date_desc")
     # Привязка заказов к WO: блок на странице WO + бейджи "PO #" в списке WO.
     _safe_create_index(shop_db.parts_orders, [("shop_id", ASCENDING), ("work_order_id", ASCENDING)], name="idx_parts_orders_shop_work_order")
     _safe_create_index(shop_db.parts_orders, [("payment_status", ASCENDING)], name="idx_parts_orders_payment_status")

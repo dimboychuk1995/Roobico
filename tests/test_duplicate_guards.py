@@ -93,14 +93,15 @@ def test_part_create_duplicate_blocked(client, dup_seed, mongo):
     assert mongo[SHOP_A_DB].parts.count_documents({"part_number": "DUP-100"}) == 1
 
 
-def test_part_create_inactive_duplicate_mentions_deactivated(client, dup_seed):
+def test_part_create_inactive_duplicate_mentions_parts_order(client, dup_seed):
+    """Партам нет кнопки Restore: подсказка ведёт в парт-ордер."""
     login(client)
     token = get_csrf_token(client)
     resp = client.post("/parts/api/create", json={"part_number": "dup-gone"},
                        headers={"X-CSRFToken": token})
     assert resp.status_code == 409
     err = resp.get_json()["error"]
-    assert "deactivated" in err and "Reactivate" in err
+    assert "inactive" in err and "parts order" in err
 
 
 def test_part_rename_to_existing_blocked(client, dup_seed):

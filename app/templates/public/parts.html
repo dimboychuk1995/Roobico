@@ -1,6 +1,6 @@
 {% extends "layouts/app_base.html" %}
 {% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
-{% from "components/ui.html" import empty_state, payment_status_badge %}
+{% from "components/ui.html" import empty_state, payment_status_badge, status_badge %}
 
 {% block page_title %}Parts{% endblock %}
 
@@ -9,7 +9,7 @@
   <h1 class="page-header__title">Parts</h1>
   <ul class="nav page-header__tabs" role="tablist">
     <li class="nav-item" role="presentation">
-      <a class="nav-link {% if active_tab == 'parts' %}active{% endif %}" id="tab-parts" href="{{ url_for('parts.parts_page', tab='parts', q=q, date_preset=date_preset, date_from=date_from, date_to=date_to) }}" role="tab" aria-controls="content-parts" aria-selected="{{ 'true' if active_tab == 'parts' else 'false' }}">Parts</a>
+      <a class="nav-link {% if active_tab == 'parts' %}active{% endif %}" id="tab-parts" href="{{ url_for('parts.parts_page', tab='parts', q=q, status=part_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}" role="tab" aria-controls="content-parts" aria-selected="{{ 'true' if active_tab == 'parts' else 'false' }}">Parts</a>
     </li>
     <li class="nav-item" role="presentation">
       <a class="nav-link {% if active_tab == 'orders' %}active{% endif %}" id="tab-orders" href="{{ url_for('parts.parts_page', tab='orders', q=q, date_preset=date_preset, date_from=date_from, date_to=date_to) }}" role="tab" aria-controls="content-orders" aria-selected="{{ 'true' if active_tab == 'orders' else 'false' }}">Parts Orders</a>
@@ -49,7 +49,15 @@
       <div class="col-12 col-md-8 col-lg-6">
         <input type="text" name="q" class="form-control form-control-sm" placeholder="Search parts by any field..." value="{{ q or '' }}" />
       </div>
-      {% if q %}
+      <div class="col-auto">
+        <select name="status" class="form-select form-select-sm" aria-label="Part status" onchange="this.form.submit()"
+                title="Inactive parts are hidden from work orders; they become active again when added to a parts order">
+          <option value="active" {% if part_status == 'active' %}selected{% endif %}>Active parts</option>
+          <option value="inactive" {% if part_status == 'inactive' %}selected{% endif %}>Inactive parts</option>
+          <option value="all" {% if part_status == 'all' %}selected{% endif %}>All parts</option>
+        </select>
+      </div>
+      {% if q or part_status != 'active' %}
         <div class="col-auto">
           <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('parts.parts_page', tab='parts') }}">Reset</a>
         </div>
@@ -65,7 +73,8 @@
               <th data-sort-field="description" style="min-width:260px;">Description</th>
               <th data-sort-field="reference" style="min-width:180px;">Reference</th>
               <th data-sort-field="in_stock" class="text-end" style="width:120px;">In stock</th>
-              <th data-sort-field="average_cost" class="text-end" style="width:150px;">Avg cost</th>
+              <th data-sort-field="average_cost" class="text-end" style="width:150px;" title="Weighted average cost of what is in stock">Avg cost</th>
+              <th data-sort-field="last_price" class="text-end" style="width:130px;" title="Price on the latest parts order with this part — the default price when you order it again">Last price</th>
               <th style="min-width:180px;">Vendor</th>
               <th style="min-width:180px;">Category</th>
               <th style="min-width:180px;">Location</th>
@@ -77,6 +86,9 @@
               <tr>
                 <td class="fw-semibold">
                   {{ p.part_number }}
+                  {% if p.is_active is defined and p.is_active == false %}
+                    {{ status_badge(false) }}
+                  {% endif %}
                   {% if p.cross_ref_numbers %}
                     <div class="small text-muted fw-normal cross-ref-hint"
                          title="Interchangeable with: {{ p.cross_ref_numbers | join(', ') }}">
@@ -98,6 +110,13 @@
                     {{ "%.2f"|format(p.average_cost) }}
                   {% else %}
                     0.00
+                  {% endif %}
+                </td>
+                <td class="text-end">
+                  {% if p.get('last_price') is not none %}
+                    <span title="{% if p.get('last_price_order_number') %}Order #{{ p.get('last_price_order_number') }}{% else %}Latest parts order{% endif %}">{{ "%.2f"|format(p.get('last_price')) }}</span>
+                  {% else %}
+                    <span class="text-muted" title="No parts orders with this part yet">-</span>
                   {% endif %}
                 </td>
 
@@ -139,10 +158,19 @@
 
                 <td class="text-end">
                   {% if p.is_active is defined and p.is_active == false %}
-                    <form method="post" action="{{ url_for('parts.parts_restore', part_id=p._id) }}" class="d-inline">
-                      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                      <button class="btn btn-sm btn-outline-success">Restore</button>
-                    </form>
+                    {# Кнопки Restore нет: неактивный парт возвращается в оборот
+                       только через парт-ордер (services/activation.py). #}
+                    <div class="d-flex gap-2 justify-content-end align-items-center flex-nowrap">
+                      <span class="small text-muted text-nowrap"
+                            title="Inactive parts become active again automatically when added to a parts order">
+                        Add to a parts order to reactivate
+                      </span>
+                      <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap flex-shrink-0 partHistoryBtn"
+                              data-part-id="{{ p._id }}" data-part-number="{{ p.part_number }}"
+                              data-bs-toggle="modal" data-bs-target="#partHistoryModal">
+                        History
+                      </button>
+                    </div>
                   {% else %}
                     <div class="d-flex gap-1 justify-content-end flex-nowrap">
                     <button type="button" class="btn btn-sm btn-outline-secondary text-nowrap flex-shrink-0 partCrossRefsBtn"
@@ -169,8 +197,9 @@
                       Edit
                     </button>
                     <form method="post" action="{{ url_for('parts.parts_deactivate', part_id=p._id) }}" class="d-inline"
-                          onsubmit="return appConfirmSubmit(this, 'Deactivate this part?');">
+                          onsubmit="return appConfirmSubmit(this, 'Deactivate this part?{% if not p.do_not_track_inventory and (p.in_stock or 0) > 0 %} It still has {{ p.in_stock }} in stock: the quantity stays on the part but is hidden from inventory totals.{% endif %} It becomes active again only when added to a parts order.');">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                      <input type="hidden" name="status" value="{{ part_status }}">
                       <button class="btn btn-sm btn-outline-danger text-nowrap flex-shrink-0">
                         Deactivate
                       </button>
@@ -191,9 +220,9 @@
           </div>
           <div class="btn-group btn-group-sm" role="group" aria-label="Parts pagination">
             <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-               href="{{ url_for('parts.parts_page', tab='parts', q=q, parts_page=pagination.prev_page, parts_per_page=pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
+               href="{{ url_for('parts.parts_page', tab='parts', q=q, status=part_status, parts_page=pagination.prev_page, parts_per_page=pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
             <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-               href="{{ url_for('parts.parts_page', tab='parts', q=q, parts_page=pagination.next_page, parts_per_page=pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
+               href="{{ url_for('parts.parts_page', tab='parts', q=q, status=part_status, parts_page=pagination.next_page, parts_per_page=pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
           </div>
         </div>
       {% endif %}
@@ -990,6 +1019,14 @@
             <div class="col-md-4">
               <label class="form-label">Average cost</label>
               <input name="average_cost" type="number" min="0" step="0.01" value="0" class="form-control" />
+              <div class="form-text">Weighted average of what is in stock; recalculated on every receiving.</div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label">Last price</label>
+              <input name="last_price" type="text" class="form-control" value="" placeholder="No orders yet" disabled
+                     title="Price on the latest parts order with this part — set automatically, used as the default order price" />
+              <div class="form-text">From the latest parts order. Read-only.</div>
             </div>
 
             <div class="col-12">
@@ -1026,6 +1063,7 @@
                   <option value="" disabled>(No vendors found)</option>
                 {% endif %}
               </select>
+              <div class="form-text">Switches automatically to the vendor of the latest parts order.</div>
             </div>
 
             <div class="col-md-6">

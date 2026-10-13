@@ -1337,6 +1337,7 @@ def mobile_parts():
         }
         if show_costs:
             item["average_cost"] = float(p.get("average_cost") or 0)
+            item["last_price"] = float(p["last_price"]) if p.get("last_price") is not None else None
             item["selling_price"] = float(p.get("selling_price") or 0)
         items.append(item)
 

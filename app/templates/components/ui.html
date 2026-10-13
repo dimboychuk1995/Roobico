@@ -7,7 +7,13 @@
 #}
 
 {# Строка поиска списковой страницы (GET ?q=...). #}
-{% macro search_bar(q, placeholder="Search...") %}
+{#
+  search_bar: строка поиска + (опционально) общий фильтр статуса
+  Active / Inactive / All. status — текущее значение ("active" по умолчанию),
+  status_labels — подписи опций, напр. {"active": "Active customers", ...}.
+  Один и тот же фильтр на всех списках сущностей с деактивацией.
+#}
+{% macro search_bar(q, placeholder="Search...", status=None, status_labels=None, status_title=None) %}
 <form method="get" class="row g-2 align-items-center mb-3">
   <div class="col-12 col-md-8 col-lg-6">
     <input
@@ -18,7 +24,19 @@
       value="{{ q or '' }}"
     />
   </div>
-  {% if q %}
+  {% if status is not none %}
+    {% set labels = status_labels or {"active": "Active", "inactive": "Inactive", "all": "All"} %}
+    <div class="col-auto">
+      <select name="status" class="form-select form-select-sm" aria-label="Status filter"
+              onchange="this.form.submit()"
+              title="{{ status_title or 'Show active, inactive or all records' }}">
+        <option value="active" {% if status == 'active' %}selected{% endif %}>{{ labels.active }}</option>
+        <option value="inactive" {% if status == 'inactive' %}selected{% endif %}>{{ labels.inactive }}</option>
+        <option value="all" {% if status == 'all' %}selected{% endif %}>{{ labels.all }}</option>
+      </select>
+    </div>
+  {% endif %}
+  {% if q or (status is not none and status != 'active') %}
     <div class="col-auto">
       <a class="btn btn-sm btn-outline-secondary"
          href="{{ url_for(request.endpoint, **request.view_args) }}">Reset</a>

@@ -76,6 +76,39 @@ locations" (From / To / Qty). Totals don't change.
 Reader**: upload the invoice PDF/photo; review matched parts, create missing
 ones ("Create & Add"), then Create order.
 
+**AI put the whole line amount into the price.** This is now corrected
+automatically: the reader extracts the unit price and the printed line
+amount separately and, when they disagree, uses line amount ÷ qty (hover
+the price to see the tooltip when that happened). If a price still looks
+wrong, fix it in the review table before "Add" — the **Total** column shows
+Qty × Price so a mismatch with the invoice is obvious.
+
+**Average cost looks wrong / did not change after receiving.** Average cost
+is the weighted average of what is in stock, so a small batch barely moves
+it when a lot is in stock (10 at $100 + 1 at $200 → $109). It jumps to the
+received price when stock was zero/negative or the average was 0. Check the
+part's **History** for the receipts; if an order was received twice by
+mistake, **Unreceive** it — that also removes the batch from the average.
+To just set it, type the value in the part form.
+
+**What did I pay last time, and where?** Parts list → **Last price** column
+(hover shows the order #) and the **Vendor** column — the vendor is always
+the one from the latest parts order with that part, it switches
+automatically when you buy from someone else. The last price is also
+pre-filled when you order the part again.
+
+**Stop using a part (make it inactive).** Parts tab → row → **Deactivate**.
+It disappears from WO part search, the mobile app, stocktakes and inventory
+totals; its stock and history stay. To see it later, switch the filter next
+to the search box to **Inactive parts** / **All parts**.
+
+**Bring an inactive part back.** There is no Restore button — order it:
+Parts → Order → find the part (inactive parts show an **Inactive** badge) →
+add → **Create order**. The part is active again immediately. Receiving an
+old order that contains it, saving such an order, confirming an email order
+with it, or scanning an invoice with the AI Order Reader and adding the
+line does the same.
+
 **Get vendor orders into Roobico automatically from email.** Settings →
 Integrations → **Email orders inbox** → enable → Save → copy the location's
 address (`orders-…@roobico.com`). Then either set auto-forwarding in the

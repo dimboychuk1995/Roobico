@@ -33,8 +33,15 @@ Button **"Order"** on the Parts page. One order = one vendor.
 2. **Order Date** defaults to today.
 3. **Find part** — type 2+ characters of part number or description, click a
    result to add a line. Lines have Part #, Description, In Stock, **Qty**,
-   **Price** (defaults to the part's average cost). Adding the same part again
+   **Price** and **Total** (Qty × Price, plus the core charge when its toggle
+   is on; recalculated as you type). The price defaults to the part's
+   **Last price** — what you paid on the latest parts order with it (the
+   search results show "Last $X · Avg $Y"); only a part that has never been
+   ordered defaults to its average cost. Adding the same part again
    increases Qty.
+   The search here also finds **inactive** parts (grey **Inactive** badge in
+   the results and on the line): adding one and creating the order makes
+   the part active again — this is the only way to reactivate a part.
 4. **Core charge**: if the part has a core charge, a toggle **"+ Core $X"**
    appears (on by default) — it adds qty × core charge to the total.
 5. **Non inventory amount** section — spending that is not parts and does not
@@ -56,13 +63,22 @@ review panel:
 - vendor matched by name, or a **Create Vendor** button prefilled from the
   invoice;
 - **Matched parts** — lines recognized as existing parts (editable Qty/Price,
-  "Add" / "Add All Matched");
+  a **Total** column = Qty × Price, "Add" / "Add All Matched"). An inactive
+  part is matched too (badge **Inactive**) and becomes active when the order
+  is created;
 - **New parts (not in database)** — lines with a **Create & Add** button that
   creates the part first.
 
-It uses the net (discounted) unit price and the Shipped quantity, and ignores
-tax/freight/signature lines. Always review the lines; the order is created
-only when you click **Create order**.
+**Price = unit price, never the line amount.** The reader extracts two
+numbers per line — the net unit price and the printed line amount (Ext /
+Amount / Total column) — and checks that price × qty equals the line amount.
+If the AI put the line amount into the price (qty 3, amount $150 → "price"
+$150), the price is corrected to the amount ÷ qty ($50) before you see it;
+such a price shows a tooltip on hover ("derived from the printed line
+amount") so you know to glance at it. It uses the net (discounted) unit
+price and the Shipped quantity, and ignores tax/freight/signature lines.
+Always review the lines; the order is created only when you click **Create
+order**.
 
 ## Orders from email (AI inbox, "Not confirmed" orders)
 

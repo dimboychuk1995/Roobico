@@ -220,13 +220,18 @@
 				const coreCost = parseFloat(tr.getAttribute("data-core-cost") || "0");
 				const coreToggle = tr.querySelector(".item-core-toggle");
 				const coreIncluded = coreToggle ? !!coreToggle.checked : (coreHasCharge && coreCost > 0);
-				
+
+				// Сумма строки = qty × price (+ core, если включён) — показывается в колонке Total.
+				let lineTotal = 0;
 				if (qty > 0 && price >= 0) {
-					total += price * qty;
+					lineTotal = price * qty;
 					if (coreHasCharge && coreCost > 0 && coreIncluded) {
-						total += coreCost * qty;
+						lineTotal += coreCost * qty;
 					}
 				}
+				const lineTotalCell = tr.querySelector(".line-total");
+				if (lineTotalCell) lineTotalCell.textContent = "$" + lineTotal.toFixed(2);
+				total += lineTotal;
 			});
 
 			const nonInventoryRows = Array.from(nonInventoryBody.querySelectorAll("tr"));
@@ -552,6 +557,36 @@
 		const confirmEmailOrderBtn = document.getElementById("confirmEmailOrderBtn");
 		const rejectEmailOrderBtn = document.getElementById("rejectEmailOrderBtn");
 
+		// Сумма строки в таблицах AI-скана / email-строк: qty × price.
+		function scanLineTotal(qty, price) {
+			const q = parseInt(qty || "0", 10);
+			const p = parseFloat(price || "0");
+			return ((q > 0 && p >= 0) ? q * p : 0).toFixed(2);
+		}
+
+		// Цена, которую парсер вывел из суммы строки (а не прочитал как unit price),
+		// помечается подсказкой — пользователь видит, что её стоит перепроверить.
+		function scanPriceTitle(item) {
+			return item && item.price_note
+				? `title="Unit price derived from the printed line amount (line total ÷ qty) — please double-check"`
+				: "";
+		}
+
+		// Пересчёт суммы строки при правке qty/price в таблицах скана и email-строк.
+		onDocument("input", function (e) {
+			const t = e.target;
+			if (!(t instanceof HTMLElement)) return;
+			const isQty = t.classList.contains("scan-match-qty") || t.classList.contains("scan-new-qty");
+			const isPrice = t.classList.contains("scan-match-price") || t.classList.contains("scan-new-price");
+			if (!isQty && !isPrice) return;
+			const tr = t.closest("tr");
+			if (!tr) return;
+			const qtyEl = tr.querySelector(".scan-match-qty, .scan-new-qty");
+			const priceEl = tr.querySelector(".scan-match-price, .scan-new-price");
+			const cell = tr.querySelector(".scan-line-total");
+			if (cell) cell.textContent = "$" + scanLineTotal(qtyEl?.value, priceEl?.value);
+		});
+
 		function renderEmailOrderReview(order, orderId) {
 			if (!emailReviewBox) return;
 			const needsConfirmation = !!(order && order.needs_confirmation);
@@ -581,7 +616,7 @@
 			if (unmatched.length > 0) {
 				lines += `<div class="mt-2"><strong>Lines from the email not found in the parts catalog:</strong> <span class="text-muted">create them as parts (they are added to the order), or leave them and they will be dropped on confirm.</span></div>`;
 				lines += `<div class="table-responsive mt-1"><table class="table table-sm table-bordered mb-0"><thead><tr>`;
-				lines += `<th style="min-width:140px;">Part #</th><th style="min-width:200px;">Description</th><th style="width:80px;">Qty</th><th style="width:110px;">Price</th><th style="width:130px;">Action</th>`;
+				lines += `<th style="min-width:140px;">Part #</th><th style="min-width:200px;">Description</th><th style="width:80px;">Qty</th><th style="width:110px;">Price</th><th style="width:100px;" class="text-end">Total</th><th style="width:130px;">Action</th>`;
 				lines += `</tr></thead><tbody>`;
 				for (const item of unmatched) {
 					lines += `<tr data-scan-unmatched="1" data-email-unmatched="1">
@@ -589,6 +624,7 @@
 						<td><input type="text" class="form-control form-control-sm scan-new-desc" value="${escapeHtml(item.description || "")}" placeholder="Description"></td>
 						<td><input type="number" class="form-control form-control-sm scan-new-qty" min="1" step="1" value="${Number(item.quantity || 1)}"></td>
 						<td><input type="number" class="form-control form-control-sm scan-new-price" min="0" step="0.01" value="${Number(item.price || 0).toFixed(2)}"></td>
+						<td class="text-end scan-line-total">$${scanLineTotal(item.quantity, item.price)}</td>
 						<td><button type="button" class="btn btn-sm btn-outline-primary create-scanned-part-btn"><i class="bi bi-plus-lg me-1"></i>Create & Add</button></td>
 					</tr>`;
 				}
@@ -984,7 +1020,8 @@
 			if (searchAbort) searchAbort.abort();
 			searchAbort = new AbortController();
 
-			const res = await fetch(`/parts/api/search?q=${encodeURIComponent(q)}&limit=30`, {
+			// include_inactive: в заказ можно положить неактивный парт — заказ его реактивирует.
+			const res = await fetch(`/parts/api/search?q=${encodeURIComponent(q)}&limit=30&include_inactive=1`, {
 				signal: searchAbort.signal,
 			});
 			return await res.json();
@@ -999,7 +1036,7 @@
 			if (itemsBody.querySelectorAll("tr").length === 0) {
 				const empty = document.createElement("tr");
 				empty.id = "emptyOrderRow";
-				empty.innerHTML = `<td colspan="6" class="text-center text-muted small py-3">No items added yet.</td>`;
+				empty.innerHTML = `<td colspan="7" class="text-center text-muted small py-3">No items added yet.</td>`;
 				itemsBody.appendChild(empty);
 			}
 		}
@@ -1031,7 +1068,10 @@
 
 			const pn = item.part_number || "";
 			const desc = item.description || "";
-			const price = Number(item.average_cost || 0).toFixed(2);
+			// Цена по умолчанию — последняя закупочная (last_price); если заказов
+			// ещё не было — средняя себестоимость.
+			const hasLastPrice = item.last_price !== undefined && item.last_price !== null && Number(item.last_price) > 0;
+			const price = (hasLastPrice ? Number(item.last_price) : Number(item.average_cost || 0)).toFixed(2);
 			const inStock = parseInt(item.in_stock || 0, 10);
 			const coreHasCharge = item.core_has_charge || false;
 			const coreCost = Number(item.core_cost || 0).toFixed(2);
@@ -1046,12 +1086,17 @@
 				</div>`
 				: '';
 
+			// Неактивный парт: бейдж-подсказка — создание заказа сделает его активным.
+			const inactiveBadge = (item.is_active === false)
+				? ` <span class="badge text-bg-secondary ms-1" title="Inactive part — it becomes active again when this order is created">Inactive</span>`
+				: "";
+
 			const tr = document.createElement("tr");
 			tr.setAttribute("data-part-id", pid);
 			tr.setAttribute("data-core-has-charge", coreHasCharge ? "true" : "false");
 			tr.setAttribute("data-core-cost", coreCost);
 			tr.innerHTML = `
-				<td class="fw-semibold">${escapeHtml(pn)}</td>
+				<td class="fw-semibold">${escapeHtml(pn)}${inactiveBadge}</td>
 				<td class="text-muted">${escapeHtml(desc) || "-"}</td>
 				<td class="text-end text-muted">${inStock}</td>
 				<td class="text-end">
@@ -1061,6 +1106,7 @@
 					<input class="form-control form-control-sm text-end price-input" type="number" min="0" step="0.01" value="${price}" required>
 					${corePriceCell}
 				</td>
+				<td class="text-end fw-semibold line-total">$0.00</td>
 				<td class="text-end">
 					<button type="button" class="btn btn-sm btn-outline-danger remove-item-btn">Remove</button>
 				</td>
@@ -1121,6 +1167,7 @@
 						<input class="form-control form-control-sm text-end price-input" type="number" min="0" step="0.01" value="${item.price}" required ${isReceived ? 'disabled' : ''}>
 						${corePriceCell}
 					</td>
+					<td class="text-end fw-semibold line-total">$0.00</td>
 					<td class="text-end">
 						${removeBtn}
 					</td>
@@ -1174,16 +1221,24 @@
 					el.type = "button";
 					el.className = "list-group-item list-group-item-action";
 
-					const priceDisplay = Number(item.average_cost || 0).toFixed(2);
+					// Last — цена последнего заказа (дефолт строки), Avg — средняя себестоимость.
+					const avgDisplay = Number(item.average_cost || 0).toFixed(2);
+					const hasLast = item.last_price !== undefined && item.last_price !== null && Number(item.last_price) > 0;
+					const priceDisplay = hasLast
+						? `<span title="Price on the latest parts order">Last $${Number(item.last_price).toFixed(2)}</span> <span title="Average cost">· Avg $${avgDisplay}</span>`
+						: `<span title="Average cost (no orders yet)">Avg $${avgDisplay}</span>`;
 					const inStock = parseInt(item.in_stock || 0, 10);
 					const coreInfo = item.core_has_charge && item.core_cost > 0
 						? `<span class="badge bg-warning text-dark ms-1" title="Core charge included">+Core $${Number(item.core_cost).toFixed(2)}</span>`
 						: '';
+					const inactiveInfo = (item.is_active === false)
+						? `<span class="badge text-bg-secondary ms-1" title="Inactive part — adding it to the order makes it active again">Inactive</span>`
+						: '';
 
 					el.innerHTML = `
 						<div class="d-flex justify-content-between">
-							<div class="fw-semibold">${escapeHtml(item.part_number)}</div>
-							<div class="text-muted small">$${priceDisplay}${coreInfo} <span class="ms-2 badge ${inStock > 0 ? 'bg-success' : 'bg-secondary'}">${inStock} in stock</span></div>
+							<div class="fw-semibold">${escapeHtml(item.part_number)}${inactiveInfo}</div>
+							<div class="text-muted small">${priceDisplay}${coreInfo} <span class="ms-2 badge ${inStock > 0 ? 'bg-success' : 'bg-secondary'}">${inStock} in stock</span></div>
 						</div>
 						<div class="text-muted small">${escapeHtml(item.description)}</div>
 					`;
@@ -1721,7 +1776,7 @@
 					if (matched.length > 0) {
 						details += `<div class="mt-2"><strong>Matched parts:</strong></div>`;
 						details += `<div class="table-responsive mt-1"><table class="table table-sm table-bordered mb-0"><thead><tr>`;
-						details += `<th>Part #</th><th>Description</th><th style="width:80px;">Qty</th><th style="width:110px;">Price</th><th style="width:100px;">Action</th>`;
+						details += `<th>Part #</th><th>Description</th><th style="width:80px;">Qty</th><th style="width:110px;">Price</th><th style="width:100px;" class="text-end">Total</th><th style="width:100px;">Action</th>`;
 						details += `</tr></thead><tbody>`;
 						for (const item of matched) {
 							const mp = item.matched_part;
@@ -1730,11 +1785,15 @@
 							const coreBadge = hasCore
 								? ` <span class="badge bg-warning text-dark" title="Core charge: $${coreCost} per unit">+ Core $${coreCost}</span>`
 								: '';
+							const inactiveBadge = (mp.is_active === false)
+								? ` <span class="badge text-bg-secondary" title="Inactive part — it becomes active again when the order is created">Inactive</span>`
+								: '';
 							details += `<tr data-scan-matched="1" data-scan-part-id="${escapeHtml(mp.part_id)}" data-scan-core-has-charge="${hasCore ? 'true' : 'false'}" data-scan-core-cost="${coreCost}">
-								<td><strong>${escapeHtml(mp.part_number)}</strong>${coreBadge}</td>
+								<td><strong>${escapeHtml(mp.part_number)}</strong>${coreBadge}${inactiveBadge}</td>
 								<td class="text-muted">${escapeHtml(mp.description || item.description)}</td>
 								<td><input type="number" class="form-control form-control-sm scan-match-qty" min="1" step="1" value="${item.quantity}"></td>
-								<td><input type="number" class="form-control form-control-sm scan-match-price" min="0" step="0.01" value="${Number(item.price).toFixed(2)}"></td>
+								<td><input type="number" class="form-control form-control-sm scan-match-price" min="0" step="0.01" value="${Number(item.price).toFixed(2)}" ${scanPriceTitle(item)}></td>
+								<td class="text-end scan-line-total">$${scanLineTotal(item.quantity, item.price)}</td>
 								<td><button type="button" class="btn btn-sm btn-primary add-scanned-matched-btn"><i class="bi bi-plus-lg me-1"></i>Add</button></td>
 							</tr>`;
 						}
@@ -1748,14 +1807,15 @@
 					if (unmatched.length > 0) {
 						details += `<div class="mt-3"><strong>New parts (not in database):</strong></div>`;
 						details += `<div class="table-responsive mt-1"><table class="table table-sm table-bordered mb-0"><thead><tr>`;
-						details += `<th style="min-width:140px;">Part #</th><th style="min-width:200px;">Description</th><th style="width:80px;">Qty</th><th style="width:110px;">Price</th><th style="width:130px;">Action</th>`;
+						details += `<th style="min-width:140px;">Part #</th><th style="min-width:200px;">Description</th><th style="width:80px;">Qty</th><th style="width:110px;">Price</th><th style="width:100px;" class="text-end">Total</th><th style="width:130px;">Action</th>`;
 						details += `</tr></thead><tbody>`;
 						for (const item of unmatched) {
 							details += `<tr data-scan-unmatched="1">
 								<td><input type="text" class="form-control form-control-sm scan-new-pn" value="${escapeHtml(item.part_number)}" placeholder="Part number"></td>
 								<td><input type="text" class="form-control form-control-sm scan-new-desc" value="${escapeHtml(item.description)}" placeholder="Description"></td>
 								<td><input type="number" class="form-control form-control-sm scan-new-qty" min="1" step="1" value="${item.quantity}"></td>
-								<td><input type="number" class="form-control form-control-sm scan-new-price" min="0" step="0.01" value="${Number(item.price).toFixed(2)}"></td>
+								<td><input type="number" class="form-control form-control-sm scan-new-price" min="0" step="0.01" value="${Number(item.price).toFixed(2)}" ${scanPriceTitle(item)}></td>
+								<td class="text-end scan-line-total">$${scanLineTotal(item.quantity, item.price)}</td>
 								<td><button type="button" class="btn btn-sm btn-outline-primary create-scanned-part-btn"><i class="bi bi-plus-lg me-1"></i>Create & Add</button></td>
 							</tr>`;
 						}
@@ -3043,6 +3103,7 @@
 		const inStockGroup = document.getElementById('inStockGroup');
 		const inStockInput = createPartModal.querySelector('input[name="in_stock"]');
 		const averageCostInput = createPartModal.querySelector('input[name="average_cost"]');
+		const lastPriceInput = createPartModal.querySelector('input[name="last_price"]'); // read-only, не уходит в payload
 		const doNotTrackInventoryCheckbox = document.getElementById('doNotTrackInventoryToggle');
 		const coreCheckbox = document.getElementById('coreChargeToggle');
 		const coreCostInput = createPartModal.querySelector('input[name="core_cost"]');
@@ -3099,6 +3160,13 @@
 			locationSelect.value = item.location_id || '';
 			inStockInput.value = item.in_stock ?? 0;
 			averageCostInput.value = item.average_cost ?? 0;
+			if (lastPriceInput) {
+				const hasLast = item.last_price !== undefined && item.last_price !== null;
+				lastPriceInput.value = hasLast ? Number(item.last_price).toFixed(2) : '';
+				lastPriceInput.title = hasLast && item.last_price_order_number
+					? `From parts order #${item.last_price_order_number}`
+					: 'Price on the latest parts order with this part — set automatically';
+			}
 
 			if (doNotTrackInventoryCheckbox) {
 				doNotTrackInventoryCheckbox.checked = !!item.do_not_track_inventory;

@@ -42,6 +42,18 @@ from app.blueprints.parts.services.stock import (
     transfer_stock,
     set_location_qty,
 )
+from app.blueprints.parts.services.activation import (
+    ORDERABLE_PART_FILTER,
+    find_orderable_part,
+    is_part_inactive,
+    reactivate_parts_for_order,
+)
+from app.blueprints.parts.services.costing import (
+    order_part_ids,
+    refresh_last_price,
+    reverse_weighted_average_cost,
+    weighted_average_cost,
+)
 from app.blueprints.parts.services.email_orders import (
     confirm_email_order,
     count_unconfirmed as count_unconfirmed_email_orders,
@@ -654,10 +666,19 @@ def parts_page():
         "core_cost": 0.0,
     }
 
+    # Фильтр статуса парта: active (по умолчанию) / inactive / all. Слитые
+    # дубли (merged_into) не показываются ни в одном режиме.
+    part_status = (request.args.get("status") or "active").strip().lower()
+    if part_status not in ("active", "inactive", "all"):
+        part_status = "active"
+
     if active_tab == "parts":
-        parts_query = {
-            "is_active": True,
-        }
+        if part_status == "inactive":
+            parts_query = {"is_active": False, **ORDERABLE_PART_FILTER}
+        elif part_status == "all":
+            parts_query = {**ORDERABLE_PART_FILTER}
+        else:
+            parts_query = {"is_active": True}
         parts_search_filter = build_regex_search_filter(
             q,
             text_fields=["part_number", "description", "reference", "search_terms"],
@@ -685,7 +706,7 @@ def parts_page():
         parts_in_stock, pagination = paginate_find(
             parts_coll,
             parts_query,
-            get_sort_params(request.args, [("part_number", 1), ("description", 1), ("created_at", -1)], ["part_number", "description", "reference", "in_stock", "average_cost", "created_at"]),
+            get_sort_params(request.args, [("part_number", 1), ("description", 1), ("created_at", -1)], ["part_number", "description", "reference", "in_stock", "average_cost", "last_price", "created_at"]),
             parts_page_num,
             parts_per_page,
         )
@@ -786,6 +807,8 @@ def parts_page():
                 "location_id": str(p.get("location_id")) if p.get("location_id") else "",
                 "in_stock": int(_parse_int(p.get("in_stock"), default=0)),
                 "average_cost": float(_parse_float(p.get("average_cost"), default=0.0)),
+                "last_price": float(p["last_price"]) if p.get("last_price") is not None else None,
+                "last_price_order_number": p.get("last_price_order_number"),
                 "do_not_track_inventory": bool(p.get("do_not_track_inventory")),
                 "has_selling_price": bool(p.get("has_selling_price")),
                 "selling_price": float(_parse_float(p.get("selling_price"), default=0.0)),
@@ -1340,6 +1363,7 @@ def parts_page():
         active_page="parts",
         active_tab=active_tab,
         q=q,
+        part_status=part_status,
         parts=parts_in_stock,
         pagination=pagination,
         orders_pagination=orders_pagination,
@@ -1706,9 +1730,15 @@ def parts_api_search():
     if not normalized_query:
         return {"ok": True, "items": []}
 
+    # include_inactive=1 — только для модалки парт-ордера: неактивный парт
+    # можно положить в заказ, и заказ его реактивирует. Слитые дубли
+    # (merged_into) не ищутся никогда.
+    include_inactive = str(request.args.get("include_inactive") or "").strip().lower() in ("1", "true", "yes")
+    active_filter = dict(ORDERABLE_PART_FILTER) if include_inactive else {"is_active": True}
+
     query_filter = {
         "shop_id": shop["_id"],
-        "is_active": True,
+        **active_filter,
     }
     if len(query_tokens) <= 1:
         query_filter["search_terms"] = normalized_query
@@ -1726,6 +1756,8 @@ def parts_api_search():
         "selling_price": 1,
         "core_has_charge": 1,
         "core_cost": 1,
+        "is_active": 1,
+        "last_price": 1,
     }
 
     def _serialize_item(p):
@@ -1734,12 +1766,15 @@ def parts_api_search():
             "part_number": p.get("part_number") or "",
             "description": p.get("description") or "",
             "average_cost": float(p.get("average_cost") or 0.0),
+            # Цена последнего заказа — дефолт для строки парт-ордера (None — заказов не было).
+            "last_price": float(p["last_price"]) if p.get("last_price") is not None else None,
             "in_stock": int(p.get("in_stock") or 0),
             "vendor_id": str(p["vendor_id"]) if p.get("vendor_id") else "",
             "has_selling_price": bool(p.get("has_selling_price")),
             "selling_price": float(p.get("selling_price") or 0.0),
             "core_has_charge": bool(p.get("core_has_charge", False)),
             "core_cost": float(p.get("core_cost") or 0.0),
+            "is_active": p.get("is_active") is not False,
         }
 
     fetch_limit = min(300, max(50, limit * 6))
@@ -1774,7 +1809,7 @@ def parts_api_search():
         contains = re.escape(q)
         fallback_filter = {
             "shop_id": shop["_id"],
-            "is_active": True,
+            **active_filter,
             "search_terms": {"$exists": False},
             "$or": [
                 {"part_number": {"$regex": contains, "$options": "i"}},
@@ -1886,11 +1921,16 @@ def parts_api_orders_parse_invoice():
         pn = item.get("part_number", "").strip()
         part_match = None
         if pn:
-            part_doc = parts_coll.find_one({
-                "shop_id": shop["_id"],
-                "is_active": True,
-                "part_number": {"$regex": f"^{_re_escape(pn)}$", "$options": "i"},
-            })
+            # Неактивный парт тоже считается найденным: добавление в заказ
+            # реактивирует его. Активный предпочтительнее при совпадении номера.
+            part_doc = parts_coll.find_one(
+                {
+                    "shop_id": shop["_id"],
+                    **ORDERABLE_PART_FILTER,
+                    "part_number": {"$regex": f"^{_re_escape(pn)}$", "$options": "i"},
+                },
+                sort=[("is_active", -1)],
+            )
             if part_doc:
                 part_match = {
                     "part_id": str(part_doc["_id"]),
@@ -1898,8 +1938,10 @@ def parts_api_orders_parse_invoice():
                     "description": part_doc.get("description", ""),
                     "in_stock": part_doc.get("in_stock", 0),
                     "average_cost": part_doc.get("average_cost", 0),
+                    "last_price": float(part_doc["last_price"]) if part_doc.get("last_price") is not None else None,
                     "core_has_charge": bool(part_doc.get("core_has_charge", False)),
                     "core_cost": float(part_doc.get("core_cost") or 0.0),
+                    "is_active": part_doc.get("is_active") is not False,
                 }
 
         items_with_matches.append({
@@ -1989,7 +2031,8 @@ def parts_api_orders_create():
         if price < 0:
             return jsonify({"ok": False, "error": "Price cannot be negative."}), 400
 
-        part = parts_coll.find_one({"_id": pid, "is_active": True})
+        # Неактивный парт можно заказать — заказ его реактивирует (ниже).
+        part = find_orderable_part(parts_coll, pid, shop_id=shop["_id"])
         if not part:
             continue
 
@@ -2065,32 +2108,28 @@ def parts_api_orders_create():
 
     res = orders_coll.insert_one(order_doc)
 
+    # Парт-ордер — единственный способ вернуть неактивный парт в оборот.
+    reactivated = reactivate_parts_for_order(
+        parts_coll, [it["part_id"] for it in items],
+        order_id=res.inserted_id, order_number=order_number, user_id=user_oid, now=now,
+    )
+    # last_price партов = цена из последнего по дате заказа.
+    refresh_last_price(orders_coll.database, shop["_id"], [it["part_id"] for it in items], now=now)
+
     return jsonify(
         {
             "ok": True,
             "order_id": str(res.inserted_id),
             "items_count": len(items),
             "non_inventory_count": len(non_inventory_amounts),
+            "reactivated_parts": reactivated,
         }
     )
 
 def _recalc_weighted_avg(old_qty: int, old_avg: float, add_qty: int, add_price: float) -> float:
-    """
-    Weighted average:
-      (old_avg * old_qty + add_price * add_qty) / (old_qty + add_qty)
-
-    Safeguards for 0 qty.
-    """
-    old_qty = int(old_qty or 0)
-    add_qty = int(add_qty or 0)
-    old_avg = float(old_avg or 0.0)
-    add_price = float(add_price or 0.0)
-
-    denom = old_qty + add_qty
-    if denom <= 0:
-        return 0.0
-
-    return (old_avg * old_qty + add_price * add_qty) / denom
+    """Средняя себестоимость после прихода — см. services/costing.py
+    (остаток ≤ 0 и нулевая средняя не усредняются)."""
+    return weighted_average_cost(old_qty, old_avg, add_qty, add_price)
 
 
 @parts_bp.get("/api/orders/<order_id>")
@@ -2257,7 +2296,7 @@ def parts_api_orders_update(order_id: str):
         if price < 0:
             return jsonify({"ok": False, "error": "Price cannot be negative."}), 400
 
-        part = parts_coll.find_one({"_id": pid, "is_active": True})
+        part = find_orderable_part(parts_coll, pid, shop_id=shop["_id"])
         if not part:
             continue
 
@@ -2304,6 +2343,18 @@ def parts_api_orders_update(order_id: str):
                 "updated_by": user_oid,
             }
         }
+    )
+
+    # Email-заказ до подтверждения парты не реактивирует — это сделает Confirm.
+    if not order.get("needs_confirmation"):
+        reactivate_parts_for_order(
+            parts_coll, [it["part_id"] for it in items],
+            order_id=oid, order_number=order.get("order_number"), user_id=user_oid, now=now,
+        )
+    # last_price пересчитывается и у убранных из заказа партов, и у оставшихся.
+    refresh_last_price(
+        orders_coll.database, shop["_id"],
+        order_part_ids(order) + [it["part_id"] for it in items], now=now,
     )
 
     updated_order = orders_coll.find_one({"_id": oid})
@@ -2740,9 +2791,15 @@ def parts_api_orders_receive(order_id: str):
         if recv_price < 0:
             return jsonify({"ok": False, "error": "Order contains negative price."}), 400
 
-        part = parts_coll.find_one({"_id": pid})
-        if not part or part.get("is_active") is False:
+        part = find_orderable_part(parts_coll, pid)
+        if not part:
             continue
+        # Парт деактивировали после заказа — приёмка возвращает его в оборот.
+        if is_part_inactive(part):
+            reactivate_parts_for_order(
+                parts_coll, [pid], order_id=order["_id"],
+                order_number=order.get("order_number"), user_id=user_oid, now=now,
+            )
 
         if bool(part.get("do_not_track_inventory")):
             parts_coll.update_one(
@@ -3105,7 +3162,8 @@ def parts_api_orders_return_create(order_id: str):
 
 
 def _rollback_received_order_inventory(parts_coll, items, user_oid, shop_id, ref=None, item_locations=None):
-    """Rollback stock quantities for received order items (without touching avg cost).
+    """Rollback stock quantities for received order items and take the batch
+    back out of the weighted average cost (services/costing.py).
     item_locations — {part_id_str: location_id_str | ""}, сохранённые при приёмке:
     откат снимает остаток из тех же локаций, куда принимали."""
     if not isinstance(items, list):
@@ -3122,12 +3180,16 @@ def _rollback_received_order_inventory(parts_coll, items, user_oid, shop_id, ref
 
         pid = it.get("part_id")
         qty = _parse_int(it.get("quantity"), default=0)
+        price = _parse_float(it.get("price"), default=0.0)
         part_number = str(it.get("part_number") or "").strip()
 
         if not pid or qty <= 0:
             continue
 
-        part = parts_coll.find_one({"_id": pid, "is_active": True}, {"in_stock": 1, "do_not_track_inventory": 1})
+        part = parts_coll.find_one(
+            {"_id": pid, "is_active": True},
+            {"in_stock": 1, "do_not_track_inventory": 1, "average_cost": 1},
+        )
         if not part:
             continue
 
@@ -3143,12 +3205,17 @@ def _rollback_received_order_inventory(parts_coll, items, user_oid, shop_id, ref
         updates.append({
             "part_id": pid,
             "qty": qty,
+            # Средняя без этой партии: обратная формула к приёмке.
+            "avg_after": reverse_weighted_average_cost(
+                current_qty, part.get("average_cost"), qty, price,
+            ),
         })
 
     if errors:
         return 0, errors
 
     shop_db = parts_coll.database
+    now = utcnow()
     updated = 0
     for upd in updates:
         stock_kwargs = {}
@@ -3162,6 +3229,10 @@ def _rollback_received_order_inventory(parts_coll, items, user_oid, shop_id, ref
         )
         if result["ok"] and not result.get("skipped"):
             updated += 1
+            parts_coll.update_one(
+                {"_id": upd["part_id"]},
+                {"$set": {"average_cost": float(upd["avg_after"]), "updated_at": now, "updated_by": user_oid}},
+            )
 
     return updated, []
 
@@ -3362,6 +3433,10 @@ def parts_api_orders_delete(order_id: str):
         },
     )
 
+    # Удалённый заказ больше не «последний»: last_price откатывается к предыдущему.
+    if not order.get("is_return"):
+        refresh_last_price(orders_coll.database, shop["_id"], order_part_ids(order), now=now)
+
     return jsonify({"ok": True, "updated_parts": updated})
 
 
@@ -3399,6 +3474,8 @@ def parts_api_get(part_id: str):
             "in_stock": int(part.get("in_stock") or 0),
             "do_not_track_inventory": bool(part.get("do_not_track_inventory")),
             "average_cost": float(part.get("average_cost") or 0.0),
+            "last_price": float(part["last_price"]) if part.get("last_price") is not None else None,
+            "last_price_order_number": part.get("last_price_order_number"),
             "has_selling_price": bool(part.get("has_selling_price")),
             "selling_price": float(part.get("selling_price") or 0.0),
             "core_has_charge": bool(part.get("core_has_charge", False)),
@@ -4026,50 +4103,9 @@ def parts_deactivate(part_id: str):
         }},
     )
 
-    flash("Part deactivated.", "success")
-    return redirect(url_for("parts.parts_page"))
+    flash("Part deactivated. It becomes active again when it is added to a parts order.", "success")
+    return redirect(url_for("parts.parts_page", status=request.form.get("status") or None))
 
 
-@parts_bp.post("/<part_id>/restore")
-@login_required
-@permission_required("parts.deactivate")
-def parts_restore(part_id: str):
-    """
-    Restore (reactivate) part.
-    Используем то же право parts.deactivate.
-    """
-    parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
-    if parts_coll is None or shop is None:
-        flash("Shop database not configured for this shop.", "error")
-        return redirect(url_for("parts.parts_page"))
-
-    pid = _oid(part_id)
-    if not pid:
-        flash("Invalid part id.", "error")
-        return redirect(url_for("parts.parts_page"))
-
-    existing = parts_coll.find_one({"_id": pid})
-    if not existing:
-        flash("Part not found.", "error")
-        return redirect(url_for("parts.parts_page"))
-
-    if existing.get("is_active") is True:
-        flash("Part is already active.", "info")
-        return redirect(url_for("parts.parts_page"))
-
-    now = utcnow()
-    user_oid = _oid(session.get(SESSION_USER_ID))
-
-    parts_coll.update_one(
-        {"_id": pid},
-        {"$set": {
-            "is_active": True,
-            "updated_at": now,
-            "updated_by": user_oid,
-            "deactivated_at": None,
-            "deactivated_by": None,
-        }},
-    )
-
-    flash("Part restored.", "success")
-    return redirect(url_for("parts.parts_page"))
+# Ручного Restore для партов нет: неактивный парт возвращается в оборот
+# только через парт-ордер (services/activation.py).

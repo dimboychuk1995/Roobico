@@ -144,14 +144,23 @@ def _load_shops_for_tenant(master, tenant_id):
     return shops
 
 
+def _parse_status_filter(raw) -> str:
+    """Общий фильтр списков: active (по умолчанию) / inactive / all."""
+    status = (raw or "active").strip().lower()
+    return status if status in ("active", "inactive", "all") else "active"
+
+
 def _redirect_users_index():
     q = (request.values.get("q") or "").strip()
     page = (request.values.get("page") or "").strip()
     per_page = (request.values.get("per_page") or "").strip()
+    status = (request.values.get("status") or "").strip()
 
     params = {}
     if q:
         params["q"] = q
+    if status and status != "active":
+        params["status"] = status
     if page:
         params["page"] = page
     if per_page:
@@ -191,9 +200,14 @@ def users_index():
     tenant_values = _id_variants(tenant_from_user)
 
     q = (request.args.get("q") or "").strip()
+    status = _parse_status_filter(request.args.get("status"))
 
     page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
     query_filter = {"tenant_id": {"$in": tenant_values}}
+    if status == "active":
+        query_filter["is_active"] = {"$ne": False}
+    elif status == "inactive":
+        query_filter["is_active"] = False
     search_filter = build_regex_search_filter(
         q,
         text_fields=["name", "first_name", "last_name", "email", "phone", "role"],
@@ -223,6 +237,7 @@ def users_index():
         users=users,
         pagination=pagination,
         q=q,
+        status=status,
         shops_for_form=shops_for_form,
         active_shop_id=str(session.get(SESSION_SHOP_ID) or ""),
         sort_by=(request.args.get("sort_by") or "").strip(),
@@ -363,6 +378,39 @@ def users_deactivate(user_id):
         return _redirect_users_index()
 
     flash("User deactivated.", "success")
+    return _redirect_users_index()
+
+
+@settings_bp.route("/users/<user_id>/activate", methods=["POST"])
+@login_required
+@permission_required("settings.manage_users")
+def users_activate(user_id):
+    """Обратная операция к deactivate — кнопка Activate в списке (фильтр
+    Inactive users). То же, что галочка «Active user» в форме редактирования."""
+    master = get_master_db()
+
+    tenant_id_raw = session.get(SESSION_TENANT_ID)
+    if not tenant_id_raw:
+        flash("Tenant session missing. Please login again.", "error")
+        session.clear()
+        return redirect(url_for("main.index"))
+
+    target_id = _maybe_object_id(user_id)
+    if not target_id:
+        flash("Invalid user id.", "error")
+        return _redirect_users_index()
+
+    tenant_values = _id_variants(tenant_id_raw)
+    res = master.users.update_one(
+        {"_id": target_id, "tenant_id": {"$in": tenant_values}},
+        {"$set": {"is_active": True, "updated_at": utcnow()}},
+    )
+
+    if res.matched_count == 0:
+        flash("User not found.", "error")
+        return _redirect_users_index()
+
+    flash("User activated.", "success")
     return _redirect_users_index()
 
 

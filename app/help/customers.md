@@ -4,9 +4,12 @@
 
 **Customers** in the sidebar. Button **"Add Customer"**. Search "Search
 customers by any field..." (company, contact names, phone, email, address).
-Columns: Company (address underneath), Name (main contact; "Inactive" badge
-for deactivated), Phone, Email, **Current Balance**, Actions → "Open".
-Rows are clickable.
+Next to the search box is the status filter **Active customers** (default) /
+**Inactive customers** / **All customers** — the same filter exists on
+Vendors, Parts, Users and the customer's Units tab. Columns: Company
+(address underneath), Name (main contact; "Inactive" badge for
+deactivated), Phone, Email, **Current Balance**, Actions → "Open". Rows are
+clickable.
 
 ## Customer record
 
@@ -91,6 +94,15 @@ Header buttons: **"Back"**, **"Portal Link"**, **"Create Work Order"**.
 
 Customers and units are deactivated (soft), never deleted — history stays.
 There is no customer merge feature.
+
+- **Finding an inactive one**: Customers list → status filter **Inactive
+  customers** (or **All**); on a customer page → **Units** tab → **Inactive
+  units**. Inactive rows carry a grey **Inactive** badge.
+- **Activating back**: open the customer → **Activate Customer**; open the
+  unit → **Details** → **Activate Unit**. Everything (history, units,
+  balances) is where it was.
+- Inactive customers and units are hidden from work-order pickers, the
+  mobile app and the customer portal until activated.
 
 ## "NEW Customer" (system customer)
 
