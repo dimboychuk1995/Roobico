@@ -272,6 +272,32 @@ def _wo_mechanic_names(wo_doc: dict) -> list[str]:
     return names
 
 
+def _labor_block_is_job(block: dict) -> bool:
+    """Строка работ «настоящая» (есть описание, часы или запчасти), а не
+    пустая заготовка, которую оставили в WO."""
+    labor = block.get("labor") if isinstance(block.get("labor"), dict) else {}
+    if str(labor.get("description") or block.get("description") or "").strip():
+        return True
+    try:
+        if float(labor.get("hours") or block.get("hours") or 0) > 0:
+            return True
+    except (TypeError, ValueError):
+        pass
+    return bool(block.get("parts"))
+
+
+def has_unassigned_labor(wo_doc: dict) -> bool:
+    """Есть ли в WO строка работ, которая никому не назначена."""
+    for block in wo_doc.get("labors") or []:
+        if not isinstance(block, dict) or not _labor_block_is_job(block):
+            continue
+        labor = block.get("labor") if isinstance(block.get("labor"), dict) else {}
+        assigned = labor.get("assigned_mechanics") or block.get("assigned_mechanics") or []
+        if not any(isinstance(a, dict) and (a.get("user_id") or str(a.get("name") or "").strip()) for a in assigned):
+            return True
+    return False
+
+
 def _build_work_order_items(shop_db, shop_id: ObjectId, rows: list) -> list:
     """Строки таблицы WO из raw-документов: лейблы, суммы, оплаты, таймеры."""
     customer_ids = [x.get("customer_id") for x in rows if x.get("customer_id")]
@@ -367,6 +393,8 @@ def _build_work_order_items(shop_db, shop_id: ObjectId, rows: list) -> list:
                 "working_now": working_map.get(x.get("_id")) or [],
                 "parts_orders": parts_orders_map.get(x.get("_id")) or [],
                 "mechanics": _wo_mechanic_names(x),
+                # Строка работ без механика — пометка в списке, пока WO не оплачен.
+                "has_unassigned_labor": status != "paid" and has_unassigned_labor(x),
                 # Флаг «механик закончил» имеет смысл только пока WO в работе.
                 # mechanic_done — все работавшие механики поставили Done;
                 # mechanics_done — кто уже поставил (частичный Done).

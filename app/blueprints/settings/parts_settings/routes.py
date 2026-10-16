@@ -167,7 +167,7 @@ def _find_one_by_id(col, _id_str: str, extra_filter: dict | None = None):
 
 @settings_bp.route("/parts-settings", methods=["GET"])
 @login_required
-@permission_required("parts.edit")
+@permission_required("settings.manage_parts_settings")
 def parts_settings_index():
     master = get_master_db()
 
@@ -314,7 +314,7 @@ def parts_settings_index():
 
 @settings_bp.route("/parts-settings/tax-rate", methods=["POST"])
 @login_required
-@permission_required("parts.edit")
+@permission_required("settings.manage_parts_settings")
 def parts_settings_save_tax():
     master, sdb, shop_oid = _require_shop_db_or_redirect()
     if sdb is None:
@@ -378,7 +378,7 @@ def _resolve_location_parent(sdb, shop_oid, parent_id_raw: str):
 
 @settings_bp.route("/parts-settings/locations/create", methods=["POST"])
 @login_required
-@permission_required("parts.edit")
+@permission_required("settings.manage_parts_settings")
 def parts_locations_create():
     master, sdb, shop_oid = _require_shop_db_or_redirect()
     if sdb is None:
@@ -416,7 +416,7 @@ def parts_locations_create():
 
 @settings_bp.route("/parts-settings/locations/<location_id>/update", methods=["POST"])
 @login_required
-@permission_required("parts.edit")
+@permission_required("settings.manage_parts_settings")
 def parts_locations_update(location_id: str):
     master, sdb, shop_oid = _require_shop_db_or_redirect()
     if sdb is None:
@@ -458,7 +458,7 @@ def parts_locations_update(location_id: str):
 
 @settings_bp.route("/parts-settings/locations/<location_id>/delete", methods=["POST"])
 @login_required
-@permission_required("parts.edit")
+@permission_required("settings.manage_parts_settings")
 def parts_locations_delete(location_id: str):
     master, sdb, shop_oid = _require_shop_db_or_redirect()
     if sdb is None:
@@ -497,7 +497,7 @@ def parts_locations_delete(location_id: str):
 
 @settings_bp.route("/parts-settings/categories/create", methods=["POST"])
 @login_required
-@permission_required("parts.edit")
+@permission_required("settings.manage_parts_settings")
 def parts_categories_create():
     master, sdb, shop_oid = _require_shop_db_or_redirect()
     if sdb is None:
@@ -523,7 +523,7 @@ def parts_categories_create():
 
 @settings_bp.route("/parts-settings/categories/<category_id>/update", methods=["POST"])
 @login_required
-@permission_required("parts.edit")
+@permission_required("settings.manage_parts_settings")
 def parts_categories_update(category_id: str):
     master, sdb, shop_oid = _require_shop_db_or_redirect()
     if sdb is None:
@@ -549,7 +549,7 @@ def parts_categories_update(category_id: str):
 
 @settings_bp.route("/parts-settings/categories/<category_id>/delete", methods=["POST"])
 @login_required
-@permission_required("parts.edit")
+@permission_required("settings.manage_parts_settings")
 def parts_categories_delete(category_id: str):
     master, sdb, shop_oid = _require_shop_db_or_redirect()
     if sdb is None:
@@ -652,7 +652,7 @@ def _serialize_scale(doc):
 
 @settings_bp.route("/parts-settings/pricing-rules", methods=["GET"])
 @login_required
-@permission_required("parts.edit")
+@permission_required("settings.manage_parts_settings")
 def parts_pricing_rules_get():
     """List all pricing rule scales for active shop."""
     master, sdb, shop_oid = _require_shop_db_or_redirect()
@@ -668,7 +668,7 @@ def parts_pricing_rules_get():
 
 @settings_bp.route("/parts-settings/pricing-rules/<scale_id>", methods=["GET"])
 @login_required
-@permission_required("parts.edit")
+@permission_required("settings.manage_parts_settings")
 def parts_pricing_rules_get_one(scale_id):
     master, sdb, shop_oid = _require_shop_db_or_redirect()
     if sdb is None:
@@ -687,7 +687,7 @@ def parts_pricing_rules_get_one(scale_id):
 
 @settings_bp.route("/parts-settings/pricing-rules/save", methods=["POST"])
 @login_required
-@permission_required("parts.edit")
+@permission_required("settings.manage_parts_settings")
 def parts_pricing_rules_save():
     """
     Save (update) one existing pricing rule scale identified by `id`.
@@ -726,7 +726,7 @@ def parts_pricing_rules_save():
 
 @settings_bp.route("/parts-settings/pricing-rules/create", methods=["POST"])
 @login_required
-@permission_required("parts.edit")
+@permission_required("settings.manage_parts_settings")
 def parts_pricing_rules_create():
     """
     Create a new named pricing rule scale for active shop.
@@ -768,7 +768,7 @@ def parts_pricing_rules_create():
 
 @settings_bp.route("/parts-settings/pricing-rules/<scale_id>/delete", methods=["POST"])
 @login_required
-@permission_required("parts.edit")
+@permission_required("settings.manage_parts_settings")
 def parts_pricing_rules_delete(scale_id):
     master, sdb, shop_oid = _require_shop_db_or_redirect()
     if sdb is None:
@@ -795,7 +795,7 @@ def parts_pricing_rules_delete(scale_id):
 
 @settings_bp.route("/parts-settings/pricing-rules/<scale_id>/set-default", methods=["POST"])
 @login_required
-@permission_required("parts.edit")
+@permission_required("settings.manage_parts_settings")
 def parts_pricing_rules_set_default(scale_id):
     master, sdb, shop_oid = _require_shop_db_or_redirect()
     if sdb is None:

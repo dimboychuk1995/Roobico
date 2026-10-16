@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 from flask import g, request, session, redirect, url_for, flash, jsonify, render_template, make_response
 
+from app.utils import audit_log
 from app.blueprints.work_orders import work_orders_bp
 from app.blueprints.main.routes import _render_app_page
 from app.extensions import get_master_db, get_mongo_client, csrf
@@ -117,6 +118,7 @@ from app.utils.permissions import (
     has_permission,
     is_mechanic_mode,
     permission_required,
+    permission_required_any,
 )
 from app.utils.display_datetime import (
     format_date_mmddyyyy,
@@ -384,6 +386,7 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
         "mechanic_done": bool((form_state or {}).get("mechanic_done")),
         "wo_updated_at": (form_state or {}).get("wo_updated_at") or "",
         "pending_attachment_id": pending_attachment_id,
+        "calendar_event_id": (form_state or {}).get("calendar_event_id") or "",
         "initial_authorizations": (form_state or {}).get("authorizations") or [],
         "avi_checklist": annual_inspection_checklist(),
         "avi_type_defaults": VEHICLE_TYPE_COMPONENT_DEFAULTS,
@@ -606,7 +609,12 @@ def work_order_details_page():
             },
         )
 
-    return render_details(shop_db, shop, customer_id, unit_id)
+    # Открытие из календаря: id записи, которую привяжем к созданному WO.
+    calendar_event_id = oid(request.args.get("calendar_event_id"))
+    return render_details(
+        shop_db, shop, customer_id, unit_id,
+        form_state={"calendar_event_id": str(calendar_event_id) if calendar_event_id else ""},
+    )
 
 
 @work_orders_bp.get("/work_orders/api/work_orders/live_signature")
@@ -705,6 +713,8 @@ def create_unit():
     doc["search_terms"] = build_unit_search_terms(doc)
 
     res = shop_db.units.insert_one(doc)
+    audit_log.log_event("create", "unit", res.inserted_id, label=audit_log.unit_label(doc),
+                        details={"customer_id": str(customer_id), "customer": audit_log.customer_label(customer)})
     unit_id = res.inserted_id
 
     flash("Unit created.", "success")
@@ -929,6 +939,22 @@ def create_work_order():
 
     res = shop_db.work_orders.insert_one(doc)
     new_wo_id = res.inserted_id
+    _cust = shop_db.customers.find_one({"_id": customer_id}, {"company_name": 1, "contacts": 1}) or {}
+    _unit = shop_db.units.find_one({"_id": unit_id}, {"unit_number": 1, "year": 1, "make": 1, "model": 1, "vin": 1}) or {}
+    audit_log.log_event("create", "estimate" if create_status == "estimate" else "work_order", new_wo_id,
+                        label=audit_log.wo_label(doc),
+                        summary=f"{audit_log.wo_label(doc)} created for {audit_log.customer_label(_cust)} ({audit_log.unit_label(_unit)})",
+                        details={"customer_id": str(customer_id), "customer": audit_log.customer_label(_cust),
+                                 "unit_id": str(unit_id), "unit": audit_log.unit_label(_unit),
+                                 "jobs": audit_log.labor_summary(doc), "grand_total": totals.get("grand_total"), "status": create_status})
+
+    # WO создан из календаря — привязываем запись календаря к WO, чтобы
+    # на сетке вместо «запланировано» был живой статус WO.
+    calendar_event_id = oid(request.form.get("calendar_event_id"))
+    if calendar_event_id:
+        from app.blueprints.calendar.routes import link_event_to_work_order
+
+        link_event_to_work_order(shop_db, shop, calendar_event_id, new_wo_id, wo_number)
 
     # ✅ Reassign pending attachments to the real work order ID
     pending_att_id = oid(request.form.get("pending_attachment_id"))
@@ -1421,6 +1447,9 @@ def api_create_annual_inspection():
     # последняя по created_at считается действующей.
     res = shop_db.annual_inspections.insert_one(doc)
 
+    audit_log.log_event("create", "inspection", res.inserted_id,
+                        label=f"Inspection - {audit_log.unit_label(unit) if unit else 'unit'}",
+                        details={"unit_id": str(unit_id or ""), "customer_id": str(customer_id or "")})
     return jsonify({"ok": True, "id": str(res.inserted_id)}), 200
 
 
@@ -1439,6 +1468,7 @@ def api_delete_annual_inspection(inspection_id):
     res = shop_db.annual_inspections.delete_one({"_id": insp_id, "shop_id": shop["_id"]})
     if not res.deleted_count:
         return jsonify({"ok": False, "error": "inspection_not_found"}), 200
+    audit_log.log_event("delete", "inspection", insp_id, label="Annual inspection")
     return jsonify({"ok": True}), 200
 
 
@@ -1527,8 +1557,14 @@ def api_download_annual_inspection_pdf(inspection_id):
 
 @work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/update")
 @login_required
-@permission_required("work_orders.create")
+@permission_required_any("work_orders.edit", "work_orders.create")
 def api_work_order_update(work_order_id):
+    # Правка существующего WO — work_orders.edit. Исключение — механик-режим:
+    # у механика есть только create, его сохранение форсится в in_progress и
+    # не трогает цены (enforce_mechanic_status / автоцены сервером).
+    if not has_permission("work_orders.edit") and not is_mechanic_mode():
+        return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.edit"}), 403
+
     shop_db, shop = get_shop_db()
     if shop_db is None:
         return jsonify({"ok": False, "error": "shop_db_missing"}), 200
@@ -1799,6 +1835,9 @@ def api_work_order_update(work_order_id):
 
     # Строки с затреканным временем: assigned = кто фактически работал,
     # пропорционально времени — ручной ввод их не перетирает.
+    audit_log.log_event("update", "work_order", wo_id, label=audit_log.wo_label(wo),
+                        changes=audit_log.wo_changes(wo, set_fields),
+                        details={"saved_status": set_fields.get("status") or wo.get("status")})
     time_tracking.sync_labor_assignments_from_time(
         shop_db, shop, wo_id, mechanics_by_id=mechanics_by_id
     )
@@ -1822,7 +1861,7 @@ def api_work_order_update(work_order_id):
 
 @work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/payment")
 @login_required
-@permission_required("work_orders.create")
+@permission_required("work_orders.manage_payments")
 def api_work_order_payment(work_order_id):
     """
     Record a payment for a work order.
@@ -1915,6 +1954,10 @@ def api_work_order_payment(work_order_id):
         return new_payment_id, summary
 
     payment_id, payment_summary = run_atomically(get_mongo_client(), _apply_payment)
+    audit_log.log_event("payment", "work_order", wo_id, label=audit_log.wo_label(wo),
+                        summary=f"Payment ${round2(amount):.2f} ({payment_method}) recorded for {audit_log.wo_label(wo)} - balance ${remaining_balance:.2f}",
+                        details={"amount": round2(amount), "method": payment_method, "remaining_balance": remaining_balance,
+                                 "payment_id": str(payment_id), "status": payment_summary.get("status")})
 
     return jsonify({
         "ok": True,
@@ -1928,7 +1971,7 @@ def api_work_order_payment(work_order_id):
 
 @work_orders_bp.get("/work_orders/api/work_orders/<work_order_id>/payments")
 @login_required
-@permission_required("work_orders.create")
+@permission_required_any("work_orders.manage_payments", "work_orders.view_costs")
 def api_get_work_order_payments(work_order_id):
     """
     Get all payments for a work order with balance info.
@@ -1990,7 +2033,7 @@ def api_get_work_order_payments(work_order_id):
 
 @work_orders_bp.post("/work_orders/api/payments/<payment_id>/delete")
 @login_required
-@permission_required("work_orders.create")
+@permission_required("work_orders.manage_payments")
 def api_delete_work_order_payment(payment_id):
     if not has_permission("work_orders.view_costs"):
         return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.view_costs"}), 403
@@ -2044,6 +2087,9 @@ def api_delete_work_order_payment(payment_id):
         }
 
     summary = run_atomically(get_mongo_client(), _apply_delete)
+    audit_log.log_event("payment_delete", "work_order", wo_id, label=audit_log.wo_label(wo),
+                        summary=f"Payment ${float(payment.get('amount') or 0):.2f} removed from {audit_log.wo_label(wo)}",
+                        details={"amount": payment.get("amount"), "payment_id": str(pay_id), "status": summary.get("status")})
 
     return jsonify(
         {
@@ -2097,7 +2143,7 @@ def api_bulk_payment_unpaid_work_orders(customer_id):
 
 @work_orders_bp.post("/work_orders/api/bulk-payments")
 @login_required
-@permission_required("work_orders.create")
+@permission_required("work_orders.manage_payments")
 def api_bulk_payment():
     """
     Record one payment split across several work orders.
@@ -2124,6 +2170,10 @@ def api_bulk_payment():
         user_id=current_user_id(),
         customer_id=oid(data.get("customer_id")),
     )
+    if isinstance(result, dict) and result.get("ok"):
+        audit_log.log_event("payment", "customer", data.get("customer_id"),
+                            summary=f"Bulk payment recorded ({data.get('payment_method') or 'cash'}) for {len(data.get('allocations') or [])} invoice(s)",
+                            details={"allocations": len(data.get("allocations") or []), "method": data.get("payment_method")})
     return jsonify(result), 200
 
 
@@ -2315,53 +2365,9 @@ def api_get_all_payments():
     }), 200
 
 
-@work_orders_bp.post("/work_orders/api/test/create-sample-payment/<work_order_id>")
-@login_required
-@permission_required("work_orders.create")
-def api_test_create_sample_payment(work_order_id):
-    """
-    TEST ENDPOINT: Create a sample payment for testing (remove in production).
-    """
-    shop_db, shop = get_shop_db()
-    if shop_db is None:
-        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
-
-    wo_id = oid(work_order_id)
-    if not wo_id:
-        return jsonify({"ok": False, "error": "invalid_work_order_id"}), 200
-
-    wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True})
-    if not wo:
-        return jsonify({"ok": False, "error": "work_order_not_found"}), 200
-
-    now = utcnow()
-    user_id = current_user_id()
-
-    # Create test payment
-    payment_doc = {
-        "work_order_id": wo_id,
-        "shop_id": shop["_id"],
-        "tenant_id": shop.get("tenant_id"),
-        "amount": 99.99,
-        "payment_method": "cash",
-        "notes": "[TEST PAYMENT]",
-        "is_active": True,
-        "created_at": now,
-        "created_by": user_id,
-    }
-
-    result = shop_db.work_order_payments.insert_one(payment_doc)
-
-    return jsonify({
-        "ok": True,
-        "message": "Test payment created",
-        "payment_id": str(result.inserted_id)
-    }), 200
-
-
 @work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/status")
 @login_required
-@permission_required("work_orders.create")
+@permission_required_any("work_orders.change_status", "work_orders.create")
 def api_work_order_set_status(work_order_id):
     shop_db, shop = get_shop_db()
     if shop_db is None:
@@ -2380,6 +2386,12 @@ def api_work_order_set_status(work_order_id):
 
     if status not in ("open", "paid", "in_progress"):
         return jsonify({"ok": False, "error": "invalid_status"}), 200
+
+    # Смена бизнес-статуса (open/paid) — work_orders.change_status. «Взять в
+    # работу» (in_progress) может любой, кто вообще сохраняет WO (create):
+    # это рабочее состояние, его же выставляют таймеры механиков.
+    if status != "in_progress" and not has_permission("work_orders.change_status"):
+        return jsonify({"ok": False, "error": "forbidden_status", "required": "work_orders.change_status"}), 403
 
     # Механик-режим: разрешён только in_progress, и нельзя трогать paid WO —
     # иначе смена статуса удалит записи платежей (delete_many ниже).
@@ -2402,6 +2414,9 @@ def api_work_order_set_status(work_order_id):
         status_fields.update(clear_mechanic_done_fields())
     shop_db.work_orders.update_one({"_id": wo_id}, {"$set": status_fields})
 
+    audit_log.log_event("status", "work_order", wo_id, label=audit_log.wo_label(wo),
+                        summary=f"{audit_log.wo_label(wo)}: status {wo.get('status') or 'open'} -> {status}",
+                        changes=[audit_log.change("status", wo.get("status"), status)])
     return jsonify({"ok": True, "status": status}), 200
 
 
@@ -2444,6 +2459,8 @@ def api_work_order_set_confirmed(work_order_id):
         },
     )
 
+    audit_log.log_event("confirm", "work_order", wo_id, label=audit_log.wo_label(wo),
+                        summary=f"{audit_log.wo_label(wo)}: mechanic work {'confirmed' if confirmed else 'un-confirmed'} by manager")
     return jsonify({"ok": True, "manager_confirmed": confirmed}), 200
 
 
@@ -2531,6 +2548,14 @@ def api_work_order_delete(work_order_id):
             {"entity_type": {"$in": ["work_order_labor", "work_order_payment"]}, "parent_id": wo_id},
         ]
     }).deleted_count
+
+    # Записи календаря, привязанные к этому WO, остаются обычными записями.
+    from app.blueprints.calendar.routes import unlink_work_order_events
+
+    unlink_work_order_events(shop_db, shop, wo_id)
+    audit_log.log_event("delete", "work_order", wo_id, label=audit_log.wo_label(wo),
+                        details={"payments_deleted": payments_deleted, "attachments_deleted": attachments_deleted,
+                                 "jobs": audit_log.labor_summary(wo)})
 
     # Mark work order as inactive (soft delete)
     shop_db.work_orders.update_one(
@@ -2704,7 +2729,7 @@ def api_delete_email_contact(customer_id):
 
 @work_orders_bp.get("/work_orders/api/work_orders/<work_order_id>/download-pdf")
 @login_required
-@permission_required("work_orders.view")
+@permission_required("work_orders.export_pdf")
 def api_download_work_order_pdf(work_order_id):
     # PDF содержит все цены — недоступен без права видеть стоимости.
     if not has_permission("work_orders.view_costs"):
@@ -2744,7 +2769,7 @@ def api_download_work_order_pdf(work_order_id):
 
 @work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/send-email")
 @login_required
-@permission_required("work_orders.create")
+@permission_required("work_orders.send_to_customer")
 def api_send_work_order_email(work_order_id):
     shop_db, shop = get_shop_db()
     if shop_db is None:
@@ -2819,12 +2844,14 @@ def api_send_work_order_email(work_order_id):
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
+    audit_log.log_event("send", "work_order", wo_id, label=audit_log.wo_label(wo),
+                        summary=f"{audit_log.wo_label(wo)} e-mailed to {', '.join(to_emails)}", details={"to": to_emails})
     return jsonify({"ok": True, "sent_to": to_emails}), 200
 
 
 @work_orders_bp.post("/work_orders/api/payments/<payment_id>/send-receipt")
 @login_required
-@permission_required("work_orders.create")
+@permission_required("work_orders.send_to_customer")
 def api_send_payment_receipt(payment_id):
     shop_db, shop = get_shop_db()
     if shop_db is None:
@@ -2923,6 +2950,9 @@ def api_send_payment_receipt(payment_id):
     except RuntimeError as exc:
         return jsonify({"ok": False, "error": str(exc)}), 500
 
+    audit_log.log_event("send", "work_order", wo.get("_id"), label=audit_log.wo_label(wo),
+                        summary=f"Payment receipt for {audit_log.wo_label(wo)} e-mailed to {', '.join(to_emails)}",
+                        details={"payment_id": str(pay_id), "to": to_emails})
     return jsonify({"ok": True, "sent_to": to_emails}), 200
 
 
@@ -2940,7 +2970,10 @@ def api_send_payment_receipt(payment_id):
 
 @work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/send-authorization")
 @login_required
-@permission_required("work_orders.create")
+# Запрос авторизации у клиента — часть работы над WO: доступен и механику
+# (create), который сам просит одобрить найденную работу. PDF/чеки с ценами
+# (send-email, send-receipt) — только work_orders.send_to_customer.
+@permission_required_any("work_orders.send_to_customer", "work_orders.create")
 def api_send_authorization_email(work_order_id):
     shop_db, shop = get_shop_db()
     if shop_db is None:
@@ -3087,6 +3120,9 @@ def api_send_authorization_email(work_order_id):
         return jsonify({"ok": False, "error": "Failed to send authorization email",
                         "failed": failed}), 500
 
+    audit_log.log_event("send", "authorization", wo_id, label=audit_log.wo_label(wo),
+                        summary=f"Authorization request for {audit_log.wo_label(wo)} sent to {', '.join(sent_to)}",
+                        details={"scope": scope, "to": sent_to})
     return jsonify({"ok": True, "sent_to": sent_to, "failed": failed}), 200
 
 
@@ -3113,7 +3149,7 @@ def api_polish_issue_description():
 
 @work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/labors/<int:labor_index>/issue-description")
 @login_required
-@permission_required("work_orders.create")
+@permission_required("work_orders.edit")
 def api_save_labor_issue_description(work_order_id, labor_index):
     shop_db, shop = get_shop_db()
     if shop_db is None:
@@ -3152,6 +3188,9 @@ def api_save_labor_issue_description(work_order_id, labor_index):
     )
     if update_res.matched_count == 0:
         return jsonify({"ok": False, "error": "Failed to save."}), 500
+    audit_log.log_event("update", "work_order", wo_id, label=audit_log.wo_label(wo),
+                        summary=f"{audit_log.wo_label(wo)}: issue description saved for job #{labor_index + 1}",
+                        details={"labor_index": labor_index})
     return jsonify({"ok": True, "issue_description": text}), 200
 
 
@@ -3243,6 +3282,12 @@ def public_authorization_submit(token):
     )
 
     auth_doc = auth_col.find_one({"_id": auth_doc["_id"]}) or auth_doc
+    _what = f"job #{int(labor_index) + 1}" if scope == "labor" and labor_index is not None else "the work order"
+    audit_log.log_event("confirm" if new_status == "approved" else "update", "authorization", wo.get("_id"),
+                        label=audit_log.wo_label(wo),
+                        summary=f"Customer {new_status} {_what} on {audit_log.wo_label(wo)}",
+                        details={"email": auth_doc.get("recipient_email"), "comment": comment, "ip": client_ip},
+                        user={"name": f"Customer ({auth_doc.get('recipient_email') or 'portal'})"}, shop=shop, source="portal")
     ctx = _build_authorization_context(shop_db, shop, wo, scope, labor_index)
     return render_template(
         "public/work_orders/authorization_page.html",
@@ -3615,6 +3660,10 @@ def api_mechanic_work_order_create():
         **mechanic_done_fields(shop_db, shop, None, data, user_id, now),
     }
     res = shop_db.work_orders.insert_one(doc)
+    audit_log.log_event("create", "work_order", res.inserted_id, label=audit_log.wo_label(doc),
+                        summary=f"{audit_log.wo_label(doc)} created by mechanic for {audit_log.customer_label(customer)} ({audit_log.unit_label(unit)})",
+                        details={"customer_id": str(customer_id), "customer": audit_log.customer_label(customer),
+                                 "unit_id": str(unit_id), "unit": audit_log.unit_label(unit), "jobs": audit_log.labor_summary(doc)})
     core_sync = sync_work_order_cores(shop_db, shop, [], labors, user_id)
 
     from app.blueprints.work_orders.services.push_events import notify_after_mechanic_save
@@ -3708,6 +3757,10 @@ def api_mechanic_work_order_update(work_order_id):
         )
 
     shop_db.work_orders.update_one({"_id": wo_id}, {"$set": set_fields})
+    _done_now = bool(set_fields.get("mechanic_done")) and not bool(wo.get("mechanic_done"))
+    audit_log.log_event("done" if _done_now else "update", "work_order", wo_id, label=audit_log.wo_label(wo),
+                        summary=f"{audit_log.wo_label(wo)} {'marked Done' if _done_now else 'saved'} by mechanic",
+                        changes=audit_log.wo_changes(wo, set_fields))
 
     from app.blueprints.work_orders.services.push_events import notify_after_mechanic_save
 
@@ -3768,6 +3821,10 @@ def api_mechanic_timer_start():
             )
 
     stopped_prev = stopped_prev_logs[-1] if stopped_prev_logs else None
+    audit_log.log_event("timer", "time_log", log.get("_id"), label=f"WO #{log.get('wo_number')}",
+                        summary=f"Timer started on WO #{log.get('wo_number')}",
+                        details={"work_order_id": str(log.get("work_order_id")), "labor_id": log.get("labor_id")},
+                        url=f"/work_orders/details?work_order_id={log.get('work_order_id')}")
     return jsonify({
         "ok": True,
         "timer": time_tracking._log_payload(log),
@@ -3799,6 +3856,10 @@ def api_mechanic_timer_stop():
     from app.blueprints.work_orders.services.mechanic_editor import refresh_time_derived_fields
 
     log = logs[-1]
+    audit_log.log_event("timer", "time_log", log.get("_id"), label=f"WO #{log.get('wo_number')}",
+                        summary=f"Timer stopped on WO #{log.get('wo_number')} - {int(log.get('seconds') or 0) // 60} min",
+                        details={"work_order_id": str(log.get("work_order_id")), "labor_id": log.get("labor_id"), "seconds": log.get("seconds")},
+                        url=f"/work_orders/details?work_order_id={log.get('work_order_id')}")
     mechanics_by_id = {m["id"]: m for m in get_assignable_mechanics(shop)}
     for stopped_wo_id in {l.get("work_order_id") for l in logs if l.get("work_order_id")}:
         refresh_time_derived_fields(
@@ -3893,6 +3954,9 @@ def api_work_order_transfer(work_order_id):
                 {"_id": wo_id}, {"$set": wo_set}, session=session
             ),
         )
+        audit_log.log_event("transfer", "work_order", wo_id, label=audit_log.wo_label(wo),
+                            summary=f"{audit_log.wo_label(wo)} transferred to {audit_log.customer_label(target)}",
+                            details={"to_customer_id": str(target_id), "unit_action": unit_action})
         return jsonify({"ok": True, "unit_action": unit_action}), 200
 
     vin = str(unit.get("vin") or "").strip()
@@ -3950,6 +4014,9 @@ def api_work_order_transfer(work_order_id):
 
         run_atomically(get_mongo_client(), _tx)
 
+    audit_log.log_event("transfer", "work_order", wo_id, label=audit_log.wo_label(wo),
+                        summary=f"{audit_log.wo_label(wo)} transferred to {audit_log.customer_label(target)} (unit: {unit_action})",
+                        details={"to_customer_id": str(target_id), "unit_action": unit_action, "unit_id": str(wo_set.get("unit_id") or "")})
     return jsonify({
         "ok": True,
         "unit_action": unit_action,
@@ -4036,6 +4103,10 @@ def api_time_log_update(log_id):
     if error:
         return jsonify({"ok": False, "error": error}), 400
 
+    audit_log.log_event("update", "time_log", log.get("_id"), label=f"WO #{log.get('wo_number')}",
+                        summary=f"Mechanic hours edited on WO #{log.get('wo_number')}: {log.get('user_name')} -> {int(log.get('seconds') or 0) // 60} min",
+                        details={"seconds": log.get("seconds"), "mechanic": log.get("user_name")},
+                        url=f"/work_orders/details?work_order_id={log.get('work_order_id')}")
     _refresh_after_time_log_change(shop_db, shop, log.get("work_order_id"))
     return jsonify({
         "ok": True,
@@ -4062,6 +4133,10 @@ def api_time_log_delete(log_id):
     if error:
         return jsonify({"ok": False, "error": error}), 400
 
+    audit_log.log_event("delete", "time_log", log.get("_id"), label=f"WO #{log.get('wo_number')}",
+                        summary=f"Mechanic timer session deleted on WO #{log.get('wo_number')}: {log.get('user_name')} ({int(log.get('seconds') or 0) // 60} min)",
+                        details={"seconds": log.get("seconds"), "mechanic": log.get("user_name")},
+                        url=f"/work_orders/details?work_order_id={log.get('work_order_id')}")
     _refresh_after_time_log_change(shop_db, shop, log.get("work_order_id"))
     return jsonify({
         "ok": True,

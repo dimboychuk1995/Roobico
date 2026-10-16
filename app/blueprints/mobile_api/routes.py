@@ -13,6 +13,7 @@ from flask import jsonify, request, session
 from flask_wtf.csrf import generate_csrf
 from werkzeug.security import check_password_hash
 
+from app.utils import audit_log
 from app.blueprints.mobile_api import mobile_api_bp
 from app.blueprints.work_orders.services.listing import get_work_orders_list
 from app.extensions import csrf, get_master_db
@@ -139,6 +140,8 @@ def mobile_login():
     session.permanent = True
 
     # user_permissions в сессию кладёт _session_payload (пересчёт на каждый запрос)
+    audit_log.log_event("login", "session", user["_id"], label=audit_log.user_label(user),
+                        summary=f"{audit_log.user_label(user)} signed in (mobile app)", user=user, tenant_id=tenant["_id"], source="mobile")
     return jsonify(_session_payload(master, user, tenant)), 200
 
 
@@ -384,7 +387,7 @@ def mobile_work_order_details(work_order_id):
 
 @mobile_api_bp.get("/api/mobile/parts_orders")
 @api_login_required
-@permission_required("parts.view")
+@permission_required("parts_orders.view")
 def mobile_parts_orders():
     from app.blueprints.parts.routes import (
         _build_parts_order_payment_summary,
@@ -615,6 +618,10 @@ def mobile_work_order_create():
         )
 
     res = shop_db.work_orders.insert_one(doc)
+    audit_log.log_event("create", "work_order", res.inserted_id, label=audit_log.wo_label(doc),
+                        summary=f"{audit_log.wo_label(doc)} created (mobile) for {audit_log.customer_label(customer)} ({audit_log.unit_label(unit)})",
+                        details={"customer_id": str(customer_id), "customer": audit_log.customer_label(customer),
+                                 "unit_id": str(unit_id), "unit": audit_log.unit_label(unit), "jobs": audit_log.labor_summary(doc)})
 
     core_sync = sync_work_order_cores(shop_db, shop, [], labors, user_id)
 
@@ -745,6 +752,10 @@ def mobile_work_order_edit(work_order_id):
         )
 
     shop_db.work_orders.update_one({"_id": wo_id}, {"$set": set_fields})
+    _done_now = bool(set_fields.get("mechanic_done")) and not bool(wo.get("mechanic_done"))
+    audit_log.log_event("done" if _done_now else "update", "work_order", wo_id, label=audit_log.wo_label(wo),
+                        summary=f"{audit_log.wo_label(wo)} {'marked Done' if _done_now else 'saved'} (mobile)",
+                        changes=audit_log.wo_changes(wo, set_fields))
 
     from app.blueprints.work_orders.services.push_events import notify_after_mechanic_save
 
@@ -1063,6 +1074,7 @@ def mobile_customer_create():
     doc["search_terms"] = build_customer_search_terms(doc)
 
     res = shop_db.customers.insert_one(doc)
+    audit_log.log_event("create", "customer", res.inserted_id, label=audit_log.customer_label(doc))
     return jsonify({"ok": True, "id": str(res.inserted_id), "label": customer_label(doc)}), 200
 
 
@@ -1121,6 +1133,8 @@ def mobile_unit_create():
     doc["search_terms"] = build_unit_search_terms(doc)
 
     res = shop_db.units.insert_one(doc)
+    audit_log.log_event("create", "unit", res.inserted_id, label=audit_log.unit_label(doc),
+                        details={"customer_id": str(customer_id), "customer": audit_log.customer_label(customer)})
     return jsonify({"ok": True, "id": str(res.inserted_id), "label": unit_label(doc)}), 200
 
 
@@ -1170,6 +1184,9 @@ def mobile_unit_update(unit_id):
     update["search_terms"] = build_unit_search_terms(merged)
 
     shop_db.units.update_one({"_id": u_id}, {"$set": update})
+    audit_log.log_event("update", "unit", u_id, label=audit_log.unit_label(existing),
+                        changes=audit_log.diff_fields(existing, update, audit_log.UNIT_FIELDS),
+                        details={"customer_id": str(existing.get("customer_id") or "")})
     return jsonify({"ok": True, "id": str(u_id)}), 200
 
 
@@ -1217,6 +1234,7 @@ def mobile_vendor_create():
     doc.update(build_vendor_legacy_contact_fields(contacts))
 
     res = shop_db.vendors.insert_one(doc)
+    audit_log.log_event("create", "vendor", res.inserted_id, label=name)
     return jsonify({"ok": True, "id": str(res.inserted_id), "name": name}), 200
 
 
@@ -1435,7 +1453,7 @@ def mobile_stocktake_options():
 
 @mobile_api_bp.post("/api/mobile/stocktakes")
 @api_login_required
-@permission_required("parts.edit")
+@permission_required("parts.adjust_stock")
 def mobile_stocktake_create():
     from app.blueprints.parts.services.stocktake import create_stocktake
 
@@ -1456,6 +1474,7 @@ def mobile_stocktake_create():
     if err:
         return jsonify({"ok": False, "error": err}), 400
 
+    audit_log.log_event("create", "stocktake", stocktake["_id"], label=f"ST-{stocktake['number']}")
     return jsonify({"ok": True, "id": str(stocktake["_id"]), "number": stocktake["number"]}), 200
 
 

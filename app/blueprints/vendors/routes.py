@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from flask import request, redirect, url_for, flash, session, jsonify
 
+from app.utils import audit_log
 from app.blueprints.vendors import vendors_bp
 from app.blueprints.main.routes import _render_app_page
 from app.extensions import get_master_db, get_mongo_client
@@ -183,7 +184,7 @@ def vendors_api_balances():
 
 @vendors_bp.post("/create")
 @login_required
-@permission_required("vendors.edit")
+@permission_required("vendors.create")
 def vendors_create():
     coll, shop, master = _vendors_collection()
     if coll is None or shop is None:
@@ -237,13 +238,14 @@ def vendors_create():
 
     coll.insert_one(doc)
 
+    audit_log.log_event("create", "vendor", doc.get("_id"), label=audit_log.vendor_label(doc))
     flash("Vendor created successfully.", "success")
     return redirect(url_for("vendors.vendors_page"))
 
 
 @vendors_bp.post("/api/create")
 @login_required
-@permission_required("vendors.edit")
+@permission_required("vendors.create")
 def vendors_api_create():
     """
     AJAX create vendor with full fields.
@@ -297,6 +299,7 @@ def vendors_api_create():
     doc.update(build_vendor_legacy_contact_fields(contacts))
 
     res = coll.insert_one(doc)
+    audit_log.log_event("create", "vendor", res.inserted_id, label=name)
     return jsonify(ok=True, vendor_id=str(res.inserted_id), vendor_name=name)
 
 
@@ -337,6 +340,7 @@ def vendors_deactivate(vendor_id):
         }},
     )
 
+    audit_log.log_event("deactivate", "vendor", vid, label=audit_log.vendor_label(existing))
     flash("Vendor deactivated.", "success")
     return redirect(url_for("vendors.vendors_page"))
 
@@ -382,6 +386,7 @@ def vendors_restore(vendor_id):
         }},
     )
 
+    audit_log.log_event("activate", "vendor", vid, label=audit_log.vendor_label(existing))
     flash("Vendor restored.", "success")
     return redirect(url_for("vendors.vendors_page"))
 
@@ -642,4 +647,6 @@ def vendors_api_update(vendor_id):
         {"$set": update_data}
     )
 
+    audit_log.log_event("update", "vendor", vid, label=audit_log.vendor_label(vendor),
+                        changes=audit_log.diff_fields(vendor, update_data, audit_log.VENDOR_FIELDS))
     return jsonify({"ok": True, "message": "Vendor updated successfully"})

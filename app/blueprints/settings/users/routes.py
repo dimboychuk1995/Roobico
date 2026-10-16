@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from bson import ObjectId
 from flask import render_template, request, redirect, url_for, flash, session
 
+from app.utils import audit_log
 from app.blueprints.settings import settings_bp
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import (
@@ -14,6 +15,7 @@ from app.utils.auth import (
     SESSION_TENANT_DB,
     SESSION_SHOP_ID,
 )
+from app.constants.permissions import PROTECTED_ROLE_KEYS
 from app.utils.permissions import permission_required, filter_nav_items
 from app.blueprints.main.routes import NAV_ITEMS
 from app.utils.layout import build_app_layout_context
@@ -82,6 +84,17 @@ def _load_current_user(master):
     if not user_id:
         return None
     return master.users.find_one({"_id": user_id, "is_active": True})
+
+
+def _is_protected_role(role_key) -> bool:
+    return str(role_key or "").strip().lower() in PROTECTED_ROLE_KEYS
+
+
+def _actor_is_owner(current_user) -> bool:
+    """Владелец (protected-роль) — единственный, кто может трогать
+    owner-аккаунты и раздавать роль Owner. Иначе любой с
+    settings.manage_users мог бы сделать владельцем себя."""
+    return _is_protected_role((current_user or {}).get("role"))
 
 
 def _render_settings_page(template_name: str, **ctx):
@@ -242,6 +255,8 @@ def users_index():
         active_shop_id=str(session.get(SESSION_SHOP_ID) or ""),
         sort_by=(request.args.get("sort_by") or "").strip(),
         sort_dir=(request.args.get("sort_dir") or "").strip(),
+        actor_is_owner=_actor_is_owner(current_user),
+        protected_role_keys=sorted(PROTECTED_ROLE_KEYS),
     )
 
 
@@ -285,6 +300,19 @@ def users_edit(user_id):
 
     if not first_name or not last_name or not email:
         flash("Please fill first name, last name and email.", "error")
+        return _redirect_users_index()
+
+    actor_is_owner = _actor_is_owner(current_user)
+    is_self = str(target_id) == str(session.get(SESSION_USER_ID))
+    current_role = str(target.get("role") or "viewer").strip().lower()
+    if _is_protected_role(current_role) and not actor_is_owner:
+        flash("Only an owner can edit an owner account.", "error")
+        return _redirect_users_index()
+    if _is_protected_role(role) and not actor_is_owner:
+        flash("Only an owner can assign the Owner role.", "error")
+        return _redirect_users_index()
+    if is_self and role != current_role:
+        flash("You cannot change your own role.", "error")
         return _redirect_users_index()
 
     existing = master.users.find_one({"email": email})
@@ -342,6 +370,10 @@ def users_edit(user_id):
         return _redirect_users_index()
 
     master.users.update_one({"_id": target_id}, {"$set": update_doc})
+    audit_log.log_event("update", "user", target_id, label=audit_log.user_label(target),
+                        changes=audit_log.diff_fields(target, update_doc, {"first_name": "First name", "last_name": "Last name", "email": "Email",
+                                                                       "phone": "Phone", "role": "Role", "is_active": "Active",
+                                                                       "shop_ids": "Locations", "pay_type": "Pay type", "salary_amount": "Salary"}))
     flash("User updated successfully.", "success")
     return _redirect_users_index()
 
@@ -368,6 +400,11 @@ def users_deactivate(user_id):
         return _redirect_users_index()
 
     tenant_values = _id_variants(tenant_id_raw)
+    target = master.users.find_one({"_id": target_id, "tenant_id": {"$in": tenant_values}}, {"role": 1})
+    if target and _is_protected_role(target.get("role")) and not _actor_is_owner(_load_current_user(master)):
+        flash("Only an owner can deactivate an owner account.", "error")
+        return _redirect_users_index()
+
     res = master.users.update_one(
         {"_id": target_id, "tenant_id": {"$in": tenant_values}},
         {"$set": {"is_active": False, "updated_at": utcnow()}},
@@ -377,6 +414,7 @@ def users_deactivate(user_id):
         flash("User not found.", "error")
         return _redirect_users_index()
 
+    audit_log.log_event("deactivate", "user", target_id, label=audit_log.user_label(target or {}) or str(target_id))
     flash("User deactivated.", "success")
     return _redirect_users_index()
 
@@ -410,6 +448,8 @@ def users_activate(user_id):
         flash("User not found.", "error")
         return _redirect_users_index()
 
+    _activated = master.users.find_one({"_id": target_id}, {"name": 1, "first_name": 1, "last_name": 1, "email": 1}) or {}
+    audit_log.log_event("activate", "user", target_id, label=audit_log.user_label(_activated))
     flash("User activated.", "success")
     return _redirect_users_index()
 
@@ -430,6 +470,10 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
 
     if "@" not in email:
         flash("Valid email is required.", "error")
+        return redirect(url_for("settings.users_index"))
+
+    if _is_protected_role(role) and not _actor_is_owner(current_user):
+        flash("Only an owner can assign the Owner role.", "error")
         return redirect(url_for("settings.users_index"))
 
     tenant_id = tenant_oid or _maybe_object_id(current_user.get("tenant_id")) or _maybe_object_id(tenant_id_raw)
@@ -525,6 +569,9 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
         user_id = master.users.insert_one(user_doc).inserted_id
 
     _send_invite_or_warn(master, {**user_doc, "_id": user_id})
+    audit_log.log_event("create", "user", user_id, label=audit_log.user_label(user_doc),
+                        summary=f"User invited: {audit_log.user_label(user_doc)} ({role})" + (" (reactivated)" if reactivate_target is not None else ""),
+                        details={"role": role, "email": email})
 
     return redirect(url_for("settings.users_index"))
 
@@ -570,4 +617,5 @@ def users_resend_invite(user_id):
         return _redirect_users_index()
 
     _send_invite_or_warn(master, target)
+    audit_log.log_event("send", "user", target_id, label=audit_log.user_label(target), summary=f"Invitation re-sent to {target.get('email')}")
     return _redirect_users_index()

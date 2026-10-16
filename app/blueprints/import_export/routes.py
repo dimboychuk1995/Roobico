@@ -25,6 +25,7 @@ from datetime import date as date_cls, datetime, timezone
 from bson import ObjectId
 from flask import jsonify, request, send_file, session
 
+from app.utils import audit_log
 from app.blueprints.import_export import import_export_bp
 from app.blueprints.main.routes import _render_app_page
 from app.extensions import get_master_db, get_mongo_client
@@ -815,6 +816,9 @@ def run_import():
         "skipped": skipped,
         "total": len(rows),
     }
+    audit_log.log_event("import", "import", None, label=str(entity_type),
+                        summary=f"Imported {imported} {entity_type} row(s), skipped {skipped}, errors {len(errors)}",
+                        details={"entity_type": entity_type, "imported": imported, "skipped": skipped, "total": len(rows), "errors": len(errors)})
     if errors:
         result["errors"] = errors
     return jsonify(result)

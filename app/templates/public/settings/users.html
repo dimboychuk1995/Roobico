@@ -65,6 +65,10 @@
                   {% endif %}
                 </td>
                 <td class="text-end">
+                  {% set row_is_owner = (u.get('role') or '') in (protected_role_keys or []) %}
+                  {% if row_is_owner and not actor_is_owner %}
+                  <span class="text-muted small" title="Only an owner can edit owner accounts">Owner account</span>
+                  {% else %}
                   <div class="d-inline-flex gap-1">
                     <button
                       type="button"
@@ -134,6 +138,7 @@
                       </form>
                     {% endif %}
                   </div>
+                  {% endif %}
                 </td>
               </tr>
             {% endfor %}
@@ -193,6 +198,7 @@
             <div class="col-12 col-md-6">
               <label class="form-label" for="role">Role</label>
               <select class="form-select" id="role" name="role" required>
+                {% if actor_is_owner %}<option value="owner">Owner</option>{% endif %}
                 <option value="manager">Manager</option>
                 <option value="parts_manager">Parts manager</option>
                 <option value="senior_mechanic">Senior mechanic</option>
@@ -341,6 +347,7 @@
             <div class="col-12 col-md-6">
               <label class="form-label" for="edit_user_role">Role</label>
               <select class="form-select" id="edit_user_role" name="role" required>
+                {% if actor_is_owner %}<option value="owner">Owner</option>{% endif %}
                 <option value="manager">Manager</option>
                 <option value="parts_manager">Parts manager</option>
                 <option value="senior_mechanic">Senior mechanic</option>

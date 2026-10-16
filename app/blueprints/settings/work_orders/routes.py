@@ -5,6 +5,7 @@ import re
 
 from flask import render_template, redirect, url_for, flash, session, request, jsonify
 
+from app.utils import audit_log
 from app.blueprints.settings import settings_bp
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import login_required, SESSION_USER_ID, SESSION_TENANT_ID, SESSION_SHOP_ID
@@ -159,7 +160,7 @@ def _validate_labor_rate_form(name_raw, hourly_rate_raw):
 
 @settings_bp.route("/work_orders", methods=["GET", "POST"])
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_wo_settings")
 def work_orders_index():
     master = get_master_db()
     user = _load_current_user(master)
@@ -275,7 +276,7 @@ def work_orders_index():
 
 @settings_bp.post("/work_orders/labor_rates/create")
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_wo_settings")
 def work_orders_labor_rates_create():
     master = get_master_db()
     user = _load_current_user(master)
@@ -316,13 +317,14 @@ def work_orders_labor_rates_create():
         }
     )
 
+    audit_log.log_event("create", "labor_rate", None, label=name, details={"hourly_rate": float(hourly_rate), "code": code})
     flash("Labor rate created.", "success")
     return redirect(url_for("settings.work_orders_index"))
 
 
 @settings_bp.post("/work_orders/labor_rates/<rate_id>/update")
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_wo_settings")
 def work_orders_labor_rates_update(rate_id: str):
     master = get_master_db()
     user = _load_current_user(master)
@@ -372,13 +374,14 @@ def work_orders_labor_rates_update(rate_id: str):
         },
     )
 
+    audit_log.log_event("update", "labor_rate", rate_oid, label=name, details={"hourly_rate": float(hourly_rate)})
     flash("Labor rate updated.", "success")
     return redirect(url_for("settings.work_orders_index"))
 
 
 @settings_bp.post("/work_orders/labor_rates/<rate_id>/delete")
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_wo_settings")
 def work_orders_labor_rates_delete(rate_id: str):
     master = get_master_db()
     user = _load_current_user(master)
@@ -409,6 +412,8 @@ def work_orders_labor_rates_delete(rate_id: str):
             }
         },
     )
+    if res.matched_count:
+        audit_log.log_event("delete", "labor_rate", rate_oid, label="Labor rate")
     if res.matched_count == 0:
         flash("Labor rate not found.", "error")
         return redirect(url_for("settings.work_orders_index"))
@@ -449,7 +454,7 @@ _HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
 @settings_bp.get("/pdf-design")
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_pdf_design")
 def pdf_design_index():
     master = get_master_db()
     shop_db, shop_oid = _get_shop_db_strict(master)
@@ -485,7 +490,7 @@ def pdf_design_index():
 
 @settings_bp.post("/api/pdf-design")
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_pdf_design")
 def api_pdf_design_save():
     master = get_master_db()
     user = _load_current_user(master)

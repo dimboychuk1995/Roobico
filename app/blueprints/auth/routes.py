@@ -6,6 +6,7 @@ from bson import ObjectId
 import hashlib
 import secrets, time
 
+from app.utils import audit_log
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import login_user, logout_user, SESSION_USER_ID, SESSION_TENANT_ID, SESSION_TENANT_DB
 from app.utils.email_sender import send_email
@@ -137,6 +138,8 @@ def login():
     session["user_permissions"] = perms
     session.modified = True
 
+    audit_log.log_event("login", "session", user["_id"], label=audit_log.user_label(user),
+                        summary=f"{audit_log.user_label(user)} signed in", user=user, tenant_id=tenant["_id"])
     if subscription_blocked:
         flash("Your subscription has expired. Renew it below to restore access.", "error")
         return redirect(app_url("billing.subscription_page"))
@@ -152,6 +155,8 @@ def login():
 
 @auth_bp.get("/logout")
 def logout():
+    if session.get(SESSION_USER_ID):
+        audit_log.log_event("logout", "session", session.get(SESSION_USER_ID), summary="Signed out")
     logout_user()
     flash("Logged out.", "info")
     return redirect(url_for("main.index"))
@@ -466,5 +471,7 @@ def accept_invite(token):
          "$unset": {"invite_token": "", "invite_token_created": ""}},
     )
 
+    audit_log.log_event("create", "session", user["_id"], label=audit_log.user_label(user),
+                        summary=f"Invitation accepted: {audit_log.user_label(user)} set a password", user=user, tenant_id=user.get("tenant_id"))
     flash("Your account is ready. Log in with your new password.", "success")
     return redirect(url_for("main.index"))

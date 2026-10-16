@@ -40,7 +40,8 @@ PERMISSIONS: dict[str, str] = {
     "parts.create": "Create parts",
     "parts.edit": "Edit parts",
     "parts.delete": "Delete parts",
-    "parts.adjust_stock": "Adjust part stock manually",
+    "parts.adjust_stock": "Move stock between locations and run stocktakes",
+    "parts.edit_stock_qty": "Edit on-hand quantity directly (In stock field when editing a part, Set qty by location)",
     "parts.view_costs": "View part costs (avg cost / cost columns)",
 
     # ── Parts Orders ────────────────────────────────────────
@@ -58,7 +59,7 @@ PERMISSIONS: dict[str, str] = {
     "work_orders.change_status": "Change work order status",
     "work_orders.delete": "Delete work orders",
     "work_orders.manage_payments": "Record / delete work order payments",
-    "work_orders.send_to_customer": "Send work order / authorization to customer",
+    "work_orders.send_to_customer": "Email work order PDF / payment receipts to customer (authorization requests need only Create)",
     "work_orders.manage_email_contacts": "Edit / delete customer contacts in email dialogs",
     "work_orders.export_pdf": "Export work order PDF",
     "work_orders.view_costs": "View part costs inside WO",
@@ -151,6 +152,7 @@ PERMISSION_GROUPS: list[dict] = [
             "parts.edit",
             "parts.delete",
             "parts.adjust_stock",
+            "parts.edit_stock_qty",
             "parts.view_costs",
         ],
     },

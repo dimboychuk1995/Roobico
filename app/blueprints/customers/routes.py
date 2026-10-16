@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from bson import ObjectId
 from flask import request, redirect, url_for, flash, session, jsonify
 
+from app.utils import audit_log
 from app.blueprints.customers import customers_bp
 from app.blueprints.main.routes import _render_app_page
 from app.extensions import get_master_db, get_mongo_client
@@ -1250,7 +1251,7 @@ def customer_unit_details_page(customer_id, unit_id):
 
 @customers_bp.post("/customers/<customer_id>/units/<unit_id>/update")
 @login_required
-@permission_required("customers.edit")
+@permission_required("customers.manage_units")
 def customer_unit_update(customer_id, unit_id):
     coll, shop, master = _customers_collection()
     if coll is None or shop is None:
@@ -1309,13 +1310,16 @@ def customer_unit_update(customer_id, unit_id):
     update_fields["search_terms"] = build_unit_search_terms(update_fields)
 
     shop_db.units.update_one({"_id": uid}, {"$set": update_fields})
+    audit_log.log_event("update", "unit", uid, label=audit_log.unit_label(unit),
+                        changes=audit_log.diff_fields(unit, update_fields, audit_log.UNIT_FIELDS),
+                        details={"customer_id": str(cid), "customer": audit_log.customer_label(customer)})
     flash("Unit updated.", "success")
     return redirect(url_for("customers.customer_unit_details_page", customer_id=str(cid), unit_id=str(uid), tab="details"))
 
 
 @customers_bp.post("/customers/<customer_id>/units/<unit_id>/deactivate")
 @login_required
-@permission_required("customers.edit")
+@permission_required("customers.manage_units")
 def customer_unit_deactivate(customer_id, unit_id):
     coll, shop, master = _customers_collection()
     if coll is None or shop is None:
@@ -1350,13 +1354,14 @@ def customer_unit_deactivate(customer_id, unit_id):
         }},
     )
 
+    audit_log.log_event("deactivate", "unit", uid, label=audit_log.unit_label(unit), details={"customer_id": str(cid)})
     flash("Unit deactivated.", "success")
     return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="units"))
 
 
 @customers_bp.post("/customers/<customer_id>/units/<unit_id>/activate")
 @login_required
-@permission_required("customers.edit")
+@permission_required("customers.manage_units")
 def customer_unit_activate(customer_id, unit_id):
     coll, shop, master = _customers_collection()
     if coll is None or shop is None:
@@ -1400,13 +1405,15 @@ def customer_unit_activate(customer_id, unit_id):
         },
     )
 
+    audit_log.log_event("activate", "unit", uid, label=audit_log.unit_label(unit),
+                        details={"customer_id": str(cid), "customer": audit_log.customer_label(customer)})
     flash("Unit activated.", "success")
     return redirect(url_for("customers.customer_unit_details_page", customer_id=str(cid), unit_id=str(uid), tab="details"))
 
 
 @customers_bp.post("/customers/create")
 @login_required
-@permission_required("customers.edit")
+@permission_required("customers.create")
 def customers_create():
     coll, shop, master = _customers_collection()
     if coll is None or shop is None:
@@ -1485,6 +1492,7 @@ def customers_create():
     doc["search_terms"] = build_customer_search_terms(doc)
 
     coll.insert_one(doc)
+    audit_log.log_event("create", "customer", doc.get("_id"), label=audit_log.customer_label(doc))
 
     flash("Customer created successfully.", "success")
     return redirect(url_for("customers.customers_page"))
@@ -1534,6 +1542,7 @@ def customers_deactivate(customer_id):
         }},
     )
 
+    audit_log.log_event("deactivate", "customer", cid, label=audit_log.customer_label(existing))
     flash("Customer deactivated. History is kept; you can activate them back anytime.", "success")
     return redirect(url_for("customers.customer_details_page", customer_id=str(cid)))
 
@@ -1572,6 +1581,7 @@ def customers_activate(customer_id):
         }},
     )
 
+    audit_log.log_event("activate", "customer", cid, label=audit_log.customer_label(existing))
     flash("Customer activated.", "success")
     return redirect(url_for("customers.customer_details_page", customer_id=str(cid)))
 
@@ -1669,6 +1679,8 @@ def customer_details_update(customer_id):
 
     coll.update_one({"_id": cid}, {"$set": update_data})
 
+    audit_log.log_event("update", "customer", cid, label=audit_log.customer_label(customer),
+                        changes=audit_log.diff_fields(customer, update_data, audit_log.CUSTOMER_FIELDS))
     flash("Customer updated successfully.", "success")
     return redirect(url_for("customers.customer_details_page", customer_id=str(cid), tab="details"))
 
@@ -1762,6 +1774,8 @@ def customers_api_update(customer_id):
 
     coll.update_one({"_id": cid}, {"$set": update_data})
 
+    audit_log.log_event("update", "customer", cid, label=audit_log.customer_label(customer),
+                        changes=audit_log.diff_fields(customer, update_data, audit_log.CUSTOMER_FIELDS))
     return jsonify({"ok": True, "message": "Customer updated successfully"})
 
 
@@ -1805,6 +1819,7 @@ def customers_api_deactivate(customer_id):
         },
     )
 
+    audit_log.log_event("deactivate", "customer", cid, label=audit_log.customer_label(customer))
     return jsonify({"ok": True, "message": "Customer deactivated"})
 
 

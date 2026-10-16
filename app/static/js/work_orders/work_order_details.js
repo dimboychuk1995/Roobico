@@ -5962,49 +5962,79 @@
 
     applyStateFromStatus();
 
-    // ── Auto-apply presets from URL query params ──
+    // ── Prefill from the calendar / URL query params ──
+    // presets=id,id — apply service presets block by block;
+    // mechanic_id    — assign this mechanic (100%) to every prefilled block;
+    // note           — appointment note: labor description when the block
+    //                  has none (no preset), otherwise the issue description.
     if (!isCreated) {
       const urlParams = new URLSearchParams(window.location.search);
       const presetsParam = urlParams.get("presets");
-      console.log("[WO auto-apply] isCreated:", isCreated, "presetsParam:", presetsParam);
-      if (presetsParam) {
-        const presetIds = presetsParam.split(",").map(s => s.trim()).filter(Boolean);
-        console.log("[WO auto-apply] presetIds:", presetIds);
-        if (presetIds.length > 0) {
-          (async function () {
-            try {
-              // Ensure editor is enabled before applying presets
-              console.log("[WO auto-apply] editor disabled before?", editor?.disabled);
-              if (editor) editor.disabled = false;
+      const mechanicParam = String(urlParams.get("mechanic_id") || "").trim();
+      const noteParam = String(urlParams.get("note") || "").trim().slice(0, 200);
+      const presetIds = presetsParam
+        ? presetsParam.split(",").map(s => s.trim()).filter(Boolean)
+        : [];
 
-              for (let i = 0; i < presetIds.length; i++) {
-                let blockEl;
-                if (i === 0) {
-                  blockEl = blocksContainer.querySelector(".wo-labor");
-                } else {
-                  blockEl = cloneBlock(blocksContainer);
-                  setupMiscChargeButton(blockEl);
-                  Array.from(blocksContainer.querySelectorAll(".wo-labor")).forEach((b, idx) => renumberBlock(b, idx));
-                }
-                console.log("[WO auto-apply] applying preset", presetIds[i], "to block", i, "blockEl?", !!blockEl);
-                if (blockEl) {
-                  await applyPresetToBlock(presetIds[i], blockEl, blocksContainer, pricing, laborRates, shopSupplyPct);
-                }
-                // Verify after apply
-                if (blockEl) {
-                  const h = blockEl.querySelector(".labor-hours");
-                  const r = blockEl.querySelector(".labor-rate");
-                  const d = blockEl.querySelector(".labor-description");
-                  console.log("[WO auto-apply] AFTER apply block", i, "- hours:", h?.value, "rate:", r?.value, "desc:", d?.value);
-                }
-              }
-              recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
-              console.log("[WO auto-apply] done, recalcAll called");
-            } catch (err) {
-              console.error("[WO auto-apply presets] error:", err);
-            }
-          })();
+      const prefillMechanic = Array.isArray(mechanicsData)
+        ? mechanicsData.find((m) => String(m?.id || "") === mechanicParam)
+        : null;
+
+      function applyCalendarExtras() {
+        const blocks = Array.from(blocksContainer.querySelectorAll(".wo-labor"));
+        if (!blocks.length) return;
+        if (prefillMechanic) {
+          blocks.forEach((blockEl) => {
+            if (getLaborAssignments(blockEl).length) return;
+            setLaborAssignments(blockEl, [{
+              user_id: String(prefillMechanic.id || ""),
+              name: String(prefillMechanic.name || ""),
+              role: String(prefillMechanic.role || ""),
+              percent: 100,
+            }]);
+          });
         }
+        if (noteParam) {
+          const first = blocks[0];
+          const descInput = first.querySelector(".labor-description");
+          const issueInput = first.querySelector(".labor-issue-description");
+          if (descInput && !String(descInput.value || "").trim()) {
+            descInput.value = noteParam;
+          } else if (issueInput && !String(issueInput.value || "").trim()) {
+            issueInput.value = noteParam;
+          }
+        }
+      }
+
+      if (presetIds.length > 0) {
+        (async function () {
+          try {
+            // Ensure editor is enabled before applying presets
+            if (editor) editor.disabled = false;
+
+            for (let i = 0; i < presetIds.length; i++) {
+              let blockEl;
+              if (i === 0) {
+                blockEl = blocksContainer.querySelector(".wo-labor");
+              } else {
+                blockEl = cloneBlock(blocksContainer);
+                setupMiscChargeButton(blockEl);
+                Array.from(blocksContainer.querySelectorAll(".wo-labor")).forEach((b, idx) => renumberBlock(b, idx));
+              }
+              if (blockEl) {
+                await applyPresetToBlock(presetIds[i], blockEl, blocksContainer, pricing, laborRates, shopSupplyPct);
+              }
+            }
+            applyCalendarExtras();
+            recalcAll(blocksContainer, pricing, laborRates, shopSupplyPct);
+          } catch (err) {
+            console.error("[WO auto-apply presets] error:", err);
+            toast("Could not apply presets from the calendar.");
+          }
+        })();
+      } else if (prefillMechanic || noteParam) {
+        if (editor) editor.disabled = false;
+        applyCalendarExtras();
       }
     }
   }

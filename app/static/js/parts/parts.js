@@ -9,6 +9,20 @@
 	// чтобы они не дублировались.
 	let partsInitAbort = null;
 
+	// Права страницы (из #partsPermissionsData, см. parts.html). Читаем
+	// каждый раз: после мягкой навигации разметка страницы новая.
+	function partsPerms() {
+		try {
+			const el = document.getElementById('partsPermissionsData');
+			return el ? (JSON.parse(el.textContent || '{}') || {}) : {};
+		} catch (e) {
+			return {};
+		}
+	}
+	function partsCanEditStockQty() {
+		return !!partsPerms().edit_stock_qty;
+	}
+
 	function initPartsPage() {
 		if (partsInitAbort) {
 			partsInitAbort.abort();
@@ -189,7 +203,8 @@
 
 			let searchAbort = null;
 
-			function escapeHtml(str) {
+		
+	function escapeHtml(str) {
 				return (str || "").replace(/[&<>"']/g, (m) => ({
 					"&": "&amp;",
 					"<": "&lt;",
@@ -2659,19 +2674,21 @@
 				if (!rows.length) {
 					body.innerHTML = '<tr><td colspan="3" class="text-center text-muted small py-3">No stock at any location yet.</td></tr>';
 				} else {
+					const canSetQty = partsCanEditStockQty();
 					body.innerHTML = rows.map(function (r) {
 						const name = escapeHtml(r.location_name || "Unassigned") +
 							(r.is_primary ? ' <span class="badge bg-secondary ms-1">primary</span>' : "");
 						const locId = escapeHtml(r.location_id || "");
+						const setCell = canSetQty
+							? '<div class="input-group input-group-sm flex-nowrap justify-content-end">' +
+							  '<input type="number" step="1" class="form-control form-control-sm plm-adjust-input" style="max-width:90px;" value="' + Number(r.qty || 0) + '">' +
+							  '<button type="button" class="btn btn-outline-primary plm-adjust-btn" data-location-id="' + locId + '">Set</button>' +
+							  '</div>'
+							: '<span class="text-muted small" title="Only managers can set quantities directly">&mdash;</span>';
 						return '<tr>' +
 							'<td>' + name + '</td>' +
 							'<td class="text-end fw-semibold">' + Number(r.qty || 0) + '</td>' +
-							'<td class="text-end">' +
-							'<div class="input-group input-group-sm flex-nowrap justify-content-end">' +
-							'<input type="number" step="1" class="form-control form-control-sm plm-adjust-input" style="max-width:90px;" value="' + Number(r.qty || 0) + '">' +
-							'<button type="button" class="btn btn-outline-primary plm-adjust-btn" data-location-id="' + locId + '">Set</button>' +
-							'</div>' +
-							'</td>' +
+							'<td class="text-end">' + setCell + '</td>' +
 							'</tr>';
 					}).join("");
 				}
@@ -3143,6 +3160,12 @@
 			if (!item || typeof item !== 'object') return;
 			editingPartId.value = partId || '';
 			modalTitle.textContent = 'Edit part: ' + (item.part_number || '');
+			// Остаток существующего парта правят только с parts.edit_stock_qty;
+			// поле остаётся видимым (значение уходит в payload без изменений).
+			const stockLocked = !partsCanEditStockQty();
+			inStockInput.disabled = stockLocked;
+			const lockedHint = document.getElementById('inStockLockedHint');
+			if (lockedHint) lockedHint.classList.toggle('d-none', !stockLocked);
 
 			// Кнопка Cross references доступна только при редактировании.
 			const crossBtn = document.getElementById('editPartCrossRefsBtn');
@@ -3371,6 +3394,9 @@
 		createPartModal.addEventListener('hidden.bs.modal', function() {
 			editingPartId.value = '';
 			modalTitle.textContent = 'Create new part';
+			inStockInput.disabled = false;
+			const createLockedHint = document.getElementById('inStockLockedHint');
+			if (createLockedHint) createLockedHint.classList.add('d-none');
 			document.getElementById('editPartCrossRefsBtn')?.classList.add('d-none');
 			form.reset();
 			syncInStockVisibility();

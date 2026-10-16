@@ -1,12 +1,24 @@
+"""
+Технический слой журнала: каждый мутирующий HTTP-запрос (POST/PUT/PATCH/
+DELETE) попадает в master_db.audit_journal.
+
+Бизнес-события пишет app/utils/audit_log.log_event (с actor'ом, объектом и
+изменениями). Если хендлер записал хотя бы одно такое событие и ответил
+успешно, сырой запрос не дублируется. Если событий не было — пишется
+строка kind="request" с человеческим названием эндпоинта
+(audit_endpoint_labels), чтобы в журнале было абсолютно каждое действие.
+Ошибки (5xx / исключения) и отказы в доступе (403) пишутся всегда.
+"""
 from __future__ import annotations
 
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from flask import g, has_request_context, request, session
+from flask import current_app, g, has_request_context, request, session
 
 from app.extensions import get_master_db
-from app.utils.auth import SESSION_TENANT_ID, SESSION_USER_ID
+from app.utils.audit_endpoint_labels import describe_endpoint
+from app.utils.auth import SESSION_SHOP_ID, SESSION_TENANT_ID, SESSION_USER_ID
 
 
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
@@ -14,12 +26,27 @@ SENSITIVE_KEYS = {
     "password",
     "pass",
     "passwd",
+    "password_confirm",
+    "new_password",
     "token",
     "access_token",
     "refresh_token",
     "secret",
     "api_key",
     "authorization",
+    "csrf_token",
+}
+# Эндпоинты, чьи тела не стоит хранить даже в замаскированном виде
+# (файлы/бинарные тела, большие AI-пейлоады).
+SKIP_PAYLOAD_ENDPOINTS = {
+    "attachments.api_upload",
+    "work_orders.api_parse_handwritten_work_order",
+    "parts.parts_api_orders_parse_invoice",
+    "import_export.upload_headers",
+    "import_export.run_import",
+    "assistant.chat",
+    "inbound_email.inbound_email_webhook",
+    "billing.stripe_webhook",
 }
 
 
@@ -63,6 +90,8 @@ def _sanitize_payload(value):
 
 def _get_request_payload() -> dict:
     payload: dict = {}
+    if str(request.endpoint or "") in SKIP_PAYLOAD_ENDPOINTS:
+        return payload
 
     json_data = request.get_json(silent=True)
     if isinstance(json_data, dict):
@@ -81,12 +110,19 @@ def _get_request_payload() -> dict:
     return payload
 
 
-def _resolve_user_tenant_context() -> tuple[str, str]:
+def _resolve_actor() -> dict:
+    user = getattr(g, "user", None) if has_request_context() else None
     user_id = ""
     tenant_id = ""
+    user_name = ""
+    user_role = ""
 
-    if getattr(g, "user", None):
-        user_id = str(g.user.get("_id") or "")
+    if user:
+        user_id = str(user.get("_id") or "")
+        user_name = str(user.get("name") or "").strip() or " ".join(
+            p for p in (user.get("first_name"), user.get("last_name")) if p
+        ).strip() or str(user.get("email") or "")
+        user_role = str(user.get("role") or "").strip().lower()
     if getattr(g, "tenant", None):
         tenant_id = str(g.tenant.get("_id") or "")
 
@@ -95,11 +131,11 @@ def _resolve_user_tenant_context() -> tuple[str, str]:
     if not tenant_id:
         tenant_id = str(session.get(SESSION_TENANT_ID) or "")
 
-    return user_id, tenant_id
+    return {"user_id": user_id, "user_name": user_name, "user_role": user_role, "tenant_id": tenant_id}
 
 
 def _resolve_shop_id(payload: dict) -> str:
-    shop_id = str(session.get("shop_id") or "").strip()
+    shop_id = str(session.get(SESSION_SHOP_ID) or "").strip()
     if shop_id:
         return shop_id
 
@@ -114,6 +150,17 @@ def _resolve_shop_id(payload: dict) -> str:
                 return str(value).strip()
 
     return ""
+
+
+def _request_source() -> str:
+    path = (request.path or "").lower()
+    if path.startswith("/api/mobile"):
+        return "mobile"
+    if path.startswith("/portal") or path.startswith("/authorize"):
+        return "portal"
+    if path.startswith("/admin"):
+        return "admin"
+    return "web"
 
 
 def should_log_current_request() -> bool:
@@ -136,28 +183,56 @@ def write_audit_journal(response=None, error: Exception | None = None) -> None:
     if getattr(g, "_audit_journal_written", False):
         return
 
-    payload = _get_request_payload()
-    user_id, tenant_id = _resolve_user_tenant_context()
-    shop_id = _resolve_shop_id(payload)
-
     status_code = 500
     if response is not None:
         status_code = int(getattr(response, "status_code", 500) or 500)
+    ok = error is None and 200 <= status_code < 400
+
+    # Хендлер уже описал действие бизнес-событиями — сырой запрос не нужен.
+    if ok and getattr(g, "_audit_events_written", False):
+        g._audit_journal_written = True
+        return
+
+    payload = _get_request_payload()
+    actor = _resolve_actor()
+    shop_id = _resolve_shop_id(payload)
+    endpoint = str(request.endpoint or "")
+    action, entity_type, summary = describe_endpoint(endpoint, request.method, request.path)
+    if error is not None or status_code >= 500:
+        action = "error"
+        summary = f"Failed: {summary}"
+    elif status_code in (401, 403):
+        action = "denied"
+        summary = f"Access denied: {summary}"
+    elif status_code >= 400:
+        summary = f"Rejected ({status_code}): {summary}"
 
     entry = {
+        "kind": "request",
         "request_id": str(getattr(g, "request_id", "") or build_request_id()),
         "created_at": utcnow(),
         "method": request.method.upper(),
         "path": request.path,
-        "endpoint": str(request.endpoint or ""),
+        "endpoint": endpoint,
         "blueprint": str(request.blueprint or ""),
         "status_code": status_code,
-        "ok": 200 <= status_code < 400,
+        "ok": ok,
+        "action": action,
+        "entity_type": entity_type,
+        "entity_id": "",
+        "entity_label": "",
+        "entity_url": "",
+        "summary": summary,
+        "changes": [],
+        "details": {},
+        "source": _request_source(),
         "ip": _safe_str(request.headers.get("X-Forwarded-For") or request.remote_addr or "", 255),
         "user_agent": _safe_str(request.headers.get("User-Agent") or "", 1024),
         "referrer": _safe_str(request.referrer or "", 1024),
-        "user_id": user_id,
-        "tenant_id": tenant_id,
+        "user_id": actor["user_id"],
+        "user_name": actor["user_name"],
+        "user_role": actor["user_role"],
+        "tenant_id": actor["tenant_id"],
         "shop_id": shop_id,
         "payload": payload,
         "error": _safe_str(error, 4000) if error else "",
@@ -168,4 +243,7 @@ def write_audit_journal(response=None, error: Exception | None = None) -> None:
         master.audit_journal.insert_one(entry)
         g._audit_journal_written = True
     except Exception:
-        pass
+        try:
+            current_app.logger.exception("audit journal: failed to write request entry")
+        except Exception:
+            pass

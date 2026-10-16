@@ -8,6 +8,7 @@ from zoneinfo import available_timezones
 from bson import ObjectId, Binary
 from flask import render_template, request, redirect, url_for, flash, session, jsonify, make_response
 
+from app.utils import audit_log
 from app.blueprints.settings import settings_bp
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import login_required, SESSION_USER_ID, SESSION_TENANT_ID
@@ -478,7 +479,7 @@ def _grant_shop_to_owners(master, tenant_id, new_shop_id):
 
 @settings_bp.route("/locations", methods=["GET", "POST"])
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_locations")
 def locations_index():
     master = get_master_db()
     user = _load_current_user(master)
@@ -753,7 +754,7 @@ def locations_index():
 
 @settings_bp.get("/api/locations")
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_locations")
 def api_locations_list():
     master = get_master_db()
     tenant = _load_current_tenant(master)
@@ -780,7 +781,7 @@ def api_locations_list():
 
 @settings_bp.post("/api/locations")
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_locations")
 def api_locations_create():
     master = get_master_db()
     user = _load_current_user(master)
@@ -880,6 +881,7 @@ def api_locations_create():
 
         # ✅ создать shop DB + seed parts_categories + pricing rules + labor rates
         init_shop_database(shop_db_name, tenant, shop_doc, actor_user_id=user.get("_id"))
+        audit_log.log_event("create", "location", new_shop_id, label=name, details={"slug": shop_slug})
 
         return jsonify({
             "ok": True,
@@ -900,7 +902,7 @@ def api_locations_create():
 
 @settings_bp.route("/api/locations/<shop_id>", methods=["PUT", "PATCH", "POST"])
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_locations")
 def api_locations_update(shop_id: str):
     master = get_master_db()
     user = _load_current_user(master)
@@ -966,6 +968,9 @@ def api_locations_update(shop_id: str):
         },
     )
 
+    audit_log.log_event("update", "location", shop_oid, label=update_set.get("name") or shop.get("name") or "Location",
+                        changes=audit_log.diff_fields(shop, update_set, {"name": "Name", "address": "Address", "phone": "Phone", "email": "Email",
+                                                                     "timezone": "Timezone", "zip": "ZIP", "is_active": "Active"}))
     # If the address changed, refresh the sales-tax cache for the new ZIP
     # so subsequent work-orders use the up-to-date rate.
     if address_changed and extracted_zip:
@@ -979,7 +984,7 @@ def api_locations_update(shop_id: str):
 
 @settings_bp.post("/api/locations/<shop_id>/inactive")
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_locations")
 def api_locations_inactive(shop_id: str):
     master = get_master_db()
     user = _load_current_user(master)
@@ -1008,6 +1013,7 @@ def api_locations_inactive(shop_id: str):
         },
     )
 
+    audit_log.log_event("deactivate", "location", shop_oid, label=shop.get("name") or "Location")
     return jsonify({"ok": True})
 
 

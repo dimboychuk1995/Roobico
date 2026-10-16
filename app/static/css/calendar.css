@@ -321,3 +321,414 @@
   line-height: 1;
   padding: 2px 7px;
 }
+
+/* ── toolbar: view toggle, mechanic filter, legend ── */
+
+.cal-toolbar {
+  padding-bottom: 4px;
+}
+
+.cal-view-toggle .btn {
+  white-space: nowrap;
+}
+
+.cal-mech-filter {
+  width: auto;
+  max-width: 220px;
+}
+
+.cal-wo-switch {
+  padding-left: 2.5em;
+  white-space: nowrap;
+}
+
+.cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  padding: 4px 0 2px;
+  color: #5f6368;
+}
+
+.cal-legend-label {
+  font-weight: 600;
+}
+
+.cal-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.cal-legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex: 0 0 auto;
+}
+
+.cal-legend-hint {
+  color: #80868b;
+  font-style: italic;
+}
+
+/* ── mechanics view: one column per mechanic ── */
+
+.cal-header-cell--mech {
+  cursor: default;
+  padding: 6px 6px 4px;
+}
+
+.cal-header-cell--mech:hover {
+  background: transparent;
+}
+
+.cal-mech-name {
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  font-size: .9rem;
+  font-weight: 600;
+  color: #3c4043;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
+.cal-mech-sub {
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  font-size: .68rem;
+  color: #70757a;
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+.cal-header-cell--unassigned .cal-mech-name {
+  color: #80868b;
+  font-style: italic;
+}
+
+/* ── work order events ── */
+
+.cal-event--wo {
+  padding-left: 9px;
+}
+
+.cal-event--linked {
+  border-style: dashed;
+  border-color: rgba(255, 255, 255, .85);
+}
+
+.cal-event-chip {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  font-size: .6rem;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .22);
+  color: #fff;
+  letter-spacing: .02em;
+  white-space: nowrap;
+  max-width: calc(100% - 8px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cal-event--running .cal-event-chip {
+  background: rgba(255, 255, 255, .35);
+  animation: cal-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes cal-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .55; }
+}
+
+/* ── linked WO panel + WO modal ── */
+
+.cal-linked-wo {
+  background: #f8f9fa;
+}
+
+.cal-wo-details dt {
+  font-weight: 500;
+  color: #5f6368;
+}
+
+.cal-wo-details dd {
+  margin-bottom: .35rem;
+}
+
+/* ── "Not scheduled" strip: work orders without time, as chips ── */
+
+.cal-unscheduled-row {
+  display: flex;
+  flex-shrink: 0;
+  height: 66px;
+  border-bottom: 1px solid #dadce0;
+  background: #fafbfc;
+}
+
+.cal-unscheduled-gutter {
+  flex: 0 0 56px;
+  min-width: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 6px;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  font-size: .62rem;
+  line-height: 1.15;
+  text-align: right;
+  text-transform: uppercase;
+  letter-spacing: .03em;
+  color: #70757a;
+}
+
+.cal-unscheduled-cols {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+}
+
+.cal-unscheduled-cell {
+  flex: 1 1 0;
+  min-width: 0;
+  border-left: 1px solid #dadce0;
+  padding: 4px 4px 2px;
+  overflow-y: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 3px;
+}
+
+.cal-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 1px 7px 1px 5px;
+  border: 1px solid;
+  border-radius: 999px;
+  background: #fff;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  font-size: .68rem;
+  font-weight: 500;
+  line-height: 1.35;
+  cursor: grab;
+  user-select: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.cal-chip:hover {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .25);
+}
+
+.cal-chip-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+}
+
+.cal-chip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cal-event--ghost {
+  opacity: .9;
+  border-style: dashed;
+}
+
+/* ── appointment that overlaps the mechanic's actual work on another job ── */
+
+.cal-event--conflict {
+  outline: 2px solid #ea4335;
+  outline-offset: -2px;
+}
+
+.cal-event-warn {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  min-width: 16px;
+  text-align: center;
+  font-size: .68rem;
+  font-weight: 700;
+  line-height: 1.35;
+  border-radius: 999px;
+  background: #ea4335;
+  color: #fff;
+}
+
+/* ── who is who: mechanic markers (legend on top + badge on every block) ── */
+
+.cal-event {
+  padding-left: 9px; /* room for the coloured mechanic edge */
+}
+
+.cal-mech-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 4px;
+  border-radius: 999px;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  font-size: .62rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  color: #fff;
+  text-shadow: 0 0 2px rgba(0, 0, 0, .45);
+  flex: 0 0 auto;
+}
+
+.cal-event-mechs {
+  position: absolute;
+  top: 2px;
+  right: 3px;
+  display: flex;
+  gap: 2px;
+}
+
+.cal-event-mechs .cal-mech-badge {
+  min-width: 18px;
+  height: 18px;
+  font-size: .58rem;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .7);
+}
+
+.cal-event-title {
+  padding-right: 24px; /* keep the title clear of the badges */
+}
+
+.cal-legend-break {
+  flex-basis: 100%;
+  height: 0;
+}
+
+.cal-mech-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px 1px 2px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: transparent;
+  color: #3c4043;
+  font: inherit;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.cal-mech-marker:hover {
+  background: #f1f3f4;
+}
+
+.cal-mech-marker.active {
+  border-color: #1a73e8;
+  background: #e8f0fe;
+}
+
+.cal-mech-name .cal-mech-badge {
+  margin-right: 5px;
+  vertical-align: middle;
+}
+
+.cal-event-warn {
+  top: auto;
+  bottom: 3px;
+  left: 4px;
+  right: auto;
+}
+
+/* ── expanded day: one lane per mechanic, markers in the day header ── */
+
+.cal-lane-sep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px dashed #c6c9cc;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.cal-header-cell.cal-expanded {
+  padding: 3px 0 0;
+  justify-content: flex-start;
+}
+
+.cal-header-cell.cal-expanded .cal-day-number {
+  width: 30px;
+  height: 30px;
+  font-size: 1.1rem;
+}
+
+.cal-lane-names {
+  display: none;
+  width: 100%;
+  height: 22px;
+  margin-top: 2px;
+  align-items: center;
+  border-top: 1px solid #e8eaed;
+}
+
+.cal-header-cell.cal-expanded .cal-lane-names.has-lanes {
+  display: flex;
+}
+
+.cal-lane-name {
+  flex: 1 1 0;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 4px;
+  font-family: "Manrope", "Segoe UI", sans-serif;
+  font-size: .7rem;
+  font-weight: 600;
+  color: #3c4043;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-left: 1px solid #e0e0e0;
+}
+
+.cal-lane-name:first-child {
+  border-left: 0;
+}
+
+.cal-lane-name--unassigned {
+  color: #80868b;
+  font-style: italic;
+}
+
+/* facts (timer sessions) and read-only blocks open details on click, never move */
+.cal-event--fact,
+.cal-event--static,
+.cal-chip--static {
+  cursor: pointer;
+}
+
+/* plans (appointments linked to a work order) sit under the facts */
+.cal-event--linked {
+  z-index: 2;
+}
+
+.cal-wo-plan + .cal-wo-plan {
+  margin-top: 4px;
+}

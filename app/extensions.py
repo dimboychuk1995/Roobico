@@ -132,6 +132,11 @@ def ensure_master_collections_indexes(master_db):
     _safe_create_index(master_db.audit_journal, [("shop_id", ASCENDING), ("created_at", DESCENDING)], name="idx_audit_journal_shop_created")
     _safe_create_index(master_db.audit_journal, [("endpoint", ASCENDING), ("created_at", DESCENDING)], name="idx_audit_journal_endpoint_created")
     _safe_create_index(master_db.audit_journal, [("method", ASCENDING), ("created_at", DESCENDING)], name="idx_audit_journal_method_created")
+    # Бизнес-журнал (app/utils/audit_log): фильтры по пользователю, объекту, действию, виду строк.
+    _safe_create_index(master_db.audit_journal, [("tenant_id", ASCENDING), ("user_id", ASCENDING), ("created_at", DESCENDING)], name="idx_audit_journal_tenant_user_created")
+    _safe_create_index(master_db.audit_journal, [("tenant_id", ASCENDING), ("entity_type", ASCENDING), ("entity_id", ASCENDING), ("created_at", DESCENDING)], name="idx_audit_journal_tenant_entity_created")
+    _safe_create_index(master_db.audit_journal, [("tenant_id", ASCENDING), ("action", ASCENDING), ("created_at", DESCENDING)], name="idx_audit_journal_tenant_action_created")
+    _safe_create_index(master_db.audit_journal, [("tenant_id", ASCENDING), ("kind", ASCENDING), ("created_at", DESCENDING)], name="idx_audit_journal_tenant_kind_created")
 
     # Customer authorization tokens for work orders / individual labor items.
     _safe_create_index(master_db.work_order_authorizations, [("token", ASCENDING)], unique=True, name="uniq_wo_auth_token")
@@ -305,6 +310,8 @@ def ensure_shop_collections_indexes(shop_db):
     _safe_create_index(shop_db.calendar_events, [("shop_id", ASCENDING), ("start_time", ASCENDING)], name="idx_calendar_events_shop_start")
     _safe_create_index(shop_db.calendar_events, [("shop_id", ASCENDING), ("customer_id", ASCENDING), ("start_time", ASCENDING)], name="idx_calendar_events_shop_customer_start")
     _safe_create_index(shop_db.calendar_events, [("shop_id", ASCENDING), ("unit_id", ASCENDING), ("start_time", ASCENDING)], name="idx_calendar_events_shop_unit_start")
+    # Записи, привязанные к WO (календарь ↔ work orders): unlink при удалении WO.
+    _safe_create_index(shop_db.calendar_events, [("shop_id", ASCENDING), ("work_order_id", ASCENDING)], name="idx_calendar_events_shop_wo")
     _safe_create_index(shop_db.calendar_settings, [("key", ASCENDING)], unique=True, name="uniq_calendar_settings_key")
 
     # Work order presets

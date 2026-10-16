@@ -1,5 +1,5 @@
 {% extends "layouts/app_base.html" %}
-{% from "components/ui.html" import empty_state %}
+{% from "components/ui.html" import empty_state, pagination_controls %}
 
 {% block page_title %}Reports - Activity Journal{% endblock %}
 
@@ -12,30 +12,98 @@
 </div>
 
 <div class="card mb-3">
-  <div class="card-header">
-    <div class="fw-semibold">Filters</div>
-  </div>
   <div class="card-body">
-    <form method="GET" action="{{ url_for('reports.activity_journal_page') }}" class="row g-2 align-items-end">
-      <div class="col-12 col-md-3">
-        <label class="form-label">Method</label>
-        <select name="method" class="form-select form-select-sm">
-          <option value="" {% if not method_filter %}selected{% endif %}>All</option>
-          <option value="POST" {% if method_filter == 'POST' %}selected{% endif %}>POST</option>
-          <option value="PUT" {% if method_filter == 'PUT' %}selected{% endif %}>PUT</option>
-          <option value="PATCH" {% if method_filter == 'PATCH' %}selected{% endif %}>PATCH</option>
-          <option value="DELETE" {% if method_filter == 'DELETE' %}selected{% endif %}>DELETE</option>
+    <form method="GET" action="{{ url_for('reports.activity_journal_page') }}" class="row g-2 align-items-end" id="journalFilters">
+      {% if filters.entity_type and filters.entity_id %}
+        <input type="hidden" name="entity_id" value="{{ filters.entity_id }}">
+      {% endif %}
+      <div class="col-12 col-lg-3">
+        <label class="form-label small mb-1">Search</label>
+        <input type="text" name="q" class="form-control form-control-sm" value="{{ filters.q }}"
+               placeholder="WO number, customer, part, user, value...">
+      </div>
+      <div class="col-6 col-md-3 col-lg-2">
+        <label class="form-label small mb-1">Period</label>
+        <select name="date_preset" class="form-select form-select-sm" onchange="this.form.submit()">
+          {% for key, label in [("all_time", "All time"), ("today", "Today"), ("yesterday", "Yesterday"), ("this_week", "This week"), ("last_week", "Last week"), ("this_month", "This month"), ("last_month", "Last month"), ("custom", "Custom range")] %}
+            <option value="{{ key }}" {% if filters.date_preset == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
         </select>
       </div>
-      <div class="col-12 col-md-4">
-        <label class="form-label">Endpoint</label>
-        <input type="text" name="endpoint" class="form-control form-control-sm" value="{{ endpoint_filter or '' }}" placeholder="e.g. settings.locations_index">
+      <div class="col-6 col-md-3 col-lg-2 {% if filters.date_preset != 'custom' %}d-none{% endif %}" id="journalDateFrom">
+        <label class="form-label small mb-1">From</label>
+        <input type="date" name="date_from" class="form-control form-control-sm" value="{{ filters.date_from }}">
       </div>
-      <div class="col-auto d-flex gap-1 align-items-end">
+      <div class="col-6 col-md-3 col-lg-2 {% if filters.date_preset != 'custom' %}d-none{% endif %}" id="journalDateTo">
+        <label class="form-label small mb-1">To</label>
+        <input type="date" name="date_to" class="form-control form-control-sm" value="{{ filters.date_to }}">
+      </div>
+      <div class="col-6 col-md-3 col-lg-2">
+        <label class="form-label small mb-1">User</label>
+        <select name="user_id" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All users</option>
+          {% for u in users %}
+            <option value="{{ u.id }}" {% if filters.user_id == u.id %}selected{% endif %}>{{ u.name }}{% if not u.active %} (inactive){% endif %}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-3 col-lg-2">
+        <label class="form-label small mb-1">Object</label>
+        <select name="entity_type" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All objects</option>
+          {% for key, label in entity_types.items() %}
+            <option value="{{ key }}" {% if filters.entity_type == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-3 col-lg-2">
+        <label class="form-label small mb-1">Action</label>
+        <select name="action" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All actions</option>
+          {% for key, label in actions.items() %}
+            <option value="{{ key }}" {% if filters.action == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-3 col-lg-2">
+        <label class="form-label small mb-1">Source</label>
+        <select name="source" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All sources</option>
+          {% for key, label in sources.items() %}
+            <option value="{{ key }}" {% if filters.source == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% if shops and shops|length > 1 %}
+      <div class="col-6 col-md-3 col-lg-2">
+        <label class="form-label small mb-1">Location</label>
+        <select name="shop_id" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="">All locations</option>
+          {% for sh in shops %}
+            <option value="{{ sh.id }}" {% if filters.shop_id == sh.id %}selected{% endif %}>{{ sh.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% endif %}
+      <div class="col-6 col-md-3 col-lg-2">
+        <label class="form-label small mb-1">Show</label>
+        <select name="kind" class="form-select form-select-sm" onchange="this.form.submit()">
+          <option value="all" {% if filters.kind == 'all' %}selected{% endif %}>Everything</option>
+          <option value="events" {% if filters.kind == 'events' %}selected{% endif %}>Business events only</option>
+          <option value="requests" {% if filters.kind == 'requests' %}selected{% endif %}>Technical requests only</option>
+        </select>
+      </div>
+      <div class="col-auto d-flex gap-1">
         <button type="submit" class="btn btn-primary btn-sm">Apply</button>
         <a href="{{ url_for('reports.activity_journal_page') }}" class="btn btn-outline-secondary btn-sm">Reset</a>
       </div>
     </form>
+    {% if filters.entity_type and filters.entity_id %}
+      <div class="small text-muted mt-2">
+        Showing the history of one {{ entity_types.get(filters.entity_type, filters.entity_type) | lower }}.
+        <a href="{{ url_for('reports.activity_journal_page') }}">Show everything</a>
+      </div>
+    {% endif %}
   </div>
 </div>
 
@@ -47,70 +115,149 @@
   <div class="card-body p-0">
     {% if activity_entries and activity_entries|length > 0 %}
       <div class="table-responsive">
-        <table class="table table-sm align-middle mb-0 sortable">
+        <table class="table table-sm align-middle mb-0 journal-table">
           <thead>
             <tr class="text-muted">
-              <th data-sort-field="created_at" style="min-width: 150px;">When</th>
-              <th data-sort-field="method" style="width: 90px;">Method</th>
-              <th data-sort-field="endpoint" style="min-width: 210px;">Endpoint</th>
-              <th data-sort-field="path" style="min-width: 220px;">Path</th>
-              <th data-sort-field="status_code" style="width: 80px;">Status</th>
-              <th class="no-sort" style="min-width: 170px;">User</th>
-              <th class="no-sort" style="min-width: 170px;">Shop</th>
-              <th class="no-sort" style="min-width: 260px;">Error</th>
+              <th style="min-width: 150px;">When</th>
+              <th style="min-width: 160px;">Who</th>
+              <th style="min-width: 120px;">Action</th>
+              <th style="min-width: 170px;">Object</th>
+              <th>What happened</th>
+              <th style="width: 90px;">Source</th>
             </tr>
           </thead>
           <tbody>
-            {% for entry in activity_entries %}
-              <tr>
-                <td>{{ entry.created_at or "-" }}</td>
+            {% for e in activity_entries %}
+              {% set has_details = e.changes or e.error or e.details or not e.is_event %}
+              <tr class="journal-row {% if not e.is_event %}journal-row--technical{% endif %} {% if not e.ok %}journal-row--failed{% endif %}"
+                  {% if has_details %}data-bs-toggle="collapse" data-bs-target="#jd-{{ e.id }}" role="button" aria-expanded="false"{% endif %}>
+                <td class="text-nowrap">
+                  <div>{{ e.when_day }}</div>
+                  <div class="text-muted small">{{ e.when_time }}</div>
+                </td>
                 <td>
-                  {% if entry.method == 'DELETE' %}
-                    <span class="badge text-bg-danger">{{ entry.method }}</span>
-                  {% elif entry.method == 'POST' %}
-                    <span class="badge text-bg-primary">{{ entry.method }}</span>
-                  {% elif entry.method == 'PUT' or entry.method == 'PATCH' %}
-                    <span class="badge text-bg-warning">{{ entry.method }}</span>
+                  {% if e.user_name %}
+                    <div class="fw-semibold">{{ e.user_name }}</div>
+                    {% if e.user_role %}<div class="text-muted small text-capitalize">{{ e.user_role | replace('_', ' ') }}</div>{% endif %}
+                  {% elif e.source == 'portal' %}
+                    <div class="fw-semibold">Customer</div><div class="text-muted small">via portal link</div>
+                  {% elif e.source == 'system' or e.source == 'email' %}
+                    <div class="fw-semibold">System</div>
                   {% else %}
-                    <span class="badge text-bg-secondary">{{ entry.method or '-' }}</span>
+                    <span class="text-muted">—</span>
                   {% endif %}
                 </td>
-                <td>{{ entry.endpoint or "-" }}</td>
-                <td>{{ entry.path or "-" }}</td>
-                <td>{{ entry.status_code or "-" }}</td>
-                <td><code>{{ entry.user_id or "-" }}</code></td>
-                <td><code>{{ entry.shop_id or "-" }}</code></td>
-                <td class="text-danger">{{ entry.error or "" }}</td>
+                <td>
+                  {% set a = e.action %}
+                  {% if a in ('delete', 'payment_delete') %}
+                    <span class="badge text-bg-danger">{{ e.action_label }}</span>
+                  {% elif a in ('create', 'payment', 'receive', 'upload', 'import', 'activate') %}
+                    <span class="badge text-bg-success">{{ e.action_label }}</span>
+                  {% elif a in ('update', 'status', 'transfer', 'settings', 'permissions', 'confirm', 'done', 'return') %}
+                    <span class="badge text-bg-warning">{{ e.action_label }}</span>
+                  {% elif a in ('error', 'denied') %}
+                    <span class="badge text-bg-danger">{{ e.action_label }}</span>
+                  {% elif a in ('send', 'login', 'logout', 'timer', 'export', 'deactivate') %}
+                    <span class="badge text-bg-info">{{ e.action_label }}</span>
+                  {% else %}
+                    <span class="badge text-bg-secondary">{{ e.action_label }}</span>
+                  {% endif %}
+                </td>
+                <td>
+                  <div class="text-muted small">{{ e.entity_type_label }}</div>
+                  {% if e.entity_label %}
+                    {% if e.entity_url %}
+                      <a href="{{ e.entity_url }}" class="fw-semibold" onclick="event.stopPropagation();">{{ e.entity_label }}</a>
+                    {% else %}
+                      <div class="fw-semibold">{{ e.entity_label }}</div>
+                    {% endif %}
+                  {% endif %}
+                </td>
+                <td>
+                  <div>{{ e.summary }}</div>
+                  {% if e.changes %}
+                    <div class="small text-muted">
+                      {{ e.changes|length }} change{% if e.changes|length != 1 %}s{% endif %}:
+                      {% for c in e.changes[:3] %}{{ c.label }}{% if not loop.last %}, {% endif %}{% endfor %}{% if e.changes|length > 3 %}, …{% endif %}
+                      <span class="journal-expand-hint">· click for details</span>
+                    </div>
+                  {% elif has_details %}
+                    <div class="small text-muted journal-expand-hint">click for details</div>
+                  {% endif %}
+                  {% if e.shop_name and shops and shops|length > 1 %}
+                    <div class="small text-muted">{{ e.shop_name }}</div>
+                  {% endif %}
+                </td>
+                <td><span class="badge text-bg-light border">{{ e.source_label }}</span></td>
               </tr>
+              {% if has_details %}
+              <tr class="collapse journal-details" id="jd-{{ e.id }}">
+                <td colspan="6" class="journal-details-cell">
+                  {% if e.changes %}
+                    <table class="table table-sm table-borderless mb-2 journal-changes">
+                      <thead><tr class="text-muted small"><th style="width: 24%;">Field</th><th style="width: 38%;">Before</th><th>After</th></tr></thead>
+                      <tbody>
+                        {% for c in e.changes %}
+                          <tr>
+                            <td class="text-capitalize">{{ c.label }}</td>
+                            <td class="journal-old">{% if c.old is none or c.old == '' %}<span class="text-muted">—</span>{% else %}{{ c.old }}{% endif %}</td>
+                            <td class="journal-new">{% if c.new is none or c.new == '' %}<span class="text-muted">—</span>{% else %}{{ c.new }}{% endif %}</td>
+                          </tr>
+                        {% endfor %}
+                      </tbody>
+                    </table>
+                  {% endif %}
+                  {% if e.details %}
+                    <div class="small mb-2">
+                      {% for k, v in e.details.items() %}
+                        <span class="me-3"><span class="text-muted text-capitalize">{{ k | replace('_', ' ') }}:</span> {{ v }}</span>
+                      {% endfor %}
+                    </div>
+                  {% endif %}
+                  {% if e.error %}
+                    <div class="text-danger small mb-2">{{ e.error }}</div>
+                  {% endif %}
+                  <div class="small text-muted">
+                    {% if e.method %}{{ e.method }} {{ e.path }}{% endif %}
+                    {% if e.status_code %} · HTTP {{ e.status_code }}{% endif %}
+                    {% if e.ip %} · IP {{ e.ip }}{% endif %}
+                    {% if e.user_id %} · user id {{ e.user_id }}{% endif %}
+                  </div>
+                  {% if not e.is_event and e.payload %}
+                    <details class="small mt-1">
+                      <summary class="text-muted">Request data</summary>
+                      <pre class="journal-payload mb-0">{{ e.payload | tojson(indent=2) }}</pre>
+                    </details>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endif %}
             {% endfor %}
           </tbody>
         </table>
       </div>
     {% else %}
-      {{ empty_state("No journal entries found", "Try widening the method or endpoint filters.") }}
+      {{ empty_state("No journal entries found", "Try a wider period or fewer filters.") }}
     {% endif %}
   </div>
 </div>
 
-{% if activity_total_pages and activity_total_pages > 1 %}
-<div class="d-flex justify-content-between align-items-center mt-3">
-  <div class="small text-muted">Page {{ activity_page }} of {{ activity_total_pages }}</div>
-  <div class="btn-group btn-group-sm" role="group" aria-label="Pagination">
-    {% set prev_page = activity_page - 1 %}
-    {% set next_page = activity_page + 1 %}
+{{ pagination_controls(pagination, label="Journal pagination") }}
 
-    {% if activity_page > 1 %}
-      <a class="btn btn-outline-secondary" href="{{ url_for('reports.activity_journal_page', page=prev_page, method=method_filter, endpoint=endpoint_filter, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
-    {% else %}
-      <button class="btn btn-outline-secondary" disabled>Prev</button>
-    {% endif %}
-
-    {% if activity_page < activity_total_pages %}
-      <a class="btn btn-outline-secondary" href="{{ url_for('reports.activity_journal_page', page=next_page, method=method_filter, endpoint=endpoint_filter, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
-    {% else %}
-      <button class="btn btn-outline-secondary" disabled>Next</button>
-    {% endif %}
-  </div>
-</div>
-{% endif %}
+<script>
+(function () {
+  var preset = document.querySelector('#journalFilters select[name="date_preset"]');
+  if (!preset) return;
+  preset.addEventListener('change', function () {
+    var custom = preset.value === 'custom';
+    document.getElementById('journalDateFrom').classList.toggle('d-none', !custom);
+    document.getElementById('journalDateTo').classList.toggle('d-none', !custom);
+  });
+  // "Custom range" waits for dates instead of submitting at once.
+  preset.removeAttribute('onchange');
+  preset.addEventListener('change', function () {
+    if (preset.value !== 'custom') preset.form.submit();
+  });
+})();
+</script>
 {% endblock %}

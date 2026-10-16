@@ -149,6 +149,7 @@
   </div>
 </div>
 
+{% if "reports.view_audit" in user_permissions %}
 <!-- ── Audit ── -->
 <h2 class="h6 text-muted text-uppercase mt-4 mb-2">Audit</h2>
 <div class="row g-3">
@@ -161,11 +162,12 @@
           </div>
           <div>
             <h2 class="h6 mb-1">Activity Journal</h2>
-            <p class="text-muted mb-0 small">Track create, edit, and delete actions across the system.</p>
+            <p class="text-muted mb-0 small">Who did what and when: every change with before/after details.</p>
           </div>
         </div>
       </div>
     </a>
   </div>
 </div>
+{% endif %}
 {% endblock %}

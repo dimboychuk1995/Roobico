@@ -5,6 +5,7 @@
 {% block page_title %}Parts{% endblock %}
 
 {% block app_content %}
+<script type="application/json" id="partsPermissionsData">{{ {"edit_stock_qty": "parts.edit_stock_qty" in user_permissions}|tojson }}</script>
 <div class="page-header">
   <h1 class="page-header__title">Parts</h1>
   <ul class="nav page-header__tabs" role="tablist">
@@ -1014,6 +1015,7 @@
             <div class="col-md-4" id="inStockGroup">
               <label class="form-label">In stock</label>
               <input name="in_stock" type="number" min="0" step="1" value="0" class="form-control" />
+              <div class="form-text d-none" id="inStockLockedHint">Only managers can change the on-hand quantity here. Stock changes through parts orders, work orders and stocktakes.</div>
             </div>
 
             <div class="col-md-4">

@@ -851,7 +851,7 @@ def attachment_download(token, attachment_id):
 
 @customer_portal_bp.post("/portal/api/customers/<customer_id>/send-link")
 @login_required
-@permission_required("customers.update")
+@permission_required("customers.manage_portal")
 def api_send_portal_link(customer_id):
     from app.blueprints.work_orders.routes import get_shop_db, customer_label
     shop_db, shop = get_shop_db()

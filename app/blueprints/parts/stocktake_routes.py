@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from flask import flash, jsonify, redirect, request, session, url_for
 
+from app.utils import audit_log
 from app.utils.auth import login_required, SESSION_USER_ID
 from app.utils.permissions import permission_required
 from app.utils.display_datetime import format_date_mmddyyyy
@@ -33,7 +34,7 @@ def _load_stocktake(shop_db, shop, stocktake_id_raw):
 
 @parts_bp.post("/stocktakes/create")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts.adjust_stock")
 def stocktakes_create():
     parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
     if parts_coll is None or shop is None:
@@ -53,6 +54,7 @@ def stocktakes_create():
         flash(err, "error")
         return redirect(url_for("parts.parts_page", tab="stocktakes"))
 
+    audit_log.log_event("create", "stocktake", stocktake["_id"], label=f"ST-{stocktake['number']}")
     flash(f"Stocktake ST-{stocktake['number']} started.", "success")
     return redirect(url_for("parts.stocktake_detail", stocktake_id=str(stocktake["_id"])))
 
@@ -144,7 +146,7 @@ def stocktake_detail(stocktake_id: str):
 
 @parts_bp.post("/stocktakes/<stocktake_id>/count")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts.adjust_stock")
 def stocktake_count(stocktake_id: str):
     parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
     if parts_coll is None or shop is None:
@@ -169,6 +171,9 @@ def stocktake_count(stocktake_id: str):
     if err:
         return jsonify({"ok": False, "error": err}), 400
 
+    audit_log.log_event("update", "stocktake", stocktake["_id"], label=f"ST-{stocktake.get('number')}",
+                        summary=f"Counted {item.get('part_number') or item.get('description') or 'item'}: {counted_qty} (variance {int(item.get('variance') or 0)})",
+                        details={"counted_qty": counted_qty, "variance": item.get("variance"), "part_number": item.get("part_number")})
     variance = int(item.get("variance") or 0)
     return jsonify({
         "ok": True,
@@ -184,7 +189,7 @@ def stocktake_count(stocktake_id: str):
 
 @parts_bp.post("/stocktakes/<stocktake_id>/items/add")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts.adjust_stock")
 def stocktake_add_item(stocktake_id: str):
     parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
     if parts_coll is None or shop is None:
@@ -214,12 +219,15 @@ def stocktake_add_item(stocktake_id: str):
     if err:
         return jsonify({"ok": False, "error": err}), 400
 
+    audit_log.log_event("update", "stocktake", stocktake["_id"], label=f"ST-{stocktake.get('number')}",
+                        summary=f"Item added to stocktake ST-{stocktake.get('number')}: {item.get('part_number') or ''}",
+                        details={"part_number": item.get("part_number")})
     return jsonify({"ok": True, "item_id": str(item["_id"])})
 
 
 @parts_bp.post("/stocktakes/<stocktake_id>/complete")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts.adjust_stock")
 def stocktake_complete(stocktake_id: str):
     parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
     if parts_coll is None or shop is None:
@@ -240,12 +248,14 @@ def stocktake_complete(stocktake_id: str):
     if err:
         return jsonify({"ok": False, "error": err}), 400
 
+    audit_log.log_event("update", "stocktake", stocktake["_id"], label=f"ST-{stocktake.get('number')}",
+                        summary=f"Stocktake ST-{stocktake.get('number')} completed", details=summary.get("totals") or {})
     return jsonify({"ok": True, "totals": summary["totals"], "errors": summary["errors"]})
 
 
 @parts_bp.post("/stocktakes/<stocktake_id>/cancel")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts.adjust_stock")
 def stocktake_cancel(stocktake_id: str):
     parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
     if parts_coll is None or shop is None:
@@ -258,6 +268,9 @@ def stocktake_cancel(stocktake_id: str):
 
     user_oid = _oid(session.get(SESSION_USER_ID))
     err = cancel_stocktake(shop_db, stocktake, user_oid)
+    if not err:
+        audit_log.log_event("delete", "stocktake", stocktake["_id"], label=f"ST-{stocktake.get('number')}",
+                            summary=f"Stocktake ST-{stocktake.get('number')} cancelled")
     if err:
         return jsonify({"ok": False, "error": err}), 400
     return jsonify({"ok": True})

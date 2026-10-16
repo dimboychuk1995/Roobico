@@ -26,6 +26,13 @@
   </ul>
   <div class="page-header__actions">
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('customers.customers_page') }}">Back</a>
+    {% if "reports.view_audit" in user_permissions %}
+    <a class="btn btn-outline-secondary btn-sm" target="_blank"
+       href="{{ url_for('reports.activity_journal_page', entity_type='customer', entity_id=customer_id) }}"
+       title="Who changed this customer and when">
+      <i class="bi bi-clock-history me-1"></i>History
+    </a>
+    {% endif %}
     <button type="button" class="btn btn-outline-info btn-sm" id="sendPortalLinkBtn"
             data-customer-id="{{ customer_id }}"
             data-customer-email="{{ customer.email or '' }}"><i class="bi bi-envelope me-1"></i>Portal Link</button>

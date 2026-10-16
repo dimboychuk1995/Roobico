@@ -4,7 +4,7 @@ from flask import render_template, request, redirect, url_for, session, flash, g
 from bson import ObjectId
 
 from app.utils.auth import login_required, SESSION_USER_ID, SESSION_TENANT_ID
-from app.utils.permissions import permission_required
+from app.utils.permissions import get_effective_permissions, permission_required
 from app.utils.hosts import app_url
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.display_datetime import get_active_shop_timezone_name
@@ -433,14 +433,14 @@ def settings_organization_save():
 
 @main_bp.get("/settings/workflows")
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_workflows")
 def settings_workflows():
     return _render_app_page("public/settings/workflows.html", active_page="settings")
 
 
 @main_bp.get("/settings/notifications")
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_notifications")
 def settings_notifications():
     return _render_app_page("public/settings/notifications.html", active_page="settings")
 
@@ -493,6 +493,10 @@ def global_search_api():
     pattern = re.compile(re.escape(q), re.IGNORECASE)
     regex = re.escape(q)
     groups = []
+    # Поиск показывает только разделы, к которым у пользователя есть доступ,
+    # а суммы — только тем, кто видит цены (механик-режим денег не видит).
+    perms = get_effective_permissions()
+    can_view_costs = "work_orders.view_costs" in perms
 
     # helper: numeric-field regex match via $expr/$toString
     def _num_regex(field):
@@ -518,7 +522,7 @@ def global_search_api():
         return name, phone, email
 
     # 1. Units  (unit_number, vin) — include inactive ones with an "Inactive" marker
-    units = list(
+    units = [] if not ("customers.view" in perms or "work_orders.view" in perms) else list(
         db.units.find(
             {"$or": [
                 {"unit_number": pattern},
@@ -564,7 +568,7 @@ def global_search_api():
         groups.append({"category": "Units", "items": items})
 
     # 2. Customers  (company, name)
-    customers = list(
+    customers = [] if "customers.view" not in perms else list(
         db.customers.find(
             {"$or": [
                 {"company_name": pattern},
@@ -593,7 +597,7 @@ def global_search_api():
         groups.append({"category": "Customers", "items": items})
 
     # 3. Vendors  (name, primary contact)
-    vendors = list(
+    vendors = [] if "vendors.view" not in perms else list(
         db.vendors.find(
             {"$or": [
                 {"name": pattern},
@@ -622,7 +626,7 @@ def global_search_api():
         groups.append({"category": "Vendors", "items": items})
 
     # 4. Work Orders  (wo_number — numeric field)
-    work_orders = list(
+    work_orders = [] if "work_orders.view" not in perms else list(
         db.work_orders.find(
             _num_regex("wo_number"),
             {"wo_number": 1, "customer_id": 1, "totals": 1, "grand_total": 1, "status": 1},
@@ -651,14 +655,17 @@ def global_search_api():
             parts_l = [f"WO #{wo.get('wo_number', '')}"]
             if customer_name:
                 parts_l.append(customer_name)
-            parts_l.append(f"${gt:,.2f}")
-            parts_l.append(paid_label)
+            if can_view_costs:
+                parts_l.append(f"${gt:,.2f}")
+                parts_l.append(paid_label)
+            elif status == "in_progress":
+                parts_l.append("In Progress")
             label = " · ".join(parts_l)
             items.append({"label": label, "url": f"/work_orders/details?work_order_id={wo['_id']}"})
         groups.append({"category": "Work Orders", "items": items})
 
     # 5. Parts
-    parts = list(
+    parts = [] if "parts.view" not in perms else list(
         db.parts.find(
             {"$or": [
                 {"part_number": pattern},
@@ -687,7 +694,7 @@ def global_search_api():
         groups.append({"category": "Parts", "items": items})
 
     # 6. Part Orders  (order_number — numeric, vendor_bill — text)
-    orders = list(
+    orders = [] if "parts_orders.view" not in perms else list(
         db.parts_orders.find(
             {"$or": [
                 _num_regex("order_number"),

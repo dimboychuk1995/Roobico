@@ -22,6 +22,11 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
   of them pressed Done; until then the WO stays In Work and the names line
   shows who already finished as a green **"✓ Name"** (● green — working
   right now, ● grey — assigned but idle).
+- A red **"Unassigned labor"** badge next to the status means at least one
+  labor line of the WO (one with a description, hours or parts) has no
+  mechanic assigned yet — open the WO and assign someone in that labor
+  block. The badge disappears once every labor line has a mechanic, and is
+  never shown on paid WOs.
 - **"In Work" group** — WOs that mechanics have taken but not marked done
   yet are grouped at the top of the table under an "In Work · taken by
   mechanics, not marked done yet" header, highlighted with the in-progress
@@ -75,6 +80,12 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
    Progress"**, **"Create Annual Inspection"**. There is also
    **"📷 Recognize WO"** — upload a photo/PDF of a handwritten work order and
    AI fills the jobs and parts (review before applying).
+5. **From the Calendar** — an appointment's "Create Work Order" button opens
+   this page with the customer, unit, presets, mechanic and note already in
+   place, and links the appointment to the saved WO (the calendar then shows
+   the live WO status instead of the appointment status). Every saved WO
+   also appears on the Calendar by itself — see Reports → Calendar in the
+   help for how it is placed and colored.
 
 ## Transfer to another customer
 

@@ -13,7 +13,7 @@ from app.utils.date_filters import build_date_range_filters
 from app.utils.layout import render_internal_page
 from app.utils.pagination import get_sort_params
 from app.utils.pdf_utils import render_chart_to_base64, render_html_to_pdf
-from app.utils.permissions import filter_nav_items
+from app.utils.permissions import filter_nav_items, permission_required
 
 
 STANDARD_REPORT_TABS = {
@@ -2005,6 +2005,7 @@ def _build_standard_reports_context(selected_tab: str, args, *, skip_report_data
 
 @reports_bp.get("")
 @login_required
+@permission_required("reports.view")
 def reports_index():
     layout_nav = filter_nav_items(NAV_ITEMS)
     return render_internal_page(
@@ -2016,6 +2017,7 @@ def reports_index():
 
 @reports_bp.get("/standard/<report_key>")
 @login_required
+@permission_required("reports.view")
 def standard_report_page(report_key: str):
     ctx = _build_standard_reports_context(report_key, request.args, skip_report_data=True)
 
@@ -2062,6 +2064,7 @@ def standard_report_page(report_key: str):
 
 @reports_bp.get("/api/standard/<report_key>")
 @login_required
+@permission_required("reports.view")
 def standard_report_api(report_key: str):
     ctx = _build_standard_reports_context(report_key, request.args)
     if not ctx.get("ok"):
@@ -2083,6 +2086,7 @@ def standard_report_api(report_key: str):
 
 @reports_bp.get("/standard/<report_key>/pdf")
 @login_required
+@permission_required("reports.export")
 def standard_report_pdf(report_key: str):
     ctx = _build_standard_reports_context(report_key, request.args)
     if not ctx.get("ok"):
@@ -2118,6 +2122,7 @@ def standard_report_pdf(report_key: str):
 
 @reports_bp.get("/timecard-salary")
 @login_required
+@permission_required("reports.view")
 def timecard_salary_page():
     layout_nav = filter_nav_items(NAV_ITEMS)
 
@@ -2498,89 +2503,157 @@ def _aggregate_uattend_hours(report_response) -> dict[int, float]:
 
 @reports_bp.get("/audit")
 @login_required
+@permission_required("reports.view_audit")
 def activity_journal_page():
+    """
+    Журнал событий: кто, что и когда сделал (бизнес-события из
+    app.utils.audit_log) плюс технические строки запросов, для которых
+    события не описаны. Фильтры: период, пользователь, тип объекта,
+    действие, источник, конкретный объект (entity_type + entity_id —
+    ссылки «History» со страниц объектов), текстовый поиск.
+    """
+    import re as _re
+
+    from app.utils.audit_endpoint_labels import describe_endpoint
+    from app.utils.audit_log import ACTIONS, ENTITY_TYPES, SOURCES
+    from app.utils.display_datetime import to_active_shop_datetime
+    from app.utils.pagination import get_pagination_params, paginate_find
+    from app.utils.tenant import tenant_id_variants
+
     layout_nav = filter_nav_items(NAV_ITEMS)
     master = get_master_db()
-
     tenant_id = str(session.get(SESSION_TENANT_ID) or "")
+    args = request.args
 
-    page_raw = (request.args.get("page") or "1").strip()
-    try:
-        page = int(page_raw)
-    except Exception:
-        page = 1
-    if page < 1:
-        page = 1
+    q = (args.get("q") or "").strip()
+    user_filter = (args.get("user_id") or "").strip()
+    entity_type = (args.get("entity_type") or "").strip().lower()
+    entity_id = (args.get("entity_id") or "").strip()
+    action = (args.get("action") or "").strip().lower()
+    source = (args.get("source") or "").strip().lower()
+    shop_filter = (args.get("shop_id") or "").strip()
+    kind = (args.get("kind") or "all").strip().lower()
+    if kind not in ("all", "events", "requests"):
+        kind = "all"
+    df = build_date_range_filters(args, default_preset="all_time")
 
-    per_page = 25
-    method_filter = (request.args.get("method") or "").strip().upper()
-    endpoint_filter = (request.args.get("endpoint") or "").strip()
+    query: dict = {"tenant_id": tenant_id} if tenant_id else {"tenant_id": "__none__"}
+    if df.get("created_from") or df.get("created_to_exclusive"):
+        rng = {}
+        if df.get("created_from"):
+            rng["$gte"] = df["created_from"]
+        if df.get("created_to_exclusive"):
+            rng["$lt"] = df["created_to_exclusive"]
+        query["created_at"] = rng
+    if user_filter:
+        query["user_id"] = user_filter
+    if entity_type:
+        query["entity_type"] = entity_type
+    if entity_id:
+        query["entity_id"] = entity_id
+    if action:
+        query["action"] = action
+    if source:
+        query["source"] = source
+    if shop_filter:
+        query["shop_id"] = shop_filter
+    if kind == "events":
+        query["kind"] = "event"
+    elif kind == "requests":
+        query["kind"] = {"$ne": "event"}
+    if q:
+        pattern = {"$regex": _re.escape(q), "$options": "i"}
+        query = {"$and": [query, {"$or": [
+            {"summary": pattern}, {"entity_label": pattern}, {"user_name": pattern},
+            {"path": pattern}, {"changes.new": pattern}, {"changes.old": pattern},
+        ]}]}
 
-    query = {}
-    if tenant_id:
-        query["tenant_id"] = tenant_id
-    if method_filter:
-        query["method"] = method_filter
-    if endpoint_filter:
-        query["endpoint"] = endpoint_filter
-
-    sort = get_sort_params(
-        request.args,
-        [("created_at", -1)],
-        ["created_at", "method", "endpoint", "path", "status_code"],
-    )
-    sort_by = sort[0][0] if sort else "created_at"
-    sort_dir = "asc" if sort and sort[0][1] == 1 else "desc"
-
-    total = master.audit_journal.count_documents(query)
-    total_pages = (total + per_page - 1) // per_page if total > 0 else 1
-    if page > total_pages:
-        page = total_pages
-
-    skip = (page - 1) * per_page
-    cursor = master.audit_journal.find(
-        query,
-        {
-            "created_at": 1,
-            "method": 1,
-            "path": 1,
-            "endpoint": 1,
-            "status_code": 1,
-            "user_id": 1,
-            "shop_id": 1,
-            "payload": 1,
-            "error": 1,
-        },
-    ).sort(sort).skip(skip).limit(per_page)
+    page, per_page = get_pagination_params(args, default_per_page=50, max_per_page=200)
+    rows, pagination = paginate_find(master.audit_journal, query, [("created_at", -1)], page, per_page)
 
     entries = []
-    for row in cursor:
-        payload = row.get("payload") if isinstance(row.get("payload"), dict) else {}
-        entries.append(
-            {
-                "created_at": row.get("created_at"),
-                "method": str(row.get("method") or ""),
-                "path": str(row.get("path") or ""),
-                "endpoint": str(row.get("endpoint") or ""),
-                "status_code": int(row.get("status_code") or 0),
-                "user_id": str(row.get("user_id") or ""),
-                "shop_id": str(row.get("shop_id") or ""),
-                "error": str(row.get("error") or ""),
-                "payload": payload,
-            }
-        )
+    for row in rows:
+        is_event = row.get("kind") == "event"
+        row_action = str(row.get("action") or "")
+        row_entity_type = str(row.get("entity_type") or "")
+        summary = str(row.get("summary") or "")
+        if not is_event and not summary:
+            # Старые записи (до бизнес-журнала): только метод/путь.
+            row_action, row_entity_type, summary = describe_endpoint(
+                str(row.get("endpoint") or ""), str(row.get("method") or ""), str(row.get("path") or "")
+            )
+            if int(row.get("status_code") or 0) >= 400:
+                summary = f"Rejected ({row.get('status_code')}): {summary}"
+        local_dt = to_active_shop_datetime(row.get("created_at"))
+        entries.append({
+            "id": str(row.get("_id")),
+            "is_event": is_event,
+            "when": local_dt.strftime("%m/%d/%Y %H:%M:%S") if local_dt else "-",
+            "when_day": local_dt.strftime("%m/%d/%Y") if local_dt else "-",
+            "when_time": local_dt.strftime("%H:%M:%S") if local_dt else "",
+            "user_id": str(row.get("user_id") or ""),
+            "user_name": str(row.get("user_name") or ""),
+            "user_role": str(row.get("user_role") or ""),
+            "action": row_action,
+            "action_label": ACTIONS.get(row_action, row_action.replace("_", " ").capitalize() or "-"),
+            "entity_type": row_entity_type,
+            "entity_type_label": ENTITY_TYPES.get(row_entity_type, row_entity_type.replace("_", " ").capitalize() or "-"),
+            "entity_id": str(row.get("entity_id") or ""),
+            "entity_label": str(row.get("entity_label") or ""),
+            "entity_url": str(row.get("entity_url") or ""),
+            "summary": summary,
+            "changes": row.get("changes") if isinstance(row.get("changes"), list) else [],
+            "details": row.get("details") if isinstance(row.get("details"), dict) else {},
+            "source": str(row.get("source") or "web"),
+            "source_label": SOURCES.get(str(row.get("source") or "web"), str(row.get("source") or "web").capitalize()),
+            "ok": bool(row.get("ok", True)),
+            "status_code": row.get("status_code"),
+            "method": str(row.get("method") or ""),
+            "path": str(row.get("path") or ""),
+            "ip": str(row.get("ip") or ""),
+            "error": str(row.get("error") or ""),
+            "shop_id": str(row.get("shop_id") or ""),
+            "shop_name": str(row.get("shop_name") or ""),
+            "payload": row.get("payload") if isinstance(row.get("payload"), dict) else {},
+        })
+
+    tv = tenant_id_variants()
+    users = []
+    if tv:
+        cursor = master.users.find(
+            {"tenant_id": {"$in": tv}},
+            {"name": 1, "first_name": 1, "last_name": 1, "email": 1, "role": 1, "is_active": 1},
+        ).sort([("name", 1), ("email", 1)])
+        for u in cursor:
+            name = str(u.get("name") or "").strip()
+            if not name:
+                name = (str(u.get("first_name") or "") + " " + str(u.get("last_name") or "")).strip()
+            users.append({"id": str(u["_id"]), "name": name or str(u.get("email") or ""), "active": u.get("is_active", True)})
+    shops = []
+    if tv:
+        for sh in master.shops.find({"tenant_id": {"$in": tv}}, {"name": 1}).sort("name", 1):
+            shops.append({"id": str(sh["_id"]), "name": str(sh.get("name") or "")})
+    shop_names = {sh["id"]: sh["name"] for sh in shops}
+    for e in entries:
+        if not e["shop_name"]:
+            e["shop_name"] = shop_names.get(e["shop_id"], "")
 
     return render_internal_page(
         "public/reports/audit.html",
         layout_nav,
         "reports",
         activity_entries=entries,
-        activity_total=total,
-        activity_page=page,
-        activity_per_page=per_page,
-        activity_total_pages=total_pages,
-        method_filter=method_filter,
-        endpoint_filter=endpoint_filter,
-        sort_by=sort_by,
-        sort_dir=sort_dir,
+        pagination=pagination,
+        activity_total=pagination.get("total", 0),
+        filters={
+            "q": q, "user_id": user_filter, "entity_type": entity_type, "entity_id": entity_id,
+            "action": action, "source": source, "shop_id": shop_filter, "kind": kind,
+            "date_preset": df.get("date_preset") or "all_time", "date_from": df.get("date_from") or "",
+            "date_to": df.get("date_to") or "",
+        },
+        users=users,
+        shops=shops,
+        entity_types=ENTITY_TYPES,
+        actions=ACTIONS,
+        sources=SOURCES,
     )

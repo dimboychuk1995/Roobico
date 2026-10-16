@@ -6,6 +6,7 @@ from typing import Optional
 from bson import ObjectId
 from flask import request, redirect, url_for, flash, session, jsonify
 
+from app.utils import audit_log
 from app.blueprints.main.routes import _render_app_page
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import login_required, SESSION_TENANT_ID, SESSION_USER_ID
@@ -20,7 +21,7 @@ from app.utils.parts_interchange import (
     serialize_cross_ref,
     unlink_part,
 )
-from app.utils.permissions import permission_required
+from app.utils.permissions import has_permission, permission_required, permission_required_any
 from app.utils.display_datetime import (
     format_date_mmddyyyy,
     format_preferred_shop_date,
@@ -1400,7 +1401,7 @@ def parts_page():
 
 @parts_bp.post("/create")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts.create")
 def parts_create():
     """
     Добавление запчасти:
@@ -1589,6 +1590,8 @@ def parts_create():
         doc["in_stock"] = 0
 
     res = parts_coll.insert_one(doc)
+    audit_log.log_event("create", "part", res.inserted_id, label=audit_log.part_label(doc),
+                        details={"part_number": doc.get("part_number"), "in_stock": doc.get("in_stock"), "average_cost": doc.get("average_cost")})
 
     # Стартовый остаток проводим через сервис остатков: строка локации + движение.
     if not do_not_track_inventory and in_stock:
@@ -1603,7 +1606,7 @@ def parts_create():
 
 @parts_bp.post("/api/create")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts.create")
 def parts_api_create():
     """
     AJAX create part.
@@ -1688,6 +1691,8 @@ def parts_api_create():
         doc["in_stock"] = 0
 
     res = parts_coll.insert_one(doc)
+    audit_log.log_event("create", "part", res.inserted_id, label=audit_log.part_label(doc),
+                        details={"part_number": doc.get("part_number"), "in_stock": doc.get("in_stock"), "average_cost": doc.get("average_cost")})
 
     if not do_not_track and in_stock:
         apply_stock_change(
@@ -1700,6 +1705,7 @@ def parts_api_create():
 
 @parts_bp.get("/api/search")
 @login_required
+@permission_required_any("parts.view", "work_orders.view_costs")
 def parts_api_search():
     """
     Search parts for dropdown/autocomplete.
@@ -1850,7 +1856,7 @@ def parts_api_search():
 
 @parts_bp.post("/api/orders/parse-invoice")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts_orders.create")
 def parts_api_orders_parse_invoice():
     """
     Upload a vendor invoice (PDF or image) and use AI to extract vendor, items, etc.
@@ -1974,7 +1980,7 @@ def _re_escape(s: str) -> str:
 
 @parts_bp.post("/api/orders/create")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts_orders.create")
 def parts_api_orders_create():
     """
     AJAX create order.
@@ -2107,6 +2113,9 @@ def parts_api_orders_create():
     }
 
     res = orders_coll.insert_one(order_doc)
+    audit_log.log_event("create", "parts_order", res.inserted_id, label=audit_log.parts_order_label(order_doc),
+                        details={"items": len(items), "total": order_doc.get("remaining_balance"),
+                                 "work_order": work_order_number, "vendor_id": str(vendor_oid or "")})
 
     # Парт-ордер — единственный способ вернуть неактивный парт в оборот.
     reactivated = reactivate_parts_for_order(
@@ -2134,7 +2143,7 @@ def _recalc_weighted_avg(old_qty: int, old_avg: float, add_qty: int, add_price: 
 
 @parts_bp.get("/api/orders/<order_id>")
 @login_required
-@permission_required("parts.view")
+@permission_required("parts_orders.view")
 def parts_api_orders_get(order_id: str):
     """
     Get order details for editing.
@@ -2237,7 +2246,7 @@ def parts_api_orders_get(order_id: str):
 
 @parts_bp.route("/api/orders/<order_id>/update", methods=["POST", "PUT"])
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts_orders.edit")
 def parts_api_orders_update(order_id: str):
     """
     AJAX update order.
@@ -2358,6 +2367,10 @@ def parts_api_orders_update(order_id: str):
     )
 
     updated_order = orders_coll.find_one({"_id": oid})
+    audit_log.log_event("update", "parts_order", oid, label=audit_log.parts_order_label(order),
+                        changes=audit_log.diff_fields(order, updated_order or {}, audit_log.PARTS_ORDER_FIELDS)
+                        + ([audit_log.change("items", len(order.get("items") or []), len(items), "items")]
+                           if len(order.get("items") or []) != len(items) else []))
     _sync_parts_order_payment_state(orders_coll, payments_coll, updated_order or {}, user_oid, now)
 
     # Заказ из почты, пользователь выбрал другого вендора: автосозданный
@@ -2369,7 +2382,7 @@ def parts_api_orders_update(order_id: str):
 
 @parts_bp.post("/api/orders/<order_id>/payment")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts_orders.manage_payments")
 def parts_api_orders_payment(order_id: str):
     parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
     if orders_coll is None or shop is None:
@@ -2432,6 +2445,9 @@ def parts_api_orders_payment(order_id: str):
     }
     result = payments_coll.insert_one(doc)
     payment_id = result.inserted_id
+    audit_log.log_event("payment", "parts_order", oid, label=audit_log.parts_order_label(order),
+                        summary=f"Payment ${doc['amount']:.2f} ({payment_method}) recorded for {audit_log.parts_order_label(order)}",
+                        details={"amount": doc["amount"], "method": payment_method, "payment_id": str(payment_id)})
 
     # Reassign pending attachments to the real payment ID
     pending_att_id = _oid(data.get("pending_attachment_id"))
@@ -2462,7 +2478,7 @@ def parts_api_orders_payment(order_id: str):
 
 @parts_bp.get("/api/orders/<order_id>/payments")
 @login_required
-@permission_required("parts.view")
+@permission_required("parts_orders.view")
 def parts_api_orders_payments(order_id: str):
     parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
     if orders_coll is None or shop is None:
@@ -2516,7 +2532,7 @@ def parts_api_orders_payments(order_id: str):
 
 @parts_bp.post("/api/payments/<payment_id>/delete")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts_orders.manage_payments")
 def parts_api_delete_payment(payment_id: str):
     parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
     if orders_coll is None or shop is None:
@@ -2552,6 +2568,9 @@ def parts_api_delete_payment(payment_id: str):
         },
     )
 
+    audit_log.log_event("payment_delete", "parts_order", order_oid, label=audit_log.parts_order_label(order),
+                        summary=f"Payment ${float(payment.get('amount') or 0):.2f} removed from {audit_log.parts_order_label(order)}",
+                        details={"amount": payment.get("amount"), "payment_id": str(pay_oid)})
     refreshed_order = orders_coll.find_one({"_id": order_oid, "shop_id": shop["_id"], "is_active": {"$ne": False}}) or order
     _sync_parts_order_payment_state(orders_coll, payments_coll, refreshed_order or {}, user_oid, now)
 
@@ -2663,6 +2682,9 @@ def parts_api_core_return(core_id: str):
     core_doc = run_atomically(client, _apply)
     if not core_doc:
         return jsonify({"ok": False, "error": "Not enough cores on hand for this return."}), 400
+    audit_log.log_event("return", "core", oid, label=audit_log.part_label(core_doc),
+                        summary=f"Core returned to {vendor_name or 'vendor'}: {audit_log.part_label(core_doc)} x {qty}",
+                        details={"qty": qty, "vendor_id": str(vendor_oid or ""), "remaining_quantity": core_doc.get("quantity")})
 
     return jsonify({
         "ok": True,
@@ -2710,12 +2732,14 @@ def parts_api_core_set_quantity(core_id: str):
     if not core_doc:
         return jsonify({"ok": False, "error": "Core not found."}), 404
 
+    audit_log.log_event("update", "core", core_oid, label=audit_log.part_label(core_doc),
+                        summary=f"Core quantity set to {int(core_doc.get('quantity') or 0)} for {audit_log.part_label(core_doc)}")
     return jsonify({"ok": True, "quantity": int(core_doc.get("quantity") or 0)})
 
 
 @parts_bp.post("/api/orders/<order_id>/receive")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts_orders.receive")
 def parts_api_orders_receive(order_id: str):
     """
     AJAX receive order (full receive).
@@ -2857,6 +2881,9 @@ def parts_api_orders_receive(order_id: str):
 
         updated += 1
 
+    audit_log.log_event("receive", "parts_order", oid, label=audit_log.parts_order_label(order),
+                        summary=f"{audit_log.parts_order_label(order)} received ({updated} part(s) stocked)",
+                        details={"vendor_bill": vendor_bill, "updated_parts": updated})
     orders_coll.update_one(
         {"_id": oid},
         {"$set": {
@@ -2879,7 +2906,7 @@ def parts_api_orders_receive(order_id: str):
 
 @parts_bp.get("/api/orders/<order_id>/receive-context")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts_orders.receive")
 def parts_api_orders_receive_context(order_id: str):
     """Данные для диалога приёмки: позиции с дефолтными локациями партов
     + дерево локаций магазина."""
@@ -2994,7 +3021,7 @@ def _order_return_allowed(order) -> bool:
 
 @parts_bp.get("/api/orders/<order_id>/return-context")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts_orders.receive")
 def parts_api_orders_return_context(order_id: str):
     """Данные для диалога возврата: позиции с доступным к возврату количеством."""
     parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
@@ -3034,7 +3061,7 @@ def parts_api_orders_return_context(order_id: str):
 
 @parts_bp.post("/api/orders/<order_id>/returns")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts_orders.receive")
 def parts_api_orders_return_create(order_id: str):
     """
     Создать возврат вендору по заказу. Body: {items: [{part_id, quantity}], notes}.
@@ -3125,6 +3152,9 @@ def parts_api_orders_return_create(order_id: str):
     }
     res = orders_coll.insert_one(return_doc)
     return_id = res.inserted_id
+    audit_log.log_event("return", "parts_order", return_id, label=f"Return #{return_doc['order_number']}",
+                        summary=f"Return created for {audit_log.parts_order_label(order)}: {len(return_items)} item(s), credit ${return_doc['credit_total']:.2f}",
+                        details={"for_order_id": str(order["_id"]), "credit_total": return_doc["credit_total"]})
 
     # Заказ был принят → возвращаемое физически уходит со склада.
     # Оплачен, но не принят → на складе ничего нет, движение не пишем.
@@ -3239,7 +3269,7 @@ def _rollback_received_order_inventory(parts_coll, items, user_oid, shop_id, ref
 
 @parts_bp.post("/api/orders/<order_id>/unreceive")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts_orders.receive")
 def parts_api_orders_unreceive(order_id: str):
     """AJAX unreceive order and rollback inventory quantities for tracked parts."""
     parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
@@ -3296,6 +3326,8 @@ def parts_api_orders_unreceive(order_id: str):
         },
     )
 
+    audit_log.log_event("update", "parts_order", oid, label=audit_log.parts_order_label(order),
+                        summary=f"{audit_log.parts_order_label(order)} un-received (stock rolled back)")
     return jsonify({"ok": True, "updated_parts": updated})
 
 
@@ -3315,7 +3347,7 @@ def _load_email_order(order_id: str):
 
 @parts_bp.post("/api/orders/<order_id>/confirm")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts_orders.edit")
 def parts_api_orders_confirm(order_id: str):
     """Human confirmation of an order the AI created from the email inbox.
     Body: {"drop_unmatched": bool} — drop email lines that were never matched
@@ -3331,12 +3363,14 @@ def parts_api_orders_confirm(order_id: str):
     )
     if not ok:
         return jsonify({"ok": False, "error": message}), 400
+    audit_log.log_event("confirm", "parts_order", order.get("_id"), label=audit_log.parts_order_label(order),
+                        summary=f"E-mail order confirmed: {audit_log.parts_order_label(order)}")
     return jsonify({"ok": True, "message": message})
 
 
 @parts_bp.post("/api/orders/<order_id>/reject")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts_orders.edit")
 def parts_api_orders_reject(order_id: str):
     """Reject (soft-delete) an unconfirmed email order. The inbox entry is
     marked rejected; a vendor auto-created for this email only is deactivated."""
@@ -3348,12 +3382,14 @@ def parts_api_orders_reject(order_id: str):
     )
     if not ok:
         return jsonify({"ok": False, "error": message}), 400
+    audit_log.log_event("delete", "parts_order", order.get("_id"), label=audit_log.parts_order_label(order),
+                        summary=f"E-mail order rejected: {audit_log.parts_order_label(order)}")
     return jsonify({"ok": True, "message": message})
 
 
 @parts_bp.route("/api/orders/<order_id>", methods=["DELETE"])
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts_orders.delete")
 def parts_api_orders_delete(order_id: str):
     """Delete (soft-delete) parts order. If received, rollback tracked inventory quantities."""
     parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
@@ -3437,6 +3473,7 @@ def parts_api_orders_delete(order_id: str):
     if not order.get("is_return"):
         refresh_last_price(orders_coll.database, shop["_id"], order_part_ids(order), now=now)
 
+    audit_log.log_event("delete", "parts_order", oid, label=audit_log.parts_order_label(order))
     return jsonify({"ok": True, "updated_parts": updated})
 
 
@@ -3543,6 +3580,8 @@ def parts_api_cross_refs_add(part_id: str):
         return jsonify({"ok": False, "error": "Part not found"}), 404
 
     link_parts(parts_coll, shop["_id"], part, other)
+    audit_log.log_event("update", "part", pid, label=audit_log.part_label(part),
+                        summary=f"Cross reference added: {audit_log.part_label(part)} <-> {audit_log.part_label(other)}")
 
     part = parts_coll.find_one({"_id": pid, "shop_id": shop["_id"]})
     return jsonify({
@@ -3573,6 +3612,8 @@ def parts_api_cross_refs_remove(part_id: str):
         return jsonify({"ok": False, "error": "Part not found"}), 404
 
     unlink_part(parts_coll, shop["_id"], part)
+    audit_log.log_event("update", "part", pid, label=audit_log.part_label(part),
+                        summary=f"Cross reference removed from {audit_log.part_label(part)}")
     return jsonify({"ok": True, "message": "Cross reference removed"})
 
 
@@ -3904,6 +3945,18 @@ def parts_api_update(part_id: str):
     was_tracked = not bool(part.get("do_not_track_inventory"))
     old_stock = int(part.get("in_stock") or 0)
 
+    # Прямая правка остатка из формы (поле In stock) — отдельное право
+    # parts.edit_stock_qty: по умолчанию только owner / general manager /
+    # manager. Остальные меняют остаток через заказы, стоктейки, WO.
+    if not do_not_track_inventory and in_stock != (old_stock if was_tracked else 0):
+        if not has_permission("parts.edit_stock_qty"):
+            return jsonify({
+                "ok": False,
+                "error": "You don't have permission to change the on-hand quantity. "
+                         "Receive a parts order or run a stocktake, or ask a manager.",
+                "required": "parts.edit_stock_qty",
+            }), 403
+
     if do_not_track_inventory:
         if was_tracked:
             # Обнуляет раскладку по локациям и пишет движение tracking_off.
@@ -3924,6 +3977,11 @@ def parts_api_update(part_id: str):
                 user_id=user_oid,
             )
 
+    audit_log.log_event("update", "part", pid, label=audit_log.part_label(part),
+                        changes=audit_log.diff_fields(part, set_doc, audit_log.PART_FIELDS)
+                        + ([audit_log.change("in_stock", old_stock, in_stock, "in stock")]
+                           if (not do_not_track_inventory and in_stock != old_stock) else []),
+                        details={"part_number": part_number})
     return jsonify({"ok": True, "message": "Part updated successfully"})
 
 
@@ -3997,7 +4055,7 @@ def parts_api_part_locations(part_id: str):
 
 @parts_bp.post("/api/<part_id>/locations/transfer")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts.adjust_stock")
 def parts_api_part_locations_transfer(part_id: str):
     """Перенос количества между локациями ('' = Unassigned). Итог in_stock не меняется."""
     parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
@@ -4024,6 +4082,11 @@ def parts_api_part_locations_transfer(part_id: str):
     result = transfer_stock(
         parts_coll.database, shop["_id"], pid, qty, from_loc, to_loc, user_id=user_oid,
     )
+    _moved = parts_coll.find_one({"_id": pid}, {"part_number": 1, "description": 1}) or {}
+    if result.get("ok"):
+        audit_log.log_event("update", "part", pid, label=audit_log.part_label(_moved),
+                            summary=f"Stock moved between locations: {audit_log.part_label(_moved)} x {qty}",
+                            details={"qty": qty, "from_location": str(from_loc or ""), "to_location": str(to_loc or ""), "part_number": _moved.get("part_number")})
     if not result["ok"]:
         return jsonify({"ok": False, "error": result.get("error") or "Transfer failed"}), 400
     return jsonify({"ok": True})
@@ -4031,7 +4094,7 @@ def parts_api_part_locations_transfer(part_id: str):
 
 @parts_bp.post("/api/<part_id>/locations/adjust")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts.edit_stock_qty")
 def parts_api_part_locations_adjust(part_id: str):
     """Установить фактическое количество в конкретной локации (ручная поправка)."""
     parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
@@ -4058,6 +4121,11 @@ def parts_api_part_locations_adjust(part_id: str):
         parts_coll.database, shop["_id"], pid, loc, new_qty,
         movement_type="manual_edit", user_id=user_oid,
     )
+    _adjusted = parts_coll.find_one({"_id": pid}, {"part_number": 1, "description": 1}) or {}
+    if result.get("ok"):
+        audit_log.log_event("update", "part", pid, label=audit_log.part_label(_adjusted),
+                            summary=f"Stock adjusted manually: {audit_log.part_label(_adjusted)} -> {new_qty} in location (total {result.get('stock_after')})",
+                            details={"new_qty": new_qty, "location": str(loc or ""), "stock_after": result.get("stock_after"), "part_number": _adjusted.get("part_number")})
     if not result["ok"]:
         return jsonify({"ok": False, "error": result.get("error") or "Adjust failed"}), 400
     return jsonify({"ok": True, "stock_after": result.get("stock_after")})
@@ -4065,7 +4133,7 @@ def parts_api_part_locations_adjust(part_id: str):
 
 @parts_bp.post("/<part_id>/deactivate")
 @login_required
-@permission_required("parts.edit")
+@permission_required("parts.delete")
 def parts_deactivate(part_id: str):
     """
     Удаление запчасти = деактивация (soft delete).
@@ -4104,6 +4172,7 @@ def parts_deactivate(part_id: str):
     )
 
     flash("Part deactivated. It becomes active again when it is added to a parts order.", "success")
+    audit_log.log_event("deactivate", "part", pid, label=audit_log.part_label(existing), details={"part_number": existing.get("part_number")})
     return redirect(url_for("parts.parts_page", status=request.form.get("status") or None))
 
 

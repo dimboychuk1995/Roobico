@@ -1326,3 +1326,44 @@ html[data-theme="dark"] .badge-status-declined { background: rgba(239, 68, 68, 0
 [data-theme="dark"] th:last-child > .ft-resize-handle::after { background: transparent; }
 [data-theme="dark"] th:last-child > .ft-resize-handle:hover::after,
 [data-theme="dark"] body.ft-resizing th:last-child > .ft-resize-handle::after { background: rgba(96, 165, 250, 0.7); }
+
+/* ── Calendar: work orders, mechanics view, legend ── */
+html[data-theme="dark"] .cal-legend { color: var(--muted); }
+html[data-theme="dark"] .cal-legend-hint { color: #80868b; }
+html[data-theme="dark"] .cal-mech-name { color: #e8eaed; }
+html[data-theme="dark"] .cal-mech-sub { color: #9aa0a6; }
+html[data-theme="dark"] .cal-header-cell--unassigned .cal-mech-name { color: #9aa0a6; }
+html[data-theme="dark"] .cal-header-cell--mech:hover { background: transparent; }
+html[data-theme="dark"] .cal-event--wo { box-shadow: inset 4px 0 0 rgba(0, 0, 0, .45), 0 1px 2px rgba(0, 0, 0, .5); }
+html[data-theme="dark"] .cal-event--linked { border-color: rgba(255, 255, 255, .6); }
+html[data-theme="dark"] .cal-event-chip { background: rgba(0, 0, 0, .35); }
+html[data-theme="dark"] .cal-event--running .cal-event-chip { background: rgba(0, 0, 0, .5); }
+html[data-theme="dark"] .cal-linked-wo { background: #1e1e1e !important; border-color: var(--border) !important; color: var(--text); }
+html[data-theme="dark"] .cal-linked-wo .text-muted { color: var(--muted) !important; }
+html[data-theme="dark"] .cal-wo-details dt { color: var(--muted); }
+html[data-theme="dark"] .cal-wo-switch .form-check-label { color: var(--text); }
+
+/* ── Activity Journal ── */
+html[data-theme="dark"] .journal-row--technical td { color: var(--muted); }
+html[data-theme="dark"] .journal-row--failed td:first-child { box-shadow: inset 3px 0 0 #f87171; }
+html[data-theme="dark"] .journal-expand-hint { color: #80868b; }
+html[data-theme="dark"] .journal-details-cell { background: #1e1e1e; color: var(--text); }
+html[data-theme="dark"] .journal-old { color: #f87171; text-decoration-color: rgba(248, 113, 113, .5); }
+html[data-theme="dark"] .journal-new { color: #4ade80; }
+html[data-theme="dark"] .journal-payload { background: #121212; border-color: var(--border); color: var(--text); }
+html[data-theme="dark"] .journal-table .badge.text-bg-light { background: #2a2a2a !important; color: var(--text) !important; border-color: var(--border) !important; }
+html[data-theme="dark"] .cal-unscheduled-row { background: #161616; border-bottom-color: var(--border); }
+html[data-theme="dark"] .cal-unscheduled-gutter { color: #9aa0a6; }
+html[data-theme="dark"] .cal-unscheduled-cell { border-left-color: var(--border); }
+html[data-theme="dark"] .cal-chip { background: #1e1e1e; }
+html[data-theme="dark"] .cal-chip:hover { box-shadow: 0 1px 3px rgba(0, 0, 0, .7); }
+html[data-theme="dark"] .cal-event--conflict { outline-color: #f28b82; }
+html[data-theme="dark"] .cal-event-warn { background: #f28b82; color: #1b1b1b; }
+html[data-theme="dark"] .cal-mech-marker { color: var(--text); }
+html[data-theme="dark"] .cal-mech-marker:hover { background: #2a2a2a; }
+html[data-theme="dark"] .cal-mech-marker.active { border-color: #8ab4f8; background: rgba(138, 180, 248, .16); }
+html[data-theme="dark"] .cal-event-mechs .cal-mech-badge { box-shadow: 0 0 0 1px rgba(0, 0, 0, .55); }
+html[data-theme="dark"] .cal-lane-sep { border-left-color: #3a3a3a; }
+html[data-theme="dark"] .cal-lane-names { border-top-color: var(--border); }
+html[data-theme="dark"] .cal-lane-name { color: #e8eaed; border-left-color: var(--border); }
+html[data-theme="dark"] .cal-lane-name--unassigned { color: #9aa0a6; }

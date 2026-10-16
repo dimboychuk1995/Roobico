@@ -39,6 +39,9 @@
       {% else %}
         {{ wo_status_badge('paid' if w.is_paid else 'unpaid') }}
       {% endif %}
+      {% if w.has_unassigned_labor %}
+        <span class="badge text-bg-danger ms-1" title="A labor line on this work order has no mechanic assigned yet">Unassigned labor</span>
+      {% endif %}
       {# Механики WO: зелёный ● — работают сейчас; серый ● — простаивают;
          ✓ — уже поставили Done и ждут остальных (частичный Done). #}
       {% set done_names = w.mechanics_done or [] %}

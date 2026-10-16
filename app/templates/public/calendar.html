@@ -8,22 +8,40 @@
 {% endblock %}
 
 {% block app_content %}
-<div class="cal-toolbar d-flex align-items-center justify-content-between mb-2">
-  <div class="d-flex align-items-center gap-2">
-    <button type="button" class="btn btn-outline-secondary btn-sm" id="calPrev" title="Previous week">
-      <span aria-hidden="true">&#x2039;</span>
-    </button>
-    <button type="button" class="btn btn-outline-secondary btn-sm" id="calToday">Today</button>
-    <button type="button" class="btn btn-outline-secondary btn-sm" id="calNext" title="Next week">
-      <span aria-hidden="true">&#x203A;</span>
-    </button>
+<div class="cal-toolbar mb-2" data-can-create-wo="{{ '1' if calendar_can_create_wo else '0' }}" data-can-create="{{ '1' if calendar_can_create else '0' }}" data-can-edit="{{ '1' if calendar_can_edit else '0' }}" data-can-delete="{{ '1' if calendar_can_delete else '0' }}">
+  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2">
+    <div class="d-flex align-items-center gap-2">
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="calPrev" title="Previous">
+        <span aria-hidden="true">&#x2039;</span>
+      </button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="calToday">Today</button>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="calNext" title="Next">
+        <span aria-hidden="true">&#x203A;</span>
+      </button>
+    </div>
+    <h5 class="cal-title mb-0" id="calTitle"></h5>
+    <div class="d-flex align-items-center gap-2 cal-toolbar-actions flex-wrap justify-content-end">
+      <div class="btn-group btn-group-sm cal-view-toggle" role="group" aria-label="Calendar view">
+        <button type="button" class="btn btn-outline-secondary active" id="calViewWeek" data-view="week" title="Week view">
+          <i class="bi bi-calendar-week me-1"></i>Week
+        </button>
+        <button type="button" class="btn btn-outline-secondary" id="calViewMechanics" data-view="mechanics" title="One day, a column per mechanic">
+          <i class="bi bi-people me-1"></i>By mechanic
+        </button>
+      </div>
+      <select class="form-select form-select-sm cal-mech-filter" id="calMechanicFilter" title="Show only one mechanic">
+        <option value="">All mechanics</option>
+      </select>
+      <div class="form-check form-switch mb-0 cal-wo-switch" title="Show work orders on the calendar">
+        <input class="form-check-input" type="checkbox" role="switch" id="calShowWO" checked>
+        <label class="form-check-label small" for="calShowWO">Work orders</label>
+      </div>
+      <button type="button" class="btn btn-outline-secondary btn-sm" id="calSettingsBtn" title="Settings">
+        <i class="bi bi-gear"></i>
+      </button>
+    </div>
   </div>
-  <h5 class="cal-title mb-0" id="calTitle"></h5>
-  <div class="text-end cal-toolbar-actions">
-    <button type="button" class="btn btn-outline-secondary btn-sm" id="calSettingsBtn" title="Settings">
-      <i class="bi bi-gear"></i>
-    </button>
-  </div>
+  <div class="cal-legend small" id="calLegend"></div>
 </div>
 
 <div id="calWeekContainer"></div>
@@ -42,6 +60,10 @@
         <button type="button" class="btn btn-outline-secondary btn-sm mt-2" id="settingsAddStatus">
           + Add Status
         </button>
+        <p class="text-muted small mt-3 mb-0">
+          Work order statuses on the calendar (Not started, In progress, Mechanic done, Completed, Paid)
+          come from the work order itself and are not editable here.
+        </p>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -61,6 +83,23 @@
       </div>
       <div class="modal-body">
         <input type="hidden" id="apptEventId" value="">
+        <input type="hidden" id="apptWorkOrderId" value="">
+
+        <div class="cal-linked-wo alert alert-light border d-none mb-3" id="apptLinkedWO">
+          <div class="d-flex align-items-center justify-content-between gap-2 flex-wrap">
+            <div>
+              <div class="fw-semibold">
+                <i class="bi bi-link-45deg me-1"></i>Linked to <span id="apptLinkedWONumber">WO</span>
+                <span class="badge ms-1" id="apptLinkedWOState"></span>
+              </div>
+              <div class="small text-muted" id="apptLinkedWOSummary"></div>
+            </div>
+            <div class="d-flex gap-1">
+              <a class="btn btn-sm btn-outline-primary" id="apptLinkedWOOpen" href="#" target="_blank">Open WO</a>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="apptUnlinkWOBtn" title="Keep the appointment, remove the link">Unlink</button>
+            </div>
+          </div>
+        </div>
 
         <div class="mb-3 position-relative">
           <label class="form-label">Customer</label>
@@ -87,14 +126,16 @@
           <div id="apptPresetTags" class="d-flex flex-wrap gap-1 mt-2"></div>
         </div>
 
-        <input type="hidden" id="apptDate" value="">
-
         <div class="row mb-3">
-          <div class="col-6">
+          <div class="col-4">
+            <label class="form-label">Date</label>
+            <input type="date" class="form-control" id="apptDate" value="">
+          </div>
+          <div class="col-4">
             <label class="form-label">Start</label>
             <select class="form-select" id="apptStart"></select>
           </div>
-          <div class="col-6">
+          <div class="col-4">
             <label class="form-label">End</label>
             <select class="form-select" id="apptEnd"></select>
           </div>
@@ -114,16 +155,50 @@
 
         <div class="mb-3">
           <label class="form-label">Title / Note</label>
-          <input type="text" class="form-control" id="apptTitle" placeholder="Optional">
+          <input type="text" class="form-control" id="apptTitle" placeholder="Optional" maxlength="200">
         </div>
       </div>
       <div class="modal-footer">
         <button type="button" class="btn btn-outline-danger me-auto d-none" id="apptDeleteBtn">Delete</button>
-        <button type="button" class="btn btn-outline-success d-none" id="apptCreateWOBtn">
+        <button type="button" class="btn btn-outline-success d-none" id="apptCreateWOBtn" title="Saves the appointment and opens a prefilled work order">
           <i class="bi bi-file-earmark-plus me-1"></i>Create Work Order
         </button>
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button type="button" class="btn btn-primary" id="apptSaveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Work Order Modal (read-only summary of a WO shown on the calendar) -->
+<div class="modal fade" id="woEventModal" tabindex="-1" aria-labelledby="woEventModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title" id="woEventModalLabel">Work Order</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span class="badge" id="woEventState"></span>
+          <span class="small text-muted" id="woEventWhen"></span>
+        </div>
+        <dl class="row mb-0 cal-wo-details">
+          <dt class="col-4">Customer</dt><dd class="col-8" id="woEventCustomer">—</dd>
+          <dt class="col-4">Unit</dt><dd class="col-8" id="woEventUnit">—</dd>
+          <dt class="col-4">Mechanics</dt><dd class="col-8" id="woEventMechanics">—</dd>
+          <dt class="col-4">Work</dt><dd class="col-8" id="woEventLabors">—</dd>
+          <dt class="col-4">Planned hours</dt><dd class="col-8" id="woEventHours">—</dd>
+        </dl>
+        <div class="mt-3 d-none" id="woEventPlans"></div>
+        <p class="small text-muted mt-3 mb-0" id="woEventHint"></p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-primary me-auto" id="woEventScheduleBtn" title="Create a calendar appointment linked to this work order">
+          <i class="bi bi-calendar-plus me-1"></i>Add to schedule
+        </button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <a class="btn btn-primary" id="woEventOpenBtn" href="#" target="_blank">Open Work Order</a>
       </div>
     </div>
   </div>

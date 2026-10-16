@@ -209,6 +209,29 @@ def create_app():
             _g._table_prefs_json = cached
         return {"user_table_prefs_json": cached}
 
+    # Права текущего пользователя — во все шаблоны всех рендер-путей
+    # (render_internal_page, _render_app_page, механик), чтобы условия вида
+    # {% if "reports.view_audit" in user_permissions %} работали одинаково
+    # везде. Явно переданное user_permissions из роута имеет приоритет
+    # (Flask не перетирает значения, пришедшие из render_template).
+    @app.context_processor
+    def inject_user_permissions():
+        from flask import g as _g, session as _session
+
+        perms = getattr(_g, "user_permissions", None)
+        if perms is None:
+            perms = set()
+            try:
+                if _session.get("user_id"):
+                    from app.utils.permissions import get_effective_permissions
+
+                    perms = set(get_effective_permissions())
+            except Exception:  # noqa: BLE001 — страница важнее флагов прав
+                app.logger.exception("user permissions load failed")
+                perms = set()
+            _g.user_permissions = perms
+        return {"user_permissions": sorted(perms), "user_permissions_set": set(perms)}
+
     # каждый запрос: если есть сессия — поднимем g.user и g.tenant
     @app.before_request
     def enforce_host_split():

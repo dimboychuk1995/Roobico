@@ -58,6 +58,11 @@ Categories, storage locations and pricing scales are configured on
   "Inactive parts" above).
 - **In stock** — starting quantity; afterwards stock changes only through
   orders, work orders, transfers, stocktakes and manual adjustments.
+  Editing this number on an existing part is a manual override and needs
+  the permission **"Edit on-hand quantity directly"** (by default only
+  Owner, General manager, Manager). Without it the field is locked in the
+  edit form and the server rejects a changed quantity — receive a parts
+  order or run a stocktake instead.
 - **Average cost** — the weighted average cost of what is in stock,
   recalculated on every receiving:
   (old avg × old qty + received price × received qty) / total qty.
@@ -109,8 +114,10 @@ the mobile app. Removing a reference unlinks just that part.
 - Each part has one primary location, but stock can sit in several locations
   at once. The **"Locations"** button on a part opens **"Stock by
   location"**: per-location quantities with **"Set qty"** (manual
-  adjustment) and a **"Transfer between locations"** section (From / To /
-  Qty) — transfers don't change the total.
+  adjustment — needs "Edit on-hand quantity directly", otherwise the Set
+  control is hidden) and a **"Transfer between locations"** section
+  (From / To / Qty) — transfers don't change the total and need only
+  "Adjust part stock".
 - A location can't be deleted while it has sub-locations, is a primary
   location for parts, or still holds stock (transfer it out first).
 - **"History"** on a part shows its Orders and Work Orders with dates and

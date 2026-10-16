@@ -50,6 +50,50 @@ Calendar, Customers, Vendors, Parts, Parts Orders, Work Orders, Attachments,
 Reports, Import/Export, Settings). System roles cannot be deleted; a custom
 role in use by active users cannot be deleted either.
 
+**Every checkbox is enforced by the server.** The permission tree matches
+the real checks on each action, so unticking a key really blocks it:
+
+- *Customers*: view / create / edit / deactivate / manage units / manage
+  portal links (the "Send portal link" button on a customer profile).
+- *Vendors*: view / create / edit / deactivate.
+- *Parts*: view / create / edit / delete (deactivate) / adjust stock
+  (location transfers, stocktakes) / **edit on-hand quantity directly**
+  (the "In stock" field when editing a part and "Set" by location; by
+  default only Owner, General manager and Manager — a Parts manager or a
+  custom role needs it ticked explicitly) / view costs.
+- *Parts Orders*: view / create (including the AI invoice parser) / edit
+  (incl. confirm/reject of e-mailed orders) / delete / receive (receive,
+  un-receive, returns) / manage payments.
+- *Work Orders*: view / create / edit (saving an existing WO) / change
+  status (Paid ↔ Open ↔ In progress) / delete / manage payments (record,
+  delete, bulk payments) / send to customer (WO e-mail, receipts,
+  authorizations) / export PDF / view costs / edit tracked hours.
+- *Reports*: view (all standard reports, timecard), export (report PDF),
+  view audit (Activity Journal).
+- *Settings*: each page has its own key — organization, locations, users,
+  roles, parts settings & pricing, WO presets, WO settings (labor rates,
+  supply, cores, PDF design has its own key), workflows, notifications,
+  integrations, billing.
+- *Dashboard*: view / edit goals.
+
+Global search and the parts/WO pickers only return sections and prices
+the user may see; a user without "View part costs inside WO" never gets
+amounts, even in search results.
+
+**Who may change roles and users.** Only an **Owner** can edit, deactivate
+or re-assign the role of another owner account, and only an owner can
+assign the Owner role. Nobody can change their own role or their own
+per-user overrides. A user managing roles or overrides can only grant
+permissions they have themselves (a General manager, who has no billing
+access, cannot add "Manage subscription & billing" to any role or user);
+removing permissions is always allowed.
+
+**After an upgrade** that refines which key a page checks, run
+`python -m app.scripts.sync_default_roles` once: system roles catch up
+with the defaults, and custom roles receive the precise keys their broad
+keys used to imply (e.g. a role with "Edit parts" gets the Parts Orders
+keys), so nobody loses access. Then tidy the roles in this screen.
+
 Key permission to know: **"View part costs inside WO"**
 (work_orders.view_costs). A user with work-order access but WITHOUT this
 permission works in **mechanic mode** — no prices anywhere (see the mechanic

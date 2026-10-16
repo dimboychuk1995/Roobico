@@ -95,9 +95,55 @@ month / This year / Custom):
 
 ## Activity Journal
 
-Audit log of every create/edit/delete action in the system (reads are not
-logged): when, method, endpoint, path, status, user, shop, error. Filters by
-method and endpoint. Passwords/tokens are masked.
+Reports → **Activity Journal** (permission "View audit journal") — the
+complete history of who did what in the shop. Every change made through
+the web app, the mobile app, the customer portal or the e-mail inbox lands
+here; reads/views are not logged.
+
+Each row shows **When** (shop time), **Who** (user name and role, or
+"Customer" for portal actions and "System" for automatic ones), **Action**
+(Created, Updated, Deleted, Status changed, Payment, Sent, Received,
+Returned, Activated/Deactivated, Signed in/out, Timer, Marked done,
+Confirmed, Transferred, Imported, Uploaded, Permissions changed, Settings
+changed, Access denied, Failed request), **Object** (the work order, unit,
+customer, part, parts order, vendor, user, role, appointment, … — a link
+opens it) and **What happened** — a plain sentence such as
+"WO #1042: status open → paid" or "Payment $250.00 (card) recorded for
+WO #1042 — balance $0.00". Click a row to expand the details:
+
+- a **Before / After** table of every field that changed (customer name,
+  address, part cost, unit mileage, role permissions, WO jobs and hours,
+  appointment time, …);
+- extra details (amounts, quantities, recipients, files);
+- technical trace: HTTP method and path, status code, IP, user id.
+
+Business events are recorded for work orders (create, save with job/part
+changes, status, mechanic Done, manager confirmation, payments and their
+removal, bulk payments, e-mails, authorizations and the customer's
+approve/decline, transfer, delete, timers start/stop, tracked-hours edits,
+annual inspections), customers and units (create, update, activate /
+deactivate, both web and mobile), vendors, parts (create, update with
+before/after of cost and price, stock adjustments and transfers,
+deactivate, cross references), parts orders (create, update, receive,
+un-receive, returns, payments, e-mail order confirm/reject, delete), cores,
+stocktakes, appointments, attachments, users (invite, edit, activate /
+deactivate, per-user permissions), roles (create, edit with the list of
+added/removed permissions, clone, delete), locations, presets, labor
+rates, data imports, and sign-ins / sign-outs (web and mobile).
+
+Anything else that changes data (settings pages, integrations, billing,
+AI tools) is still journaled as a **technical request** with a readable
+name ("PDF design saved", "Integration settings saved"); failed requests
+and access denials are journaled as well, so attempts to do something
+without permission are visible.
+
+**Filters**: free-text search (WO number, customer, part number, user
+name, any changed value), period presets or a custom range, user, object
+type, action, source (web / mobile / portal / system), location (for
+multi-location tenants) and "Show": everything, business events only or
+technical requests only. The **History** button on a work order or
+customer page opens the journal filtered to that one object. Passwords and
+tokens are masked everywhere.
 
 ## Dashboard
 
@@ -148,10 +194,105 @@ Widgets:
 
 ## Calendar
 
-Sidebar → **Calendar** — weekly appointment scheduler (Mon–Sun, 06:00–21:00,
-15-minute steps). Click an empty slot to create, click an event to edit,
-drag & drop to move. Appointment fields: Customer, Unit, Service Presets,
-Start/End, Assign to Mechanic, Status, Title/Note. When customer + unit are
-set, a **"Create Work Order"** button opens a prefilled WO. Statuses
-(Scheduled, Confirmed, In Progress, Completed, Cancelled) and their colors
-are editable per shop via the gear → "Appointment Statuses".
+Sidebar → **Calendar** — the shop's schedule and its activity log in one
+grid (Mon–Sun, 06:00–21:00, 15-minute steps). It shows two kinds of blocks:
+
+- **Appointments** — what you planned by hand. Click an empty slot to
+  create one, click a block to edit, drag & drop to move. Fields: Customer,
+  Unit, Service Presets, Date, Start/End, Assign to Mechanic, Status,
+  Title/Note. Appointment statuses (Scheduled, Confirmed, In Progress,
+  Completed, Cancelled) and their colors are editable per shop via the
+  gear → "Appointment Statuses".
+- **Work orders** — every active WO appears on the calendar automatically,
+  even if nobody ever scheduled it, so you can see who did what, when, and
+  what is still waiting. A WO block has a left edge in the mechanic's colour
+  (plus their initials in the corner) and a status chip; the legend under
+  the toolbar explains the colors:
+  - **Not started** — WO exists, no mechanic has started it;
+  - **In progress** — a mechanic is working on it (a pulsing chip means a
+    timer is running right now);
+  - **Mechanic done** — all mechanics pressed Done, the manager has not
+    reviewed it yet;
+  - **Completed** — the work is finished (manager saved/confirmed it or
+    hours were tracked), payment still pending;
+  - **Paid** — invoice paid.
+  Estimates are not shown (they are quotes, not work). In mechanic mode
+  "Paid" is shown as "Completed" — mechanics never see money.
+
+**Where a work order lands on the grid.** If mechanics tracked time on it,
+the WO shows as one block per mechanic per work session, exactly when that
+mechanic's timer was running (short stop/start pauses under 20 minutes are
+merged). So a mechanic's blocks never overlap: if Sergey worked on WO A
+8:00–9:00, then on WO B 9:10–11:00 and came back to WO A after lunch, you
+see three separate blocks, not two day-long bars. Two mechanics on the same
+job show as two blocks with their names. A WO with no tracked time and no
+appointment is **not placed on the grid at all** — it sits as a chip in the
+**"Not scheduled"** strip under the day (or mechanic) header on its Work
+Order Date, so the calendar never invents a time. A WO with an
+appointment is "scheduled" and has no chip. Click a WO block or chip for
+the summary — customer, unit, mechanic hours, jobs, planned hours, its
+appointments — and **Open Work Order**.
+
+**Views and filters** (toolbar, right side):
+
+- **Week** — classic 7-day grid. Inside every day column each mechanic
+  who has blocks that day gets their own narrow lane (same order as the
+  "By mechanic" view), so one mechanic's blocks never mix with another's.
+  Click a day header to expand that day: the wide column splits into **one
+  lane per mechanic of the shop** (three mechanics = three lanes), each
+  with the mechanic's marker and name in the header above its lane; an
+  "Unassigned" lane appears only when something has no mechanic. Dropping
+  a chip or a plan into a lane assigns it to that mechanic. Click the
+  header again to collapse.
+- **Who is who**: every mechanic has a colour. The row of markers on top
+  (colour, initials, name) is the key; each block carries the same colour
+  on its left edge and the mechanic's initials in its corner, so you can
+  tell at a glance whose block it is. Click a marker to show only that
+  mechanic, click it again to show everyone.
+- **By mechanic** — one day, a column per mechanic plus "Unassigned". Each
+  header shows how many different jobs (work orders / appointments) the
+  mechanic has that day — several timer sessions on one WO count once. A WO with several
+  mechanics appears in each of their columns. Use ‹ › to move by day. In
+  this view, dragging a block into another column reassigns the mechanic
+  of that appointment.
+- **All mechanics** dropdown — show only one mechanic (or only unassigned
+  blocks) in either view.
+- **Work orders** switch — hide the automatic WO blocks and keep only your
+  appointments. The choice is remembered in this browser.
+
+**Scheduling a work order.** Drag a chip from the "Not scheduled" strip
+onto the grid (into a mechanic's lane or column to pick who), or click a
+chip / a timer block and press **Add to schedule** — this opens a new
+appointment linked to the WO, prefilled with the customer, unit, planned
+hours and the mechanic (for a timer block: the next quarter-hour after
+that session, so you plan the follow-up, not the past); save it to put
+the plan on the grid. Timer blocks themselves are facts and cannot be
+moved. **Facts beat plans**: timer blocks are always
+shown; once the planned mechanic actually works on that WO during the
+planned time, the plan disappears from the grid (it is still listed in the
+WO window under "Planned for this day", where you can edit or delete it),
+so the calendar shows what really happened, not what was planned. A plan
+for a *different* mechanic on the same WO stays on the grid — that
+mechanic still has their part to do. **One mechanic, one job at a time**: an appointment cannot be saved
+or moved onto a slot where the same mechanic already has another
+appointment (cancelled ones don't count) or where the mechanic's timer
+shows they were actually working on a different work order — the
+calendar refuses with the conflicting time and work order, so pick another
+time or mechanic. An older appointment that overlaps such actual work is
+marked with a red **!** badge and outline ("planned here, but the mechanic
+was actually working on WO #…"); fix or delete it. Linked appointments have a dashed border, show the live WO
+status, number and jobs, and keep an **Open WO** button and an **Unlink**
+button in the edit dialog. As soon as a WO has at least one linked
+appointment, its "Not scheduled" chip disappears (it is in the plan now);
+actual timer blocks are never hidden. Deleting the WO keeps the
+appointment and only removes the link.
+
+**Creating a work order from the calendar.** Fill customer and unit (and,
+optionally, presets, mechanic and a note), then press **Create Work
+Order**. The appointment is saved first, then the WO page opens in a new
+tab with everything prefilled: customer, unit, one labor block per preset,
+the mechanic assigned 100% to each block, and the note as the labor
+description (or as the issue description when a preset already named the
+job). Once you save the WO, the appointment is linked to it and starts
+showing the WO status. Mechanics (mechanic mode) do not get this button.
+

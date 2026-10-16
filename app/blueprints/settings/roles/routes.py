@@ -14,6 +14,7 @@ from flask import (
     jsonify,
 )
 
+from app.utils import audit_log
 from app.blueprints.settings import settings_bp
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import (
@@ -23,6 +24,7 @@ from app.utils.auth import (
     SESSION_TENANT_DB,
 )
 from app.utils.permissions import (
+    get_effective_permissions,
     permission_required,
     filter_nav_items,
     refresh_session_permissions,
@@ -87,6 +89,15 @@ def _serialize_role(role: dict, users_by_role: dict | None = None) -> dict:
         "is_protected": bool(role.get("is_protected") or key in PROTECTED_ROLE_KEYS),
         "user_count": int(users_by_role.get(key, 0)),
     }
+
+
+def _beyond_actor(perms) -> list[str]:
+    """Права из списка, которых нет у самого текущего пользователя.
+
+    Менеджер ролей/пользователей не может выдать (роли или человеку) больше,
+    чем есть у него самого — иначе general manager добавил бы себе
+    settings.manage_billing, а manager — manage_roles."""
+    return sorted(set(perms or []) - get_effective_permissions())
 
 
 def _normalize_perm_list(raw, *, allow_unknown: bool = False) -> list[str]:
@@ -197,6 +208,9 @@ def api_roles_create():
         return jsonify({"ok": False, "error": "Role name is required."}), 400
 
     perms = _normalize_perm_list(data.get("permissions"))
+    beyond = _beyond_actor(perms)
+    if beyond:
+        return jsonify({"ok": False, "error": "You cannot grant permissions you don't have: " + ", ".join(beyond)}), 403
 
     base_key = _slugify_role_key(name)
     key = _ensure_unique_role_key(tdb, base_key)
@@ -217,6 +231,7 @@ def api_roles_create():
     }
     res = tdb.roles.insert_one(doc)
     doc["_id"] = res.inserted_id
+    audit_log.log_event("create", "role", doc["_id"], label=name, details={"permissions": len(perms)})
     return jsonify({"ok": True, "role": _serialize_role(doc)})
 
 
@@ -251,7 +266,12 @@ def api_roles_update(role_id):
         update["name"] = new_name
 
     if "permissions" in data:
-        update["permissions"] = _normalize_perm_list(data.get("permissions"))
+        new_perms = _normalize_perm_list(data.get("permissions"))
+        # Проверяем только ДОБАВЛЯЕМЫЕ права: убрать лишнее у роли можно всегда.
+        beyond = _beyond_actor(set(new_perms) - set(role.get("permissions") or []))
+        if beyond:
+            return jsonify({"ok": False, "error": "You cannot grant permissions you don't have: " + ", ".join(beyond)}), 403
+        update["permissions"] = new_perms
 
     tdb.roles.update_one({"_id": rid}, {"$set": update})
 
@@ -260,6 +280,11 @@ def api_roles_update(role_id):
     # пересчитать сессию ТЕКУЩЕГО юзера (если эта роль его)
     refresh_session_permissions()
 
+    audit_log.log_event("update", "role", rid, label=(fresh or {}).get("name") or role.get("name") or role.get("key"),
+                        changes=audit_log.diff_fields(role, update, {"name": "Name"})
+                        + ([audit_log.change("permissions", sorted(set(role.get("permissions") or []) - set(update["permissions"])),
+                                             sorted(set(update["permissions"]) - set(role.get("permissions") or [])), "permissions removed -> added")]
+                           if "permissions" in update and set(update["permissions"]) != set(role.get("permissions") or []) else []))
     return jsonify({"ok": True, "role": _serialize_role(fresh)})
 
 
@@ -297,6 +322,7 @@ def api_roles_delete(role_id):
             "error": f"Cannot delete: role is assigned to {used} active user(s).",
         }), 400
 
+    audit_log.log_event("delete", "role", rid, label=role.get("name") or role.get("key"))
     tdb.roles.delete_one({"_id": rid})
     return jsonify({"ok": True})
 
@@ -320,6 +346,9 @@ def api_roles_clone(role_id):
         return jsonify({"ok": False, "error": "Role not found."}), 404
 
     new_name = f"{src.get('name') or src.get('key')} (copy)"
+    beyond = _beyond_actor(_normalize_perm_list(src.get("permissions") or []))
+    if beyond:
+        return jsonify({"ok": False, "error": "You cannot clone a role with permissions you don't have: " + ", ".join(beyond)}), 403
     base_key = _ensure_unique_role_key(tdb, _slugify_role_key(new_name))
 
     now = _utcnow()
@@ -338,6 +367,7 @@ def api_roles_clone(role_id):
     }
     res = tdb.roles.insert_one(doc)
     doc["_id"] = res.inserted_id
+    audit_log.log_event("create", "role", doc["_id"], label=new_name, summary=f"Role cloned from {src.get('name') or src.get('key')}: {new_name}")
     return jsonify({"ok": True, "role": _serialize_role(doc)})
 
 
@@ -416,9 +446,17 @@ def api_user_permissions_update(user_id):
     if not user:
         return jsonify({"ok": False, "error": "User not found."}), 404
 
+    if str(uid) == str(session.get(SESSION_USER_ID)):
+        return jsonify({"ok": False, "error": "You cannot change your own permissions."}), 403
+    if str(user.get("role") or "").strip().lower() in PROTECTED_ROLE_KEYS:
+        return jsonify({"ok": False, "error": "Owner permissions cannot be changed."}), 403
+
     data = request.get_json(silent=True) or {}
     allow = _normalize_perm_list(data.get("allow_permissions"))
     deny = _normalize_perm_list(data.get("deny_permissions"))
+    beyond = _beyond_actor(allow)
+    if beyond:
+        return jsonify({"ok": False, "error": "You cannot grant permissions you don't have: " + ", ".join(beyond)}), 403
 
     # deny выигрывает: уберём из allow всё, что в deny
     deny_set = set(deny)
@@ -437,4 +475,7 @@ def api_user_permissions_update(user_id):
     # пересчитать сессию текущего пользователя если это он сам
     refresh_session_permissions(user_id=uid)
 
+    audit_log.log_event("permissions", "user", uid, label=audit_log.user_label(user),
+                        changes=[audit_log.change("allow_permissions", user.get("allow_permissions") or [], allow, "extra permissions"),
+                                 audit_log.change("deny_permissions", user.get("deny_permissions") or [], deny, "denied permissions")])
     return jsonify({"ok": True, "allow_permissions": allow, "deny_permissions": deny})

@@ -1685,3 +1685,57 @@ th:last-child > .ft-resize-handle:hover::after,
 body.ft-resizing th:last-child > .ft-resize-handle::after { background: rgba(13, 110, 253, 0.65); }
 
 body.ft-resizing { cursor: col-resize; user-select: none; }
+
+/* ── Activity Journal (Reports → Activity Journal) ── */
+.journal-row[data-bs-toggle="collapse"] {
+  cursor: pointer;
+}
+
+.journal-row--technical td {
+  color: #6c757d;
+}
+
+.journal-row--failed td:first-child {
+  box-shadow: inset 3px 0 0 #dc3545;
+}
+
+.journal-expand-hint {
+  color: #9aa0a6;
+  font-style: italic;
+}
+
+.journal-details-cell {
+  background: #f8f9fa;
+  border-top: 0 !important;
+  padding: .6rem 1rem .8rem 1.5rem !important;
+}
+
+.journal-changes {
+  max-width: 980px;
+  font-size: .85rem;
+}
+
+.journal-changes td {
+  word-break: break-word;
+}
+
+.journal-old {
+  color: #b02a37;
+  text-decoration: line-through;
+  text-decoration-color: rgba(176, 42, 55, .45);
+}
+
+.journal-new {
+  color: #146c43;
+  font-weight: 500;
+}
+
+.journal-payload {
+  font-size: .75rem;
+  max-height: 260px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  padding: .5rem;
+}

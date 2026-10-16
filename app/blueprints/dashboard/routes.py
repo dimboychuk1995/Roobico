@@ -1032,7 +1032,7 @@ def dashboard_metrics_block_api(block_name: str):
 
 @dashboard_bp.post("/dashboard/api/goals")
 @login_required
-@permission_required("dashboard.view")
+@permission_required("dashboard.edit_goals")
 def dashboard_goals_save_api():
     shop_db, shop = _get_active_shop_db()
     if shop is None:

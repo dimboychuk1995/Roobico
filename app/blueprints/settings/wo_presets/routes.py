@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from flask import render_template, redirect, url_for, flash, session, request, jsonify
 from bson import ObjectId
 
+from app.utils import audit_log
 from app.blueprints.settings import settings_bp
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import login_required, SESSION_USER_ID, SESSION_TENANT_ID, SESSION_SHOP_ID
@@ -296,7 +297,7 @@ def _parse_preset_form(form):
 
 @settings_bp.route("/wo_presets", methods=["GET"])
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_wo_presets")
 def wo_presets_index():
     master = get_master_db()
     user = _load_current_user(master)
@@ -406,7 +407,7 @@ def wo_presets_index():
 
 @settings_bp.route("/wo_presets/create", methods=["POST"])
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_wo_presets")
 def wo_presets_create():
     master = get_master_db()
     user = _load_current_user(master)
@@ -437,6 +438,7 @@ def wo_presets_create():
         "updated_by": user["_id"],
     }
     sdb.wo_presets.insert_one(doc)
+    audit_log.log_event("create", "preset", doc.get("_id"), label=data.get("name") or "Preset")
 
     flash(f"Preset \"{data['name']}\" created.", "success")
     return redirect(url_for("settings.wo_presets_index"))
@@ -444,7 +446,7 @@ def wo_presets_create():
 
 @settings_bp.route("/wo_presets/<preset_id>", methods=["GET"])
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_wo_presets")
 def wo_presets_detail(preset_id: str):
     """Return preset JSON for the edit modal."""
     master = get_master_db()
@@ -586,7 +588,7 @@ def wo_presets_detail(preset_id: str):
 
 @settings_bp.route("/wo_presets/<preset_id>/update", methods=["POST"])
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_wo_presets")
 def wo_presets_update(preset_id: str):
     master = get_master_db()
     user = _load_current_user(master)
@@ -628,13 +630,14 @@ def wo_presets_update(preset_id: str):
         }},
     )
 
+    audit_log.log_event("update", "preset", oid, label=data.get("name") or "Preset")
     flash(f"Preset \"{data['name']}\" updated.", "success")
     return redirect(url_for("settings.wo_presets_index"))
 
 
 @settings_bp.route("/wo_presets/<preset_id>/delete", methods=["POST"])
 @login_required
-@permission_required("settings.manage_org")
+@permission_required("settings.manage_wo_presets")
 def wo_presets_delete(preset_id: str):
     master = get_master_db()
     user = _load_current_user(master)
@@ -660,5 +663,6 @@ def wo_presets_delete(preset_id: str):
         {"$set": {"is_active": False, "updated_at": now, "updated_by": user["_id"]}},
     )
 
+    audit_log.log_event("delete", "preset", oid, label="Preset")
     flash("Preset deleted.", "success")
     return redirect(url_for("settings.wo_presets_index"))

@@ -9,6 +9,7 @@ from __future__ import annotations
 from bson import ObjectId
 from flask import request, jsonify, session, make_response
 
+from app.utils import audit_log
 from app.blueprints.attachments import attachments_bp
 from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import login_required, SESSION_TENANT_ID, SESSION_USER_ID
@@ -79,6 +80,10 @@ def api_upload():
         except Exception as exc:
             errors.append({"filename": f.filename, "error": str(exc)})
 
+    if saved:
+        audit_log.log_event("upload", "attachment", entity_id, label=f"{len(saved)} file(s) on {entity_type} {entity_id}",
+                            summary=f"Uploaded {len(saved)} file(s) to {str(entity_type).replace('_', ' ')}: " + ", ".join(str(d.get("filename") or "") for d in saved if isinstance(d, dict)),
+                            details={"entity_type": entity_type, "entity_id": str(entity_id), "files": [str(d.get("filename") or "") for d in saved if isinstance(d, dict)]})
     return jsonify(ok=True, saved=saved, errors=errors)
 
 
@@ -154,4 +159,5 @@ def api_delete(attachment_id):
     if not ok:
         return jsonify(ok=False, error="Attachment not found or already deleted."), 404
 
+    audit_log.log_event("delete", "attachment", attachment_id, label="Attachment", summary=f"Attachment deleted ({attachment_id})")
     return jsonify(ok=True)

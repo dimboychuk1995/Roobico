@@ -176,7 +176,42 @@ from the time clock, so mechanics who don't use the job timer still show
 their hours at work for any past period.
 
 **Who changed/deleted this?** Reports → Activity Journal — every
-create/edit/delete with user, time and endpoint.
+create/edit/delete with the user, time and a Before/After of the fields.
+Fastest path: open the work order or customer and press **History**; or
+type the WO number / part number / customer into the journal search.
+
+**Who did what today / this week?** Calendar → switch **Work orders** on:
+every WO shows on the days mechanics actually worked on it (from their job
+timers), with names and hours; click a block for details. **By mechanic**
+view gives one column per mechanic for a single day; the dropdown filters a
+single mechanic in the week view.
+
+**Which jobs still have nobody on them?** Work Orders list → rows with a
+red **Unassigned labor** badge next to the status have a labor line with
+no mechanic. Open the WO, pick the mechanic in that labor block (and the
+split percentage if several share it), Save.
+
+**Plan a job for a mechanic.** Calendar → click the slot (in By-mechanic
+view click inside the mechanic's column) → customer, unit, presets →
+Save. To turn the plan into a WO press **Create Work Order**: customer,
+unit, presets, mechanic and note are carried over and the appointment is
+linked to the new WO, so its status updates automatically. An existing WO
+can be scheduled too: drag its chip from the "Not scheduled" strip into a
+mechanic's lane, or open it → **Add to schedule** and pick the time.
+
+**An old appointment is still hanging around after the job was done.**
+The calendar hides a plan once the planned mechanic actually worked on
+that WO at that time (the timer block replaces it), but the appointment
+still exists. Click the WO block → **Planned for this day** lists every
+appointment for that WO that day, hidden ones marked "replaced by actual
+work" → **Delete** (or **Edit** to move it to a real follow-up slot).
+
+**"Mechanic is already booked" when the slot looks empty?** The slot is
+held by another appointment of that mechanic (cancelled ones don't count)
+or by their timer: a running timer blocks only the time up to now, a
+finished session blocks its real time. The message names the work order
+and time; open that WO's block → Planned for this day to fix or delete
+the plan.
 
 **Revenue looks too high?** Total Revenue includes collected sales tax, and
 Sales reports date WOs by their Work Order Date (falling back to creation
