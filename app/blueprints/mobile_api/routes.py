@@ -521,6 +521,7 @@ def mobile_part_price():
 @permission_required("work_orders.create")
 def mobile_work_order_create():
     from app.blueprints.work_orders.services.common import utcnow
+    from app.utils.display_datetime import shop_local_date_to_utc
     from app.blueprints.work_orders.services.inventory import (
         deduct_parts_from_inventory,
         sync_work_order_cores,
@@ -594,7 +595,8 @@ def mobile_work_order_create():
         "unit_id": unit_id,
         "status": status,
         "labors": labors,
-        "work_order_date": now,
+        # Полночь по времени магазина — как у даты, введённой в офисе.
+        "work_order_date": shop_local_date_to_utc(now),
         "totals": totals,
         "inventory_deducted": len(inventory_result["deducted"]) > 0,
         "inventory_deductions": inventory_result["deducted"],
@@ -744,12 +746,22 @@ def mobile_work_order_edit(work_order_id):
 
     # Обновление пробега юнита из формы WO (как в веб-редакторе).
     unit_mileage = _i32_or_none(data.get("unit_mileage"))
+    prior_unit_mileage = None
     if unit_mileage is not None:
+        unit_doc = shop_db.units.find_one({"_id": wo.get("unit_id"), "shop_id": shop["_id"]}, {"mileage": 1})
+        prior_unit_mileage = (unit_doc or {}).get("mileage")
         set_fields["mileage"] = unit_mileage
         shop_db.units.update_one(
             {"_id": wo.get("unit_id"), "shop_id": shop["_id"], "is_active": True},
             {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
         )
+
+    if is_mechanic:
+        # Дата WO (дата инвойса) = день последнего реального сохранения
+        # механиком — см. mechanic_save_date_fields.
+        from app.blueprints.work_orders.services.mechanic_editor import mechanic_save_date_fields
+
+        set_fields.update(mechanic_save_date_fields(wo, labors, data, set_fields, user_id, now, unit_mileage=prior_unit_mileage))
 
     shop_db.work_orders.update_one({"_id": wo_id}, {"$set": set_fields})
     _done_now = bool(set_fields.get("mechanic_done")) and not bool(wo.get("mechanic_done"))

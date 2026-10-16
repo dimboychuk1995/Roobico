@@ -11,6 +11,7 @@ WO блоки матчатся по стабильному labor_id, чтобы 
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 from app.blueprints.work_orders.services.common import f64, i32, round2
 from app.blueprints.work_orders.services.mobile_editor import suggest_part_price
@@ -351,6 +352,76 @@ def merge_mechanic_edit(shop_db, shop, existing_wo: dict, payload_labors) -> lis
         })
 
     return out
+
+
+def mechanic_work_fingerprint(labors) -> list[tuple]:
+    """То, что механик реально меняет в WO: описание работ, описание проблемы,
+    запчасти (ключ + qty). Цены/часы/ставки/назначения — не его, в отпечаток
+    не входят."""
+    out: list[tuple] = []
+    for block in labors or []:
+        if not isinstance(block, dict):
+            continue
+        labor = block.get("labor") if isinstance(block.get("labor"), dict) else {}
+        parts = []
+        for p in block.get("parts") or []:
+            if not isinstance(p, dict):
+                continue
+            parts.append((_stored_part_key(p), i32(p.get("qty")) or 0, str(p.get("description") or "").strip()))
+        out.append((
+            str(block.get("labor_id") or "").strip(),
+            str(labor.get("description") or "").strip(),
+            str(labor.get("issue_description") or "").strip(),
+            tuple(sorted(parts)),
+        ))
+    return out
+
+
+def mechanic_save_touched_work(existing_wo: dict, new_labors, data: dict, set_fields: dict, user_id, unit_mileage=None) -> bool:
+    """
+    Сохранение механика что-то изменило по сути — работы/запчасти, пробег
+    или впервые нажатое «Done». Мобильное приложение шлёт автосейв и при
+    простом открытии WO (с пробегом, подставленным из юнита): такой пустой
+    запрос «сохранением работы» не считается — пробег считается изменённым,
+    только если он отличается и от WO, и от текущего пробега юнита
+    (unit_mileage — значение ДО этого сохранения).
+    """
+    if mechanic_work_fingerprint(existing_wo.get("labors")) != mechanic_work_fingerprint(new_labors):
+        return True
+    if "mileage" in set_fields and set_fields["mileage"] not in (existing_wo.get("mileage"), unit_mileage):
+        return True
+    state = str((data or {}).get("mechanic_state") or "").strip().lower()
+    if state == "done":
+        from app.blueprints.work_orders.services.mechanic_done import done_marks
+        from app.utils.tenant import oid
+
+        uid = oid(user_id)
+        if uid and uid not in {oid(m.get("user_id")) for m in done_marks(existing_wo)}:
+            return True
+    return False
+
+
+def mechanic_save_date_fields(existing_wo: dict, new_labors, data: dict, set_fields: dict, user_id, now: datetime, unit_mileage=None) -> dict:
+    """
+    Дата WO (она же дата инвойса) = день, когда механик последний раз
+    реально что-то сохранил, а не день создания. Значение — полночь этого
+    дня по времени магазина (как у даты, введённой в офисе), и пишется
+    только если день изменился: сохранения в тот же день не трогают поле
+    (нет шума в журнале и перестановок в списках). Пустой автосейв при
+    открытии WO дату не двигает.
+    """
+    from app.utils.display_datetime import shop_local_date_to_utc
+
+    if not mechanic_save_touched_work(existing_wo, new_labors, data, set_fields, user_id, unit_mileage=unit_mileage):
+        return {}
+    today_utc = shop_local_date_to_utc(now)
+    current = existing_wo.get("work_order_date")
+    if isinstance(current, datetime):
+        if current.tzinfo is None:
+            current = current.replace(tzinfo=timezone.utc)
+        if current == today_utc:
+            return {}
+    return {"work_order_date": today_utc}
 
 
 def refresh_time_derived_fields(shop_db, shop, work_order_id, mechanics_by_id=None):

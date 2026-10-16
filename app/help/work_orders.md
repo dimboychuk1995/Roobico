@@ -24,9 +24,11 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
   right now, ● grey — assigned but idle).
 - A red **"Unassigned labor"** badge next to the status means at least one
   labor line of the WO (one with a description, hours or parts) has no
-  mechanic assigned yet — open the WO and assign someone in that labor
-  block. The badge disappears once every labor line has a mechanic, and is
-  never shown on paid WOs.
+  mechanic yet — nobody is assigned to it and no mechanic's timer has run
+  on it (a line with tracked time belongs to whoever tracked it, exactly as
+  the WO page shows). Open the WO and assign someone in that labor block.
+  The badge disappears once every labor line has a mechanic, and is never
+  shown on paid WOs.
 - **"In Work" group** — WOs that mechanics have taken but not marked done
   yet are grouped at the top of the table under an "In Work · taken by
   mechanics, not marked done yet" header, highlighted with the in-progress
@@ -75,7 +77,13 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
 2. **Unit** — pick the customer's unit, or click **"+ Add Unit"** to create
    one inline (VIN auto-fills Make/Model/Year/Type via the VIN decoder).
 3. **Mileage** is required to create. **Work Order Date** defaults to today
-   and can be changed.
+   and can be changed. It is also the invoice date on the PDF and the date
+   the lists and sales reports use. **A mechanic's save moves this date to
+   the day of that save** — the Save button in web mechanic mode, and in the
+   app every autosave that actually changed something (jobs, parts,
+   mileage) or the first press of Done — so a job started on Monday and
+   finished on Wednesday is invoiced for Wednesday. Merely opening a WO in
+   the app does not move it, and office saves leave the date as set.
 4. Buttons: **"Create Work Order"**, or from its dropdown: **"Save In
    Progress"**, **"Create Annual Inspection"**. There is also
    **"📷 Recognize WO"** — upload a photo/PDF of a handwritten work order and

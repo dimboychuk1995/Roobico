@@ -4,7 +4,7 @@ merge по labor_id, автоцены сервером, синк дефолтн�
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from bson import ObjectId
@@ -921,6 +921,72 @@ def test_mobile_wo_save_sets_done_flag(client, mech_seed, mongo):
     wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
     assert wo["status"] == "in_progress"
     assert wo["mechanic_done"] is True
+    _deactivate_wos(mongo, data["id"])
+
+
+def test_mechanic_save_moves_work_order_date_to_today(client, mech_seed, mongo):
+    """Дата WO (дата инвойса) = день последнего сохранения механиком, в котором
+    он что-то реально поменял (веб механик-режим и мобилка). Значение — полночь
+    по времени магазина, как у даты из офиса; повторные сохранения в тот же
+    день поле не трогают. Пустой автосейв (как при открытии WO в приложении)
+    и менеджерское сохранение дату не двигают."""
+    from zoneinfo import ZoneInfo
+
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Date follows save")
+    shop_db = mongo[SHOP_A_DB]
+    wo_id = ObjectId(data["id"])
+    labor_id = shop_db.work_orders.find_one({"_id": wo_id})["labors"][0]["labor_id"]
+    tz = ZoneInfo("America/Chicago")  # тестовый магазин без timezone_location
+    old_date = datetime.now(timezone.utc) - timedelta(days=10)
+
+    def _saved():
+        return shop_db.work_orders.find_one({"_id": wo_id})["work_order_date"].replace(tzinfo=timezone.utc)
+
+    # Создание механиком: сразу полночь сегодняшнего дня по магазину.
+    created_local = _saved().astimezone(tz)
+    assert created_local.date() == datetime.now(tz).date() and created_local.hour == 0 and created_local.minute == 0
+
+    urls = (f"/work_orders/api/mechanic/work_orders/{data['id']}", f"/api/mobile/work_orders/{data['id']}")
+    for i, url in enumerate(urls):
+        shop_db.work_orders.update_one({"_id": wo_id}, {"$set": {"work_order_date": old_date}})
+        # Пустой автосейв (payload = то, что уже сохранено, пробег — как у юнита,
+        # так приложение делает при открытии) — дата остаётся старой.
+        current = shop_db.work_orders.find_one({"_id": wo_id})["labors"][0]["labor"]["description"]
+        unit_mileage = (shop_db.units.find_one({"_id": mech_seed["unit"]["_id"]}) or {}).get("mileage")
+        shop_db.work_orders.update_one({"_id": wo_id}, {"$unset": {"mileage": ""}})
+        echo = {"unit_mileage": unit_mileage} if unit_mileage is not None else {}
+        resp = _post_json(client, url, _wo_update_payload(mech_seed, labor_id, current, echo))
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert abs((_saved() - old_date).total_seconds()) < 1, url
+        # Реально новый пробег — это правка.
+        resp = _post_json(client, url, _wo_update_payload(mech_seed, labor_id, current, {"unit_mileage": 777001 + i}))
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert _saved().astimezone(tz).date() == datetime.now(tz).date(), url
+        shop_db.work_orders.update_one({"_id": wo_id}, {"$set": {"work_order_date": old_date}})
+        # Реальная правка — дата = сегодня по магазину, полночь.
+        resp = _post_json(client, url, _wo_update_payload(mech_seed, labor_id, f"Date follows save {i}"))
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        stamped = _saved()
+        local = stamped.astimezone(tz)
+        assert local.date() == datetime.now(tz).date() and local.hour == 0 and local.minute == 0, (url, stamped)
+        # Ещё одна правка в тот же день — значение то же самое (поле не перезаписывается).
+        resp = _post_json(client, url, _wo_update_payload(mech_seed, labor_id, f"Date follows save {i} again"))
+        assert resp.status_code == 200
+        assert _saved() == stamped
+        # Done впервые — тоже «реальное» сохранение.
+        shop_db.work_orders.update_one({"_id": wo_id}, {"$set": {"work_order_date": old_date}})
+        resp = _post_json(client, url, _wo_update_payload(mech_seed, labor_id, f"Date follows save {i} again", {"mechanic_state": "done"}))
+        assert resp.status_code == 200
+        assert _saved().astimezone(tz).date() == datetime.now(tz).date(), url
+
+    # Менеджер (owner) сохраняет через оба эндпоинта — дата остаётся его.
+    assert login(client).status_code == 302
+    for i, url in enumerate(urls):
+        shop_db.work_orders.update_one({"_id": wo_id}, {"$set": {"work_order_date": old_date}})
+        resp = _post_json(client, url, _wo_update_payload(mech_seed, labor_id, f"Manager edit {i}"))
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert abs((_saved() - old_date).total_seconds()) < 1, url
     _deactivate_wos(mongo, data["id"])
 
 

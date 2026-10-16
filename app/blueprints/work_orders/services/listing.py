@@ -286,10 +286,20 @@ def _labor_block_is_job(block: dict) -> bool:
     return bool(block.get("parts"))
 
 
-def has_unassigned_labor(wo_doc: dict) -> bool:
-    """Есть ли в WO строка работ, которая никому не назначена."""
+def has_unassigned_labor(wo_doc: dict, tracked_labor_ids=None) -> bool:
+    """
+    Есть ли в WO строка работ, которая никому не назначена.
+
+    Строка с затреканным временем (tracked_labor_ids — labor_id строк, по
+    которым есть тайм-логи) считается назначенной: механика по ней
+    определяет таймер, как и на странице WO, даже если assigned_mechanics
+    ещё не синхронизированы (таймер идёт, менеджер ещё не сохранял).
+    """
+    tracked = {str(x) for x in (tracked_labor_ids or ())}
     for block in wo_doc.get("labors") or []:
         if not isinstance(block, dict) or not _labor_block_is_job(block):
+            continue
+        if str(block.get("labor_id") or "") in tracked:
             continue
         labor = block.get("labor") if isinstance(block.get("labor"), dict) else {}
         assigned = labor.get("assigned_mechanics") or block.get("assigned_mechanics") or []
@@ -340,6 +350,17 @@ def _build_work_order_items(shop_db, shop_id: ObjectId, rows: list) -> list:
             names = working_map.setdefault(log.get("work_order_id"), [])
             if name not in names:
                 names.append(name)
+
+    # Строки с затреканным временем: механик по ним определяется таймером
+    # (как на странице WO) — такие строки не считаются «без механика».
+    tracked_map: dict = {}
+    if wo_ids:
+        tracked_rows = shop_db.wo_time_logs.aggregate([
+            {"$match": {"shop_id": shop_id, "work_order_id": {"$in": wo_ids}, "labor_id": {"$nin": [None, ""]}}},
+            {"$group": {"_id": {"wo": "$work_order_id", "labor": "$labor_id"}}},
+        ])
+        for r in tracked_rows:
+            tracked_map.setdefault(r["_id"]["wo"], set()).add(str(r["_id"]["labor"]))
 
     # Привязанные парт-ордера — бейдж "PO #" в строке (зеркало бейджа
     # "WO #" в таблице Parts Orders).
@@ -394,7 +415,7 @@ def _build_work_order_items(shop_db, shop_id: ObjectId, rows: list) -> list:
                 "parts_orders": parts_orders_map.get(x.get("_id")) or [],
                 "mechanics": _wo_mechanic_names(x),
                 # Строка работ без механика — пометка в списке, пока WO не оплачен.
-                "has_unassigned_labor": status != "paid" and has_unassigned_labor(x),
+                "has_unassigned_labor": status != "paid" and has_unassigned_labor(x, tracked_map.get(x.get("_id"))),
                 # Флаг «механик закончил» имеет смысл только пока WO в работе.
                 # mechanic_done — все работавшие механики поставили Done;
                 # mechanics_done — кто уже поставил (частичный Done).

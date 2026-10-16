@@ -69,6 +69,14 @@ What a mechanic sees and can do:
   mechanic has to press Done again.
 - The mechanic form has a **Unit mileage** field — saving (incl. autosave)
   records the mileage on the unit itself and on the WO.
+- **The work order date follows the mechanic's last real save.** Every
+  save a mechanic makes that changes something — the Save button in web
+  mechanic mode, and in the app every autosave that changed jobs, parts or
+  mileage, or a press of Done — stamps the WO with that day, and that date
+  is the invoice date on the PDF and in the lists. A job created on Monday and
+  finished on Wednesday is dated Wednesday. Opening a WO without changing
+  anything does not move the date; office (manager) saves keep the date as
+  it was set.
 - Prices/hours/rates that the office already entered are preserved when a
   mechanic edits; mechanics cannot delete existing jobs (manager-only).
 - Jobs a mechanic adds without a preset automatically get the shop's

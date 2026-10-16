@@ -3473,6 +3473,7 @@ from app.blueprints.work_orders.services.mechanic_view import (
     strip_wo_list_item,
 )
 from app.blueprints.work_orders.services.mechanic_editor import (
+    mechanic_save_date_fields,
     build_mechanic_labors_payload,
     merge_mechanic_edit,
     parse_mileage,
@@ -3648,7 +3649,8 @@ def api_mechanic_work_order_create():
         "unit_id": unit_id,
         "status": "in_progress",
         "labors": labors,
-        "work_order_date": now,
+        # Полночь по времени магазина — как у даты, введённой в офисе.
+        "work_order_date": shop_local_date_to_utc(now),
         "totals": totals,
         "inventory_deducted": len(inventory_result["deducted"]) > 0,
         "inventory_deductions": inventory_result["deducted"],
@@ -3749,12 +3751,20 @@ def api_mechanic_work_order_update(work_order_id):
     }
 
     unit_mileage = parse_mileage(data.get("unit_mileage"))
+    prior_unit_mileage = None
     if unit_mileage is not None:
+        unit_doc = shop_db.units.find_one({"_id": wo.get("unit_id"), "shop_id": shop["_id"]}, {"mileage": 1})
+        prior_unit_mileage = (unit_doc or {}).get("mileage")
         set_fields["mileage"] = unit_mileage
         shop_db.units.update_one(
             {"_id": wo.get("unit_id"), "shop_id": shop["_id"], "is_active": True},
             {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
         )
+
+    if is_mechanic_mode():
+        # Дата WO (дата инвойса) = день последнего реального сохранения
+        # механиком — см. mechanic_save_date_fields.
+        set_fields.update(mechanic_save_date_fields(wo, labors, data, set_fields, user_id, now, unit_mileage=prior_unit_mileage))
 
     shop_db.work_orders.update_one({"_id": wo_id}, {"$set": set_fields})
     _done_now = bool(set_fields.get("mechanic_done")) and not bool(wo.get("mechanic_done"))

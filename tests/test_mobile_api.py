@@ -159,7 +159,7 @@ def mobile_seed(app, seed):
                 "labors": [{"labor": 200.0, "labor_total": 200.0, "parts_total": 50.0,
                             "labor_full_total": 250.0}],
             },
-            "created_at": now,
+            "work_order_date": now, "created_at": now,
         }
         db.customers.insert_one(customer)
         db.units.insert_one(unit)
