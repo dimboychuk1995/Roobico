@@ -8,7 +8,8 @@
 {% block content %}
 <div class="container mech-wrap" id="mechDetailsPage"
      data-work-order-id="{{ work_order_id or '' }}"
-     data-mode="{{ 'edit' if work_order_id else 'create' }}">
+     data-mode="{{ 'edit' if work_order_id else 'create' }}"
+     data-mechanic-mode="{{ '1' if mechanic_mode else '0' }}">
 
   <div class="mech-header">
     <div class="mech-header-title">
@@ -62,6 +63,36 @@
         </button>
       </div>
       <div class="mech-info-row"><i class="bi bi-calendar3"></i><span id="mechInfoDate">—</span></div>
+      <div class="mech-info-row">
+        <i class="bi bi-speedometer2"></i>
+        <input type="number" class="form-control form-control-sm mech-mileage-input" id="mechWoMileage"
+               inputmode="numeric" min="0" placeholder="Mileage" title="Current mileage of the unit">
+      </div>
+    </div>
+  </div>
+
+  {# Обязательный пробег: окно не закрывается, пока механик не подтвердит
+     текущий одометр (или не вернётся к списку). #}
+  <div class="modal fade" id="mechMileageModal" tabindex="-1" aria-hidden="true"
+       data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Current mileage</h5>
+        </div>
+        <div class="modal-body">
+          <div class="fw-semibold mb-1" id="mechMileageUnit">—</div>
+          <div class="text-muted small mb-3">Last recorded: <span id="mechMileageLast">—</span></div>
+          <label class="form-label" for="mechMileageInput">Enter the unit's current mileage</label>
+          <input type="number" class="form-control form-control-lg" id="mechMileageInput"
+                 inputmode="numeric" min="0" autocomplete="off">
+          <div class="form-text">Required before you can work on this order.</div>
+        </div>
+        <div class="modal-footer">
+          <a class="btn btn-outline-secondary" href="{{ url_for('mechanic.work_orders_list') }}">Back to list</a>
+          <button type="button" class="btn btn-primary" id="mechMileageConfirmBtn" disabled>Confirm</button>
+        </div>
+      </div>
     </div>
   </div>
 

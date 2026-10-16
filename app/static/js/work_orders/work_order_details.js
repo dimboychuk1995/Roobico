@@ -4733,6 +4733,13 @@
 
         if (!customer_id) { toast("Please select a customer."); return; }
         if (!unit_id) { toast("Please select a unit."); return; }
+        // Сменили юнит — пробег нового юнита обязателен (иначе на WO остался
+        // бы снимок пробега прежнего юнита).
+        if (!mileageConfirmed && !unit_mileage) {
+          if (unitMileageInput) unitMileageInput.focus();
+          toast("Enter the current mileage for the selected unit.");
+          return;
+        }
 
         const payload = {
           labors,
@@ -5868,8 +5875,20 @@
     if (isCreated) {
       applyTotalsSnapshotToUi(blocksContainer, totalsSnapshot, shopSupplyPct);
       
-      // ✅ Load unit mileage when editing an existing work order
+      // ✅ Mileage of an existing work order = what it was at that time (the
+      // snapshot stored on the WO). The unit's current mileage is used only
+      // for old WOs that have no snapshot.
       (async () => {
+        const storedMileage = String(unitMileageInput?.dataset?.woMileage || "").trim();
+        if (storedMileage) {
+          if (unitMileageInput) {
+            unitMileageInput.value = storedMileage;
+            unitMileageInput.style.color = "";
+          }
+          if (unitMileageHidden) unitMileageHidden.value = storedMileage;
+          mileageConfirmed = true;
+          return;
+        }
         const selectedUnitId = String(unitSel?.value || "").trim();
         if (selectedUnitId) {
           const unitDetails = await fetchUnitDetails(selectedUnitId);

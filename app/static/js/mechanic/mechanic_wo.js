@@ -318,9 +318,51 @@
   function initDetailsPage(root) {
     var mode = root.dataset.mode || "create";
     var woId = root.dataset.workOrderId || "";
+    // Пробег обязателен только для механика (менеджер на этой странице не спрашивается).
+    var mechanicMode = root.dataset.mechanicMode === "1";
+    // После создания WO страница перезагружается с ?mileage=<подтверждённый>:
+    // второй раз не спрашиваем.
+    var presetMileage = (new URLSearchParams(window.location.search).get("mileage") || "").trim();
 
     // labors: [{labor_id, description, issue_description, parts: [{part_id, part_number, description, qty}], time}]
-    var state = { labors: [], saving: false };
+    // mileage — текущий пробег юнита; mileageConfirmed — механик подтвердил
+    // его в окне (обязательный шаг перед работой с WO, см. showMileageGate).
+    var state = { labors: [], saving: false, mileage: "", mileageConfirmed: false, mileageRequired: mechanicMode };
+    var mileageModal = null;
+
+    function parsedMileage(value) {
+      var s = String(value || "").trim().replace(/,/g, "");
+      if (!/^\d+$/.test(s)) return null;
+      return parseInt(s, 10);
+    }
+
+    function validateMileageInput() {
+      var btn = $("mechMileageConfirmBtn");
+      var input = $("mechMileageInput");
+      if (btn && input) btn.disabled = parsedMileage(input.value) === null;
+    }
+
+    function showMileageGate(unitLabel, lastKnown) {
+      var modalEl = $("mechMileageModal");
+      if (!modalEl || !window.bootstrap) return;
+      var unitEl = $("mechMileageUnit");
+      var lastEl = $("mechMileageLast");
+      var input = $("mechMileageInput");
+      if (unitEl) unitEl.textContent = unitLabel || "—";
+      if (lastEl) lastEl.textContent = lastKnown ? Number(lastKnown).toLocaleString() : "—";
+      if (input) input.value = lastKnown || "";
+      validateMileageInput();
+      if (!mileageModal) mileageModal = new window.bootstrap.Modal(modalEl, { backdrop: "static", keyboard: false });
+      mileageModal.show();
+      setTimeout(function () { if (input) { input.focus(); input.select(); } }, 250);
+    }
+
+    function setMileage(value) {
+      state.mileage = String(value);
+      state.mileageConfirmed = true;
+      var el = $("mechWoMileage");
+      if (el) el.value = state.mileage;
+    }
     var laborsContainer = $("mechLaborsContainer");
     var pickerTargetIndex = null;
     var tickHandle = null;
@@ -480,6 +522,17 @@
         $("mechInfoUnit").textContent = (data.unit && data.unit.label) || "—";
         $("mechInfoDate").textContent = data.date || "—";
 
+        state.mileageRequired = !!data.mileage_required && data.status !== "paid";
+        var unitMileage = (data.unit && data.unit.mileage != null && data.unit.mileage !== "") ? String(data.unit.mileage) : "";
+        if (!state.mileageConfirmed && presetMileage && parsedMileage(presetMileage) !== null) {
+          setMileage(parsedMileage(presetMileage)); // подтверждён при создании WO
+        }
+        if (!state.mileageConfirmed) {
+          state.mileage = unitMileage;
+          var mileageEl = $("mechWoMileage");
+          if (mileageEl) mileageEl.value = unitMileage;
+        }
+
         var historyBtn = $("mechUnitHistoryBtn");
         if (historyBtn) {
           var historyUnitId = (data.unit && data.unit.id) || "";
@@ -525,6 +578,8 @@
         if (data.status === "paid") {
           $("mechSaveBtn").disabled = true;
           toast("Paid work orders cannot be edited", "warning");
+        } else if (state.mileageRequired && !state.mileageConfirmed) {
+          showMileageGate(data.unit && data.unit.label, unitMileage);
         }
       } catch (e) {
         toast(e.message || "Failed to load work order", "error");
@@ -550,6 +605,13 @@
       var historyCreateBtn = $("mechUnitHistoryCreateBtn");
       unitSel.addEventListener("change", function () {
         if (historyCreateBtn) historyCreateBtn.disabled = !unitSel.value;
+        // Новый WO: пробег подтверждается сразу при выборе юнита.
+        state.mileageConfirmed = false;
+        state.mileage = "";
+        if (unitSel.value && state.mileageRequired) {
+          var opt = unitSel.options[unitSel.selectedIndex];
+          showMileageGate(opt ? opt.textContent : "", opt ? (opt.dataset.mileage || "") : "");
+        }
       });
 
       custSel.addEventListener("change", async function () {
@@ -564,6 +626,7 @@
             var opt = document.createElement("option");
             opt.value = u.id;
             opt.textContent = u.label;
+            if (u.mileage != null && u.mileage !== "") opt.dataset.mileage = String(u.mileage);
             unitSel.appendChild(opt);
           });
         } catch (e) {
@@ -614,10 +677,19 @@
           var opt = document.createElement("option");
           opt.value = data.id;
           opt.textContent = data.label;
+          // Пробег, введённый в форме нового юнита, — подсказка для окна пробега.
+          var typedMileage = ($("mechUnitMileage").value || "").trim();
+          if (typedMileage) opt.dataset.mileage = typedMileage;
           unitSel.appendChild(opt);
           unitSel.value = data.id;
-          unitSel.dispatchEvent(new Event("change"));
-          if (modal) modal.hide();
+          // Окно пробега открываем после закрытия модалки юнита (две модалки
+          // друг на друге ломают скролл страницы).
+          if (modal) {
+            modalEl.addEventListener("hidden.bs.modal", function () { unitSel.dispatchEvent(new Event("change")); }, { once: true });
+            modal.hide();
+          } else {
+            unitSel.dispatchEvent(new Event("change"));
+          }
           toast("Unit created", "success");
         } catch (e) {
           toast(e.message || "Failed to create unit", "error");
@@ -904,11 +976,8 @@
     }
 
     // ---------- save ----------
-    async function save() {
-      if (state.saving) return;
-      collectFromDom();
-
-      var labors = state.labors
+    function buildLaborsPayload() {
+      return state.labors
         .filter(function (l) { return l.description || l.parts.length; })
         .map(function (l) {
           return {
@@ -926,9 +995,27 @@
             }),
           };
         });
+    }
+
+    async function save() {
+      if (state.saving) return;
+      collectFromDom();
+
+      var labors = buildLaborsPayload();
 
       if (!labors.length) {
         toast("Add at least one job description or part", "warning");
+        return;
+      }
+
+      // Пробег — обязательный шаг для механика: без подтверждения сервер отклонит.
+      if (state.mileageRequired && (!state.mileageConfirmed || parsedMileage(state.mileage) === null)) {
+        var selUnit = mode === "create" ? $("mechUnitSelect") : null;
+        var selOpt = selUnit && selUnit.value ? selUnit.options[selUnit.selectedIndex] : null;
+        showMileageGate(
+          mode === "create" ? (selOpt ? selOpt.textContent : "") : $("mechInfoUnit").textContent,
+          mode === "create" ? (selOpt ? (selOpt.dataset.mileage || "") : "") : state.mileage
+        );
         return;
       }
 
@@ -947,11 +1034,13 @@
             customer_id: custSel.value,
             unit_id: unitSel.value,
             labors: labors,
+            unit_mileage: state.mileage,
           });
           toast("Work order #" + data.wo_number + " saved (In Progress)", "success");
-          window.location.href = "/mechanic/work_orders/" + encodeURIComponent(data.id);
+          window.location.href = "/mechanic/work_orders/" + encodeURIComponent(data.id) +
+            (state.mileageConfirmed ? "?mileage=" + encodeURIComponent(state.mileage) : "");
         } else {
-          await postJson(API.update(woId), { labors: labors });
+          await postJson(API.update(woId), { labors: labors, unit_mileage: state.mileage });
           toast("Saved (In Progress)", "success");
           await loadDetails();
         }
@@ -1031,6 +1120,38 @@
     });
 
     $("mechSaveBtn").addEventListener("click", save);
+
+    // ---------- mileage gate ----------
+    var mileageInputEl = $("mechMileageInput");
+    if (mileageInputEl) mileageInputEl.addEventListener("input", validateMileageInput);
+    var mileageConfirmBtn = $("mechMileageConfirmBtn");
+    if (mileageConfirmBtn) {
+      mileageConfirmBtn.addEventListener("click", async function () {
+        var value = parsedMileage(mileageInputEl ? mileageInputEl.value : "");
+        if (value === null) return;
+        setMileage(value);
+        if (mileageModal) mileageModal.hide();
+        // Существующий WO: записываем пробег сразу, не дожидаясь Save.
+        if (mode === "edit" && woId) {
+          collectFromDom();
+          var labors = buildLaborsPayload();
+          if (!labors.length) return;
+          try {
+            await postJson(API.update(woId), { labors: labors, unit_mileage: state.mileage });
+            toast("Mileage saved", "success");
+          } catch (e) {
+            toast(e.message || "Failed to save mileage", "error");
+          }
+        }
+      });
+    }
+    var woMileageEl = $("mechWoMileage");
+    if (woMileageEl) {
+      woMileageEl.addEventListener("change", function () {
+        var value = parsedMileage(woMileageEl.value);
+        if (value !== null) setMileage(value);
+      });
+    }
 
     bindPartPicker();
     bindPresetPicker();

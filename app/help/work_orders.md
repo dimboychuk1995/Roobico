@@ -76,7 +76,12 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
    Customer Info panel with an "Open profile" link.
 2. **Unit** — pick the customer's unit, or click **"+ Add Unit"** to create
    one inline (VIN auto-fills Make/Model/Year/Type via the VIN decoder).
-3. **Mileage** is required to create. **Work Order Date** defaults to today
+3. **Mileage** is required to create. It is stored on the work order as a
+   snapshot: opening an old WO (and its PDF) shows the mileage as it was
+   at that time, not the unit's current odometer. Editing the mileage on a
+   WO updates the unit's odometer only when the new value is higher than
+   the unit's current one, so an old WO can be corrected without rolling
+   the unit back. **Work Order Date** defaults to today
    and can be changed. It is also the invoice date on the PDF and the date
    the lists and sales reports use. **A mechanic's save moves this date to
    the day of that save** — the Save button in web mechanic mode, and in the

@@ -56,19 +56,17 @@ def ie_seed(seed, mongo):
     shop_db.work_order_payments.delete_many({"work_order_id": {"$in": wo_ids}})
 
 
-def _post_import(client, entity, csv_text, mapping, filename="data.csv"):
+def _post_import(client, entity, csv_text, mapping, filename="data.csv", extra=None, expect=200):
     token = get_csrf_token(client)
-    resp = client.post(
-        "/import-export/import",
-        data={
-            "csrf_token": token,
-            "entity_type": entity,
-            "mapping": json.dumps(mapping),
-            "file": (io.BytesIO(csv_text.encode("utf-8")), filename),
-        },
-        content_type="multipart/form-data",
-    )
-    assert resp.status_code == 200, resp.get_data(as_text=True)
+    data = {
+        "csrf_token": token,
+        "entity_type": entity,
+        "mapping": json.dumps(mapping),
+        "file": (io.BytesIO(csv_text.encode("utf-8")), filename),
+    }
+    data.update(extra or {})
+    resp = client.post("/import-export/import", data=data, content_type="multipart/form-data")
+    assert resp.status_code == expect, resp.get_data(as_text=True)
     return resp.get_json()
 
 
@@ -90,26 +88,95 @@ def test_import_customers_csv_with_spaces_in_headers(client, ie_seed, mongo):
     assert doc["phone"] == "+1 555 0100"
 
 
-def test_import_units_links_customer_and_reports_reasons(client, ie_seed, mongo):
+def test_import_units_for_selected_customer(client, ie_seed, mongo):
+    """Юниты импортируются для одного выбранного клиента: колонка клиента в
+    файле не нужна, каждая строка привязывается к выбранному, дубли VIN
+    проверяются внутри этого клиента."""
     login(client)
-    csv_text = ("Customer Name,Unit Number,VIN\n"
-                "Import Fleet LLC,IMP-8,IMPVIN00000000008\n"   # ок
-                "Ghost Fleet,IMP-9,IMPVIN00000000009\n"        # клиент не найден
-                "Import Fleet LLC,,\n"                          # нет идентичности
-                "Import Fleet LLC,IMP-7X,IMPVIN00000000007\n")  # дубль VIN
-    data = _post_import(client, "units", csv_text, {
-        "Customer Name": "customer_name", "Unit Number": "unit_number", "VIN": "vin",
-    })
-    assert data["imported"] == 1
-    assert data["skipped"] == 3
+    cid = str(ie_seed["customer"]["_id"])
+    csv_text = ("Unit Number,VIN,Make\n"
+                "IMP-8,IMPVIN00000000008,Volvo\n"    # ок
+                ",,Kenworth\n"                       # нет идентичности
+                "IMP-7X,IMPVIN00000000007,\n")       # дубль VIN у этого клиента
+    data = _post_import(client, "units", csv_text, {"Unit Number": "unit_number", "VIN": "vin", "Make": "make"},
+                        extra={"customer_id": cid})
+    assert data["imported"] == 1, data
+    assert data["skipped"] == 2
     joined = " | ".join(data["errors"])
-    assert 'customer "Ghost Fleet" not found' in joined
     assert "unit number and VIN are both empty" in joined
-    assert "already exists for customer" in joined
+    assert 'already exists for customer "Import Fleet LLC"' in joined
 
     unit = mongo[SHOP_A_DB].units.find_one({"unit_number": "IMP-8"})
     assert unit is not None
     assert unit["customer_id"] == ie_seed["customer"]["_id"]
+
+
+def test_import_units_matching_customer_column_is_fine(client, ie_seed, mongo):
+    """Колонка Customer Name с именем выбранного клиента (или пустая) не мешает."""
+    login(client)
+    cid = str(ie_seed["customer"]["_id"])
+    csv_text = ("Customer Name,Unit Number,VIN\n"
+                "import fleet llc,IMP-10,IMPVIN00000000010\n"
+                ",IMP-14,IMPVIN00000000014\n")
+    data = _post_import(client, "units", csv_text, {"Unit Number": "unit_number", "VIN": "vin"},
+                        extra={"customer_id": cid})
+    assert data["imported"] == 2, data
+    for number in ("IMP-10", "IMP-14"):
+        assert mongo[SHOP_A_DB].units.find_one({"unit_number": number})["customer_id"] == ie_seed["customer"]["_id"]
+
+
+def test_import_units_requires_valid_customer(client, ie_seed, seed, mongo):
+    login(client)
+    csv_text = "Unit Number,VIN\nIMP-11,IMPVIN00000000011\n"
+    mapping = {"Unit Number": "unit_number", "VIN": "vin"}
+    data = _post_import(client, "units", csv_text, mapping, expect=400)
+    assert "Choose the customer" in data["error"]
+    data = _post_import(client, "units", csv_text, mapping, extra={"customer_id": str(ObjectId())}, expect=400)
+    assert data["error"] == "Customer not found."
+    # Деактивированный клиент — тоже нельзя.
+    shop_db = mongo[SHOP_A_DB]
+    ghost = {"_id": ObjectId(), "shop_id": seed["shop_a"]["_id"], "company_name": "Gone Fleet",
+             "contacts": [], "is_active": False, "created_at": datetime.now(timezone.utc)}
+    shop_db.customers.insert_one(ghost)
+    try:
+        data = _post_import(client, "units", csv_text, mapping, extra={"customer_id": str(ghost["_id"])}, expect=400)
+        assert data["error"] == "Customer not found."
+    finally:
+        shop_db.customers.delete_one({"_id": ghost["_id"]})
+    assert shop_db.units.find_one({"unit_number": "IMP-11"}) is None
+
+    # Страница вкладки Units отдаёт выбор клиента и список клиентов.
+    html = client.get("/import-export/?tab=units").get_data(as_text=True)
+    assert 'id="importCustomerSearch"' in html and "Import Fleet LLC" in html
+
+
+def test_import_units_customer_list_is_html_safe(client, ie_seed, seed, mongo):
+    """Имена клиентов попадают в <script> — без HTML-экранирования это stored XSS."""
+    login(client)
+    shop_db = mongo[SHOP_A_DB]
+    evil = {"_id": ObjectId(), "shop_id": seed["shop_a"]["_id"], "company_name": "Evil </script><script>alert(1)</script>",
+            "contacts": [], "is_active": True, "created_at": datetime.now(timezone.utc)}
+    shop_db.customers.insert_one(evil)
+    try:
+        html = client.get("/import-export/?tab=units").get_data(as_text=True)
+        assert "</script><script>alert(1)" not in html
+        assert "\\u003c/script\\u003e" in html
+    finally:
+        shop_db.customers.delete_one({"_id": evil["_id"]})
+
+
+def test_import_units_skips_rows_of_other_customers(client, ie_seed, mongo):
+    """Экспорт всего магазина (есть колонка Customer Name): строки других
+    клиентов не переезжают к выбранному, а пропускаются с причиной."""
+    login(client)
+    cid = str(ie_seed["customer"]["_id"])
+    csv_text = ("Customer Name,Unit Number,VIN\n"
+                "Import Fleet LLC,IMP-12,IMPVIN00000000012\n"
+                "Other Fleet,IMP-13,IMPVIN00000000013\n")
+    data = _post_import(client, "units", csv_text, {"Unit Number": "unit_number", "VIN": "vin"}, extra={"customer_id": cid})
+    assert data["imported"] == 1 and data["skipped"] == 1, data
+    assert 'belongs to customer "Other Fleet"' in " | ".join(data["errors"])
+    assert mongo[SHOP_A_DB].units.find_one({"unit_number": "IMP-13"}) is None
 
 
 def test_import_parts_uses_stock_service(client, ie_seed, mongo):

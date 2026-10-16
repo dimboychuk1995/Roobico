@@ -118,7 +118,8 @@ def _build_wo_pdf_context(shop_db, shop, wo):
     unit = shop_db.units.find_one({"_id": wo.get("unit_id")}) or {}
     unit_lbl = unit_label(unit)
     unit_vin = str(unit.get("vin") or "").strip()
-    unit_mileage = str(unit.get("mileage") or "").strip()
+    # Пробег на момент работы — снимок с WO; у старых WO без снимка — юнит.
+    unit_mileage = str((wo.get("mileage") if wo.get("mileage") is not None else unit.get("mileage")) or "").strip()
     unit_number = str(unit.get("unit_number") or "").strip()
     unit_year = str(unit.get("year") or "").strip()
     unit_make = str(unit.get("make") or "").strip()

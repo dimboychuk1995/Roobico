@@ -75,6 +75,7 @@ def mech_seed(app, seed, mongo):
         "customer_id": customer["_id"],
         "vin": "MECH1234567890000",
         "unit_number": "M-1",
+        "mileage": 100000,
         "is_active": True,
         "created_at": now,
     }
@@ -111,6 +112,7 @@ def _create_wo_as_mechanic(client, mech_seed, description="Replace brakes"):
     resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
         "customer_id": str(mech_seed["customer"]["_id"]),
         "unit_id": str(mech_seed["unit"]["_id"]),
+        "unit_mileage": 100000,
         "labors": [{
             "description": description,
             "parts": [{"part_id": str(mech_seed["part"]["_id"]), "qty": 2}],
@@ -311,7 +313,7 @@ def test_mechanic_update_preserves_manager_fields(client, mech_seed, mongo):
     resp = _post_json(
         client,
         f"/work_orders/api/mechanic/work_orders/{wo_doc['_id']}",
-        {"labors": [{
+        {"unit_mileage": 100000, "labors": [{
             "labor_id": labor_id,
             "description": "Manager job — done",
             "parts": [
@@ -414,6 +416,7 @@ def test_mobile_edit_forces_in_progress_for_mechanic(client, mech_seed, mongo):
 
     resp = _post_json(client, f"/api/mobile/work_orders/{wo_id}", {
         "status": "open",
+        "unit_mileage": 100000,
         "labors": [{"labor_id": "", "description": "Mobile force test", "parts": []}],
     })
     assert resp.status_code == 200, resp.get_data(as_text=True)
@@ -850,12 +853,14 @@ def test_mechanic_can_load_wo_form_customers_and_units(client, mech_seed):
 
 
 def _wo_update_payload(mech_seed, labor_id, description, extra=None):
+    # Пробег обязателен для сохранений механика — по умолчанию шлём известный.
     payload = {
         "labors": [{
             "labor_id": labor_id,
             "description": description,
             "parts": [{"part_id": str(mech_seed["part"]["_id"]), "qty": 2}],
         }],
+        "unit_mileage": 100000,
     }
     payload.update(extra or {})
     return payload
@@ -1175,6 +1180,7 @@ def test_mechanic_sends_authorization(client, mech_seed, mongo, monkeypatch):
 
 
 def test_mechanic_save_updates_unit_mileage(client, mech_seed, mongo):
+    mongo[SHOP_A_DB].units.update_one({"_id": mech_seed["unit"]["_id"]}, {"$set": {"mileage": 100000}})
     login_mechanic(client)
     data = _create_wo_as_mechanic(client, mech_seed, description="Mileage job")
     shop_db = mongo[SHOP_A_DB]
@@ -1192,14 +1198,73 @@ def test_mechanic_save_updates_unit_mileage(client, mech_seed, mongo):
     wo = shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
     assert wo["mileage"] == 152300
 
-    # Мусор/пусто пробег не трогают.
-    resp = _post_json(
-        client,
-        f"/api/mobile/work_orders/{data['id']}",
-        _wo_update_payload(mech_seed, labor_id, "Mileage job", {"unit_mileage": ""}),
-    )
-    assert resp.status_code == 200
+    # Пусто/мусор — сохранение механика отклоняется, пробег не тронут.
+    for bad in ("", "abc", "-5"):
+        resp = _post_json(
+            client,
+            f"/api/mobile/work_orders/{data['id']}",
+            _wo_update_payload(mech_seed, labor_id, "Mileage job", {"unit_mileage": bad}),
+        )
+        assert resp.status_code == 400, (bad, resp.get_data(as_text=True))
+        assert resp.get_json()["error"] == "mileage_required"
     assert mongo[SHOP_A_DB].units.find_one({"_id": mech_seed["unit"]["_id"]})["mileage"] == 152300
+    _deactivate_wos(mongo, data["id"])
+
+
+def test_mechanic_mileage_gate_and_odometer_forward_only(client, mech_seed, mongo):
+    """Веб-эндпоинт механика тоже требует пробег; менеджеру он не обязателен;
+    в деталях механика есть флаг mileage_required и снимок wo_mileage; меньший
+    пробег пишется на WO, но одометр юнита не откатывает."""
+    mongo[SHOP_A_DB].units.update_one({"_id": mech_seed["unit"]["_id"]}, {"$set": {"mileage": 100000}})
+    login_mechanic(client)
+    data = _create_wo_as_mechanic(client, mech_seed, description="Gate job")
+    shop_db = mongo[SHOP_A_DB]
+    wo_id = ObjectId(data["id"])
+    labor_id = shop_db.work_orders.find_one({"_id": wo_id})["labors"][0]["labor_id"]
+    web = f"/work_orders/api/mechanic/work_orders/{data['id']}"
+    mobile = f"/api/mobile/work_orders/{data['id']}"
+
+    # Без пробега — 400 и никаких побочных эффектов (описание не изменилось).
+    resp = _post_json(client, web, _wo_update_payload(mech_seed, labor_id, "Gate job edited", {"unit_mileage": None}))
+    assert resp.status_code == 400 and resp.get_json()["error"] == "mileage_required"
+    assert shop_db.work_orders.find_one({"_id": wo_id})["labors"][0]["labor"]["description"] == "Gate job"
+    # Старая сборка приложения ключ не шлёт вовсе — её не ломаем.
+    legacy = _wo_update_payload(mech_seed, labor_id, "Gate job legacy")
+    legacy.pop("unit_mileage")
+    resp = _post_json(client, mobile, legacy)
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    # Пробег юнита, сохранённый строкой (старые офисные сохранения), при
+    # подтверждении того же числа не считается правкой — дата WO не двигается.
+    shop_db.units.update_one({"_id": mech_seed["unit"]["_id"]}, {"$set": {"mileage": "100000"}})
+    old_date = datetime.now(timezone.utc) - timedelta(days=10)
+    shop_db.work_orders.update_one({"_id": wo_id}, {"$set": {"work_order_date": old_date, "mileage": 100000}})
+    resp = _post_json(client, mobile, _wo_update_payload(mech_seed, labor_id, "Gate job legacy", {"unit_mileage": "100000"}))
+    assert resp.status_code == 200
+    saved_date = shop_db.work_orders.find_one({"_id": wo_id})["work_order_date"].replace(tzinfo=timezone.utc)
+    assert abs((saved_date - old_date).total_seconds()) < 1
+
+    # Детали для механика: флаг обязательного пробега + снимок с WO + текущий одометр.
+    for url in (web, mobile):
+        details = client.get(url).get_json()
+        assert details["mileage_required"] is True, url
+        assert details["wo_mileage"] == 100000 and details["unit"]["mileage"] is not None
+
+    # Больший пробег: и WO, и юнит.
+    resp = _post_json(client, web, _wo_update_payload(mech_seed, labor_id, "Gate job", {"unit_mileage": 210000}))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert shop_db.work_orders.find_one({"_id": wo_id})["mileage"] == 210000
+    assert shop_db.units.find_one({"_id": mech_seed["unit"]["_id"]})["mileage"] == 210000
+    # Меньший — только снимок на WO, одометр юнита стоит.
+    resp = _post_json(client, mobile, _wo_update_payload(mech_seed, labor_id, "Gate job", {"unit_mileage": 205000}))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert shop_db.work_orders.find_one({"_id": wo_id})["mileage"] == 205000
+    assert shop_db.units.find_one({"_id": mech_seed["unit"]["_id"]})["mileage"] == 210000
+
+    # Менеджер (owner) сохраняет без пробега — можно; флага обязательности нет.
+    assert login(client).status_code == 302
+    resp = _post_json(client, mobile, _wo_update_payload(mech_seed, labor_id, "Gate job by manager", {"unit_mileage": None}))
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert client.get(web).get_json()["mileage_required"] is False
     _deactivate_wos(mongo, data["id"])
 
 
@@ -1457,6 +1522,7 @@ def test_mechanic_can_delete_labor(client, mech_seed, mongo):
     # Механик прислал только первую строку — вторая удаляется.
     resp = _post_json(client, f"/api/mobile/work_orders/{data['id']}", {
         "status": "in_progress",
+        "unit_mileage": 100000,
         "labors": [{"labor_id": keep_id, "description": "Keep me",
                     "hours": "", "rate_code": "", "parts": []}],
         "mechanic_state": "in_progress",

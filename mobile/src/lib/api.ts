@@ -306,7 +306,7 @@ export function fetchWoFormCustomers(q: string) {
 
 /** Юниты клиента для формы WO — доступно механику (work_orders.create). */
 export function fetchWoFormUnits(customerId: string) {
-  return request<{ items: { id: string; label: string }[] }>(
+  return request<{ items: { id: string; label: string; mileage?: number | string | null }[] }>(
     `/work_orders/api/units?customer_id=${encodeURIComponent(customerId)}`
   ).then((d) => d.items || []);
 }
@@ -441,6 +441,10 @@ export interface MechWorkOrderDetails {
   customer_email?: string;
   mechanic_done?: boolean;
   unit: { id: string; label: string; vin: string; unit_number: string; mileage: number | string | null };
+  /** Пробег, записанный на самом WO (снимок на момент работы). */
+  wo_mileage?: number | string | null;
+  /** Механик обязан подтвердить текущий пробег до работы с WO. */
+  mileage_required?: boolean;
   date: string;
   labors: MechWoLabor[];
   my_running_timer: MechRunningTimer | null;

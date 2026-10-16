@@ -25,6 +25,60 @@
   // Секция импорта может быть скрыта правами — тогда просто ничего не делаем.
   if (!els.step1 || !els.file || !els.uploadBtn) return;
 
+  // ── Units: target customer (list rendered by the server, searchable) ──
+  var customers = Array.isArray(window.__importCustomers) ? window.__importCustomers : [];
+  var custEls = {
+    id: document.getElementById("importCustomerId"),
+    search: document.getElementById("importCustomerSearch"),
+    drop: document.getElementById("importCustomerDrop"),
+    label: document.getElementById("importCustomerLabel"),
+  };
+  var needsCustomer = entityType === "units" && !!custEls.id;
+
+  function renderCustomerDrop(q) {
+    if (!custEls.drop) return;
+    var needle = String(q || "").trim().toLowerCase();
+    var items = customers.filter(function (c) {
+      return !needle || String(c.label || "").toLowerCase().indexOf(needle) !== -1;
+    }).slice(0, 50);
+    custEls.drop.innerHTML = "";
+    if (!items.length) { custEls.drop.style.display = "none"; return; }
+    items.forEach(function (c) {
+      var item = document.createElement("button");
+      item.type = "button";
+      item.className = "list-group-item list-group-item-action";
+      item.textContent = c.label;
+      item.addEventListener("mousedown", function (e) {
+        e.preventDefault();
+        custEls.id.value = c.id;
+        custEls.search.value = c.label;
+        custEls.drop.style.display = "none";
+        updateCustomerState();
+      });
+      custEls.drop.appendChild(item);
+    });
+    custEls.drop.style.display = "";
+  }
+
+  function updateCustomerState() {
+    if (custEls.label) {
+      custEls.label.textContent = custEls.id && custEls.id.value ? "— for " + custEls.search.value : "";
+    }
+    validateMapping();
+  }
+
+  if (needsCustomer && custEls.search) {
+    custEls.search.addEventListener("input", function () {
+      custEls.id.value = ""; // typing invalidates the choice until an item is picked
+      renderCustomerDrop(custEls.search.value);
+      updateCustomerState();
+    });
+    custEls.search.addEventListener("focus", function () { renderCustomerDrop(custEls.search.value); });
+    custEls.search.addEventListener("blur", function () {
+      setTimeout(function () { if (custEls.drop) custEls.drop.style.display = "none"; }, 150);
+    });
+  }
+
   var alertFn = window.appAlert || function (msg) { window.alert(msg); };
 
   function show(el, on) { if (el) el.style.display = on ? "" : "none"; }
@@ -38,7 +92,10 @@
   function setBusy(on) {
     show(els.spinner, on);
     els.uploadBtn.disabled = on || !els.file.files.length;
-    if (els.runBtn) els.runBtn.disabled = on;
+    if (els.runBtn) {
+      if (on) els.runBtn.disabled = true;
+      else validateMapping();
+    }
   }
 
   // fetch + JSON: любой не-JSON ответ (500, HTML-редирект от «Access denied»)
@@ -143,7 +200,11 @@
   }
 
   function validateMapping() {
-    if (els.runBtn) els.runBtn.disabled = !Object.keys(getMapping()).length;
+    if (!els.runBtn) return;
+    var mapped = Object.keys(getMapping()).length > 0;
+    var customerOk = !needsCustomer || !!(custEls.id && custEls.id.value);
+    els.runBtn.disabled = !mapped || !customerOk;
+    els.runBtn.title = (needsCustomer && !customerOk) ? "Choose the customer to import units for" : "";
   }
 
   if (els.backBtn) {
@@ -159,10 +220,17 @@
       if (!els.file.files.length) return;
       setBusy(true);
 
+      if (needsCustomer && !(custEls.id && custEls.id.value)) {
+        setBusy(false);
+        alertFn("Choose the customer to import units for.", "warning");
+        return;
+      }
+
       var fd = new FormData();
       fd.append("file", els.file.files[0]);
       fd.append("entity_type", entityType);
       fd.append("mapping", JSON.stringify(getMapping()));
+      if (custEls.id && custEls.id.value) fd.append("customer_id", custEls.id.value);
 
       fetchJson("/import-export/import", { method: "POST", body: fd })
         .then(function (data) {

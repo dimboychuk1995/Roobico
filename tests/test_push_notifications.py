@@ -232,6 +232,7 @@ def test_mechanic_done_pushes_wo_finished(client, push_seed, push_capture):
     save_payload = {
         "labors": [{"labor_id": "PL2", "description": "Job", "parts": []}],
         "mechanic_state": "done",
+        "unit_mileage": 50000,
     }
     resp = _post_json(client, f"/work_orders/api/mechanic/work_orders/{wo['_id']}", save_payload)
     assert resp.status_code == 200, resp.get_data(as_text=True)
@@ -351,6 +352,7 @@ def test_finished_push_waits_for_all_mechanics(app, client, push_seed, push_seco
     save_payload = {
         "labors": [{"labor_id": "PL5", "description": "Job", "parts": []}],
         "mechanic_state": "done",
+        "unit_mileage": 50000,
     }
 
     _login_mechanic(client)

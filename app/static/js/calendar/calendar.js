@@ -50,6 +50,7 @@
   /* ── state ── */
   var weekStart = null;
   var expandedDayIndex = -1;
+  var expandLevel = 0;               // 0 - none, 1 - wide day, 2 - full-width day
   var selectedDayIndex = 0;          // mechanics view: which day of the week
   var viewMode = lsGet("view", "week") === "mechanics" ? "mechanics" : "week";
   var mechanicFilter = "";
@@ -538,6 +539,7 @@
       if (selectedDayIndex < 0 || selectedDayIndex > 6) selectedDayIndex = todayIdx >= 0 ? todayIdx : 0;
     }
     expandedDayIndex = -1;
+    expandLevel = 0;
     render();
   }
 
@@ -662,6 +664,7 @@
         laneNames.className = "cal-lane-names";
         cell.appendChild(laneNames);
 
+        cell.title = "Click to expand this day, click again for full width, once more to collapse";
         (function (idx) {
           cell.addEventListener("click", function () { toggleExpandDay(idx); });
         })(col.dayIndex);
@@ -1461,39 +1464,47 @@
 
   /* ── layout / expand ── */
 
+  /* Header cell, time column and the "Not scheduled" cell of a day always
+     share the same width classes: normal / wide (level 1) / full (level 2)
+     for the expanded day, collapsed for the others. */
   function applyLayout() {
     if (viewMode === "mechanics") return;
     var headerCells = container.querySelectorAll(".cal-header-cell");
     var bodyCols    = container.querySelectorAll(".cal-day-col");
+    var chipCells   = container.querySelectorAll(".cal-unscheduled-cell");
 
     var isExpanded = expandedDayIndex >= 0 && expandedDayIndex < 7;
 
     for (var i = 0; i < 7; i++) {
-      var hc = headerCells[i];
-      var bc = bodyCols[i];
-      if (!hc || !bc) continue;
-
-      if (isExpanded) {
+      var els = [headerCells[i], bodyCols[i], chipCells[i]];
+      for (var k = 0; k < els.length; k++) {
+        var el = els[k];
+        if (!el) continue;
+        el.classList.remove("cal-expanded", "cal-expanded--full", "cal-collapsed");
+        if (!isExpanded) continue;
         if (i === expandedDayIndex) {
-          hc.classList.add("cal-expanded");
-          hc.classList.remove("cal-collapsed");
-          bc.classList.add("cal-expanded");
-          bc.classList.remove("cal-collapsed");
+          el.classList.add("cal-expanded");
+          if (expandLevel >= 2) el.classList.add("cal-expanded--full");
         } else {
-          hc.classList.remove("cal-expanded");
-          hc.classList.add("cal-collapsed");
-          bc.classList.remove("cal-expanded");
-          bc.classList.add("cal-collapsed");
+          el.classList.add("cal-collapsed");
         }
-      } else {
-        hc.classList.remove("cal-expanded", "cal-collapsed");
-        bc.classList.remove("cal-expanded", "cal-collapsed");
       }
     }
   }
 
+  /* Click on a day header: 1st - wide day with mechanic lanes, 2nd - the
+     day takes almost the whole grid (other days become narrow strips),
+     3rd - back to the normal week. */
   function toggleExpandDay(idx) {
-    expandedDayIndex = expandedDayIndex === idx ? -1 : idx;
+    if (expandedDayIndex !== idx) {
+      expandedDayIndex = idx;
+      expandLevel = 1;
+    } else if (expandLevel === 1) {
+      expandLevel = 2;
+    } else {
+      expandedDayIndex = -1;
+      expandLevel = 0;
+    }
     applyLayout();
     renderEvents();
   }

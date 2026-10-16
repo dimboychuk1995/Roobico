@@ -23,6 +23,7 @@ import { LaborTimer } from "@/components/labor-timer";
 import { SearchPickerModal } from "@/components/search-picker";
 import { Badge, RowCard } from "@/components/ui";
 import { VinScannerModal } from "@/components/vin-scanner";
+import { MileageGateModal } from "@/components/mileage-gate-modal";
 import { WoAuthorizationModal } from "@/components/wo-authorization-modal";
 import { useIsMechanic } from "@/context/auth";
 import { useToast } from "@/context/toast";
@@ -61,6 +62,8 @@ import { useTheme } from "@/lib/theme";
 interface UnitOption {
   id: string;
   label: string;
+  /** Последний известный пробег юнита — подсказка в окне пробега. */
+  mileage?: number | string | null;
 }
 
 function emptyLabor(): WoFormLabor {
@@ -68,10 +71,11 @@ function emptyLabor(): WoFormLabor {
 }
 
 export default function WorkOrderFormScreen() {
-  const { id, customerId: presetCustomerId, unitId: presetUnitId } = useLocalSearchParams<{
+  const { id, customerId: presetCustomerId, unitId: presetUnitId, mileage: presetMileage } = useLocalSearchParams<{
     id?: string;
     customerId?: string;
     unitId?: string;
+   mileage?: string;
   }>();
   const isEdit = !!id;
   const theme = useTheme();
@@ -111,6 +115,9 @@ export default function WorkOrderFormScreen() {
     customer_email: string;
   } | null>(null);
   const [mileage, setMileage] = useState("");
+  // Обязательный пробег: окно открыто, пока механик не подтвердит одометр.
+  const [mileageGate, setMileageGate] = useState(false);
+  const [lastKnownMileage, setLastKnownMileage] = useState("");
   const [laborTimes, setLaborTimes] = useState<Record<string, MechLaborTime>>({});
   const [serverOffsetMs, setServerOffsetMs] = useState(0);
   const [authModal, setAuthModal] = useState<{ scope: "work_order" | "labor"; laborIndex?: number; jobLabel?: string } | null>(null);
@@ -234,7 +241,14 @@ export default function WorkOrderFormScreen() {
             mechanic_done: !!wo.mechanic_done,
             customer_email: wo.customer_email || "",
           });
-          setMileage(wo.unit.mileage != null && wo.unit.mileage !== "" ? String(wo.unit.mileage) : "");
+          const lastKnown = wo.unit.mileage != null && wo.unit.mileage !== "" ? String(wo.unit.mileage) : "";
+          // Пробег, только что подтверждённый при создании WO (router.replace
+          // перемонтирует форму) — второй раз не спрашиваем.
+          const confirmed = String(presetMileage || "").trim();
+          setMileage(confirmed || lastKnown);
+          setLastKnownMileage(lastKnown);
+          // Сначала пробег, потом работа: сервер отклонит сохранение без него.
+          if (wo.mileage_required && wo.status !== "paid" && !confirmed) setMileageGate(true);
           const times: Record<string, MechLaborTime> = {};
           wo.labors.forEach((l) => {
             if (l.labor_id) times[l.labor_id] = l.time;
@@ -295,7 +309,7 @@ export default function WorkOrderFormScreen() {
         } else if (presetCustomerId) {
           const c = await fetchCustomerDetails(presetCustomerId);
           setCustomer({ id: c.id, label: c.label });
-          const opts = c.units.map((u) => ({ id: u.id, label: u.label }));
+          const opts = c.units.map((u) => ({ id: u.id, label: u.label, mileage: u.mileage ?? null }));
           setUnits(opts);
           // Переход из общего поиска юнитов: юнит уже выбран.
           if (presetUnitId) {
@@ -321,7 +335,7 @@ export default function WorkOrderFormScreen() {
       isMechanic
         ? fetchWoFormUnits(customerId)
         : fetchCustomerDetails(customerId).then((d) =>
-            d.units.map((u) => ({ id: u.id, label: u.label }))
+            d.units.map((u) => ({ id: u.id, label: u.label, mileage: u.mileage ?? null }))
           ),
     [isMechanic]
   );
@@ -341,12 +355,15 @@ export default function WorkOrderFormScreen() {
   const applyVinMatch = async (m: VinMatch) => {
     setVinChoices(null);
     setCustomer({ id: m.customer_id, label: m.customer_label });
-    setUnit({ id: m.unit_id, label: m.unit_label });
+    // Юнит берём из свежего списка — там есть последний пробег для окна пробега.
+    let fresh: UnitOption[] = [];
     try {
-      setUnits(await loadUnitsForCustomer(m.customer_id));
+      fresh = await loadUnitsForCustomer(m.customer_id);
     } catch {
-      setUnits([]);
+      fresh = [];
     }
+    setUnits(fresh);
+    setUnit(fresh.find((u) => u.id === m.unit_id) ?? { id: m.unit_id, label: m.unit_label });
   };
 
   const onVinScanned = async (vin: string) => {
@@ -596,6 +613,10 @@ export default function WorkOrderFormScreen() {
   // ── автосейв (механик, edit-вид): любое изменение → in_progress ───
   const doAutosave = useCallback(async () => {
     if (!isMechanic || !isEdit || !id || isPaid) return;
+    if (!mileage.trim()) {
+      setMileageGate(true);
+      return;
+    }
     const rev = editRevision.current;
     const validLabors = stripMoney(
       labors.filter((l) => l.description.trim() || l.parts.length > 0)
@@ -653,14 +674,17 @@ export default function WorkOrderFormScreen() {
           setLaborTimes(times);
         }
       }
-    } catch {
+    } catch (e) {
+      if (e instanceof ApiError && e.code === "mileage_required") setMileageGate(true);
       setAutoSaveState("error");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isMechanic, isEdit, id, isPaid, labors, mileage]);
 
   useEffect(() => {
-    if (!isMechanic || !isEdit || !loadedRef.current || isPaid) return;
+    // Пока окно пробега открыто, ничего не сохраняем (в т.ч. пустой автосейв
+    // при открытии): первое сохранение уйдёт уже с подтверждённым пробегом.
+    if (!isMechanic || !isEdit || !loadedRef.current || isPaid || mileageGate) return;
     // Обновление пришло с сервера (рефетч после автосейва) — не пересохраняем.
     if (suppressAutosave.current) {
       suppressAutosave.current = false;
@@ -677,7 +701,7 @@ export default function WorkOrderFormScreen() {
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [labors, mileage]);
+  }, [labors, mileage, mileageGate]);
 
   // ── сохранение ────────────────────────────────────────────────────
   // mechanicState: работа механика всегда сохраняется как in_progress —
@@ -697,6 +721,10 @@ export default function WorkOrderFormScreen() {
       return;
     }
     if (isMechanic) {
+      if (!mileage.trim()) {
+        setMileageGate(true);
+        return;
+      }
       validLabors = stripMoney(validLabors);
       status = "in_progress";
       // Явное сохранение отменяет запланированный автосейв.
@@ -728,7 +756,8 @@ export default function WorkOrderFormScreen() {
       if (!isEdit && isMechanic && res.id) {
         // Механик после создания сразу попадает в рабочий edit-вид WO —
         // с таймерами, фото и отправкой на утверждение.
-        router.replace({ pathname: "/work-order-form", params: { id: res.id } });
+        // Пробег уже подтверждён при создании — передаём, чтобы форма не спросила снова.
+        router.replace({ pathname: "/work-order-form", params: { id: res.id, mileage: mileage.trim() } });
       } else {
         router.back();
       }
@@ -744,10 +773,15 @@ export default function WorkOrderFormScreen() {
   // Механик: WO создаётся сам, как только выбраны клиент и юнит.
   useEffect(() => {
     if (!isMechanic || isEdit || !customer || !unit || autoCreateFired.current) return;
+    // Сначала пробег: WO создаётся уже с подтверждённым одометром.
+    if (!mileage.trim()) {
+      setMileageGate(true);
+      return;
+    }
     autoCreateFired.current = true;
     save("in_progress", "in_progress");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [customer, unit]);
+  }, [customer, unit, mileage]);
 
   if (loading) {
     return (
@@ -1225,6 +1259,17 @@ export default function WorkOrderFormScreen() {
               </View>
             )}
 
+            <MileageGateModal
+              visible={isMechanic && mileageGate}
+              unitLabel={unit?.label || ""}
+              lastKnown={isEdit ? lastKnownMileage : (unit?.mileage != null && unit.mileage !== "" ? String(unit.mileage) : "")}
+              onConfirm={(value) => {
+                flushAutosave.current = true;
+                setMileage(value);
+                setMileageGate(false);
+              }}
+              onLeave={() => router.back()}
+            />
             {isEdit && id ? (
               <WoAuthorizationModal
                 visible={!!authModal}

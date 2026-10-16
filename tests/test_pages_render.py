@@ -18,6 +18,7 @@ PAGES = [
     ("/reports", "Reports"),
     ("/calendar", "Calendar"),
     ("/import-export/", "Import"),
+    ("/import-export/?tab=units", "importCustomerSearch"),
 ]
 
 

@@ -186,6 +186,14 @@ timers), with names and hours; click a block for details. **By mechanic**
 view gives one column per mechanic for a single day; the dropdown filters a
 single mechanic in the week view.
 
+**The mechanic sees a "Current mileage" window and cannot continue.** That
+is intended: confirm the odometer reading (prefilled with the last known
+value) or type the real one and press Confirm — only then the job opens.
+If Save says "Enter the unit's current mileage", fill the Unit mileage
+field. A number lower than the unit's current odometer is accepted on the
+work order but does not change the unit; fix the unit's mileage on its
+page if it was wrong.
+
 **Which jobs still have nobody on them?** Work Orders list → rows with a
 red **Unassigned labor** badge next to the status have a labor line with
 no mechanic. Open the WO, pick the mechanic in that labor block (and the
@@ -311,17 +319,34 @@ the top bar.
 
 **Move data from the old system.** Import / Export → import Customers,
 Vendors, Parts, Units and historical Work Orders from CSV/Excel with column
-mapping. Recommended order: Customers → Units (map the Customer Name column
-to link them) → Vendors → Parts → Work Orders (matched to customers by name
+mapping. Recommended order: Customers → Units (choose the customer, then
+upload that customer's unit list — one file per customer) → Vendors →
+Parts → Work Orders (matched to customers by name
 and to units by Unit Number/VIN; paid WOs also record the payment).
 Duplicates (same name / part number / VIN-per-customer as an existing
 record, or a repeat inside the file) are skipped and reported with reasons,
 so re-running a file will not create copies. Customers need at least one
 labor rate to exist.
 
+**Add a unit to a customer.** Customers → open the customer → **Units**
+tab → **Add Unit** → type the VIN (17 characters auto-fill Year, Make,
+Model and Type) or at least a Unit Number, add the mileage → **Create
+Unit**. A VIN the customer already has is refused as a duplicate. From the
+work order page the same form is behind "+ Add Unit".
+
+**Import a fleet's unit list for one customer.** Import / Export → Units
+tab → type the customer's name in "Import units for customer" and pick it
+→ upload the CSV/Excel with Unit Number / VIN (Year, Make, Model, Type,
+Mileage optional) → "Read Headers" → map the columns → Import. Every row
+lands on that customer; duplicates of a VIN the customer already has are
+skipped and listed with the reason.
+
 **Back up or move data out.** Import / Export → any tab → "Download CSV" /
 "Download Excel" exports all records of that entity. The columns match the
-import fields, so the file can be imported into another shop as-is.
+import fields, so the file can be imported into another shop as-is — except
+units, which are imported per customer: split a whole-shop units export by
+the Customer Name column and import one file per customer (rows of another
+customer are skipped with a reason).
 
 **Customize any table.** Every table in Roobico is adjustable per user:
 - **Hide / show columns** — hover the table and click the small ⚙ button in

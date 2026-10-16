@@ -22,7 +22,8 @@
       <h5 class="card-title mb-2">Export {{ entity_tabs[active_tab] }}</h5>
       <p class="text-muted small mb-3">
         Download all {{ entity_tabs[active_tab] | lower }} of this shop. The columns match the
-        import fields, so an exported file can be imported back into another shop automatically.
+        import fields, so an exported file can be imported back into another shop automatically{% if active_tab == "units" %}
+        — units are imported per customer, so split a multi-customer file by the Customer Name column first{% endif %}.
       </p>
       <div class="d-flex gap-2">
         <a class="btn btn-outline-primary btn-sm"
@@ -47,8 +48,15 @@
       <h5 class="card-title mb-3">Import {{ entity_tabs[active_tab] }}</h5>
 
       {% if active_tab == "units" %}
-      <p class="text-muted small mb-2">Tip: map the <strong>Customer Name</strong> column to link
-        each unit to an existing customer (import customers first).</p>
+      <div class="mb-3 position-relative form-narrow" id="importCustomerBox">
+        <label class="form-label" for="importCustomerSearch">Import units for customer</label>
+        <input type="hidden" id="importCustomerId" value="">
+        <input type="text" class="form-control form-control-sm" id="importCustomerSearch"
+               placeholder="Search customer..." autocomplete="off">
+        <div id="importCustomerDrop" class="list-group position-absolute shadow-sm dd-scroll w-100" style="display:none;"></div>
+        <div class="form-text">Every row in the file is linked to this customer; the file only needs
+          Unit Number / VIN (plus optional Year, Make, Model, Type, Mileage). One file per customer.</div>
+      </div>
       {% elif active_tab == "work_orders" %}
       <p class="text-muted small mb-2">Historical work orders: <strong>Date</strong> and
         <strong>Customer Name</strong> are required; units are matched by Unit Number or VIN.
@@ -70,7 +78,7 @@
 
       <!-- Step 2: Map fields -->
       <div id="importStep2" style="display:none;" class="mt-4">
-        <h6 class="mb-2">Map Columns to Fields</h6>
+        <h6 class="mb-2">Map Columns to Fields <span class="text-muted fw-normal small" id="importCustomerLabel"></span></h6>
         <p class="text-muted small mb-3">
           For each column found in your file, choose which field it corresponds to. Leave as "— Skip —" to ignore a column.
         </p>
@@ -125,6 +133,7 @@
 <script>
   window.__importEntityType = {{ active_tab | tojson }};
   window.__importEntityFields = {{ entity_fields_json | safe }};
+  window.__importCustomers = {{ (customer_options or []) | tojson }};
 </script>
 <script src="{{ url_for('static', filename='js/import_export/import_export.js') }}"></script>
 {% endblock %}

@@ -195,6 +195,7 @@ def test_confirm_locks_mechanic_and_unconfirm_reopens(client, conf_seed):
     assert resp.status_code == 200
     resp = _post_json(client, f"/api/mobile/work_orders/{wo_id}", {
         "labors": [{"labor_id": labor_id, "description": "Change oil + filter", "parts": []}],
+        "unit_mileage": 50000,
     })
     assert resp.status_code == 200
 

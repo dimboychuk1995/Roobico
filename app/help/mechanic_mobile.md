@@ -67,8 +67,18 @@ What a mechanic sees and can do:
   a timer affects only your own mark; a colleague's mark stays. When a
   manager saves the WO as **In Progress**, all marks are cleared — every
   mechanic has to press Done again.
-- The mechanic form has a **Unit mileage** field — saving (incl. autosave)
-  records the mileage on the unit itself and on the WO.
+- **Mileage first.** When a mechanic opens a work order (app or web
+  mechanic page) — and when picking the unit for a new one — a "Current
+  mileage" window appears, prefilled with the last recorded odometer. The
+  mechanic must confirm or correct it before anything else can be done:
+  the window cannot be dismissed, the only ways out are Confirm or going
+  back to the list, and the server refuses any mechanic save without a
+  mileage ("Enter the unit's current mileage before saving"). The confirmed
+  value is written to the work order (as the mileage at the time of the
+  job) and moves the unit's odometer forward; a smaller number is kept on
+  the WO only and never rolls the unit back. The **Unit mileage** field on
+  the form (and the mileage box in the web header) stays editable to
+  correct it later.
 - **The work order date follows the mechanic's last real save.** Every
   save a mechanic makes that changes something — the Save button in web
   mechanic mode, and in the app every autosave that changed jobs, parts or

@@ -2,6 +2,7 @@
 {% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
 {% from "components/ui.html" import empty_state, wo_status_badge %}
 {% from "components/annual_inspection.html" import annual_inspection_btn, annual_inspection_modal with context %}
+{% from "components/unit_create_modal.html" import unit_create_modal with context %}
 {% block page_title %}Customer Details{% endblock %}
 
 {% block app_content %}
@@ -231,6 +232,13 @@
               <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('customers.customer_details_page', customer_id=customer_id, tab='units') }}">Reset</a>
             </div>
           {% endif %}
+          {% if can_add_unit %}
+            <div class="col-auto ms-auto">
+              <button type="button" class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#createUnitModal">
+                <i class="bi bi-plus-lg me-1"></i>Add Unit
+              </button>
+            </div>
+          {% endif %}
         </form>
 
         {% if tab_items and tab_items|length > 0 %}
@@ -276,7 +284,7 @@
             </table>
           </div>
         {% else %}
-          {{ empty_state("No units found", "Units added to this customer will appear here.") }}
+          {{ empty_state("No units found", "Press \"Add Unit\" to add this customer's first vehicle." if can_add_unit else "Units added to this customer will appear here.") }}
         {% endif %}
 
       {% elif active_tab == 'payments' %}
@@ -685,6 +693,11 @@
 
 {% if can_create_inspection and active_tab == 'units' %}
   {{ annual_inspection_modal() }}
+{% endif %}
+
+{% if can_add_unit %}
+  {{ unit_create_modal(url_for('customers.customer_unit_create', customer_id=customer_id), customer_id) }}
+  <script src="{{ url_for('static', filename='js/unit_create_modal.js') }}" defer></script>
 {% endif %}
 
 {% endblock %}

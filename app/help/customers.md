@@ -49,8 +49,10 @@ Header buttons: **"Back"**, **"Portal Link"**, **"Create Work Order"**.
 
 ## Units (vehicles)
 
-- Units are created from the **work order flow** ("+ Add Unit") — there is
-  no add-unit button on the customer page itself.
+- Units are created either from the customer page — **Units tab → "Add
+  Unit"** (needs the "Create/edit customer units" permission; a deactivated
+  customer cannot get new units) — or from the **work order flow** ("+ Add
+  Unit" next to the unit picker). Both open the same form.
 - Fields: **Unit Number**, **VIN** (typing a 17-character VIN auto-fills
   Year, Make, Model, Type via the national VIN decoder), Year, Make, Model,
   Type, Mileage. License plates are not stored.

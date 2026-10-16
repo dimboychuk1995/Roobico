@@ -258,10 +258,15 @@ and every skipped row is listed with the reason.
 
 - Customers: Company Name, First/Last Name, Phone, Email, Address, Pricing
   Scale Name. Requires at least one labor rate to exist in the shop.
-- Units: **Customer Name** (links the unit to an existing customer — import
-  customers first), Unit Number, VIN, Year, Make, Model, Type, Mileage.
+- Units: pick the customer first in the **"Import units for customer"**
+  search box on the Units tab — every row in the file is linked to that
+  customer (one file per customer; a Customer Name column in the file is
+  ignored). Columns: Unit Number, VIN, Year, Make, Model, Type, Mileage.
   A row needs at least a Unit Number or a VIN; a VIN that already exists
-  for that customer is skipped as a duplicate.
+  for that customer is skipped as a duplicate. A units export of the whole
+  shop lists every customer: split it by the Customer Name column and
+  import one file per customer — rows whose Customer Name differs from the
+  chosen customer are skipped and reported, never silently re-assigned.
 - Vendors: Vendor Name (+contact, phone, email, website, address, notes).
 - Parts: Part Number, Description, Reference, In Stock, Average Cost,
   Selling Price. Starting stock is recorded properly: the part gets a

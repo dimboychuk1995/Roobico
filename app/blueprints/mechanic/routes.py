@@ -12,7 +12,7 @@ from flask import render_template
 
 from app.blueprints.mechanic import mechanic_bp
 from app.utils.auth import login_required
-from app.utils.permissions import permission_required
+from app.utils.permissions import is_mechanic_mode, permission_required
 
 
 @mechanic_bp.get("/mechanic/work_orders")
@@ -26,11 +26,11 @@ def work_orders_list():
 @login_required
 @permission_required("work_orders.create")
 def work_order_new():
-    return render_template("public/mechanic/work_order_details.html", work_order_id="")
+    return render_template("public/mechanic/work_order_details.html", work_order_id="", mechanic_mode=is_mechanic_mode())
 
 
 @mechanic_bp.get("/mechanic/work_orders/<work_order_id>")
 @login_required
 @permission_required("work_orders.view")
 def work_order_details(work_order_id):
-    return render_template("public/mechanic/work_order_details.html", work_order_id=work_order_id)
+    return render_template("public/mechanic/work_order_details.html", work_order_id=work_order_id, mechanic_mode=is_mechanic_mode())

@@ -304,6 +304,8 @@ def mobile_work_order_details(work_order_id):
             }), 403
 
         payload = mechanic_wo_payload(shop_db, shop, wo, oid(session.get("user_id")))
+        # Механик обязан подтвердить пробег до работы с WO.
+        payload["mileage_required"] = bool(wo.get("unit_id"))
         payload["server_now"] = utcnow().astimezone(_tz.utc).isoformat().replace("+00:00", "Z")
         return jsonify(payload), 200
 
@@ -613,11 +615,14 @@ def mobile_work_order_create():
 
     unit_mileage = _i32_or_none(data.get("unit_mileage"))
     if unit_mileage is not None:
+        from app.blueprints.work_orders.services.mechanic_editor import odometer_moves_forward
+
         doc["mileage"] = unit_mileage
-        shop_db.units.update_one(
-            {"_id": unit_id, "shop_id": shop["_id"], "is_active": True},
-            {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
-        )
+        if odometer_moves_forward(unit.get("mileage"), unit_mileage):
+            shop_db.units.update_one(
+                {"_id": unit_id, "shop_id": shop["_id"], "is_active": True},
+                {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
+            )
 
     res = shop_db.work_orders.insert_one(doc)
     audit_log.log_event("create", "work_order", res.inserted_id, label=audit_log.wo_label(doc),
@@ -694,8 +699,13 @@ def mobile_work_order_edit(work_order_id):
     # сохраняются, клиентские деньги игнорируются.
     is_mechanic = not has_permission("work_orders.view_costs")
     if is_mechanic:
-        from app.blueprints.work_orders.services.mechanic_editor import merge_mechanic_edit
+        from app.blueprints.work_orders.services.mechanic_editor import MILEAGE_REQUIRED_ERROR, merge_mechanic_edit
 
+        # Пробег обязателен — проверяем до любых побочных эффектов (склад, коры).
+        # Старые сборки приложения поле не шлют вовсе (ключа нет) — их не
+        # ломаем; новые шлют всегда, пустое/мусор отклоняем.
+        if wo.get("unit_id") and "unit_mileage" in data and _i32_or_none(data.get("unit_mileage")) is None:
+            return jsonify(MILEAGE_REQUIRED_ERROR), 400
         labors_payload = merge_mechanic_edit(shop_db, shop, wo, labors_payload)
 
     labors, totals_raw = compute_labors_and_totals(shop_db, shop, labors_payload)
@@ -748,13 +758,16 @@ def mobile_work_order_edit(work_order_id):
     unit_mileage = _i32_or_none(data.get("unit_mileage"))
     prior_unit_mileage = None
     if unit_mileage is not None:
+        from app.blueprints.work_orders.services.mechanic_editor import odometer_moves_forward
+
         unit_doc = shop_db.units.find_one({"_id": wo.get("unit_id"), "shop_id": shop["_id"]}, {"mileage": 1})
         prior_unit_mileage = (unit_doc or {}).get("mileage")
         set_fields["mileage"] = unit_mileage
-        shop_db.units.update_one(
-            {"_id": wo.get("unit_id"), "shop_id": shop["_id"], "is_active": True},
-            {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
-        )
+        if odometer_moves_forward(prior_unit_mileage, unit_mileage):
+            shop_db.units.update_one(
+                {"_id": wo.get("unit_id"), "shop_id": shop["_id"], "is_active": True},
+                {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
+            )
 
     if is_mechanic:
         # Дата WO (дата инвойса) = день последнего реального сохранения

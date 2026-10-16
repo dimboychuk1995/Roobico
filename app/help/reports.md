@@ -243,7 +243,9 @@ appointments — and **Open Work Order**.
   with the mechanic's marker and name in the header above its lane; an
   "Unassigned" lane appears only when something has no mechanic. Dropping
   a chip or a plan into a lane assigns it to that mechanic. Click the
-  header again to collapse.
+  header a second time to make the day even wider (the other six days
+  shrink to narrow strips), and a third time to go back to the normal
+  week.
 - **Who is who**: every mechanic has a colour. The row of markers on top
   (colour, initials, name) is the key; each block carries the same colour
   on its left edge and the mechanic's initials in its corner, so you can

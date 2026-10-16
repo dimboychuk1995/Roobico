@@ -8,7 +8,7 @@ from flask import current_app, request, jsonify
 
 from app.blueprints.work_orders import work_orders_bp
 from app.utils.auth import login_required
-from app.utils.permissions import permission_required
+from app.utils.permissions import permission_required_any
 
 
 def _fetch_vpic(vin: str) -> dict:
@@ -34,7 +34,7 @@ def _extract_value(row: dict, keys: list[str]) -> str:
 
 @work_orders_bp.get("/work_orders/api/vin")
 @login_required
-@permission_required("work_orders.create")
+@permission_required_any("work_orders.create", "customers.manage_units")
 def api_decode_vin():
     vin = (request.args.get("vin") or "").strip().upper()
     if not vin:

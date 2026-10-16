@@ -4,7 +4,8 @@
 маппинг → импорт). Каждая пропущенная строка попадает в отчёт с причиной.
 Дубли отклоняются теми же правилами, что и создание руками
 (app/utils/duplicates.py). Остатки партов проводятся через сервис склада
-(apply_stock_change), юниты привязываются к клиенту по имени, work orders
+(apply_stock_change), юниты импортируются для одного выбранного в форме
+клиента (customer_id; колонка клиента в файле игнорируется), work orders
 считают тоталы тем же конвейером, что мобильный редактор
 (compute_labors_and_totals → align_totals_with_labors).
 
@@ -74,8 +75,9 @@ ENTITY_FIELDS = {
         {"key": "address", "label": "Address"},
         {"key": "pricing_rule_name", "label": "Pricing Scale Name"},
     ],
+    # Юниты импортируются для ОДНОГО выбранного клиента (customer_id в
+    # форме) — колонки «Customer Name» в файле не нужно, она игнорируется.
     "units": [
-        {"key": "customer_name", "label": "Customer Name"},
         {"key": "unit_number", "label": "Unit Number"},
         {"key": "vin", "label": "VIN"},
         {"key": "year", "label": "Year"},
@@ -602,6 +604,21 @@ def import_export_index():
     if tab not in ENTITY_LABELS:
         tab = "customers"
 
+    # Юниты: список активных клиентов для выбора «для кого импортируем»
+    # рендерится сервером — у пользователя с правами импорта может не быть
+    # доступа к API клиентов других разделов.
+    customer_options = []
+    if tab == "units":
+        shop_db, shop = _get_shop_db()
+        if shop_db is not None:
+            customer_options = [
+                {"id": str(c["_id"]), "label": customer_display_name(c)}
+                for c in shop_db.customers.find(
+                    {"shop_id": shop["_id"], "is_active": {"$ne": False}},
+                    {"company_name": 1, "contacts": 1, "first_name": 1, "last_name": 1},
+                ).sort([("company_name", 1), ("last_name", 1)])
+            ]
+
     return _render_app_page(
         "public/import_export.html",
         active_page="import_export",
@@ -609,6 +626,7 @@ def import_export_index():
         entity_tabs=ENTITY_LABELS,
         entity_fields=ENTITY_FIELDS.get(tab, []),
         entity_fields_json=json.dumps(ENTITY_FIELDS.get(tab, [])),
+        customer_options=customer_options,
     )
 
 
@@ -679,8 +697,22 @@ def run_import():
 
     # ── контекст для конкретной сущности ────────────────────────────
     customer_map = {}
-    if entity_type in ("units", "work_orders"):
+    if entity_type == "work_orders":
         customer_map = _active_customer_map(shop_db, shop["_id"])
+
+    # Юниты всегда импортируются для одного выбранного клиента: без него
+    # получились бы «ничейные» юниты, которых не видно ни у одного клиента.
+    target_customer = None
+    if entity_type == "units":
+        target_cid = _oid((request.form.get("customer_id") or "").strip())
+        if not target_cid:
+            return jsonify({"ok": False, "error": "Choose the customer to import units for."}), 400
+        target_customer = shop_db.customers.find_one(
+            {"_id": target_cid, "shop_id": shop["_id"], "is_active": {"$ne": False}},
+            {"company_name": 1, "contacts": 1, "first_name": 1, "last_name": 1},
+        )
+        if not target_customer:
+            return jsonify({"ok": False, "error": "Customer not found."}), 400
 
     customer_default_rate_id = None
     pricing_rule_lookup = {}
@@ -741,10 +773,13 @@ def run_import():
                 imported += 1
 
             elif entity_type == "units":
-                customer_name = _safe_str(mapped_row.get("customer_name"))
-                customer_id = customer_map.get(_dup_norm(customer_name)) if customer_name else None
-                if customer_name and not customer_id:
-                    _err(i, f'customer "{customer_name}" not found (import customers first)')
+                customer_id = target_customer["_id"]
+                customer_name = customer_display_name(target_customer)
+                # Файл из экспорта всего магазина: строка другого клиента не
+                # должна молча переехать к выбранному — пропускаем с причиной.
+                file_customer = _safe_str(row.get("Customer Name")) if isinstance(row, dict) else ""
+                if file_customer and _dup_norm(file_customer) != _dup_norm(customer_name):
+                    _err(i, f'row belongs to customer "{file_customer}", not to the selected "{customer_name}" (import that customer separately)')
                     continue
                 doc, reason = _build_unit_doc(mapped_row, customer_id, shop, now, user_id)
                 if doc is None:
@@ -818,7 +853,8 @@ def run_import():
     }
     audit_log.log_event("import", "import", None, label=str(entity_type),
                         summary=f"Imported {imported} {entity_type} row(s), skipped {skipped}, errors {len(errors)}",
-                        details={"entity_type": entity_type, "imported": imported, "skipped": skipped, "total": len(rows), "errors": len(errors)})
+                        details={"entity_type": entity_type, "imported": imported, "skipped": skipped, "total": len(rows), "errors": len(errors),
+                                 **({"customer_id": str(target_customer["_id"]), "customer": customer_display_name(target_customer)} if target_customer else {})})
     if errors:
         result["errors"] = errors
     return jsonify(result)

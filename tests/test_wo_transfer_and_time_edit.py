@@ -316,6 +316,7 @@ def test_transfer_reprices_for_target_customer(client, app, wo_seed, mongo):
         # возвращает старые.
         login(client, email=MECH_EMAIL, password=MECH_PASSWORD)
         resp = _post_json(client, f"/work_orders/api/mechanic/work_orders/{wo_oid}", {
+            "unit_mileage": 50000,
             "labors": [
                 {"labor_id": labors[0]["labor_id"], "description": "Tracked job",
                  "parts": [{"part_id": str(wo_seed["part"]["_id"]), "qty": 3}]},

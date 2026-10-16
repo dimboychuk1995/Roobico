@@ -159,6 +159,8 @@ def mechanic_wo_payload(shop_db, shop, wo: dict, user_id) -> dict:
             "unit_number": str((unit or {}).get("unit_number") or ""),
             "mileage": (unit or {}).get("mileage"),
         },
+        # Пробег, записанный на самом WO (снимок на момент работы).
+        "wo_mileage": wo.get("mileage"),
         "date": format_preferred_date_label(wo.get("work_order_date"), wo.get("created_at")),
         "labors": labors_out,
         "my_running_timer": my_running_timer,

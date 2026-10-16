@@ -378,6 +378,9 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
         "wo_number": (form_state or {}).get("wo_number"),
         "work_order_date": (form_state or {}).get("work_order_date") or get_active_shop_today_iso(),
         "today_date_input_value": get_active_shop_today_iso(),
+        # Пробег, записанный на самом WO (снимок на момент работы); пусто —
+        # фронт подставит текущий пробег юнита (старые WO без снимка).
+        "wo_mileage": "" if (form_state or {}).get("mileage") is None else (form_state or {}).get("mileage"),
 
         "initial_labors": (form_state or {}).get("initial_labors") or [],
         "time_summary": (form_state or {}).get("time_summary") or {},
@@ -578,6 +581,7 @@ def work_order_details_page():
                 "created_work_order_id": str(wo.get("_id")),
                 "wo_number": wo.get("wo_number"),
                 "work_order_date": shop_date_input_value(wo.get("work_order_date") or wo.get("created_at"), default_today=True),
+                "mileage": wo.get("mileage"),
                 "initial_labors": normalize_saved_labors(wo.get("labors") or wo.get("blocks") or [], shop_db=shop_db),
                 "initial_totals": wo.get("totals")
                 or {
@@ -896,22 +900,16 @@ def create_work_order():
         # If you prefer to cancel, uncomment the redirect below
         # return redirect(url_for("work_orders.work_order_details_page", customer_id=str(customer_id), unit_id=str(unit_id)))
 
-    # ✅ Update unit mileage if provided
-    unit_mileage = request.form.get("unit_mileage")
-    if unit_mileage:
-        try:
+    # ✅ Пробег: снимок на WO (его показывает страница и PDF этого WO);
+    # одометр юнита двигаем только вперёд.
+    unit_mileage = parse_mileage(request.form.get("unit_mileage"))
+    if unit_mileage is not None:
+        unit_doc = shop_db.units.find_one({"_id": unit_id, "shop_id": shop["_id"]}, {"mileage": 1}) or {}
+        if odometer_moves_forward(unit_doc.get("mileage"), unit_mileage):
             shop_db.units.update_one(
                 {"_id": unit_id, "shop_id": shop["_id"], "is_active": True},
-                {
-                    "$set": {
-                        "mileage": unit_mileage,
-                        "updated_at": now,
-                        "updated_by": user_id,
-                    }
-                }
+                {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
             )
-        except Exception:
-            pass  # Silently ignore mileage update errors
 
     doc = {
         "shop_id": shop["_id"],
@@ -922,6 +920,7 @@ def create_work_order():
         "status": create_status,
         "labors": labors,
         "work_order_date": work_order_date,
+        "mileage": unit_mileage,
 
         # ✅ store totals from UI
         "totals": totals,
@@ -1341,7 +1340,7 @@ def api_units_for_customer():
         .limit(500)
     )
 
-    items = [{"id": str(u["_id"]), "label": unit_label(u)} for u in rows]
+    items = [{"id": str(u["_id"]), "label": unit_label(u), "mileage": u.get("mileage")} for u in rows]
     return jsonify({"items": items}), 200
 
 
@@ -1581,7 +1580,7 @@ def api_work_order_update(work_order_id):
     labors = data.get("labors", data.get("blocks"))
     raw_totals = data.get("totals") or {}
     totals = normalize_totals_payload(raw_totals)
-    unit_mileage = data.get("unit_mileage")
+    unit_mileage = parse_mileage(data.get("unit_mileage"))
     work_order_date = shop_local_date_to_utc(data.get("work_order_date"), default_today=True)
 
     # Allow changing customer/unit on existing WO
@@ -1759,23 +1758,20 @@ def api_work_order_update(work_order_id):
         )
     inventory_warnings = list(inventory_adjustment.get("errors") or [])
 
-    # ✅ Update unit mileage if provided
+    # ✅ Пробег: на WO хранится то, что ввели (снимок на момент работы — его
+    # показывает страница и PDF старого WO). Одометр юнита двигаем только
+    # вперёд и только если значение изменили относительно снимка: открыли
+    # старый WO и просто нажали Save — пробег юнита не откатываем.
     if unit_mileage is not None:
         unit_id = new_unit_id or wo.get("unit_id")
-        if unit_id:
-            try:
+        if unit_id and unit_mileage != wo.get("mileage"):
+            unit_doc = shop_db.units.find_one({"_id": unit_id, "shop_id": shop["_id"]}, {"mileage": 1}) or {}
+            current_unit_mileage = parse_mileage(unit_doc.get("mileage"))
+            if current_unit_mileage is None or unit_mileage >= current_unit_mileage:
                 shop_db.units.update_one(
                     {"_id": unit_id, "shop_id": shop["_id"], "is_active": True},
-                    {
-                        "$set": {
-                            "mileage": unit_mileage,
-                            "updated_at": now,
-                            "updated_by": user_id,
-                        }
-                    }
+                    {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
                 )
-            except Exception:
-                pass  # Silently ignore mileage update errors
 
     if converting_to_estimate:
         # У сметы нет коров — снимаем всё, что числилось за WO.
@@ -1797,6 +1793,8 @@ def api_work_order_update(work_order_id):
         "updated_at": now,
         "updated_by": user_id,
     }
+    if unit_mileage is not None:
+        set_fields["mileage"] = unit_mileage
     if new_customer_id:
         set_fields["customer_id"] = new_customer_id
     if new_unit_id:
@@ -1829,6 +1827,9 @@ def api_work_order_update(work_order_id):
                 "labor_total": "",
                 "parts_total": "",
                 "grand_total": "",
+                # Юнит сменили, новый пробег не ввели — старый снимок чужого
+                # юнита не оставляем (страница покажет одометр нового).
+                **({"mileage": ""} if (new_unit_id and new_unit_id != wo.get("unit_id") and unit_mileage is None) else {}),
             },
         }
     )
@@ -3473,6 +3474,8 @@ from app.blueprints.work_orders.services.mechanic_view import (
     strip_wo_list_item,
 )
 from app.blueprints.work_orders.services.mechanic_editor import (
+    MILEAGE_REQUIRED_ERROR,
+    odometer_moves_forward,
     mechanic_save_date_fields,
     build_mechanic_labors_payload,
     merge_mechanic_edit,
@@ -3568,6 +3571,9 @@ def api_mechanic_work_order_details(work_order_id):
         }), 403
 
     payload = mechanic_wo_payload(shop_db, shop, wo, current_user_id())
+    # Механик обязан подтвердить пробег до работы с WO (менеджера на этой
+    # странице не спрашиваем).
+    payload["mileage_required"] = bool(wo.get("unit_id")) and is_mechanic_mode()
     payload["server_now"] = _server_now_iso()
     return jsonify(payload), 200
 
@@ -3661,6 +3667,15 @@ def api_mechanic_work_order_create():
         "updated_by": user_id,
         **mechanic_done_fields(shop_db, shop, None, data, user_id, now),
     }
+    # Пробег: снимок на WO; одометр юнита — только вперёд.
+    unit_mileage = parse_mileage(data.get("unit_mileage"))
+    if unit_mileage is not None:
+        doc["mileage"] = unit_mileage
+        if odometer_moves_forward(unit.get("mileage"), unit_mileage):
+            shop_db.units.update_one(
+                {"_id": unit_id, "shop_id": shop["_id"], "is_active": True},
+                {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
+            )
     res = shop_db.work_orders.insert_one(doc)
     audit_log.log_event("create", "work_order", res.inserted_id, label=audit_log.wo_label(doc),
                         summary=f"{audit_log.wo_label(doc)} created by mechanic for {audit_log.customer_label(customer)} ({audit_log.unit_label(unit)})",
@@ -3716,6 +3731,9 @@ def api_mechanic_work_order_update(work_order_id):
     labors_payload = data.get("labors")
     if not isinstance(labors_payload, list) or not labors_payload:
         return jsonify({"ok": False, "error": "labors_required"}), 400
+    # Пробег обязателен для механика — до любых побочных эффектов (склад, коры).
+    if is_mechanic_mode() and wo.get("unit_id") and "unit_mileage" in data and parse_mileage(data.get("unit_mileage")) is None:
+        return jsonify(MILEAGE_REQUIRED_ERROR), 400
 
     merged = merge_mechanic_edit(shop_db, shop, wo, labors_payload)
     labors, totals_raw = compute_labors_and_totals(shop_db, shop, merged)
@@ -3756,10 +3774,11 @@ def api_mechanic_work_order_update(work_order_id):
         unit_doc = shop_db.units.find_one({"_id": wo.get("unit_id"), "shop_id": shop["_id"]}, {"mileage": 1})
         prior_unit_mileage = (unit_doc or {}).get("mileage")
         set_fields["mileage"] = unit_mileage
-        shop_db.units.update_one(
-            {"_id": wo.get("unit_id"), "shop_id": shop["_id"], "is_active": True},
-            {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
-        )
+        if odometer_moves_forward(prior_unit_mileage, unit_mileage):
+            shop_db.units.update_one(
+                {"_id": wo.get("unit_id"), "shop_id": shop["_id"], "is_active": True},
+                {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
+            )
 
     if is_mechanic_mode():
         # Дата WO (дата инвойса) = день последнего реального сохранения

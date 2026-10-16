@@ -200,12 +200,21 @@
   height: 30px;
 }
 
-.cal-day-col.cal-expanded {
+.cal-day-col.cal-expanded,
+.cal-unscheduled-cell.cal-expanded {
   flex: 4.9 1 0 !important;
 }
 
-.cal-day-col.cal-collapsed {
+.cal-day-col.cal-collapsed,
+.cal-unscheduled-cell.cal-collapsed {
   flex: 1 1 0 !important;
+}
+
+/* second click on the header: the day takes almost the whole grid */
+.cal-header-cell.cal-expanded--full,
+.cal-day-col.cal-expanded--full,
+.cal-unscheduled-cell.cal-expanded--full {
+  flex: 16 1 0 !important;
 }
 
 /* ── current time red line ── */
@@ -502,6 +511,7 @@
 .cal-unscheduled-cell {
   flex: 1 1 0;
   min-width: 0;
+  transition: flex .25s ease;
   border-left: 1px solid #dadce0;
   padding: 4px 4px 2px;
   overflow-y: auto;

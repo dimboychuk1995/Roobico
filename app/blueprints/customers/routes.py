@@ -1032,6 +1032,7 @@ def customer_details_page(customer_id):
         avi_type_defaults=VEHICLE_TYPE_COMPONENT_DEFAULTS,
         today_date_input_value=get_active_shop_today_iso(),
         can_create_inspection=has_permission("work_orders.create"),
+        can_add_unit=has_permission("customers.manage_units") and customer.get("is_active") is not False,
         active_tab=tab,
         q=q,
         unit_status=unit_status,
@@ -1409,6 +1410,85 @@ def customer_unit_activate(customer_id, unit_id):
                         details={"customer_id": str(cid), "customer": audit_log.customer_label(customer)})
     flash("Unit activated.", "success")
     return redirect(url_for("customers.customer_unit_details_page", customer_id=str(cid), unit_id=str(uid), tab="details"))
+
+
+@customers_bp.post("/customers/<customer_id>/units/create")
+@login_required
+@permission_required("customers.manage_units")
+def customer_unit_create(customer_id):
+    """Новый юнит со страницы клиента (вкладка Units → Add Unit). Та же
+    форма, что «+ Add Unit» на странице WO; деактивированному клиенту юниты
+    не добавляем, VIN проверяем на дубль в пределах клиента."""
+    coll, shop, master = _customers_collection()
+    if coll is None or shop is None:
+        flash("Shop database not configured for this shop.", "error")
+        return redirect(url_for("customers.customers_page"))
+
+    cid = _oid(customer_id)
+    if not cid:
+        flash("Invalid customer id.", "error")
+        return redirect(url_for("customers.customers_page"))
+
+    customer = coll.find_one({"_id": cid, "shop_id": shop["_id"]})
+    if not customer:
+        flash("Customer not found.", "error")
+        return redirect(url_for("customers.customers_page"))
+
+    units_tab = url_for("customers.customer_details_page", customer_id=str(cid), tab="units")
+    if customer.get("is_active") is False:
+        flash("This customer is deactivated. Activate it before adding units.", "error")
+        return redirect(units_tab)
+
+    def _strip(key):
+        return (request.form.get(key) or "").strip() or None
+
+    def _int(key):
+        raw = (request.form.get(key) or "").strip().replace(",", "")
+        if not raw:
+            return None
+        try:
+            n = int(float(raw))
+        except (ValueError, TypeError, OverflowError):
+            return None
+        return n if 0 <= n < 2**31 else None
+
+    unit_number = _strip("unit_number")
+    vin = _strip("vin")
+    if not unit_number and not vin:
+        flash("Enter a unit number or a VIN.", "error")
+        return redirect(units_tab)
+
+    shop_db = coll.database
+    existing_dup = find_duplicate_unit(shop_db, shop["_id"], cid, vin)
+    if existing_dup:
+        flash(unit_duplicate_message(existing_dup), "error")
+        return redirect(units_tab)
+
+    now = utcnow()
+    user_oid = _oid(session.get(SESSION_USER_ID))
+    doc = {
+        "customer_id": cid,
+        "unit_number": unit_number,
+        "vin": vin.upper() if vin else None,
+        "make": _strip("make"),
+        "model": _strip("model"),
+        "year": _int("year"),
+        "type": _strip("type"),
+        "mileage": _int("mileage"),
+        "shop_id": shop["_id"],
+        "tenant_id": shop.get("tenant_id"),
+        "is_active": True,
+        "created_at": now,
+        "updated_at": now,
+        "created_by": user_oid,
+        "updated_by": user_oid,
+    }
+    doc["search_terms"] = build_unit_search_terms(doc)
+    res = shop_db.units.insert_one(doc)
+    audit_log.log_event("create", "unit", res.inserted_id, label=audit_log.unit_label(doc),
+                        details={"customer_id": str(cid), "customer": audit_log.customer_label(customer)})
+    flash("Unit created.", "success")
+    return redirect(url_for("customers.customer_unit_details_page", customer_id=str(cid), unit_id=str(res.inserted_id), tab="details"))
 
 
 @customers_bp.post("/customers/create")

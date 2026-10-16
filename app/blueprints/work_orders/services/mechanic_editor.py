@@ -28,6 +28,23 @@ def parse_mileage(value):
     return n if n >= 0 else None
 
 
+# Сохранение механика без текущего пробега юнита не принимается: ввод
+# пробега — обязательный шаг перед работой (окно подтверждения в приложении
+# и на веб-странице механика).
+MILEAGE_REQUIRED_ERROR = {
+    "ok": False,
+    "error": "mileage_required",
+    "message": "Enter the unit's current mileage before saving.",
+}
+
+
+def odometer_moves_forward(current_value, new_value) -> bool:
+    """Одометр юнита двигаем только вперёд: меньшее значение остаётся
+    снимком на WO (опечатка, старый WO), но юнит не откатывает."""
+    current = parse_mileage(current_value)
+    return current is None or new_value >= current
+
+
 def _resolve_part_doc(shop_db, shop_id, part_id_raw, part_number):
     from app.blueprints.work_orders.services.common import oid
 
@@ -388,8 +405,11 @@ def mechanic_save_touched_work(existing_wo: dict, new_labors, data: dict, set_fi
     """
     if mechanic_work_fingerprint(existing_wo.get("labors")) != mechanic_work_fingerprint(new_labors):
         return True
-    if "mileage" in set_fields and set_fields["mileage"] not in (existing_wo.get("mileage"), unit_mileage):
-        return True
+    if "mileage" in set_fields:
+        new_mileage = parse_mileage(set_fields["mileage"])
+        known = (parse_mileage(existing_wo.get("mileage")), parse_mileage(unit_mileage))
+        if new_mileage is not None and new_mileage not in known:
+            return True
     state = str((data or {}).get("mechanic_state") or "").strip().lower()
     if state == "done":
         from app.blueprints.work_orders.services.mechanic_done import done_marks
