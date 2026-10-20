@@ -34,6 +34,7 @@ import {
   fetchStocktakeDetail,
   money,
 } from "@/lib/api";
+import { useHasPermission } from "@/context/auth";
 import { useTheme } from "@/lib/theme";
 
 type FilterMode = "all" | "pending" | "counted" | "diff";
@@ -43,6 +44,7 @@ export default function StocktakeScreen() {
   const theme = useTheme();
   const toast = useToast();
   const router = useRouter();
+  const canAdjustStock = useHasPermission("parts.adjust_stock");
   const insets = useSafeAreaInsets();
 
   const [st, setSt] = useState<StocktakeDetail | null>(null);
@@ -198,7 +200,7 @@ export default function StocktakeScreen() {
         ) : null}
       </RowCard>
 
-      {isOpen ? (
+      {isOpen && canAdjustStock ? (
         <View style={styles.actionRow}>
           <Pressable
             style={[styles.actionBtn, { backgroundColor: theme.primary, opacity: busy ? 0.7 : 1 }]}
@@ -284,7 +286,7 @@ export default function StocktakeScreen() {
           </Text>
         }
         renderItem={({ item }) => (
-          <Pressable onPress={() => (isOpen ? setCountItem(item) : undefined)}>
+          <Pressable onPress={() => (isOpen && canAdjustStock ? setCountItem(item) : undefined)}>
             <RowCard>
               <View style={styles.headerRow}>
                 <Text style={{ color: theme.text, fontWeight: "700", fontSize: 14, flex: 1 }} numberOfLines={1}>

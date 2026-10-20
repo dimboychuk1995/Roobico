@@ -47,6 +47,7 @@
 </div>
 
 <div class="row g-3">
+  {% if can_view_costs %}
   <div class="col-12 col-lg-4">
     <div class="card mb-3">
       <div class="card-body dashboard-async-card" data-block="wo-money">
@@ -115,11 +116,13 @@
       </div>
     </div>
   </div>
+  {% endif %}
 
-  <div class="col-12 col-lg-8">
+  <div class="col-12 {% if can_view_costs %}col-lg-8{% endif %}">
     <div class="card mb-3 dashboard-quick-actions-card">
       <div class="card-body">
         <div class="row g-3 dashboard-quick-actions">
+          {% if "work_orders.create" in user_permissions %}
           <div class="col-6 col-md-3">
             <a class="btn dashboard-quick-action-btn dashboard-quick-action-wo"
                href="{{ url_for('work_orders.work_order_details_page') }}"
@@ -130,6 +133,8 @@
               <span class="dashboard-quick-action-label">Create WO</span>
             </a>
           </div>
+          {% endif %}
+          {% if "parts_orders.create" in user_permissions %}
           <div class="col-6 col-md-3">
             <a class="btn dashboard-quick-action-btn dashboard-quick-action-po"
                href="{{ url_for('parts.parts_page', tab='orders', new=1) }}"
@@ -140,6 +145,8 @@
               <span class="dashboard-quick-action-label">Create PO</span>
             </a>
           </div>
+          {% endif %}
+          {% if "customers.create" in user_permissions %}
           <div class="col-6 col-md-3">
             <a class="btn dashboard-quick-action-btn dashboard-quick-action-customer"
                href="{{ url_for('customers.customers_page', new=1) }}"
@@ -150,6 +157,8 @@
               <span class="dashboard-quick-action-label">New Customer</span>
             </a>
           </div>
+          {% endif %}
+          {% if "vendors.create" in user_permissions %}
           <div class="col-6 col-md-3">
             <a class="btn dashboard-quick-action-btn dashboard-quick-action-vendor"
                href="{{ url_for('vendors.vendors_page', new=1) }}"
@@ -160,23 +169,30 @@
               <span class="dashboard-quick-action-label">New Vendor</span>
             </a>
           </div>
+          {% endif %}
         </div>
       </div>
     </div>
 
     <div class="card mb-3">
-      <div class="card-body dashboard-async-card" data-block="goal-progress">
+      {# Блок целей — деньги (view_costs); часы механиков ниже доступны по
+         dashboard.view. Без права data-block не ставим — загрузчик не
+         дёргает закрытый эндпоинт. #}
+      <div class="card-body {% if can_view_costs %}dashboard-async-card{% endif %}" {% if can_view_costs %}data-block="goal-progress"{% endif %}>
+        {% if can_view_costs %}
         <div class="dashboard-card-loader"><span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span></div>
         <div class="d-flex justify-content-between align-items-center mb-3">
           <div class="small text-muted">
             Goals Progress (<span id="dashGoalsPeriodLabel">Selected Period</span>)
             <span class="text-muted ms-1" id="dashGoalsProrationNote" style="display:none;">— prorated from monthly</span>
           </div>
+          {% if can_edit_goals %}
           <button type="button" class="btn btn-sm btn-primary d-inline-flex align-items-center gap-1" id="dashGoalsEditBtn"
                   data-bs-toggle="modal" data-bs-target="#dashGoalsModal" title="Edit monthly goals">
             <i class="bi bi-gear-fill"></i>
             <span>Edit Goals</span>
           </button>
+          {% endif %}
         </div>
         <div class="row g-3 dashboard-goals-row">
           <div class="col-12 col-md-4 text-center">
@@ -219,6 +235,7 @@
             </div>
           </div>
         </div>
+        {% endif %}
 
         <div class="dashboard-async-card dashboard-hours-section" data-block="mechanic-hours">
           <div class="dashboard-card-loader"><span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span></div>
@@ -299,6 +316,7 @@
       </div>
     </div>
 
+    {% if can_view_costs %}
     <div class="card mb-3">
       <div class="card-body dashboard-async-card" data-block="outstanding-balance">
         <div class="dashboard-card-loader"><span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span></div>
@@ -306,6 +324,7 @@
         <div class="h4 mb-0 mt-1" id="dashOutstandingBalance">${{ "%.2f"|format(outstanding_balance or 0) }}</div>
       </div>
     </div>
+    {% endif %}
 
   </div>
 </div>

@@ -141,8 +141,10 @@ def vendors_page():
 
 @vendors_bp.get("/api/balances")
 @login_required
-@permission_required("vendors.view")
+@permission_required("parts_orders.view")
 def vendors_api_balances():
+    """Баланс вендора = неоплаченные парт-ордера, поэтому право то же, что
+    на просмотр заказов (vendors.view без parts_orders.view денег не даёт)."""
     coll, shop, _master = _vendors_collection()
     if coll is None or shop is None:
         return jsonify(ok=False, error="Shop not configured"), 400
@@ -494,7 +496,7 @@ def _build_vendor_orders_summary(orders_coll, payments_coll, query: dict) -> dic
 
 @vendors_bp.get("/api/<vendor_id>/part-orders")
 @login_required
-@permission_required("vendors.view")
+@permission_required("parts_orders.view")
 def vendors_api_part_orders(vendor_id):
     coll, shop, master = _vendors_collection()
     if coll is None or shop is None:

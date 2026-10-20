@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 import { ListScreen } from "@/components/list-screen";
 import { Badge, KV, RowCard } from "@/components/ui";
 import { VendorRow, fetchVendors } from "@/lib/api";
+import { useHasPermission } from "@/context/auth";
 import { useTheme } from "@/lib/theme";
 
 function VendorCard({ item }: { item: VendorRow }) {
@@ -27,15 +28,17 @@ function VendorCard({ item }: { item: VendorRow }) {
 
 export default function VendorsScreen() {
   const router = useRouter();
+  const canCreateVendor = useHasPermission("vendors.create");
   return (
     <>
     <Stack.Screen
       options={{
-        headerRight: () => (
-          <Pressable onPress={() => router.push("/vendor-form")} hitSlop={8} style={{ paddingHorizontal: 8 }}>
-            <Ionicons name="add" size={26} color="#16a34a" />
-          </Pressable>
-        ),
+        headerRight: () =>
+          canCreateVendor ? (
+            <Pressable onPress={() => router.push("/vendor-form")} hitSlop={8} style={{ paddingHorizontal: 8 }}>
+              <Ionicons name="add" size={26} color="#16a34a" />
+            </Pressable>
+          ) : null,
       }}
     />
     <ListScreen<VendorRow>

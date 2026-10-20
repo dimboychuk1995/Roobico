@@ -13,7 +13,7 @@
     <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('parts.parts_page', tab='stocktakes') }}">
       <i class="bi bi-arrow-left me-1"></i> All stocktakes
     </a>
-    {% if stocktake.status == 'open' %}
+    {% if stocktake.status == 'open' and "parts.adjust_stock" in user_permissions %}
       <button type="button" class="btn btn-outline-danger btn-sm" id="stCancelBtn">Cancel</button>
       <button type="button" class="btn btn-success btn-sm" id="stCompleteBtn">
         <i class="bi bi-check2-circle me-1"></i> Complete &amp; apply
@@ -147,7 +147,7 @@
           <label class="btn btn-outline-secondary" for="stFilterDiscrepancy">Discrepancies</label>
         </div>
       </div>
-      {% if stocktake.status == 'open' %}
+      {% if stocktake.status == 'open' and "parts.adjust_stock" in user_permissions %}
         <div class="col-12 col-md-auto ms-md-auto">
           <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="collapse" data-bs-target="#stAddItemForm">
             <i class="bi bi-plus-lg me-1"></i> Add found part
@@ -213,7 +213,7 @@
                   {% if it.status == 'counted' %}{{ it.expected_at_count }}{% else %}{{ it.expected_initial }}{% endif %}
                 </td>
                 <td class="text-end">
-                  {% if stocktake.status == 'open' %}
+                  {% if stocktake.status == 'open' and "parts.adjust_stock" in user_permissions %}
                     <div class="input-group input-group-sm flex-nowrap justify-content-end">
                       <input type="number" min="0" step="1" class="form-control form-control-sm st-count-input"
                              style="max-width: 90px;"

@@ -159,8 +159,11 @@ export default function CalendarScreen() {
   const today = startOfDay(new Date());
   const isToday = sameDay(selectedDay, today);
 
-  const canDelete =
-    (session?.permissions || []).includes("calendar.delete") || session?.user.role === "owner";
+  const isOwner = session?.user.role === "owner";
+  const perms = session?.permissions || [];
+  const canDelete = perms.includes("calendar.delete") || isOwner;
+  const canCreate = perms.includes("calendar.create") || isOwner;
+  const canEdit = perms.includes("calendar.edit") || isOwner;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -309,6 +312,7 @@ export default function CalendarScreen() {
                   key={h}
                   style={[styles.hourSlot, { borderTopColor: theme.border, height: HOUR_H }]}
                   onPress={() => {
+                    if (!canCreate) return;
                     setCreateHour(h);
                     setCreateOpen(true);
                   }}
@@ -361,15 +365,17 @@ export default function CalendarScreen() {
       )}
 
       {/* FAB */}
-      <Pressable
-        style={[styles.fab, { backgroundColor: theme.primary }]}
-        onPress={() => {
-          setCreateHour(isToday ? Math.min(23, new Date().getHours() + 1) : 9);
-          setCreateOpen(true);
-        }}
-      >
-        <Ionicons name="add" size={28} color="#fff" />
-      </Pressable>
+      {canCreate ? (
+        <Pressable
+          style={[styles.fab, { backgroundColor: theme.primary }]}
+          onPress={() => {
+            setCreateHour(isToday ? Math.min(23, new Date().getHours() + 1) : 9);
+            setCreateOpen(true);
+          }}
+        >
+          <Ionicons name="add" size={28} color="#fff" />
+        </Pressable>
+      ) : null}
 
       <CreateEventModal
         visible={createOpen}
@@ -386,6 +392,7 @@ export default function CalendarScreen() {
         event={detailEvent}
         statuses={statuses}
         canDelete={canDelete}
+        canEdit={canEdit}
         onClose={() => setDetailEvent(null)}
         onChanged={() => {
           setDetailEvent(null);
@@ -402,12 +409,14 @@ function EventDetailModal({
   event,
   statuses,
   canDelete,
+  canEdit,
   onClose,
   onChanged,
 }: {
   event: CalendarEvent | null;
   statuses: CalendarStatus[];
   canDelete: boolean;
+  canEdit: boolean;
   onClose: () => void;
   onChanged: () => void;
 }) {
@@ -421,6 +430,10 @@ function EventDetailModal({
 
   const setStatus = async (key: string) => {
     if (key === event.status || busy) return;
+    if (!canEdit) {
+      toast.show("You don't have permission to edit appointments.", "error");
+      return;
+    }
     setBusy(true);
     try {
       await updateCalendarEvent(event.id, { status: key });

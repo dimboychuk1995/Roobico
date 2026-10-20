@@ -21,12 +21,14 @@ import {
   fetchVendorOrders,
   money,
 } from "@/lib/api";
+import { useHasPermission } from "@/context/auth";
 import { useTheme } from "@/lib/theme";
 
 export default function VendorDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const theme = useTheme();
   const router = useRouter();
+  const canEditVendor = useHasPermission("vendors.edit");
 
   const [vendor, setVendor] = useState<VendorFull | null>(null);
   const [orders, setOrders] = useState<VendorOrderRow[]>([]);
@@ -120,15 +122,16 @@ export default function VendorDetailsScreen() {
       <Stack.Screen
         options={{
           title: vendor.name || "Vendor",
-          headerRight: () => (
-            <Pressable
-              onPress={() => router.push({ pathname: "/vendor-form", params: { id: vendor._id || id } })}
-              hitSlop={8}
-              style={{ paddingHorizontal: 8 }}
-            >
-              <Ionicons name="create-outline" size={22} color={theme.primary} />
-            </Pressable>
-          ),
+          headerRight: () =>
+            canEditVendor ? (
+              <Pressable
+                onPress={() => router.push({ pathname: "/vendor-form", params: { id: vendor._id || id } })}
+                hitSlop={8}
+                style={{ paddingHorizontal: 8 }}
+              >
+                <Ionicons name="create-outline" size={22} color={theme.primary} />
+              </Pressable>
+            ) : null,
         }}
       />
 

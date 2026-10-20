@@ -38,7 +38,14 @@ the account owner.
 
 Users without the "View part costs inside WO" permission (mechanics) work in
 a special **mechanic mode** without any prices — see the mechanic
-documentation.
+documentation. The same key hides money outside work orders: customer
+balances, dashboard revenue blocks, the WO Cost button. Purchase costs in
+the parts catalog have their own key ("View part costs"), financial reports
+("View financial reports") and the Timecard / Salary report ("View
+Timecard / Salary report") have theirs, and editing employees' pay in the
+user form needs "Edit employees' pay type & salary". Every page shows only
+the buttons the role may use, and the server re-checks each action, so what
+you see is exactly what you can do.
 
 ## Money flow in one paragraph
 

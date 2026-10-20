@@ -13,6 +13,7 @@ import {
   fetchStocktakes,
   money,
 } from "@/lib/api";
+import { useHasPermission } from "@/context/auth";
 import { useTheme } from "@/lib/theme";
 
 function PartCard({ item }: { item: PartRow }) {
@@ -128,6 +129,8 @@ function StocktakeCard({ item }: { item: StocktakeRow }) {
 export default function PartsScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const canCreateOrder = useHasPermission("parts_orders.create");
+  const canAdjustStock = useHasPermission("parts.adjust_stock");
   const [segment, setSegment] = useState<"stock" | "orders" | "counts">("stock");
 
   const segmentBar = (
@@ -152,7 +155,7 @@ export default function PartsScreen() {
           </Pressable>
         );
       })}
-      {segment === "orders" ? (
+      {segment === "orders" && canCreateOrder ? (
         <Pressable
           onPress={() => router.push("/parts-order-form")}
           style={[styles.segmentChip, { borderColor: theme.primary, marginLeft: "auto" }]}
@@ -160,7 +163,7 @@ export default function PartsScreen() {
           <Text style={{ color: theme.primary, fontWeight: "700", fontSize: 13 }}>+ New order</Text>
         </Pressable>
       ) : null}
-      {segment === "counts" ? (
+      {segment === "counts" && canAdjustStock ? (
         <Pressable
           onPress={() => router.push("/stocktake-form")}
           style={[styles.segmentChip, { borderColor: theme.primary, marginLeft: "auto" }]}

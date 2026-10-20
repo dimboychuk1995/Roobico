@@ -21,12 +21,14 @@ import {
   fetchWorkOrders,
   money,
 } from "@/lib/api";
+import { useHasPermission } from "@/context/auth";
 import { useTheme } from "@/lib/theme";
 
 export default function UnitDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const theme = useTheme();
   const router = useRouter();
+  const canManageUnits = useHasPermission("customers.manage_units");
 
   const [unit, setUnit] = useState<UnitDetails | null>(null);
   const [workOrders, setWorkOrders] = useState<WorkOrderRow[]>([]);
@@ -98,15 +100,16 @@ export default function UnitDetailsScreen() {
       <Stack.Screen
         options={{
           title: unit.label,
-          headerRight: () => (
-            <Pressable
-              onPress={() => router.push({ pathname: "/unit-form", params: { id: unit.id } })}
-              hitSlop={8}
-              style={{ paddingHorizontal: 8 }}
-            >
-              <Ionicons name="create-outline" size={22} color={theme.primary} />
-            </Pressable>
-          ),
+          headerRight: () =>
+            canManageUnits ? (
+              <Pressable
+                onPress={() => router.push({ pathname: "/unit-form", params: { id: unit.id } })}
+                hitSlop={8}
+                style={{ paddingHorizontal: 8 }}
+              >
+                <Ionicons name="create-outline" size={22} color={theme.primary} />
+              </Pressable>
+            ) : null,
         }}
       />
 

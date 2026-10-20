@@ -64,7 +64,11 @@ IMPLIED_GRANTS: dict[str, list[str]] = {
         "work_orders.send_to_customer",
     ],
     "dashboard.view": ["dashboard.edit_goals"],
-    "reports.view": ["reports.export"],
+    # reports.view раньше открывал все отчёты, включая финансовые и
+    # зарплатный; теперь у них свои ключи — кастомные роли их получают.
+    "reports.view": ["reports.export", "reports.view_financial", "reports.view_payroll"],
+    # Зарплата в форме пользователя раньше шла вместе с manage_users.
+    "settings.manage_users": ["settings.manage_pay"],
     "settings.manage_org": [
         "settings.manage_locations",
         "settings.manage_wo_presets",

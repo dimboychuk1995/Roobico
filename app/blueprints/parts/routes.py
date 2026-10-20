@@ -562,6 +562,24 @@ def _get_next_order_number(shop_db, shop_id):
     return initial + seq - 1
 
 
+PART_COST_FIELDS = ("average_cost", "last_price", "last_price_order_number")
+
+
+def strip_part_cost_fields(doc: dict) -> dict:
+    """Убрать закупочные/себестоимостные поля запчасти (parts.view_costs)."""
+    for key in PART_COST_FIELDS:
+        doc.pop(key, None)
+    return doc
+
+
+def _cross_ref_item(part_doc: dict) -> dict:
+    """Кросс-референс для JSON: без себестоимости, если нет parts.view_costs."""
+    item = serialize_cross_ref(part_doc)
+    if not has_permission("parts.view_costs"):
+        strip_part_cost_fields(item)
+    return item
+
+
 @parts_bp.get("/")
 @login_required
 @permission_required("parts.view")
@@ -1359,12 +1377,23 @@ def parts_page():
                 "created_label": format_date_mmddyyyy(st.get("created_at")),
             })
 
+    # parts.view_costs: без него закупочные цены/себестоимость не уходят в
+    # шаблон вовсе (edit_payload модалки, колонки, итоги).
+    can_view_part_costs = has_permission("parts.view_costs")
+    if not can_view_part_costs:
+        for p in parts_in_stock:
+            strip_part_cost_fields(p)
+            if isinstance(p.get("edit_payload"), dict):
+                strip_part_cost_fields(p["edit_payload"])
+        parts_totals = {"inventory_cost": 0.0, "core_cost": 0.0}
+
     return _render_app_page(
         "public/parts.html",
         active_page="parts",
         active_tab=active_tab,
         q=q,
         part_status=part_status,
+        can_view_part_costs=can_view_part_costs,
         parts=parts_in_stock,
         pagination=pagination,
         orders_pagination=orders_pagination,
@@ -1850,6 +1879,13 @@ def parts_api_search():
                 break
 
     attach_alternates(parts_coll, shop["_id"], items, _serialize_item)
+
+    if not has_permission("parts.view_costs"):
+        for it in items:
+            strip_part_cost_fields(it)
+            for alt in it.get("alternates") or []:
+                if isinstance(alt, dict):
+                    strip_part_cost_fields(alt)
 
     return {"ok": True, "items": items}
 
@@ -3498,33 +3534,33 @@ def parts_api_get(part_id: str):
         return jsonify({"ok": False, "error": "Part not found"}), 404
 
     # Convert ObjectIds to strings for JSON
-    return jsonify({
-        "ok": True,
-        "item": {
-            "_id": str(part["_id"]),
-            "part_number": part.get("part_number") or "",
-            "description": part.get("description") or "",
-            "reference": part.get("reference") or "",
-            "vendor_id": str(part["vendor_id"]) if part.get("vendor_id") else "",
-            "category_id": str(part["category_id"]) if part.get("category_id") else "",
-            "location_id": str(part["location_id"]) if part.get("location_id") else "",
-            "in_stock": int(part.get("in_stock") or 0),
-            "do_not_track_inventory": bool(part.get("do_not_track_inventory")),
-            "average_cost": float(part.get("average_cost") or 0.0),
-            "last_price": float(part["last_price"]) if part.get("last_price") is not None else None,
-            "last_price_order_number": part.get("last_price_order_number"),
-            "has_selling_price": bool(part.get("has_selling_price")),
-            "selling_price": float(part.get("selling_price") or 0.0),
-            "core_has_charge": bool(part.get("core_has_charge", False)),
-            "core_cost": float(part.get("core_cost") or 0.0),
-            "misc_has_charge": bool(part.get("misc_has_charge", False)),
-            "misc_charges": part.get("misc_charges") or [],
-            "cross_refs": [
-                serialize_cross_ref(x)
-                for x in get_cross_refs(parts_coll, shop["_id"], part)
-            ],
-        }
-    })
+    item = {
+        "_id": str(part["_id"]),
+        "part_number": part.get("part_number") or "",
+        "description": part.get("description") or "",
+        "reference": part.get("reference") or "",
+        "vendor_id": str(part["vendor_id"]) if part.get("vendor_id") else "",
+        "category_id": str(part["category_id"]) if part.get("category_id") else "",
+        "location_id": str(part["location_id"]) if part.get("location_id") else "",
+        "in_stock": int(part.get("in_stock") or 0),
+        "do_not_track_inventory": bool(part.get("do_not_track_inventory")),
+        "average_cost": float(part.get("average_cost") or 0.0),
+        "last_price": float(part["last_price"]) if part.get("last_price") is not None else None,
+        "last_price_order_number": part.get("last_price_order_number"),
+        "has_selling_price": bool(part.get("has_selling_price")),
+        "selling_price": float(part.get("selling_price") or 0.0),
+        "core_has_charge": bool(part.get("core_has_charge", False)),
+        "core_cost": float(part.get("core_cost") or 0.0),
+        "misc_has_charge": bool(part.get("misc_has_charge", False)),
+        "misc_charges": part.get("misc_charges") or [],
+        "cross_refs": [
+            _cross_ref_item(x)
+            for x in get_cross_refs(parts_coll, shop["_id"], part)
+        ],
+    }
+    if not has_permission("parts.view_costs"):
+        strip_part_cost_fields(item)
+    return jsonify({"ok": True, "item": item})
 
 
 # -----------------------------
@@ -3551,7 +3587,7 @@ def parts_api_cross_refs(part_id: str):
     return jsonify({
         "ok": True,
         "items": [
-            serialize_cross_ref(x)
+            _cross_ref_item(x)
             for x in get_cross_refs(parts_coll, shop["_id"], part)
         ],
     })
@@ -3588,7 +3624,7 @@ def parts_api_cross_refs_add(part_id: str):
         "ok": True,
         "message": "Cross reference added",
         "items": [
-            serialize_cross_ref(x)
+            _cross_ref_item(x)
             for x in get_cross_refs(parts_coll, shop["_id"], part)
         ],
     })
@@ -3681,6 +3717,7 @@ def parts_api_history(part_id: str):
             for v in vendors_coll.find({"_id": {"$in": vendor_ids}}):
                 vendor_map[v.get("_id")] = _name_from_doc(v)
 
+    show_part_costs = has_permission("parts.view_costs")
     orders_out = []
     for row in orders_rows:
         qty = 0
@@ -3697,16 +3734,18 @@ def parts_api_history(part_id: str):
         if qty <= 0:
             continue
 
-        orders_out.append({
+        order_row = {
             "order_id": str(row.get("_id")),
             "order_number": row.get("order_number"),
             "status": str(row.get("status") or ""),
             "vendor": vendor_map.get(row.get("vendor_id")) or "-",
             "quantity": qty,
-            "price": float(latest_price or 0.0),
             "created_at": _fmt_dt_iso(row.get("created_at")),
             "received_at": _fmt_dt_iso(row.get("received_at")),
-        })
+        }
+        if show_part_costs:
+            order_row["price"] = float(latest_price or 0.0)
+        orders_out.append(order_row)
 
     # Work order history (prefer part_id match, fallback by part_number for legacy docs)
     db, _ = _get_shop_db(master)
@@ -3857,9 +3896,15 @@ def parts_api_update(part_id: str):
     description = (data.get("description") or "").strip()
     reference = (data.get("reference") or "").strip()
 
-    average_cost = _parse_float(data.get("average_cost", 0.0), default=0.0)
-    if average_cost < 0:
-        return jsonify({"ok": False, "error": "Average cost cannot be negative"}), 400
+    # Без parts.view_costs поле себестоимости в форме скрыто и клиент шлёт
+    # 0 — сохраняем текущее значение, иначе правка описания обнуляла бы
+    # средний cost.
+    if has_permission("parts.view_costs"):
+        average_cost = _parse_float(data.get("average_cost", 0.0), default=0.0)
+        if average_cost < 0:
+            return jsonify({"ok": False, "error": "Average cost cannot be negative"}), 400
+    else:
+        average_cost = _parse_float(part.get("average_cost"), default=0.0)
 
     has_selling_price = bool(data.get("has_selling_price", False))
     selling_price = _parse_float(data.get("selling_price", 0.0), default=0.0)

@@ -244,6 +244,32 @@ are cleared and the WO is back in In Work.
 Allow/Deny overrides. Deny always wins. For many users — create/clone a
 role in Roles & Permissions.
 
+**Senior mechanic should see customers, units and the parts catalog, but no
+money.** That is the default **Senior mechanic** role: it has "View
+customers", "View parts", "View parts orders" and "View reports" but
+neither "View part costs inside WO" nor "View part costs" — so the
+customers list has no balance column, the parts list has no Avg cost /
+Last price, the dashboard shows only the hours chart and the Reports page
+shows only Mechanic Hours.
+
+**Office person who can look at everything, including numbers, but change
+nothing.** Role **Viewer**: read-only access to all sections with prices,
+balances, financial reports and the Activity Journal — but no create /
+edit / delete / payment keys, so pages render without action buttons and
+work orders open read-only. Payroll stays hidden unless you tick "View
+Timecard / Salary report".
+
+**Bookkeeper needs payroll.** Roles & Permissions → clone Viewer (or create
+a role) and tick "View Timecard / Salary report" (reports.view_payroll) plus
+"View financial reports". If they also prepare pay changes in the user
+form, add "Edit employees' pay type & salary" — note that even with that
+key nobody can change their own pay.
+
+**HR person who manages accounts but must not see salaries.** Give them
+"Manage users" without "Edit employees' pay type & salary": the user form
+has no pay fields for them and the server ignores any pay values they
+send. They can only assign roles that are no wider than their own.
+
 **Employee left.** Users → Deactivate (login blocked, history kept). You
 cannot deactivate yourself.
 

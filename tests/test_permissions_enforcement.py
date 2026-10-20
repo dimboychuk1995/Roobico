@@ -369,7 +369,11 @@ def test_every_permission_in_catalog_is_enforced_by_a_route():
                 src += open(os.path.join(dirpath, f), encoding="utf-8").read()
     # Режимные ключи проверяются внутри хендлеров через has_permission/is_mechanic_mode.
     mode_keys = {"parts.view_costs", "work_orders.view_costs", "work_orders.manage_email_contacts",
-                 "work_orders.edit_time_logs", "attachments.view"}
+                 "work_orders.edit_time_logs", "attachments.view",
+                 # reports.view_financial — выбирается по ключу отчёта внутри
+                 # хендлера (_report_permission_for); settings.manage_pay —
+                 # поля зарплаты внутри формы пользователя.
+                 "reports.view_financial", "settings.manage_pay"}
     missing = []
     for key in PERMISSIONS:
         if key in mode_keys:

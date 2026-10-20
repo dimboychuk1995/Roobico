@@ -83,8 +83,10 @@
                       data-role="{{ u.get('role') or 'viewer' }}"
                       data-is-active="{{ '1' if u.get('is_active', True) else '0' }}"
                       data-shop-ids="{{ (u.get('shop_ids_str') or [])|join(',') }}"
+                      {% if can_manage_pay %}
                       data-pay-type="{{ u.get('pay_type') or 'salary' }}"
                       data-salary-amount="{{ '%.2f'|format(u.get('salary_amount')) if u.get('salary_amount') is not none else '' }}"
+                      {% endif %}
                     >
                       Edit
                     </button>
@@ -220,6 +222,7 @@
 
             <hr class="my-2">
 
+            {% if can_manage_pay %}
             <!-- ── Pay type ── -->
             <div class="col-12 col-md-6">
               <label class="form-label" for="create_pay_type">Pay type</label>
@@ -244,6 +247,7 @@
                 and tick this user in the employees list. The hourly rate is set there per employee.
               </div>
             </div>
+            {% endif %}
 
             <hr class="my-2">
 
@@ -372,6 +376,7 @@
 
             <hr class="my-2">
 
+            {% if can_manage_pay %}
             <!-- ── Pay type ── -->
             <div class="col-12 col-md-6">
               <label class="form-label" for="edit_pay_type">Pay type</label>
@@ -396,6 +401,7 @@
                 and tick this user in the employees list. The hourly rate is set there per employee.
               </div>
             </div>
+            {% endif %}
 
             <hr class="my-2">
 

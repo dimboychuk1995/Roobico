@@ -28,7 +28,13 @@ from app.utils.duplicates import (
 )
 from app.utils.mongo_search import build_regex_search_filter
 from app.utils.pagination import get_pagination_params, paginate_find
-from app.utils.permissions import enforce_mechanic_status, has_permission, permission_required
+from app.utils.permissions import (
+    enforce_mechanic_status,
+    forbidden_response,
+    has_permission,
+    permission_required,
+    permission_required_any,
+)
 from app.utils.rate_limit import hit_rate_limit
 from app.utils.tenant import get_shop_db as _tenant_get_shop_db, oid
 
@@ -675,6 +681,11 @@ def mobile_work_order_edit(work_order_id):
     wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True})
     if not wo:
         return jsonify({"ok": False, "error": "work_order_not_found"}), 404
+    # Правка существующего WO — work_orders.edit, как в вебе. Исключение —
+    # механик-режим (нет view_costs): у него только create, сохранение
+    # форсится в in_progress и не трогает деньги.
+    if has_permission("work_orders.view_costs") and not has_permission("work_orders.edit"):
+        return forbidden_response("work_orders.edit")
     if (wo.get("status") or "open") == "paid":
         return jsonify({"ok": False, "error": "paid_cannot_edit",
                         "message": "Paid work orders cannot be edited."}), 400
@@ -1027,7 +1038,7 @@ def mobile_unit_details(unit_id):
 
 @mobile_api_bp.post("/api/mobile/customers")
 @api_login_required
-@permission_required("customers.edit")
+@permission_required("customers.create")
 def mobile_customer_create():
     from app.blueprints.customers.routes import (
         _resolve_default_labor_rate_id,
@@ -1105,7 +1116,7 @@ def mobile_customer_create():
 
 @mobile_api_bp.post("/api/mobile/units")
 @api_login_required
-@permission_required("work_orders.create")
+@permission_required_any("customers.manage_units", "work_orders.create")
 def mobile_unit_create():
     from app.blueprints.work_orders.services.common import i32, utcnow
     from app.blueprints.work_orders.services.lookups import unit_label
@@ -1165,7 +1176,7 @@ def mobile_unit_create():
 
 @mobile_api_bp.post("/api/mobile/units/<unit_id>/update")
 @api_login_required
-@permission_required("customers.edit")
+@permission_required("customers.manage_units")
 def mobile_unit_update(unit_id):
     from app.blueprints.work_orders.services.common import i32, utcnow
     from app.utils.entity_search import build_unit_search_terms
@@ -1217,7 +1228,7 @@ def mobile_unit_update(unit_id):
 
 @mobile_api_bp.post("/api/mobile/vendors")
 @api_login_required
-@permission_required("vendors.edit")
+@permission_required("vendors.create")
 def mobile_vendor_create():
     from app.utils.contacts import (
         build_contacts_from_payload,

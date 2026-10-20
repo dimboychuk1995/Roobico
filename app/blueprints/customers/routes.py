@@ -609,8 +609,10 @@ def customers_page():
 
 @customers_bp.get("/customers/api/balances")
 @login_required
-@permission_required("customers.view")
+@permission_required("work_orders.view_costs")
 def customers_balances_api():
+    """Баланс клиента = неоплаченные тоталы WO: это деньги, поэтому право то
+    же, что на просмотр цен в WO (customers.view без view_costs его не даёт)."""
     coll, shop, master = _customers_collection()
     if coll is None or shop is None:
         return jsonify({"ok": False, "error": "Shop not configured"}), 400
@@ -679,6 +681,11 @@ def customer_details_page(customer_id):
 
     tab = (request.args.get("tab") or "work_orders").strip().lower()
     allowed_tabs = {"work_orders", "units", "payments", "estimates", "details"}
+    # Платежи и сметы — деньги: без work_orders.view_costs этих вкладок нет
+    # (шаблон прячет и суммы в остальных вкладках по тому же флагу).
+    can_view_costs = has_permission("work_orders.view_costs")
+    if not can_view_costs:
+        allowed_tabs -= {"payments", "estimates"}
     # Фильтр статуса для вкладки Units: active (по умолчанию) / inactive / all.
     unit_status = _parse_status_filter(request.args.get("status"))
     if tab not in allowed_tabs:
@@ -1023,6 +1030,13 @@ def customer_details_page(customer_id):
     )
     from app.utils.display_datetime import get_active_shop_today_iso
 
+    # Механик-режим (нет view_costs) статус paid не видит нигде — в списке
+    # WO клиента он показывается как completed.
+    if not can_view_costs:
+        for item in tab_items:
+            if isinstance(item, dict) and item.get("status") == "paid":
+                item["status"] = "completed"
+
     return _render_app_page(
         "public/customers/customer_details.html",
         active_page="customers",
@@ -1033,6 +1047,7 @@ def customer_details_page(customer_id):
         today_date_input_value=get_active_shop_today_iso(),
         can_create_inspection=has_permission("work_orders.create"),
         can_add_unit=has_permission("customers.manage_units") and customer.get("is_active") is not False,
+        can_view_costs=can_view_costs,
         active_tab=tab,
         q=q,
         unit_status=unit_status,
@@ -1221,6 +1236,12 @@ def customer_unit_details_page(customer_id, unit_id):
         else:
             annual_inspection_history.append(row)
 
+    can_view_costs = has_permission("work_orders.view_costs")
+    if not can_view_costs:
+        for item in tab_items:
+            if isinstance(item, dict) and item.get("status") == "paid":
+                item["status"] = "completed"
+
     return _render_app_page(
         "public/customers/unit_details.html",
         active_page="customers",
@@ -1232,6 +1253,7 @@ def customer_unit_details_page(customer_id, unit_id):
         annual_inspection_history=annual_inspection_history,
         can_delete_inspection=has_permission("work_orders.delete"),
         can_create_inspection=has_permission("work_orders.create"),
+        can_view_costs=can_view_costs,
         avi_checklist=annual_inspection_checklist(),
         avi_type_defaults=VEHICLE_TYPE_COMPONENT_DEFAULTS,
         today_date_input_value=get_active_shop_today_iso(),
@@ -1927,6 +1949,8 @@ def customers_api_wo_labors(wo_id):
     if not wo:
         return jsonify({"ok": False, "error": "Work order not found"}), 404
 
+    show_costs = has_permission("work_orders.view_costs")
+
     labors_out = []
     for labor_block in wo.get("labors") or []:
         if not isinstance(labor_block, dict):
@@ -1938,20 +1962,24 @@ def customers_api_wo_labors(wo_id):
         for p in parts_list:
             if not isinstance(p, dict):
                 continue
-            parts_out.append({
+            part_row = {
                 "part_number": str(p.get("part_number") or ""),
                 "description": str(p.get("description") or ""),
                 "qty": p.get("qty") or 0,
-                "price": float(p.get("price") or 0),
-            })
+            }
+            if show_costs:
+                part_row["price"] = float(p.get("price") or 0)
+            parts_out.append(part_row)
 
-        labors_out.append({
+        labor_row = {
             "description": str(labor_info.get("description") or ""),
             "hours": str(labor_info.get("hours") or ""),
-            "labor_total": float(labor_info.get("labor_full_total") or 0),
             "parts": parts_out,
-        })
+        }
+        if show_costs:
+            labor_row["labor_total"] = float(labor_info.get("labor_full_total") or 0)
+        labors_out.append(labor_row)
 
-    return jsonify({"ok": True, "labors": labors_out})
+    return jsonify({"ok": True, "labors": labors_out, "show_costs": show_costs})
 
 

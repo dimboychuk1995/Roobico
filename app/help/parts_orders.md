@@ -256,5 +256,12 @@ See the Work Orders help for details.
 
 ## Access
 
-Working with parts orders requires the parts permissions (view/edit parts);
-vendors have their own view/edit/deactivate permissions.
+Parts orders have their own keys in Settings → Roles: **View parts orders**
+(the Orders / Payments tabs, order prices, vendor balances and a vendor's
+orders list), **Create** (the Order button, AI invoice parser), **Edit**
+(Edit, Confirm / Reject of e-mailed orders), **Delete**, **Receive**
+(receive, un-receive, returns to vendor) and **Manage payments** (Pay,
+deleting payments). Buttons that need a key you don't have are not
+rendered — an order you may only view opens with a "View" button instead
+of "Edit". Vendors have their own view / create / edit / deactivate
+permissions; the vendor Balance column needs "View parts orders".

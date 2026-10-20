@@ -30,6 +30,7 @@ import {
   receivePartsOrder,
   unreceivePartsOrder,
 } from "@/lib/api";
+import { useHasPermission } from "@/context/auth";
 import { useTheme } from "@/lib/theme";
 
 export default function PartsOrderDetailsScreen() {
@@ -37,6 +38,8 @@ export default function PartsOrderDetailsScreen() {
   const theme = useTheme();
   const toast = useToast();
   const router = useRouter();
+  const canReceive = useHasPermission("parts_orders.receive");
+  const canPayOrder = useHasPermission("parts_orders.manage_payments");
 
   const [order, setOrder] = useState<PartsOrderDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -111,7 +114,7 @@ export default function PartsOrderDetailsScreen() {
   const summary = order.payment_summary;
   const received = order.status === "received";
   const isReturn = !!order.is_return;
-  const canReturn = !isReturn && (received || summary.payment_status === "paid");
+  const canReturn = canReceive && !isReturn && (received || summary.payment_status === "paid");
   const itemsTotal = order.items.reduce((s, i) => s + i.quantity * i.price, 0);
 
   return (
@@ -208,7 +211,7 @@ export default function PartsOrderDetailsScreen() {
         </View>
       </RowCard>
 
-      {isReturn ? null : !received ? (
+      {isReturn || !canReceive ? null : !received ? (
         <Pressable
           style={[styles.primaryBtn, { backgroundColor: theme.primary, opacity: busy ? 0.7 : 1 }]}
           onPress={() => setReceiveOpen(true)}
@@ -228,7 +231,7 @@ export default function PartsOrderDetailsScreen() {
         </Pressable>
       )}
 
-      {!isReturn && summary.remaining_balance > 0 ? (
+      {!isReturn && canPayOrder && summary.remaining_balance > 0 ? (
         <Pressable
           style={[styles.secondaryBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
           onPress={() => setPayOpen(true)}

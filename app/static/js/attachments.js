@@ -173,6 +173,14 @@
     }
   };
 
+  // Права — только для отрисовки кнопок; сервер проверяет сам.
+  function canUpload() {
+    return typeof window.roobicoHasPermission !== "function" || window.roobicoHasPermission("attachments.upload");
+  }
+  function canDelete() {
+    return typeof window.roobicoHasPermission !== "function" || window.roobicoHasPermission("attachments.delete");
+  }
+
   AttBlock.prototype.render = function () {
     if (!this.gallery) return;
     var html = "";
@@ -180,7 +188,9 @@
       var it = this.items[i];
       var downloadUrl = BASE + "/" + it.id + "/download";
       html += '<div class="att-item">';
-      html += '<button type="button" class="att-delete-btn" data-att-id="' + escapeHtml(it.id) + '" title="Delete">&times;</button>';
+      if (canDelete()) {
+        html += '<button type="button" class="att-delete-btn" data-att-id="' + escapeHtml(it.id) + '" title="Delete">&times;</button>';
+      }
 
       if (it.is_image) {
         html += '<a href="' + escapeHtml(downloadUrl) + '" target="_blank" rel="noopener noreferrer" class="att-thumb-link">';
@@ -266,10 +276,12 @@
           '<i class="bi bi-paperclip me-1"></i>Attachments' +
           ' <span class="att-count badge bg-secondary ms-1" style="display:none;">0</span>' +
         '</h6>' +
-        '<label class="btn btn-sm btn-outline-secondary mb-0 att-upload-btn">' +
-          '<i class="bi bi-upload me-1"></i>Upload' +
-          '<input type="file" class="att-file-input d-none" multiple accept="image/*,.pdf">' +
-        '</label>' +
+        (canUpload()
+          ? '<label class="btn btn-sm btn-outline-secondary mb-0 att-upload-btn">' +
+              '<i class="bi bi-upload me-1"></i>Upload' +
+              '<input type="file" class="att-file-input d-none" multiple accept="image/*,.pdf">' +
+            '</label>'
+          : '') +
       '</div>' +
       '<div class="att-progress my-2" style="display:none;">' +
         '<div class="progress" style="height:4px;"><div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%"></div></div>' +

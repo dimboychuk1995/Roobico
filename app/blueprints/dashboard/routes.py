@@ -10,7 +10,7 @@ from app.blueprints.main.routes import _render_app_page
 from app.extensions import get_master_db
 from app.utils.auth import login_required
 from app.utils.date_filters import build_date_range_filters
-from app.utils.permissions import permission_required
+from app.utils.permissions import has_permission, permission_required
 
 
 from app.utils.tenant import tenant_id_variants as _tenant_id_variants, get_shop_db as _get_shop_db
@@ -911,6 +911,21 @@ DASHBOARD_BLOCK_NAMES = (
     "mechanic-hours",
 )
 
+# Денежные блоки дашборда (выручка, закупки, цели, долги) — только с
+# work_orders.view_costs: dashboard.view сам по себе даёт лишь часы механиков.
+DASHBOARD_MONEY_BLOCKS = frozenset({
+    "wo-money",
+    "parts-orders",
+    "goal-progress",
+    "outstanding-balance",
+})
+
+
+def _allowed_dashboard_blocks() -> tuple[str, ...]:
+    if has_permission("work_orders.view_costs"):
+        return DASHBOARD_BLOCK_NAMES
+    return tuple(b for b in DASHBOARD_BLOCK_NAMES if b not in DASHBOARD_MONEY_BLOCKS)
+
 
 @dashboard_bp.get("/dashboard")
 @login_required
@@ -960,12 +975,14 @@ def dashboard():
         outstanding_balance=0.0,
         dashboard_metrics_api_url=url_for("dashboard.dashboard_metrics_api"),
         dashboard_goals_save_url=url_for("dashboard.dashboard_goals_save_api"),
+        can_view_costs=has_permission("work_orders.view_costs"),
+        can_edit_goals=has_permission("dashboard.edit_goals"),
     )
 
 
 def _compute_dashboard_metrics(shop_db, shop, created_from, created_to_exclusive, date_preset: str):
     metrics = {}
-    for block_name in DASHBOARD_BLOCK_NAMES:
+    for block_name in _allowed_dashboard_blocks():
         metrics.update(
             _compute_dashboard_block_metrics(
                 block_name,
@@ -1013,6 +1030,8 @@ def dashboard_metrics_block_api(block_name: str):
 
     if block_name not in DASHBOARD_BLOCK_NAMES:
         return jsonify({"ok": False, "error": "Unknown dashboard block."}), 404
+    if block_name in DASHBOARD_MONEY_BLOCKS and not has_permission("work_orders.view_costs"):
+        return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.view_costs"}), 403
 
     date_filters = _get_date_range_filters(request.args)
     created_from = date_filters["created_from"]

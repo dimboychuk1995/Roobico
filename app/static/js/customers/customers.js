@@ -120,14 +120,19 @@
       if (lb.hours) {
         html += '<span class="wo-labors-hours-badge">' + _esc(lb.hours) + ' hrs</span>';
       }
-      html += '<span class="wo-labors-item-total">Labor: <strong>$' + _money(lb.labor_total) + '</strong></span>';
+      // Без work_orders.view_costs сервер не отдаёт labor_total/price —
+      // показываем работы и запчасти без денег.
+      var showMoney = lb.labor_total !== undefined && lb.labor_total !== null;
+      if (showMoney) {
+        html += '<span class="wo-labors-item-total">Labor: <strong>$' + _money(lb.labor_total) + '</strong></span>';
+      }
       html += '</div>';
 
       if (parts.length) {
         var partsSubtotal = 0;
         html += '<div class="table-responsive">';
         html += '<table class="table table-sm mb-0 wo-labors-parts-table">';
-        html += '<thead><tr><th>Part #</th><th>Description</th><th class="text-end">Qty</th><th class="text-end">Price</th><th class="text-end">Total</th></tr></thead><tbody>';
+        html += '<thead><tr><th>Part #</th><th>Description</th><th class="text-end">Qty</th>' + (showMoney ? '<th class="text-end">Price</th><th class="text-end">Total</th>' : '') + '</tr></thead><tbody>';
         for (var j = 0; j < parts.length; j++) {
           var p = parts[j];
           var qty = Number(p.qty || 0);
@@ -137,6 +142,7 @@
           html += '<td class="wo-labors-part-number">' + _esc(p.part_number || "-") + '</td>';
           html += '<td>' + _esc(p.description || "-") + '</td>';
           html += '<td class="text-end">' + qty + '</td>';
+          if (!showMoney) { html += '</tr>'; continue; }
           html += '<td class="text-end">$' + _money(p.price) + '</td>';
           html += '<td class="text-end">$' + _money(lineTotal) + '</td>';
           html += '</tr>';

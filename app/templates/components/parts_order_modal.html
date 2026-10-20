@@ -11,7 +11,7 @@
        parts.js), а вместо location.reload() после receive/pay/unreceive
        шлётся событие roobico:wo-parts-orders-changed.
 #}
-{% from "components/attachments.html" import attachments_block %}
+{% from "components/attachments.html" import attachments_block with context %}
 
 <!-- Order Modal (AJAX create + show Received inside) -->
 <div class="modal fade" id="orderModal" tabindex="-1" aria-labelledby="orderModalLabel" aria-hidden="true"

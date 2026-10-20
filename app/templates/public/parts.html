@@ -1,11 +1,11 @@
 {% extends "layouts/app_base.html" %}
-{% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
+{% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal with context %}
 {% from "components/ui.html" import empty_state, payment_status_badge, status_badge %}
 
 {% block page_title %}Parts{% endblock %}
 
 {% block app_content %}
-<script type="application/json" id="partsPermissionsData">{{ {"edit_stock_qty": "parts.edit_stock_qty" in user_permissions}|tojson }}</script>
+<script type="application/json" id="partsPermissionsData">{{ {"edit_stock_qty": "parts.edit_stock_qty" in user_permissions, "adjust_stock": "parts.adjust_stock" in user_permissions, "view_costs": can_view_part_costs|default(false), "edit": "parts.edit" in user_permissions}|tojson }}</script>
 <div class="page-header">
   <h1 class="page-header__title">Parts</h1>
   <ul class="nav page-header__tabs" role="tablist">
@@ -29,12 +29,16 @@
     </li>
   </ul>
   <div class="page-header__actions">
+    {% if "parts_orders.create" in user_permissions %}
     <button type="button" class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#orderModal">
       <i class="bi bi-cart-plus me-1"></i> Order
     </button>
+    {% endif %}
+    {% if "parts.create" in user_permissions %}
     <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#createPartModal">
       <i class="bi bi-plus-lg me-1"></i> Add Part
     </button>
+    {% endif %}
   </div>
 </div>
 
@@ -74,8 +78,10 @@
               <th data-sort-field="description" style="min-width:260px;">Description</th>
               <th data-sort-field="reference" style="min-width:180px;">Reference</th>
               <th data-sort-field="in_stock" class="text-end" style="width:120px;">In stock</th>
+              {% if can_view_part_costs %}
               <th data-sort-field="average_cost" class="text-end" style="width:150px;" title="Weighted average cost of what is in stock">Avg cost</th>
               <th data-sort-field="last_price" class="text-end" style="width:130px;" title="Price on the latest parts order with this part — the default price when you order it again">Last price</th>
+              {% endif %}
               <th style="min-width:180px;">Vendor</th>
               <th style="min-width:180px;">Category</th>
               <th style="min-width:180px;">Location</th>
@@ -106,6 +112,7 @@
                     {{ p.in_stock if p.in_stock is not none else 0 }}
                   {% endif %}
                 </td>
+                {% if can_view_part_costs %}
                 <td class="text-end">
                   {% if p.average_cost is not none %}
                     {{ "%.2f"|format(p.average_cost) }}
@@ -120,6 +127,7 @@
                     <span class="text-muted" title="No parts orders with this part yet">-</span>
                   {% endif %}
                 </td>
+                {% endif %}
 
                 <td class="text-muted">
                   {% if p.vendor_name %}
@@ -191,12 +199,15 @@
                       Locations
                     </button>
                     {% endif %}
+                    {% if "parts.edit" in user_permissions %}
                     <button type="button" class="btn btn-sm btn-outline-primary text-nowrap flex-shrink-0 editPartBtn"
                                   data-part-id="{{ p._id }}"
                                   data-part-json="{{ (p.edit_payload or {}) | tojson | forceescape }}"
                                   data-bs-toggle="modal" data-bs-target="#createPartModal">
                       Edit
                     </button>
+                    {% endif %}
+                    {% if "parts.delete" in user_permissions %}
                     <form method="post" action="{{ url_for('parts.parts_deactivate', part_id=p._id) }}" class="d-inline"
                           onsubmit="return appConfirmSubmit(this, 'Deactivate this part?{% if not p.do_not_track_inventory and (p.in_stock or 0) > 0 %} It still has {{ p.in_stock }} in stock: the quantity stays on the part but is hidden from inventory totals.{% endif %} It becomes active again only when added to a parts order.');">
                       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -205,6 +216,7 @@
                         Deactivate
                       </button>
                     </form>
+                    {% endif %}
                     </div>
                   {% endif %}
                 </td>
@@ -228,12 +240,14 @@
         </div>
       {% endif %}
 
+      {% if can_view_part_costs %}
       <div class="d-flex justify-content-end mt-3 pt-3 border-top">
         <div class="small d-flex gap-3 flex-wrap">
           <span>Total inventory cost: <strong>${{ "%.2f"|format((parts_totals or {}).get('inventory_cost', 0)) }}</strong></span>
           <span>Total core cost: <strong>${{ "%.2f"|format((parts_totals or {}).get('core_cost', 0)) }}</strong></span>
         </div>
       </div>
+      {% endif %}
     {% else %}
       {{ empty_state("No parts in stock", "Add a part or receive a parts order to build up inventory.") }}
     {% endif %}
@@ -371,30 +385,38 @@
                       {% elif o.status == 'received' %}
                         <span class="badge text-bg-success">{{ o.status or 'ordered' }}</span>
                       {% elif o.needs_confirmation %}
+                        {% if "parts_orders.edit" in user_permissions %}
                         <button type="button" class="btn btn-sm btn-danger confirmOrderBtn"
                                 data-order-id="{{ o.id }}"
                                 title="Review the order created from email and confirm it">
                           <i class="bi bi-check2-circle me-1"></i>Confirm
                         </button>
-                      {% else %}
+                        {% else %}
+                        <span class="badge text-bg-danger">not confirmed</span>
+                        {% endif %}
+                      {% elif "parts_orders.receive" in user_permissions %}
                         <button type="button" class="btn btn-sm btn-warning receiveStatusBtn"
                                 data-order-id="{{ o.id }}"
                           data-vendor-bill="{{ o.vendor_bill or '' }}"
                                 title="Click to receive this order">
                           {{ o.status or 'ordered' }}
                         </button>
+                      {% else %}
+                        <span class="badge text-bg-warning">{{ o.status or 'ordered' }}</span>
                       {% endif %}
                     </td>
                     <td>{{ o.created_at }}</td>
                     <td class="text-end">
                       {% if not o.is_return %}
                         {% if o.needs_confirmation %}
+                          {% if "parts_orders.edit" in user_permissions %}
                           <button type="button" class="btn btn-sm btn-outline-danger rejectOrderBtn"
                                   data-order-id="{{ o.id }}"
                                   title="Not an order for us — remove it">
                             <i class="bi bi-x-circle me-1"></i> Reject
                           </button>
-                        {% elif (o.payment_status or '')|lower != 'paid' %}
+                          {% endif %}
+                        {% elif (o.payment_status or '')|lower != 'paid' and "parts_orders.manage_payments" in user_permissions %}
                           <button type="button" class="btn btn-sm btn-outline-success js-order-payment"
                                   data-order-id="{{ o.id }}" data-order-number="{{ o.order_number or '-' }}"
                                   data-payment-status="{{ o.payment_status or 'unpaid' }}"
@@ -402,7 +424,7 @@
                             <i class="bi bi-cash-coin me-1"></i> Pay
                           </button>
                         {% endif %}
-                        {% if o.status == 'received' or (o.payment_status or '')|lower == 'paid' %}
+                        {% if (o.status == 'received' or (o.payment_status or '')|lower == 'paid') and "parts_orders.receive" in user_permissions %}
                           <button type="button" class="btn btn-sm btn-outline-warning returnOrderBtn"
                                   data-order-id="{{ o.id }}" data-order-number="{{ o.order_number or '-' }}"
                                   title="Return items to vendor">
@@ -412,7 +434,7 @@
                         <button type="button" class="btn btn-sm btn-outline-primary editOrderBtn"
                                 data-order-id="{{ o.id }}"
                                 data-bs-toggle="modal" data-bs-target="#orderModal">
-                          <i class="bi bi-pencil me-1"></i> Edit
+                          <i class="bi bi-pencil me-1"></i> {% if "parts_orders.edit" in user_permissions %}Edit{% else %}View{% endif %}
                         </button>
                       {% endif %}
                       {% if o.is_return %}
@@ -421,12 +443,14 @@
                            эти файлы не показываются. #}
                         {{ attachments_btn(entity_type="parts_order", entity_id=o.id, label="Files") }}
                       {% endif %}
+                      {% if "parts_orders.delete" in user_permissions %}
                       <button type="button" class="btn btn-sm btn-outline-danger deleteOrderBtn"
                               data-order-id="{{ o.id }}"
                               data-is-return="{{ '1' if o.is_return else '' }}"
                               title="{{ 'Delete return' if o.is_return else 'Delete order' }}">
                         <i class="bi bi-trash me-1"></i> Delete
                       </button>
+                      {% endif %}
                     </td>
                   </tr>
                 {% endfor %}
@@ -541,7 +565,9 @@
                     <td>{{ p.notes if p.notes else '-' }}</td>
                     <td class="text-end">
                       {{ attachments_btn(entity_type="parts_order_payment", entity_id=p.id) }}
+                      {% if "parts_orders.manage_payments" in user_permissions %}
                       <button type="button" class="btn btn-sm btn-outline-danger js-delete-parts-payment" data-payment-id="{{ p.id }}" title="Delete payment">Delete</button>
+                      {% endif %}
                     </td>
                   </tr>
                 {% endfor %}
@@ -644,7 +670,9 @@
                 <tr>
                   <th data-sort-field="part_number" style="min-width: 160px;">Part #</th>
                   <th data-sort-field="description">Description</th>
+                  {% if can_view_part_costs %}
                   <th data-sort-field="core_cost" class="text-end" style="width: 130px;">Core Cost</th>
+                  {% endif %}
                   <th data-sort-field="quantity" class="text-end" style="width: 130px;">Quantity</th>
                   <th data-sort-field="updated_at" style="width: 180px;">Updated</th>
                   <th class="text-end no-sort" style="width: 80px;">Files</th>
@@ -656,8 +684,11 @@
                   <tr>
                     <td class="fw-semibold">{{ c.part_number }}</td>
                     <td class="text-muted">{{ c.description if c.description else '-' }}</td>
+                    {% if can_view_part_costs %}
                     <td class="text-end">${{ "%.2f"|format(c.core_cost or 0) }}</td>
+                    {% endif %}
                     <td class="text-end">
+                      {% if "parts.edit" in user_permissions %}
                       <div class="input-group input-group-sm flex-nowrap justify-content-end">
                         <input type="number" min="0" step="1"
                                class="form-control form-control-sm js-core-qty-input"
@@ -666,10 +697,14 @@
                         <button type="button" class="btn btn-outline-primary js-core-qty-save"
                                 data-core-id="{{ c.id }}" title="Save adjusted quantity">Save</button>
                       </div>
+                      {% else %}
+                      {{ c.quantity or 0 }}
+                      {% endif %}
                     </td>
                     <td>{{ c.updated_at }}</td>
                     <td class="text-end">{{ attachments_btn(entity_type="core", entity_id=c.id|string if c.id is defined else c._id|string) }}</td>
                     <td class="text-end">
+                      {% if "parts.edit" in user_permissions %}
                       <button type="button" class="btn btn-sm btn-outline-primary js-core-return-btn"
                               data-core-id="{{ c.id }}"
                               data-part-number="{{ c.part_number }}"
@@ -677,6 +712,7 @@
                               data-max-qty="{{ c.quantity or 0 }}">
                         Return
                       </button>
+                      {% endif %}
                     </td>
                   </tr>
                 {% endfor %}
@@ -758,8 +794,10 @@
                   <th data-sort-field="part_number" style="min-width: 160px;">Part #</th>
                   <th>Description</th>
                   <th data-sort-field="quantity" class="text-end" style="width: 90px;">Qty</th>
+                  {% if can_view_part_costs %}
                   <th data-sort-field="core_cost" class="text-end" style="width: 120px;">Core Cost</th>
                   <th data-sort-field="credit_total" class="text-end" style="width: 120px;">Credit</th>
+                  {% endif %}
                   <th data-sort-field="vendor_name" style="width: 160px;">Vendor</th>
                   <th>Notes</th>
                   <th data-sort-field="returned_at" style="width: 140px;">Returned</th>
@@ -771,8 +809,10 @@
                     <td class="fw-semibold">{{ r.part_number }}</td>
                     <td class="text-muted">{{ r.description or '-' }}</td>
                     <td class="text-end fw-semibold">{{ r.quantity }}</td>
+                    {% if can_view_part_costs %}
                     <td class="text-end">${{ "%.2f"|format(r.core_cost) }}</td>
                     <td class="text-end fw-semibold">${{ "%.2f"|format(r.credit_total) }}</td>
+                    {% endif %}
                     <td>{{ r.vendor }}</td>
                     <td class="text-muted small">{{ r.notes or '-' }}</td>
                     <td>{{ r.returned_at }}</td>
@@ -812,9 +852,11 @@
             each entered quantity is compared against the system stock at the moment of counting,
             and adjustments are applied as deltas when the stocktake is completed.
           </div>
+          {% if "parts.adjust_stock" in user_permissions %}
           <button type="button" class="btn btn-primary btn-sm" data-bs-toggle="modal" data-bs-target="#stocktakeCreateModal">
             <i class="bi bi-clipboard-check me-1"></i> New Stocktake
           </button>
+          {% endif %}
         </div>
 
         {% if stocktakes and stocktakes|length > 0 %}
@@ -1018,13 +1060,13 @@
               <div class="form-text d-none" id="inStockLockedHint">Only managers can change the on-hand quantity here. Stock changes through parts orders, work orders and stocktakes.</div>
             </div>
 
-            <div class="col-md-4">
+            <div class="col-md-4 {% if not can_view_part_costs %}d-none{% endif %}">
               <label class="form-label">Average cost</label>
               <input name="average_cost" type="number" min="0" step="0.01" value="0" class="form-control" />
               <div class="form-text">Weighted average of what is in stock; recalculated on every receiving.</div>
             </div>
 
-            <div class="col-md-4">
+            <div class="col-md-4 {% if not can_view_part_costs %}d-none{% endif %}">
               <label class="form-label">Last price</label>
               <input name="last_price" type="text" class="form-control" value="" placeholder="No orders yet" disabled
                      title="Price on the latest parts order with this part — set automatically, used as the default order price" />
@@ -1185,7 +1227,7 @@
                 <th style="min-width:150px;">Part #</th>
                 <th style="min-width:200px;">Description</th>
                 <th class="text-end" style="width:100px;">In stock</th>
-                <th class="text-end" style="width:120px;">Avg cost</th>
+                {% if can_view_part_costs %}<th class="text-end" style="width:120px;">Avg cost</th>{% endif %}
                 <th class="text-end" style="width:100px;"></th>
               </tr>
             </thead>
@@ -1324,6 +1366,7 @@
             </table>
           </div>
 
+          {% if "parts.adjust_stock" in user_permissions %}
           <hr>
           <div class="fw-semibold small mb-2">Transfer between locations</div>
           <div class="row g-2 align-items-end">
@@ -1344,6 +1387,7 @@
             </div>
           </div>
           <div class="form-text mt-2">Transfers move quantity between locations without changing the total in stock.</div>
+          {% endif %}
         </div>
       </div>
       <div class="modal-footer">

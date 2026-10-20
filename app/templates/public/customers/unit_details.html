@@ -1,5 +1,5 @@
 {% extends "layouts/app_base.html" %}
-{% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
+{% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal with context %}
 {% from "components/unit_recalls.html" import unit_recalls_btn, unit_recalls_modal %}
 {% from "components/ui.html" import empty_state, wo_status_badge %}
 {% from "components/annual_inspection.html" import annual_inspection_btn, annual_inspection_modal with context %}
@@ -29,7 +29,9 @@
     {% if can_create_inspection %}
       {{ annual_inspection_btn(unit_id=unit.id, customer_id=customer_id, vin=unit.raw_vin, carrier=customer_company, address=customer_address, css_class="btn btn-outline-secondary btn-sm") }}
     {% endif %}
+    {% if "work_orders.create" in user_permissions %}
     <a class="btn btn-primary btn-sm" href="{{ url_for('work_orders.work_order_details_page', customer_id=customer_id, unit_id=unit.id) }}">Create Work Order</a>
+    {% endif %}
   </div>
 </div>
 
@@ -148,9 +150,11 @@
                 <tr>
                   <th data-sort-field="wo_number">WO #</th>
                   <th data-sort-field="status">Status</th>
+                  {% if can_view_costs %}
                   <th data-sort-field="grand_total" class="text-end">Grand Total</th>
                   <th class="text-end">Paid</th>
                   <th class="text-end">Remaining</th>
+                  {% endif %}
                   <th data-sort-field="work_order_date">Created</th>
                   <th class="text-end no-sort">Actions</th>
                 </tr>
@@ -160,9 +164,11 @@
                   <tr>
                     <td><span class="badge text-bg-secondary">{{ item.wo_number }}</span></td>
                     <td>{{ wo_status_badge(item.status) }}</td>
+                    {% if can_view_costs %}
                     <td class="text-end">${{ "%.2f"|format(item.grand_total or 0) }}</td>
                     <td class="text-end">${{ "%.2f"|format(item.paid_amount or 0) }}</td>
                     <td class="text-end fw-semibold">${{ "%.2f"|format(item.remaining_balance or 0) }}</td>
+                    {% endif %}
                     <td>{{ item.created_at }}</td>
                     <td class="text-end">
                       <div class="d-flex gap-1 justify-content-end flex-nowrap">
@@ -242,6 +248,7 @@
               </div>
             </div>
           </div>
+          {% if "customers.manage_units" in user_permissions %}
           <div class="mt-3 d-flex gap-2">
             <button type="submit" class="btn btn-primary btn-sm">Save Changes</button>
             {% if unit.is_active %}
@@ -254,6 +261,9 @@
                       formnovalidate>Activate Unit</button>
             {% endif %}
           </div>
+          {% else %}
+          <div class="small text-muted mt-3">Read-only: you don't have the "Create/edit customer units" permission.</div>
+          {% endif %}
         </form>
 
         <div class="mt-4">
@@ -267,6 +277,7 @@
             Page {{ pagination.page }} of {{ pagination.pages }} · {{ pagination.total }} total
           </div>
           <div class="wo-totals-center wo-pagination-totals">
+            {% if can_view_costs %}
             <div class="wo-totals-box">
               <span>Labor: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('labor_total', 0)) }}</strong></span>
               <span>Parts: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('parts_total', 0)) }}</strong></span>
@@ -274,6 +285,7 @@
               <span>Paid: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('paid_total', 0)) }}</strong></span>
               <span>Unpaid: <strong>${{ "%.2f"|format((work_orders_totals or {}).get('unpaid_total', 0)) }}</strong></span>
             </div>
+            {% endif %}
           </div>
           {% if pagination.pages > 1 %}
             <div class="btn-group btn-group-sm wo-pagination-actions" role="group" aria-label="Unit work orders pagination">

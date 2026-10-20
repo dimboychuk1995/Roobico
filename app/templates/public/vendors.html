@@ -1,5 +1,5 @@
 {% extends "layouts/app_base.html" %}
-{% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal %}
+{% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal with context %}
 {% from "components/ui.html" import search_bar, pagination_controls, empty_state %}
 
 {% block page_title %}Vendors{% endblock %}
@@ -7,7 +7,7 @@
 {% block app_content %}
 <div class="page-header">
   <h1 class="page-header__title">Vendors</h1>
-  {% if "vendors.edit" in user_permissions %}
+  {% if "vendors.create" in user_permissions %}
   <div class="page-header__actions">
     <button class="btn btn-primary btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#createVendorModal">
       Add Vendor
@@ -33,7 +33,9 @@
               <th style="width: 14%;">Website</th>
               <th style="width: 14%;">Primary contact</th>
               <th style="width: 16%;">Address</th>
+              {% if "parts_orders.view" in user_permissions %}
               <th style="width: 10%;" class="text-end">Balance</th>
+              {% endif %}
               <th data-sort-field="is_active" style="width: 6%;" class="text-end">Status</th>
               <th style="width: 4%;" class="text-end no-sort">Actions</th>
             </tr>
@@ -71,7 +73,9 @@
 
               <td>{{ v.get('address') or '—' }}</td>
 
+              {% if "parts_orders.view" in user_permissions %}
               <td class="text-end js-vendor-balance" data-vendor-id="{{ v['_id'] }}"><span class="spinner-border spinner-border-xs text-muted" role="status"></span></td>
+              {% endif %}
 
               <td class="text-end">
                 {% if v.get('is_active', True) %}

@@ -538,13 +538,20 @@ def customers_api():
 
 @work_orders_bp.get("/work_orders/details")
 @login_required
-@permission_required("work_orders.create")
+@permission_required("work_orders.view")
 def work_order_details_page():
     if is_mechanic_mode():
         wo_id = (request.args.get("work_order_id") or "").strip()
         if wo_id:
             return redirect(url_for("mechanic.work_order_details", work_order_id=wo_id))
         return redirect(url_for("mechanic.work_order_new"))
+
+    # Существующий WO открывается любому с work_orders.view (read-only, если
+    # нет edit — кнопки действий прячет шаблон по правам); форма нового WO
+    # — только с work_orders.create.
+    if not (request.args.get("work_order_id") or "").strip() and not has_permission("work_orders.create"):
+        flash("Access denied.", "error")
+        return redirect(url_for("work_orders.work_orders_page"))
 
     shop_db, shop = get_shop_db()
     if shop_db is None:
@@ -2393,6 +2400,10 @@ def api_work_order_set_status(work_order_id):
     # это рабочее состояние, его же выставляют таймеры механиков.
     if status != "in_progress" and not has_permission("work_orders.change_status"):
         return jsonify({"ok": False, "error": "forbidden_status", "required": "work_orders.change_status"}), 403
+    # Уход из paid (в т.ч. в in_progress) удаляет записи платежей ниже — это
+    # денежное действие, без change_status его не делает никто.
+    if (wo.get("status") or "").strip().lower() == "paid" and not has_permission("work_orders.change_status"):
+        return jsonify({"ok": False, "error": "forbidden_status", "required": "work_orders.change_status"}), 403
 
     # Механик-режим: разрешён только in_progress, и нельзя трогать paid WO —
     # иначе смена статуса удалит записи платежей (delete_many ниже).
@@ -3702,6 +3713,11 @@ def api_mechanic_work_order_create():
 @permission_required("work_orders.create")
 def api_mechanic_work_order_update(work_order_id):
     from app.blueprints.work_orders.services.mobile_editor import compute_labors_and_totals
+
+    # Эндпоинт механик-режима, но доступен и менеджерам: для них правка
+    # существующего WO — work_orders.edit, как на обычном апдейте.
+    if not is_mechanic_mode() and not has_permission("work_orders.edit"):
+        return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.edit"}), 403
 
     shop_db, shop = get_shop_db()
     if shop_db is None:

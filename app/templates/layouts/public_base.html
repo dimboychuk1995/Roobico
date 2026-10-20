@@ -7,6 +7,10 @@
   <title>{% block title %}Roobico{% endblock %}</title>
   {% block meta %}{% endblock %}
   <script src="{{ url_for('static', filename='js/csrf.js') }}"></script>
+  {# Права пользователя для JS-кнопок (roobicoHasPermission). Только UI —
+     сервер проверяет каждое действие сам. #}
+  <script type="application/json" id="userPermissionsData">{{ (user_permissions or [])|tojson }}</script>
+  <script src="{{ url_for('static', filename='js/permissions.js') }}"></script>
   <link rel="icon" type="image/svg+xml" href="{{ url_for('static', filename='images/logo-circle.svg') }}">
   <link rel="icon" type="image/x-icon" href="{{ url_for('static', filename='images/favicon.ico') }}" sizes="16x16 32x32 48x48">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='images/apple-touch-icon.png') }}">

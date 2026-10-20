@@ -1,5 +1,5 @@
 {% extends "layouts/app_base.html" %}
-{% from "components/attachments.html" import attachments_block, attachments_modal %}
+{% from "components/attachments.html" import attachments_block, attachments_modal with context %}
 {% from "components/unit_recalls.html" import unit_recalls_btn, unit_recalls_modal %}
 {% from "components/annual_inspection.html" import annual_inspection_modal with context %}
 {% from "components/unit_create_modal.html" import unit_create_modal with context %}
@@ -115,10 +115,12 @@
           </div>
 
           <div class="col-lg-3 d-flex gap-2">
+            {% if "work_orders.create" in user_permissions %}
             <button id="addUnitBtn" type="button" class="btn btn-primary flex-grow-1" data-bs-toggle="modal" data-bs-target="#createUnitModal"
                     {% if not selected_customer_id %}disabled{% endif %}>
               + Add Unit
             </button>
+            {% endif %}
             {{ unit_recalls_btn(unit_select="#unitSelect", css_class="btn btn-outline-secondary") }}
           </div>
         </div>
@@ -146,10 +148,12 @@
                   <br>The order links to this work order once you create it.
                 {% endif %}
               </div>
+              {% if "parts_orders.create" in user_permissions %}
               <button type="button" class="btn btn-sm btn-primary" id="woCreatePartsOrderBtn"
                       data-bs-toggle="modal" data-bs-target="#orderModal">
                 <i class="bi bi-plus-lg me-1"></i>Create parts order
               </button>
+              {% endif %}
             </div>
             <div id="woPartsOrdersList" class="mt-2">
               <div class="text-muted small">No parts orders for this work order yet.</div>
@@ -175,7 +179,7 @@
     <script type="application/json" id="workOrderCreatedData">{{ {"created": work_order_created, "id": created_work_order_id, "status": work_order_status, "mechanic_done": mechanic_done, "updated_at": wo_updated_at}|tojson }}</script>
     <script type="application/json" id="workOrderAuthorizationsData">{{ (initial_authorizations or [])|tojson }}</script>
     <script type="application/json" id="woTimeSummary">{{ (time_summary or {})|tojson }}</script>
-    <script type="application/json" id="woPermissionsData">{{ {"manage_email_contacts": "work_orders.manage_email_contacts" in user_permissions, "edit_time_logs": "work_orders.edit_time_logs" in user_permissions}|tojson }}</script>
+    <script type="application/json" id="woPermissionsData">{{ {"manage_email_contacts": "work_orders.manage_email_contacts" in user_permissions, "edit_time_logs": "work_orders.edit_time_logs" in user_permissions, "edit": "work_orders.edit" in user_permissions, "create": "work_orders.create" in user_permissions, "change_status": "work_orders.change_status" in user_permissions, "delete": "work_orders.delete" in user_permissions, "manage_payments": "work_orders.manage_payments" in user_permissions, "send_to_customer": "work_orders.send_to_customer" in user_permissions, "export_pdf": "work_orders.export_pdf" in user_permissions}|tojson }}</script>
 
 
 
@@ -255,6 +259,7 @@
           </div>
           <div class="d-flex gap-2 align-items-center">
             <input type="file" id="recognizeWoFileInput" accept="application/pdf,image/*" style="display:none;">
+            {% if "work_orders.create" in user_permissions %}
             <button type="button" class="btn btn-outline-success btn-sm" id="recognizeWoBtn" title="Recognize a handwritten work order with AI">
               <span class="recognize-wo-label">📷 Recognize WO</span>
               <span class="recognize-wo-spinner" style="display:none;">
@@ -262,9 +267,12 @@
                 Recognizing…
               </span>
             </button>
+            {% endif %}
+            {% if "work_orders.send_to_customer" in user_permissions or "work_orders.create" in user_permissions %}
             <button type="button" class="btn btn-outline-warning btn-sm" id="sendWoAuthBtn" title="Send the entire work order to the customer for authorization" style="display:none;">
               ✉ Send for Authorization
             </button>
+            {% endif %}
             <button type="button" class="btn btn-outline-primary btn-sm" id="addLaborBtn">+ Add Labor</button>
           </div>
         </div>
@@ -526,17 +534,33 @@
      </div>
 
      <div class="wo-footer-bar d-flex align-items-center justify-content-between gap-2 flex-wrap">
+          {# Кнопки действий — только при наличии права; JS (setButtonsState)
+             переживает отсутствие любой из них (null-guards). Сервер
+             проверяет права на каждом эндпоинте независимо от разметки. #}
           <div class="d-flex align-items-center gap-2 flex-wrap">
+            {% if "work_orders.change_status" in user_permissions %}
             <button id="paidWorkOrderBtn" class="btn btn-success" type="button" style="display:none;">Paid</button>
             <button id="unpaidWorkOrderBtn" class="btn btn-warning" type="button" style="display:none;">Unpaid</button>
+            {% endif %}
+            {% if "work_orders.send_to_customer" in user_permissions %}
             <button id="emailWorkOrderBtn" class="btn btn-outline-secondary" type="button" style="display:none;"><i class="bi bi-envelope me-1"></i>Email Work Order</button>
+            {% endif %}
+            {% if "work_orders.export_pdf" in user_permissions %}
             <button id="downloadPdfBtn" class="btn btn-outline-secondary" type="button" style="display:none;"><i class="bi bi-file-earmark-pdf me-1"></i>Download PDF</button>
+            {% endif %}
+            {% if "work_orders.view_costs" in user_permissions %}
             <button id="woCostBtn" class="btn btn-outline-secondary" type="button"><i class="bi bi-cash-coin me-1"></i>WO Cost</button>
+            {% endif %}
+            {% if "work_orders.delete" in user_permissions %}
             <button id="deleteWorkOrderBtn" class="btn btn-outline-danger" type="button" style="display:none;">Delete</button>
+            {% endif %}
           </div>
 
           <div class="d-flex align-items-center gap-2 flex-wrap justify-content-end ms-auto">
+            {% if "work_orders.edit" in user_permissions %}
             <button id="editWorkOrderBtn" class="btn btn-outline-primary" type="button" style="display:none;">Edit</button>
+            {% endif %}
+            {% if "work_orders.edit" in user_permissions or "work_orders.create" in user_permissions %}
             <div class="btn-group" id="saveWorkOrderGroup" style="display:none;">
               <button id="saveWorkOrderBtn" class="btn btn-primary" type="button">Save</button>
               <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false" id="saveWorkOrderDropdownToggle">
@@ -553,6 +577,8 @@
                 </li>
               </ul>
             </div>
+            {% endif %}
+            {% if "work_orders.create" in user_permissions %}
             <div class="btn-group" id="createWorkOrderGroup">
               <button id="createWorkOrderBtn" class="btn btn-primary" type="button">Create Work Order</button>
               <button type="button" class="btn btn-primary dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false" id="createWorkOrderDropdownToggle">
@@ -564,6 +590,7 @@
                 <li><button type="button" class="dropdown-item" id="createAnnualInspectionBtn">Create Annual Inspection</button></li>
               </ul>
             </div>
+            {% endif %}
           </div>
         </div>
 

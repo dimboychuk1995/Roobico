@@ -373,6 +373,25 @@ def create_app():
                     target = url_for("main.index")
                 return redirect(target)
 
+        # защита: список доступных локаций берём из документа пользователя
+        # на каждый запрос, а не из сессии времени логина — если менеджер
+        # убрал у человека доступ к локации, он теряет его сразу, а не после
+        # перелогина. Пустой shop_ids в документе (легаси) не трогаем.
+        user_shop_ids = [
+            str(x) for x in (user.get("shop_ids") if isinstance(user.get("shop_ids"), list) else [])
+            if x is not None
+        ]
+        if user_shop_ids:
+            session_shop_ids = [str(x) for x in (session.get("shop_ids") or [])]
+            if session_shop_ids != user_shop_ids:
+                session["shop_ids"] = user_shop_ids
+                session.modified = True
+            active_now = str(session.get("shop_id") or "")
+            if active_now and active_now not in user_shop_ids:
+                session.pop("shop_id", None)
+                session["shop_id"] = user_shop_ids[0]
+                session.modified = True
+
         # защита: если активный shop стал inactive — переключаем на первый
         # активный из allowed; если активных нет — обнуляем shop_id, чтобы
         # никакой раздел не работал с отключённой локацией.

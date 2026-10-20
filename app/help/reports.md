@@ -14,6 +14,17 @@
 The first seven open the shared Standard Reports page as tabs. Pick filters
 and click **"Generate"**; **"Download PDF"** exports the same report.
 
+**Who sees which card.** "View reports" opens the page and the money-free
+**Mechanic Hours** report. The Sales & Revenue, Balances and Parts &
+Inventory cards need **"View financial reports"**, **Timecard / Salary**
+needs **"View Timecard / Salary report"**, the Activity Journal needs
+"View audit journal", and the PDF button needs "Export reports". Cards you
+are not allowed to open are not shown; opening a report by URL without the
+right returns to the Reports page (the API answers 403). Default roles:
+Owner / General manager / Manager see everything, Parts manager and Viewer
+see financial reports but not payroll, Senior mechanic and Mechanic see
+only Mechanic Hours (a mechanic has no Reports section at all).
+
 ## Common filters
 
 - **Date Preset**: All Time, Today, Yesterday, This Week, Last Week, This
@@ -78,8 +89,10 @@ salaries count as $0.
 
 ## Timecard / Salary Report
 
-Payroll per employee for a period (This week / Last week / This month / Last
-month / This year / Custom):
+Requires the permission **"View Timecard / Salary report (employee pay)"**
+— by default only Owner, General manager and Manager; tick it for a
+bookkeeper role in Settings → Roles. Payroll per employee for a period
+(This week / Last week / This month / Last month / This year / Custom):
 
 - **Salary** employees: weekly `salary_amount` × weeks in the period
   (days ÷ 7; a shorter range prorates fractionally).

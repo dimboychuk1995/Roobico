@@ -76,7 +76,14 @@ function ManagerWoScreen() {
   // Реальный ключ платежей — work_orders.manage_payments (record_payment не
   // существует в каталоге; старый фолбэк на create давал платежи всем).
   const canPay = useHasPermission("work_orders.manage_payments");
-  const canEdit = useHasPermission("work_orders.create");
+  // Этот экран только для менеджеров (механик редиректится на форму):
+  // правка существующего WO — work_orders.edit, как на вебе.
+  const canCreate = useHasPermission("work_orders.create");
+  const canEdit = useHasPermission("work_orders.edit");
+  const canChangeStatus = useHasPermission("work_orders.change_status");
+  const canDeleteWo = useHasPermission("work_orders.delete");
+  const canSend = useHasPermission("work_orders.send_to_customer");
+  const canConfirm = useHasPermission("work_orders.view_costs");
 
   const load = useCallback(async () => {
     if (!id) return;
@@ -358,7 +365,7 @@ function ManagerWoScreen() {
 
       <AttachmentsBlock entityType="work_order" entityId={wo.id} />
 
-      {canPay && wo.status !== "paid" ? (
+      {(canSend || canCreate) && wo.status !== "paid" ? (
         <Pressable
           style={[styles.secondaryBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
           onPress={() => setAuthModalOpen(true)}
@@ -368,31 +375,35 @@ function ManagerWoScreen() {
         </Pressable>
       ) : null}
 
-      <Pressable
-        style={[styles.secondaryBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
-        onPress={onToggleConfirmed}
-      >
-        <Ionicons
-          name={wo.manager_confirmed ? "lock-open-outline" : "checkmark-circle-outline"}
-          size={16}
-          color={wo.manager_confirmed ? theme.warning : theme.primary}
-        />
-        <Text
-          style={{ color: wo.manager_confirmed ? theme.warning : theme.primary, fontWeight: "600" }}
+      {canConfirm ? (
+        <Pressable
+          style={[styles.secondaryBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
+          onPress={onToggleConfirmed}
         >
-          {wo.manager_confirmed ? "Cancel confirmation" : "Confirm work order"}
-        </Text>
-      </Pressable>
+          <Ionicons
+            name={wo.manager_confirmed ? "lock-open-outline" : "checkmark-circle-outline"}
+            size={16}
+            color={wo.manager_confirmed ? theme.warning : theme.primary}
+          />
+          <Text
+            style={{ color: wo.manager_confirmed ? theme.warning : theme.primary, fontWeight: "600" }}
+          >
+            {wo.manager_confirmed ? "Cancel confirmation" : "Confirm work order"}
+          </Text>
+        </Pressable>
+      ) : null}
 
-      <Pressable
-        style={[styles.secondaryBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
-        onPress={() => setEmailModalOpen(true)}
-      >
-        <Ionicons name="mail-outline" size={16} color={theme.primary} />
-        <Text style={{ color: theme.primary, fontWeight: "600" }}>Email work order (PDF)</Text>
-      </Pressable>
+      {canSend ? (
+        <Pressable
+          style={[styles.secondaryBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
+          onPress={() => setEmailModalOpen(true)}
+        >
+          <Ionicons name="mail-outline" size={16} color={theme.primary} />
+          <Text style={{ color: theme.primary, fontWeight: "600" }}>Email work order (PDF)</Text>
+        </Pressable>
+      ) : null}
 
-      {canPay && wo.status === "paid" ? (
+      {canChangeStatus && wo.status === "paid" ? (
         <Pressable
           style={[styles.secondaryBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
           onPress={onMarkUnpaid}
@@ -402,7 +413,7 @@ function ManagerWoScreen() {
         </Pressable>
       ) : null}
 
-      {canPay ? (
+      {canDeleteWo ? (
         <Pressable
           style={[styles.secondaryBtn, { borderColor: theme.border, backgroundColor: theme.surface }]}
           onPress={onDeleteWo}

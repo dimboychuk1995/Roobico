@@ -71,7 +71,9 @@ PERMISSIONS: dict[str, str] = {
     "attachments.delete": "Delete attachments",
 
     # ── Reports ─────────────────────────────────────────────
-    "reports.view": "View reports",
+    "reports.view": "View reports index & non-financial reports (Mechanic Hours)",
+    "reports.view_financial": "View financial reports (sales, revenue, payments, balances, parts orders)",
+    "reports.view_payroll": "View Timecard / Salary report (employee pay)",
     "reports.export": "Export reports (Excel/PDF)",
     "reports.view_audit": "View audit journal",
 
@@ -85,6 +87,7 @@ PERMISSIONS: dict[str, str] = {
     "settings.manage_org": "Manage organization & general settings",
     "settings.manage_locations": "Manage shops / locations",
     "settings.manage_users": "Manage users",
+    "settings.manage_pay": "Edit employees' pay type & salary (users form)",
     "settings.manage_roles": "Manage roles & permissions",
     "settings.manage_parts_settings": "Manage parts categories / locations / pricing",
     "settings.manage_wo_presets": "Manage work order presets",
@@ -197,7 +200,13 @@ PERMISSION_GROUPS: list[dict] = [
     {
         "key": "reports",
         "label": "Reports",
-        "items": ["reports.view", "reports.export", "reports.view_audit"],
+        "items": [
+            "reports.view",
+            "reports.view_financial",
+            "reports.view_payroll",
+            "reports.export",
+            "reports.view_audit",
+        ],
     },
     {
         "key": "import_export",
@@ -216,6 +225,7 @@ PERMISSION_GROUPS: list[dict] = [
             "settings.manage_org",
             "settings.manage_locations",
             "settings.manage_users",
+            "settings.manage_pay",
             "settings.manage_roles",
             "settings.manage_parts_settings",
             "settings.manage_wo_presets",
@@ -298,11 +308,13 @@ def build_default_roles() -> list[dict]:
         "attachments.view",
         "attachments.upload",
         "reports.view",
+        "reports.view_financial",
         "settings.view",
         "settings.manage_parts_settings",
     })
 
-    # Senior mechanic
+    # Senior mechanic — работает без цен (нет *.view_costs): отчёты только
+    # нефинансовые (Mechanic Hours), балансы/дашборд-деньги закрыты.
     senior_mechanic = _safe_subset({
         "dashboard.view",
         "calendar.view",
@@ -347,6 +359,7 @@ def build_default_roles() -> list[dict]:
         "work_orders.manage_email_contacts",
         "attachments.view",
         "reports.view",
+        "reports.view_financial",
         "reports.view_audit",
         "settings.view",
     })

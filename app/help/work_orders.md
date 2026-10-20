@@ -13,6 +13,15 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
   Custom Range; default This Month) filtering by the work order date.
 - Columns: WO #, Customer, Date, Unit, Mileage, Labor, Parts, Tax, Total,
   Balance, Paid (status badge), Actions (Pay / Download PDF / Edit / Delete).
+  Each action needs its key: Pay and Bulk Payment — "Manage payments",
+  Download PDF — "Export PDF", Delete — "Delete work orders", Create Work
+  Order — "Create work orders". Without "Edit work orders" the button reads
+  **Open** and the work order opens read-only: no Edit / Save / Paid /
+  Delete, and the parts-order, email and authorization buttons appear only
+  with their own keys ("Send to customer", "Create parts orders"...).
+  Moving a **paid** work order back to Open or In Progress (which removes
+  its payment records) always needs "Change work order status", even for
+  users who may otherwise save work orders.
 - Under the status badge the list also shows mechanic activity: a green
   "● <names>" line — mechanics with a running job timer on this WO right
   now — and a green **"Mechanic done"** badge when the mechanic saved the

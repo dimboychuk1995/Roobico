@@ -13,6 +13,7 @@ import {
 import { RowCard } from "@/components/ui";
 import { useToast } from "@/context/toast";
 import { ApiError, StandardReport, fetchStandardReport } from "@/lib/api";
+import { useHasPermission } from "@/context/auth";
 import { useTheme } from "@/lib/theme";
 
 const REPORTS = [
@@ -53,7 +54,11 @@ export default function ReportsScreen() {
   const theme = useTheme();
   const toast = useToast();
 
-  const [reportKey, setReportKey] = useState("sales_summary");
+  // Финансовые отчёты — reports.view_financial; «Mechanic hours» без денег
+  // доступен по reports.view (как на вебе).
+  const canFinancial = useHasPermission("reports.view_financial");
+  const reports = REPORTS.filter((r) => r.key === "mechanic_hours" || canFinancial);
+  const [reportKey, setReportKey] = useState(canFinancial ? "sales_summary" : "mechanic_hours");
   const [preset, setPreset] = useState("this_month");
   const [report, setReport] = useState<StandardReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -96,7 +101,7 @@ export default function ReportsScreen() {
 
       {/* Выбор отчёта */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chipScroller} contentContainerStyle={styles.chipRow}>
-        {REPORTS.map((r) => {
+        {reports.map((r) => {
           const active = r.key === reportKey;
           return (
             <Pressable

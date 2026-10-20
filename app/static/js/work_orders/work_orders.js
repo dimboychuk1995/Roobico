@@ -292,6 +292,7 @@
           const notes = String(payment.notes || "").trim();
           const paymentId = String(payment.id || "");
 
+          const canManagePayments = typeof window.roobicoHasPermission !== "function" || window.roobicoHasPermission("work_orders.manage_payments");
           html += `
             <tr>
               <td><span class="badge bg-secondary">${woNumber}</span></td>
@@ -300,7 +301,7 @@
               <td><span class="badge bg-secondary">${method}</span></td>
               <td><small>${createdAt}</small></td>
               <td>${notes ? `<small>${notes}</small>` : "<small class='text-muted'>—</small>"}</td>
-              <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary js-open-att-modal me-1" data-entity-type="work_order_payment" data-entity-id="${paymentId}" data-bs-toggle="modal" data-bs-target="#attachmentsModal" title="Attachments"><i class="bi bi-paperclip me-1"></i>Attachments</button><button type="button" class="btn btn-sm btn-outline-danger js-delete-work-order-payment" data-payment-id="${paymentId}" title="Delete payment">Delete</button></td>
+              <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary js-open-att-modal me-1" data-entity-type="work_order_payment" data-entity-id="${paymentId}" data-bs-toggle="modal" data-bs-target="#attachmentsModal" title="Attachments"><i class="bi bi-paperclip me-1"></i>Attachments</button>${canManagePayments ? `<button type="button" class="btn btn-sm btn-outline-danger js-delete-work-order-payment" data-payment-id="${paymentId}" title="Delete payment">Delete</button>` : ""}</td>
             </tr>
           `;
         } catch (itemErr) {

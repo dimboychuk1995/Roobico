@@ -160,6 +160,33 @@ def has_permission(permission_key: str) -> bool:
     return permission_key in get_effective_permissions()
 
 
+def has_any_permission(*permission_keys: str) -> bool:
+    perms = get_effective_permissions()
+    return any(key in perms for key in permission_keys)
+
+
+def forbidden_response(permission_key: str, message: str | None = None):
+    """
+    Единый 403 для проверок внутри хендлеров (когда декоратора мало —
+    право зависит от данных запроса). Формат тот же, что у
+    permission_required: {"ok": false, "error": "forbidden", "required": key}.
+    """
+    payload = {"ok": False, "error": "forbidden", "required": permission_key}
+    if message:
+        payload["message"] = message
+    return jsonify(payload), 403
+
+
+def can_view_costs() -> bool:
+    """Пользователь видит деньги по WO/клиентам (не механик-режим)."""
+    return "work_orders.view_costs" in get_effective_permissions()
+
+
+def can_view_part_costs() -> bool:
+    """Пользователь видит закупочные цены/себестоимость запчастей."""
+    return "parts.view_costs" in get_effective_permissions()
+
+
 def is_mechanic_mode() -> bool:
     """
     Механик-режим: пользователь работает с WO, но не должен видеть цены.

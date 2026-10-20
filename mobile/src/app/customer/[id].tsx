@@ -21,12 +21,18 @@ import {
   fetchWorkOrders,
   money,
 } from "@/lib/api";
+import { useHasPermission } from "@/context/auth";
 import { useTheme } from "@/lib/theme";
 
 export default function CustomerDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const theme = useTheme();
   const router = useRouter();
+  // Кнопки — по правам (сервер проверяет сам; здесь только UI).
+  const canEditCustomer = useHasPermission("customers.edit");
+  const canManageUnitsPerm = useHasPermission("customers.manage_units");
+  const canCreateWoPerm = useHasPermission("work_orders.create");
+  const canAddUnit = canManageUnitsPerm || canCreateWoPerm;
 
   const [customer, setCustomer] = useState<CustomerDetails | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
@@ -101,15 +107,16 @@ export default function CustomerDetailsScreen() {
       <Stack.Screen
         options={{
           title: customer.label,
-          headerRight: () => (
-            <Pressable
-              onPress={() => router.push({ pathname: "/customer-form", params: { id: customer.id } })}
-              hitSlop={8}
-              style={{ paddingHorizontal: 8 }}
-            >
-              <Ionicons name="create-outline" size={22} color={theme.primary} />
-            </Pressable>
-          ),
+          headerRight: () =>
+            canEditCustomer ? (
+              <Pressable
+                onPress={() => router.push({ pathname: "/customer-form", params: { id: customer.id } })}
+                hitSlop={8}
+                style={{ paddingHorizontal: 8 }}
+              >
+                <Ionicons name="create-outline" size={22} color={theme.primary} />
+              </Pressable>
+            ) : null,
         }}
       />
 
@@ -160,12 +167,14 @@ export default function CustomerDetailsScreen() {
         <Text style={[styles.sectionTitle, { color: theme.muted }]}>
           UNITS ({customer.units.length})
         </Text>
-        <Pressable
-          onPress={() => router.push({ pathname: "/unit-form", params: { customerId: customer.id } })}
-          hitSlop={8}
-        >
-          <Text style={{ color: theme.primary, fontWeight: "700", fontSize: 13 }}>+ Add unit</Text>
-        </Pressable>
+        {canAddUnit ? (
+          <Pressable
+            onPress={() => router.push({ pathname: "/unit-form", params: { customerId: customer.id } })}
+            hitSlop={8}
+          >
+            <Text style={{ color: theme.primary, fontWeight: "700", fontSize: 13 }}>+ Add unit</Text>
+          </Pressable>
+        ) : null}
       </View>
       {customer.units.length === 0 ? (
         <RowCard>

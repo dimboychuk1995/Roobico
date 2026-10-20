@@ -39,6 +39,21 @@ cleared).
 - **"Permissions"** per user — allow/deny overrides on top of the role:
   "the role provides a baseline. Allow grants extra permissions on top, and
   Deny removes them. **Deny always wins.**" Changes apply immediately.
+- **Pay type / Salary amount** in the user form are visible and saved only
+  with the permission **"Edit employees' pay type & salary"**
+  (settings.manage_pay — Owner, General manager and Manager by default).
+  Without it the form has no pay fields and the server keeps the existing
+  values. **Nobody can change their own pay**, whatever their role — an
+  owner edits the owner's pay from another owner account, or not at all.
+- **Which roles you can assign.** You can give a user only a role whose
+  permissions you have yourself (the Owner can assign any role). A Manager
+  without "Manage roles & permissions" cannot promote a colleague to
+  General manager, because that role includes managing roles. Editing the
+  profile of someone whose role is already wider than yours (name, phone,
+  shops) still works — only the role change is blocked.
+- **Shop access applies immediately.** When you change a user's shops, the
+  change takes effect on their very next request — no re-login needed; if
+  their current shop was removed they are switched to the first allowed one.
 
 ## Roles & Permissions
 
@@ -68,17 +83,38 @@ the real checks on each action, so unticking a key really blocks it:
   status (Paid ↔ Open ↔ In progress) / delete / manage payments (record,
   delete, bulk payments) / send to customer (WO e-mail, receipts,
   authorizations) / export PDF / view costs / edit tracked hours.
-- *Reports*: view (all standard reports, timecard), export (report PDF),
-  view audit (Activity Journal).
+- *Reports*: **view** (the Reports page and the money-free **Mechanic
+  Hours** report), **view financial reports** (Sales Summary, General
+  Revenue, Payments Summary, Customer Balances, Vendor Balances, Parts
+  Orders Summary — cards are hidden and the API answers 403 without it),
+  **view Timecard / Salary** (employee pay — a separate key, off by default
+  for everyone except Owner / General manager / Manager), export (report
+  PDF), view audit (Activity Journal).
 - *Settings*: each page has its own key — organization, locations, users,
-  roles, parts settings & pricing, WO presets, WO settings (labor rates,
-  supply, cores, PDF design has its own key), workflows, notifications,
-  integrations, billing.
-- *Dashboard*: view / edit goals.
+  **pay** (pay type / salary fields in the user form), roles, parts
+  settings & pricing, WO presets, WO settings (labor rates, supply, cores,
+  PDF design has its own key), workflows, notifications, integrations,
+  billing.
+- *Dashboard*: view / edit goals. The money blocks (Paid vs Unpaid, Parts
+  Orders spend, Goals, Outstanding Balance) additionally need "View part
+  costs inside WO"; without it the dashboard shows only the labor-hours
+  chart.
+- *Attachments*: view / upload / delete — the Upload button and the ×
+  on a thumbnail appear only with the matching key.
 
 Global search and the parts/WO pickers only return sections and prices
 the user may see; a user without "View part costs inside WO" never gets
 amounts, even in search results.
+
+**Buttons follow permissions everywhere.** Every list and detail page
+renders only the actions the role is allowed to perform: no "Add
+Customer" without *Create customers*, no Pay / Delete / PDF buttons on the
+work-orders list without the matching keys, no Receive / Pay / Return /
+Edit / Delete on parts orders, no Save on the customer or unit form, no
+New Stocktake / Complete / count fields without *Adjust stock*, and so on.
+A user with only **"View work orders"** can open any work order read-only
+(no Edit, Save, Paid, Delete...). The server checks each action
+independently of what the page shows, so a hand-crafted request gets 403.
 
 **Who may change roles and users.** Only an **Owner** can edit, deactivate
 or re-assign the role of another owner account, and only an owner can
@@ -92,12 +128,35 @@ removing permissions is always allowed.
 `python -m app.scripts.sync_default_roles` once: system roles catch up
 with the defaults, and custom roles receive the precise keys their broad
 keys used to imply (e.g. a role with "Edit parts" gets the Parts Orders
-keys), so nobody loses access. Then tidy the roles in this screen.
+keys; "View reports" also grants *view financial reports* and *view
+Timecard / Salary*; "Manage users" also grants *pay*), so custom roles
+don't lose access. System roles follow the defaults instead: after the
+reports split a **Senior mechanic** no longer opens financial reports or
+payroll (they never see prices elsewhere either), a **Viewer** and a
+**Parts manager** keep financial reports but not payroll. Then tidy the
+roles in this screen.
 
 Key permission to know: **"View part costs inside WO"**
 (work_orders.view_costs). A user with work-order access but WITHOUT this
 permission works in **mechanic mode** — no prices anywhere (see the mechanic
-doc). The default Mechanic and Senior mechanic roles are like this.
+doc). The default Mechanic and Senior mechanic roles are like this. The same
+key is the "may see money" switch outside work orders too: customer
+balances (list, profile, Current Balance), the Payments and Estimates tabs
+of a customer, totals and amounts in the customer's / unit's work-order
+history, the dashboard money blocks and the WO Cost button. A Senior
+mechanic therefore sees customers, units and the parts catalog, but never a
+dollar amount.
+
+**"View part costs (avg cost / cost columns)"** (parts.view_costs) governs
+the purchase side of the parts catalog: the Avg cost / Last price columns
+and inventory totals on the Parts page, Core Cost / Credit columns in Cores
+and Cores Returns, the Average cost field in the part form, costs in part
+search results, part history and cross references. Without it the server
+strips those fields from every response and keeps the stored average cost
+untouched when such a user edits a part. Prices on parts orders are part of
+the order itself and follow *View parts orders*; vendor balances and a
+vendor's orders list also require *View parts orders*, because a balance
+is the sum of unpaid orders.
 
 **"Edit mechanics' actual tracked hours"** (work_orders.edit_time_logs)
 unlocks the pencil next to the tracked-time summary on a work order's job —

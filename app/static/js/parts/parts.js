@@ -2522,7 +2522,8 @@
 					'<td class="fw-semibold"><a href="' + escapeHtml(partUrl) + '" target="_blank" rel="noopener" class="text-decoration-none">' + escapeHtml(x.part_number || "") + '</a></td>' +
 					'<td class="text-muted">' + (escapeHtml(x.description || "") || "-") + '</td>' +
 					'<td class="text-end">' + escapeHtml(stock) + '</td>' +
-					'<td class="text-end">' + Number(x.average_cost || 0).toFixed(2) + '</td>' +
+					// Без parts.view_costs сервер не отдаёт average_cost — колонки нет.
+					(x.average_cost !== undefined ? '<td class="text-end">' + Number(x.average_cost || 0).toFixed(2) + '</td>' : '') +
 					'<td class="text-end"><button type="button" class="btn btn-sm btn-outline-danger cross-ref-remove-btn" data-cross-ref-id="' + escapeHtml(x.id || "") + '">Remove</button></td>' +
 					'</tr>';
 			}).join("");

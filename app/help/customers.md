@@ -9,7 +9,12 @@ Next to the search box is the status filter **Active customers** (default) /
 Vendors, Parts, Users and the customer's Units tab. Columns: Company
 (address underneath), Name (main contact; "Inactive" badge for
 deactivated), Phone, Email, **Current Balance**, Actions → "Open". Rows are
-clickable.
+clickable. The **Current Balance** column (and the balance on the customer
+profile, the Payments and Estimates tabs, totals in the work-order history)
+appear only for users with "View part costs inside WO"; a Senior mechanic
+sees the customer without any amounts, and a paid work order is shown to
+them as "completed". "Add Customer" needs "Create customers", the profile
+Save button "Edit customers", "Portal Link" "Manage customer portal links".
 
 ## Customer record
 

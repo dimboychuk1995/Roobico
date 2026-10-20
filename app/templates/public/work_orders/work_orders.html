@@ -1,5 +1,5 @@
 {% extends "layouts/app_base.html" %}
-{% from "components/attachments.html" import attachments_block, attachments_modal %}
+{% from "components/attachments.html" import attachments_block, attachments_modal with context %}
 {% from "components/ui.html" import empty_state, wo_status_badge %}
 
 {% block page_title %}Work Orders{% endblock %}
@@ -60,7 +60,7 @@
       {% endif %}
     </td>
     <td class="text-end text-nowrap">
-      {% if not w.is_paid %}
+      {% if not w.is_paid and "work_orders.manage_payments" in user_permissions %}
         <button type="button"
                 class="btn btn-outline-success btn-sm me-1 js-mark-paid"
                 data-work-order-id="{{ w.id }}"
@@ -68,15 +68,19 @@
           <i class="bi bi-cash-coin me-1"></i>Pay
         </button>
       {% endif %}
+      {% if "work_orders.export_pdf" in user_permissions %}
       <a class="btn btn-outline-secondary btn-sm me-1" href="{{ url_for('work_orders.api_download_work_order_pdf', work_order_id=w.id) }}" target="_blank" rel="noopener noreferrer" title="Download PDF" aria-label="Download PDF">
         <i class="bi bi-file-earmark-pdf"></i>
       </a>
+      {% endif %}
       <a class="btn btn-outline-primary btn-sm me-1" href="{{ url_for('work_orders.work_order_details_page', work_order_id=w.id) }}" target="_blank" rel="noopener noreferrer">
-        Edit
+        {% if "work_orders.edit" in user_permissions %}Edit{% else %}Open{% endif %}
       </a>
+      {% if "work_orders.delete" in user_permissions %}
       <button type="button" class="btn btn-outline-danger btn-sm js-delete-work-order" data-work-order-id="{{ w.id }}" title="Delete work order">
         Delete
       </button>
+      {% endif %}
     </td>
   </tr>
 {% endmacro %}
@@ -96,12 +100,16 @@
     </li>
   </ul>
   <div class="page-header__actions">
+    {% if "work_orders.manage_payments" in user_permissions %}
     <button type="button" class="btn btn-outline-primary btn-sm me-2" id="bulkPaymentBtn">
       <i class="bi bi-cash-stack me-1"></i>Bulk Payment
     </button>
+    {% endif %}
+    {% if "work_orders.create" in user_permissions %}
     <a class="btn btn-primary btn-sm" href="{{ url_for('work_orders.work_order_details_page') }}">
       Create Work Order
     </a>
+    {% endif %}
   </div>
 </div>
 

@@ -8,11 +8,13 @@
 <!-- Header -->
 <div class="page-header">
   <h1 class="page-header__title">Customers</h1>
+  {% if "customers.create" in user_permissions %}
   <div class="page-header__actions">
     <button class="btn btn-primary btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#createCustomerModal">
       Add Customer
     </button>
   </div>
+  {% endif %}
 </div>
 
 <!-- Customers list -->
@@ -32,7 +34,9 @@
               <th data-sort-field="last_name" style="width: 18%;">Name</th>
               <th style="width: 16%;">Phone</th>
               <th style="width: 21%;">Email</th>
+              {% if "work_orders.view_costs" in user_permissions %}
               <th class="text-end" style="width: 10%;">Current Balance</th>
+              {% endif %}
               <th class="text-end no-sort" style="width: 10%;">Actions</th>
             </tr>
           </thead>
@@ -68,9 +72,11 @@
 
                 <td>{{ c.main_contact_phone if c.main_contact_phone else "-" }}</td>
                 <td>{{ c.main_contact_email if c.main_contact_email else "-" }}</td>
+                {% if "work_orders.view_costs" in user_permissions %}
                 <td class="text-end fw-semibold js-customer-balance" data-customer-id="{{ cid }}">
                   <span class="spinner-border spinner-border-xs text-muted" role="status"></span>
                 </td>
+                {% endif %}
 
                 <td class="text-end">
                   <a class="btn btn-sm btn-outline-primary" href="{{ url_for('customers.customer_details_page', customer_id=cid) }}">Open</a>

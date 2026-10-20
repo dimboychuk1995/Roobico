@@ -145,7 +145,15 @@ only leave the account by tapping Log out yourself. (Access still ends
 immediately when a user is deactivated — session lifetime never overrides
 that.) Bottom tabs: **Dashboard**, **Work Orders**, **Customers**,
 **Parts**, **More** — tabs and rows hide according to the user's
-permissions (a mechanic sees only Work Orders + More).
+permissions (a mechanic sees only Work Orders + More). Inside the screens
+the action buttons follow the same keys as the web: the pencil on a
+customer / unit / vendor needs the edit (or "manage units") key, "+ Add
+unit", "+ New order", "+ New count", Receive / Pay / Return on a parts
+order, Complete / Cancel / counting on a stocktake, Confirm / Email /
+Delete / Mark unpaid on a work order and the calendar's "+" all appear only
+with the matching permission; the Reports screen lists financial reports
+only with "View financial reports". Whatever the app shows, the server
+checks each request itself and answers 403 if the key is missing.
 
 - **Dashboard**: outstanding balance, revenue/paid/unpaid, WO count, labor,
   parts, parts-orders stats per period (Today/Week/Month/Year).

@@ -55,6 +55,12 @@ Roobico — мультитенантный SaaS для автосервисов 
 - SSH-ключи для подключения к серверу: `C:\Users\User\Desktop\roobico\`.
 - После деплоя фич, меняющих поисковые поля, прогнать бэкфилл на нужной базе:
   `python -m app.scripts.backfill_search_terms`.
+- После деплоя изменений в каталоге прав (`app/constants/permissions.py`:
+  новые ключи или уточнение, какой ключ проверяет роут) — прогнать
+  `python -m app.scripts.sync_default_roles` (сначала `--dry-run`): роли
+  существующих тенантов сеются один раз при создании и сами новые ключи
+  не получат. Подразумеваемые гранты для кастомных ролей — `IMPLIED_GRANTS`
+  в скрипте.
 - Ящик локации для парт-ордеров (email → AI → заказы «not confirmed»):
   установка Cloudflare Email Worker + cron `app.scripts.process_inbound_emails`
   — `deploy/email_orders_inbox.md`.

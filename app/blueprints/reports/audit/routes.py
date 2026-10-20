@@ -13,7 +13,7 @@ from app.utils.date_filters import build_date_range_filters
 from app.utils.layout import render_internal_page
 from app.utils.pagination import get_sort_params
 from app.utils.pdf_utils import render_chart_to_base64, render_html_to_pdf
-from app.utils.permissions import filter_nav_items, permission_required
+from app.utils.permissions import filter_nav_items, has_permission, permission_required
 
 
 STANDARD_REPORT_TABS = {
@@ -36,6 +36,24 @@ CUSTOMER_FILTER_TABS = {
 VENDOR_FILTER_TABS = {
     "parts_orders_summary",
 }
+
+# Отчёты без денег — доступны по reports.view; всё остальное (выручка,
+# платежи, балансы, закупки) — reports.view_financial.
+NON_FINANCIAL_REPORT_TABS = {
+    "mechanic_hours",
+}
+
+
+def _report_permission_for(report_key: str) -> str:
+    key = str(report_key or "").strip().lower()
+    return "reports.view" if key in NON_FINANCIAL_REPORT_TABS else "reports.view_financial"
+
+
+def _report_forbidden(report_key: str):
+    required = _report_permission_for(report_key)
+    if has_permission(required):
+        return None
+    return required
 
 NON_INVENTORY_AMOUNT_TYPES = {
     "shop_supply",
@@ -2019,6 +2037,13 @@ def reports_index():
 @login_required
 @permission_required("reports.view")
 def standard_report_page(report_key: str):
+    required = _report_forbidden(report_key)
+    if required:
+        from flask import flash, redirect, url_for
+
+        flash("Access denied.", "error")
+        return redirect(url_for("reports.reports_index"))
+
     ctx = _build_standard_reports_context(report_key, request.args, skip_report_data=True)
 
     if not ctx.get("ok"):
@@ -2066,6 +2091,10 @@ def standard_report_page(report_key: str):
 @login_required
 @permission_required("reports.view")
 def standard_report_api(report_key: str):
+    required = _report_forbidden(report_key)
+    if required:
+        return jsonify(ok=False, error="forbidden", required=required), 403
+
     ctx = _build_standard_reports_context(report_key, request.args)
     if not ctx.get("ok"):
         return jsonify(ok=False, error=ctx.get("error") or "Unable to build report."), 400
@@ -2088,6 +2117,10 @@ def standard_report_api(report_key: str):
 @login_required
 @permission_required("reports.export")
 def standard_report_pdf(report_key: str):
+    required = _report_forbidden(report_key)
+    if required:
+        return jsonify(ok=False, error="forbidden", required=required), 403
+
     ctx = _build_standard_reports_context(report_key, request.args)
     if not ctx.get("ok"):
         payload = (ctx.get("error") or "Unable to build report.").encode("utf-8")
@@ -2122,7 +2155,7 @@ def standard_report_pdf(report_key: str):
 
 @reports_bp.get("/timecard-salary")
 @login_required
-@permission_required("reports.view")
+@permission_required("reports.view_payroll")
 def timecard_salary_page():
     layout_nav = filter_nav_items(NAV_ITEMS)
 

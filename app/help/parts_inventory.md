@@ -16,7 +16,15 @@ Categories, storage locations and pricing scales are configured on
   stock is split ("Shelf A × 3, Shelf B × 1"); stock without a location shows
   "Unassigned".
 - Row actions: **Cross refs**, **History**, **Locations** (tracked parts
-  only), **Edit**, **Deactivate**.
+  only), **Edit** (needs "Edit parts"), **Deactivate** (needs "Delete
+  parts"). "Add Part" needs "Create parts", "Order" needs "Create parts
+  orders", "New Stocktake" and the transfer form in Locations need "Adjust
+  stock".
+- The **Avg cost** and **Last price** columns, the inventory-cost totals
+  under the table and the Core Cost / Credit columns in Cores are shown only
+  with the permission **"View part costs (avg cost / cost columns)"**;
+  without it the server also strips costs from part search, history and
+  cross references, and the part form has no Average cost field.
 - Status filter next to the search box: **Active parts** (default),
   **Inactive parts**, **All parts**. Inactive parts carry a grey
   **Inactive** badge and have only the **History** button.

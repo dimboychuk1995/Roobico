@@ -6,6 +6,7 @@
   <h1 class="page-header__title">Reports</h1>
 </div>
 
+{% if "reports.view_financial" in user_permissions %}
 <!-- ── Sales & Revenue ── -->
 <h2 class="h6 text-muted text-uppercase mt-4 mb-2">Sales &amp; Revenue</h2>
 <div class="row g-3">
@@ -114,6 +115,8 @@
   </div>
 </div>
 
+{% endif %}
+
 <!-- ── Labor ── -->
 <h2 class="h6 text-muted text-uppercase mt-4 mb-2">Labor</h2>
 <div class="row g-3">
@@ -132,6 +135,7 @@
       </div>
     </a>
   </div>
+  {% if "reports.view_payroll" in user_permissions %}
   <div class="col-12 col-md-6 col-xl-4">
     <a href="{{ url_for('reports.timecard_salary_page') }}" class="text-decoration-none">
       <div class="card h-100">
@@ -147,6 +151,7 @@
       </div>
     </a>
   </div>
+  {% endif %}
 </div>
 
 {% if "reports.view_audit" in user_permissions %}

@@ -15,8 +15,13 @@ from app.utils.auth import (
     SESSION_TENANT_DB,
     SESSION_SHOP_ID,
 )
-from app.constants.permissions import PROTECTED_ROLE_KEYS
-from app.utils.permissions import permission_required, filter_nav_items
+from app.constants.permissions import ALL_PERMISSIONS, PROTECTED_ROLE_KEYS
+from app.utils.permissions import (
+    filter_nav_items,
+    get_effective_permissions,
+    has_permission,
+    permission_required,
+)
 from app.blueprints.main.routes import NAV_ITEMS
 from app.utils.layout import build_app_layout_context
 from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
@@ -95,6 +100,27 @@ def _actor_is_owner(current_user) -> bool:
     owner-аккаунты и раздавать роль Owner. Иначе любой с
     settings.manage_users мог бы сделать владельцем себя."""
     return _is_protected_role((current_user or {}).get("role"))
+
+
+def _role_beyond_actor(role_doc: dict | None) -> list[str]:
+    """Права назначаемой роли, которых нет у самого актёра.
+
+    Менеджер с settings.manage_users, но без settings.manage_roles, не должен
+    обходить ограничение через назначение коллеге роли General manager (в
+    ней есть manage_roles) — иначе любой «кадровик» раздаёт права, которых
+    у него нет. Владелец (protected-роль) назначает любые роли.
+    """
+    if not role_doc:
+        return []
+    if str(role_doc.get("key") or "").strip().lower() in PROTECTED_ROLE_KEYS:
+        role_perms = set(ALL_PERMISSIONS)
+    else:
+        role_perms = {str(p) for p in (role_doc.get("permissions") or []) if isinstance(p, str)}
+    return sorted(role_perms - get_effective_permissions())
+
+
+def _can_manage_pay() -> bool:
+    return has_permission("settings.manage_pay")
 
 
 def _render_settings_page(template_name: str, **ctx):
@@ -256,6 +282,7 @@ def users_index():
         sort_by=(request.args.get("sort_by") or "").strip(),
         sort_dir=(request.args.get("sort_dir") or "").strip(),
         actor_is_owner=_actor_is_owner(current_user),
+        can_manage_pay=_can_manage_pay(),
         protected_role_keys=sorted(PROTECTED_ROLE_KEYS),
     )
 
@@ -331,6 +358,18 @@ def users_edit(user_id):
         flash("Selected role does not exist in tenant roles.", "error")
         return _redirect_users_index()
 
+    # Смена роли — только на роль, чьи права есть у самого актёра
+    # (владелец — любые). Правка профиля без смены роли не блокируется,
+    # даже если роль пользователя шире актёрской.
+    if role != current_role and not actor_is_owner:
+        beyond = _role_beyond_actor(role_doc)
+        if beyond:
+            flash(
+                "You cannot assign a role with permissions you don't have: " + ", ".join(beyond),
+                "error",
+            )
+            return _redirect_users_index()
+
     selected_shop_ids_raw = request.form.getlist("shop_ids")
     allowed_shop_ids = set(_safe_str_list(session.get("shop_ids")))
 
@@ -357,10 +396,16 @@ def users_edit(user_id):
         "role": role,
         "shop_ids": selected_shop_oids,
         "is_active": is_active,
-        "pay_type": pay_type,
-        "salary_amount": salary_amount,
         "updated_at": utcnow(),
     }
+
+    # Зарплата/тип оплаты — отдельное право settings.manage_pay, и никто
+    # не меняет оплату самому себе (иначе менеджер с manage_users поднял бы
+    # себе оклад). Без права поля формы игнорируются — текущие значения
+    # остаются как есть.
+    if _can_manage_pay() and not is_self:
+        update_doc["pay_type"] = pay_type
+        update_doc["salary_amount"] = salary_amount
 
     # Пароль здесь НЕ меняется даже владельцем: аккаунт и пароль — строго
     # на стороне пользователя (приглашение / forgot password).
@@ -439,6 +484,11 @@ def users_activate(user_id):
         return _redirect_users_index()
 
     tenant_values = _id_variants(tenant_id_raw)
+    target = master.users.find_one({"_id": target_id, "tenant_id": {"$in": tenant_values}}, {"role": 1})
+    if target and _is_protected_role(target.get("role")) and not _actor_is_owner(_load_current_user(master)):
+        flash("Only an owner can activate an owner account.", "error")
+        return _redirect_users_index()
+
     res = master.users.update_one(
         {"_id": target_id, "tenant_id": {"$in": tenant_values}},
         {"$set": {"is_active": True, "updated_at": utcnow()}},
@@ -501,6 +551,20 @@ def _handle_create_user(master, current_user, tenant_oid, tenant_id_raw):
     if not role_doc:
         flash("Selected role does not exist in tenant roles.", "error")
         return redirect(url_for("settings.users_index"))
+
+    if not _actor_is_owner(current_user):
+        beyond = _role_beyond_actor(role_doc)
+        if beyond:
+            flash(
+                "You cannot assign a role with permissions you don't have: " + ", ".join(beyond),
+                "error",
+            )
+            return redirect(url_for("settings.users_index"))
+
+    if not _can_manage_pay():
+        # Без права на зарплату новый сотрудник заводится с дефолтной
+        # оплатой — поля формы не учитываются.
+        pay_type, salary_amount = "salary", None
 
     creator_id = _maybe_object_id(session.get(SESSION_USER_ID))
 

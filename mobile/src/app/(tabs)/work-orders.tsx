@@ -5,7 +5,7 @@ import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { ListScreen } from "@/components/list-screen";
 import { Badge, RowCard } from "@/components/ui";
-import { useIsMechanic } from "@/context/auth";
+import { useHasPermission, useIsMechanic } from "@/context/auth";
 import { useToast } from "@/context/toast";
 import {
   AllPaymentRow,
@@ -122,6 +122,7 @@ function PaymentCard({ item }: { item: AllPaymentRow }) {
 export default function WorkOrdersScreen() {
   const theme = useTheme();
   const router = useRouter();
+  const canCreateWo = useHasPermission("work_orders.create");
   const toast = useToast();
   const isMechanic = useIsMechanic();
   const [segment, setSegment] = useState<SegmentKey>("work_orders");
@@ -225,7 +226,7 @@ export default function WorkOrdersScreen() {
   const workOrdersHeader = (
     <>
       {segmentBar}
-      {isMechanic ? (
+      {isMechanic && canCreateWo ? (
         <Pressable
           style={[styles.createBtn, { backgroundColor: theme.primary }]}
           onPress={() => router.push("/work-order-form")}
