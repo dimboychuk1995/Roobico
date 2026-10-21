@@ -110,6 +110,7 @@ def _create_wo(client, deep_seed, descriptions):
     resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
         "customer_id": str(deep_seed["customer"]["_id"]),
         "unit_id": str(deep_seed["unit"]["_id"]),
+        "allow_duplicate_unit_wo": True,  # тесты заводят несколько WO на один юнит — явный обход правила «один юнит = один WO»
         "labors": [{"description": d, "parts": []} for d in descriptions],
     })
     assert resp.status_code == 200, resp.get_data(as_text=True)

@@ -237,6 +237,19 @@ your screen.
   translates the issue text into professional English for the customer),
   **"Send for Authorization"** (this labor only).
 
+## One unit — one work order (mechanic mode)
+
+When a mechanic selects a unit for a new work order (web mechanic page or
+mobile app: by hand, from the unit search, or by VIN scan) and that unit
+already has a work order **In Progress**, the mechanic is sent into the
+existing work order instead of creating another one; the message names
+the WO and the mechanic working on it right now. Several mechanics then
+share one WO with their own job timers. The server refuses a mechanic's
+duplicate create for a busy unit (the existing WO is returned), while
+managers may still create additional work orders for the same unit from
+the office pages. Confirmed, completed, paid work orders and estimates do
+not block a new one.
+
 ## Live updates from mechanics
 
 The work order details page updates itself while it is open — no manual

@@ -232,6 +232,14 @@ date). WOs without a customer are excluded from per-customer reports.
 mechanic mode with job timers; their saves always go to "In Progress" for a
 manager to finish. No prices appear for them anywhere, web or mobile.
 
+**Second mechanic joins a truck that is already being worked on.** Nothing
+to set up: when the second mechanic scans the VIN or picks the customer and
+unit, the app notices the unit already has a work order In Progress and
+opens that WO (toast: "Work order #123 is already in progress for this
+unit (Ivan working on it right now). Opening it…"). No duplicate WO is
+created — both mechanics add their jobs and run their own timers on the
+same work order.
+
 **Two mechanics on one job — when is it "done"?** Each mechanic presses
 **Done** in their own app. The WO leaves the **In Work** group, gets the
 "Mechanic done" badge and sends the "finished" push only after the last

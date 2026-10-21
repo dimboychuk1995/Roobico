@@ -116,6 +116,7 @@ def _create_wo(client, wo_seed, customer, unit, description="Fix brakes"):
     resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
         "customer_id": str(customer["_id"]),
         "unit_id": str(unit["_id"]),
+        "allow_duplicate_unit_wo": True,
         "labors": [{"description": description, "parts": []}],
     })
     assert resp.status_code == 200, resp.get_data(as_text=True)
@@ -263,6 +264,7 @@ def test_transfer_reprices_for_target_customer(client, app, wo_seed, mongo):
         resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
             "customer_id": str(src["_id"]),
             "unit_id": str(unit["_id"]),
+            "allow_duplicate_unit_wo": True,
             "labors": [
                 {"description": "Tracked job",
                  "parts": [{"part_id": str(wo_seed["part"]["_id"]), "qty": 2}]},

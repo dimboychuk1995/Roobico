@@ -167,6 +167,68 @@ def mechanic_wo_payload(shop_db, shop, wo: dict, user_id) -> dict:
     }
 
 
+def find_active_unit_work_order(shop_db, shop, unit_id) -> dict | None:
+    """
+    WO юнита, над которым сейчас работают: статус in_progress, активный, не
+    подтверждён менеджером (подтверждённый для механика закрыт — туда
+    отправлять бессмысленно). Если таких несколько, берём тот, где идёт
+    таймер, иначе самый свежий по updated_at.
+
+    Зачем: второй механик сканирует VIN (или выбирает клиента и юнит
+    руками) того же грузовика — ему должен открыться WO коллеги, а не
+    завестись дубль. None — юнит свободен, можно создавать.
+    """
+    uid = oid(unit_id)
+    if not uid:
+        return None
+
+    rows = list(
+        shop_db.work_orders.find(
+            {
+                "shop_id": shop["_id"],
+                "unit_id": uid,
+                "is_active": True,
+                "status": "in_progress",
+                "manager_confirmed": {"$ne": True},
+            },
+            {"wo_number": 1, "status": 1, "mechanic_done": 1, "customer_id": 1,
+             "updated_at": 1, "created_at": 1},
+        ).sort([("updated_at", -1), ("created_at", -1)])
+    )
+    if not rows:
+        return None
+
+    running: dict = {}
+    for log in shop_db.wo_time_logs.find(
+        {
+            "shop_id": shop["_id"],
+            "work_order_id": {"$in": [r["_id"] for r in rows]},
+            "stopped_at": None,
+        }
+    ):
+        running.setdefault(log.get("work_order_id"), []).append(str(log.get("user_name") or "").strip())
+
+    chosen = next((r for r in rows if running.get(r["_id"])), rows[0])
+    names = [n for n in dict.fromkeys(running.get(chosen["_id"], [])) if n]
+    return {
+        "id": str(chosen["_id"]),
+        "wo_number": chosen.get("wo_number"),
+        "status": str(chosen.get("status") or "in_progress"),
+        "mechanic_done": bool(chosen.get("mechanic_done")),
+        "customer_id": str(chosen.get("customer_id") or ""),
+        "working_now": names,
+    }
+
+
+def active_unit_work_order_message(payload: dict | None) -> str:
+    """Текст для тоста/алерта: «WO #N уже в работе по этому юниту (Иван работает)»."""
+    if not payload:
+        return ""
+    names = payload.get("working_now") or []
+    who = f" ({', '.join(names)} working on it right now)" if names else ""
+    return f"Work order #{payload.get('wo_number')} is already in progress for this unit{who}."
+
+
 def mechanic_unit_history(shop_db, shop, unit: dict, exclude_wo_id=None, limit: int = 30) -> dict:
     """История юнита без денег: прошлые WO с работами и запчастями.
 

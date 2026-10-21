@@ -14,6 +14,8 @@
     timersActive: "/work_orders/api/mechanic/timers/active",
     customers: "/work_orders/api/customers",
     units: "/work_orders/api/units",
+    // WO, над которым уже работают по юниту (второй механик попадает в него).
+    unitActiveWo: function (id) { return "/work_orders/api/mechanic/units/" + encodeURIComponent(id) + "/active_work_order"; },
     unitCreate: "/api/mobile/units",
     unitHistory: function (id) { return "/work_orders/api/mechanic/units/" + encodeURIComponent(id) + "/history"; },
     partsSearch: "/work_orders/api/parts/search",
@@ -29,12 +31,19 @@
     });
   }
 
+  // Ошибка запроса несёт status и тело ответа (data): по ним обработчики
+  // различают, например, 409 unit_has_active_work_order.
+  function requestError(res, data) {
+    var err = new Error((data && (data.message || data.error)) || ("Request failed (" + res.status + ")"));
+    err.status = res.status;
+    err.data = data || {};
+    return err;
+  }
+
   async function getJson(url) {
     var res = await fetch(url, { headers: { "Accept": "application/json" } });
     var data = await res.json().catch(function () { return {}; });
-    if (!res.ok || data.ok === false) {
-      throw new Error((data && data.error) || ("Request failed (" + res.status + ")"));
-    }
+    if (!res.ok || data.ok === false) throw requestError(res, data);
     return data;
   }
 
@@ -45,9 +54,7 @@
       body: JSON.stringify(body || {}),
     });
     var data = await res.json().catch(function () { return {}; });
-    if (!res.ok || data.ok === false) {
-      throw new Error((data && data.error) || ("Request failed (" + res.status + ")"));
-    }
+    if (!res.ok || data.ok === false) throw requestError(res, data);
     return data;
   }
 
@@ -587,6 +594,25 @@
     }
 
     // ---------- customer / unit pickers (create mode) ----------
+    function goToExistingWorkOrder(wo, message) {
+      toast((message || ("Work order #" + wo.wo_number + " is already in progress for this unit.")) + " Opening it\u2026", "info");
+      window.location.href = "/mechanic/work_orders/" + encodeURIComponent(wo.id);
+    }
+
+    // true — по юниту уже есть WO в работе и мы уходим в него.
+    async function openActiveUnitWorkOrder(unitId) {
+      try {
+        var data = await getJson(API.unitActiveWo(unitId));
+        if (data && data.work_order && data.work_order.id) {
+          goToExistingWorkOrder(data.work_order, data.message);
+          return true;
+        }
+      } catch (e) {
+        // Проверка не удалась — создание всё равно защищено сервером (409).
+      }
+      return false;
+    }
+
     async function initCreatePickers() {
       var custSel = $("mechCustomerSelect");
       var unitSel = $("mechUnitSelect");
@@ -603,12 +629,17 @@
         toast(e.message || "Failed to load customers", "error");
       }
       var historyCreateBtn = $("mechUnitHistoryCreateBtn");
-      unitSel.addEventListener("change", function () {
+      unitSel.addEventListener("change", async function () {
         if (historyCreateBtn) historyCreateBtn.disabled = !unitSel.value;
         // Новый WO: пробег подтверждается сразу при выборе юнита.
         state.mileageConfirmed = false;
         state.mileage = "";
-        if (unitSel.value && state.mileageRequired) {
+        if (!unitSel.value) return;
+        // Один юнит в цеху — один WO: по юниту уже идёт работа (другой
+        // механик или просто in progress) → открываем тот WO, а не заводим
+        // новый. Сервер дублирует проверку на создании (409).
+        if (mechanicMode && await openActiveUnitWorkOrder(unitSel.value)) return;
+        if (state.mileageRequired) {
           var opt = unitSel.options[unitSel.selectedIndex];
           showMileageGate(opt ? opt.textContent : "", opt ? (opt.dataset.mileage || "") : "");
         }
@@ -1045,6 +1076,12 @@
           await loadDetails();
         }
       } catch (e) {
+        // Пока механик заполнял форму, коллега уже завёл WO по этому юниту —
+        // уходим в него (сервер отказал создавать дубль).
+        if (e && e.data && e.data.error === "unit_has_active_work_order" && e.data.work_order) {
+          goToExistingWorkOrder(e.data.work_order, e.data.message);
+          return;
+        }
         toast(e.message || "Failed to save", "error");
       } finally {
         state.saving = false;

@@ -565,6 +565,27 @@ def mobile_work_order_create():
     # Механик создаёт WO сразу при выборе клиента и юнита — работы добавляются
     # потом автосейвом, поэтому пустой список работ для него валиден.
     is_mechanic = not has_permission("work_orders.view_costs")
+
+    # Один юнит в цеху — один WO: если по юниту уже идёт работа (другой
+    # механик или просто in_progress), механик попадает в тот WO, а не
+    # заводит дубль. Приложение проверяет это при выборе юнита; здесь —
+    # страховка (старые сборки, гонки). allow_duplicate_unit_wo — явный
+    # обход для автоматизации/тестов, приложение его не шлёт.
+    if is_mechanic and not bool(data.get("allow_duplicate_unit_wo")):
+        from app.blueprints.work_orders.services.mechanic_view import (
+            active_unit_work_order_message,
+            find_active_unit_work_order,
+        )
+
+        existing = find_active_unit_work_order(shop_db, shop, unit_id)
+        if existing:
+            return jsonify({
+                "ok": False,
+                "error": "unit_has_active_work_order",
+                "message": active_unit_work_order_message(existing),
+                "work_order": existing,
+            }), 409
+
     if not isinstance(labors_payload, list) or (not labors_payload and not is_mechanic):
         return jsonify({"ok": False, "error": "labors_required",
                         "message": "At least one labor is required."}), 400

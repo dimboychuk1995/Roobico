@@ -43,11 +43,15 @@ export function setCsrfToken(token: string) {
 export class ApiError extends Error {
   status: number;
   code: string;
+  // Тело ответа сервера: обработчики читают из него детали (например,
+  // work_order при 409 unit_has_active_work_order).
+  data: any;
 
-  constructor(message: string, status: number, code = "") {
+  constructor(message: string, status: number, code = "", data: any = null) {
     super(message);
     this.status = status;
     this.code = code;
+    this.data = data;
   }
 }
 
@@ -95,7 +99,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
       onUnauthorized?.();
     }
     const message = (data && (data.message || data.error)) || `Request failed (${res.status}).`;
-    throw new ApiError(String(message), res.status, String((data && data.error) || ""));
+    throw new ApiError(String(message), res.status, String((data && data.error) || ""), data);
   }
 
   return data as T;
@@ -305,6 +309,23 @@ export function fetchWoFormCustomers(q: string) {
 }
 
 /** Юниты клиента для формы WO — доступно механику (work_orders.create). */
+// WO, над которым уже идёт работа по юниту (in_progress, не подтверждён
+// менеджером) — второй механик открывает его вместо создания нового.
+export interface UnitActiveWorkOrder {
+  id: string;
+  wo_number: number | string | null;
+  status: string;
+  mechanic_done: boolean;
+  customer_id: string;
+  working_now: string[];
+}
+
+export function fetchUnitActiveWorkOrder(unitId: string) {
+  return request<{ ok: boolean; work_order: UnitActiveWorkOrder | null; message: string }>(
+    `/work_orders/api/mechanic/units/${encodeURIComponent(unitId)}/active_work_order`
+  );
+}
+
 export function fetchWoFormUnits(customerId: string) {
   return request<{ items: { id: string; label: string; mileage?: number | string | null }[] }>(
     `/work_orders/api/units?customer_id=${encodeURIComponent(customerId)}`

@@ -261,6 +261,7 @@ def test_mechanic_create_pushes_wo_taken(client, push_seed, push_capture):
     resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
         "customer_id": str(push_seed["customer"]["_id"]),
         "unit_id": str(push_seed["unit"]["_id"]),
+        "allow_duplicate_unit_wo": True,
         "labors": [{"description": "New job",
                     "parts": [{"part_id": str(push_seed["part"]["_id"]), "qty": 1}]}],
     })

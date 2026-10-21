@@ -24,6 +24,21 @@ What a mechanic sees and can do:
   ("What was done..."), add parts by search (quantities only; a non-catalog
   entry becomes "one-time part — manager fills the price"), apply presets
   ("From preset").
+- **One truck in the shop = one work order.** The moment a mechanic picks a
+  unit (by hand, from the unit search, or by scanning its VIN) the app
+  checks whether that unit already has a work order **In Progress** — a
+  colleague is working on it, or it is simply open on the floor. If so, the
+  mechanic is taken **into that work order** instead of creating a new one;
+  the toast says which WO it is and who is working on it right now ("Work
+  order #123 is already in progress for this unit (Ivan working on it
+  right now). Opening it…"). Both mechanics then work on the same WO —
+  each with their own job timers and their own Done. The server enforces
+  the same rule: a mechanic's attempt to create a second WO for a busy
+  unit is refused and the existing WO is returned, so older app builds
+  cannot create a duplicate either. The rule ignores work orders a manager
+  has already **confirmed** (locked for mechanics), completed/paid ones
+  and estimates — those leave the unit free for a new WO. Managers are not
+  redirected: they create work orders deliberately.
 - **Scan VIN** (new WO screen, before picking anything): the **"Scan VIN"**
   button opens the camera. Just point it at the VIN **barcode** (door-jamb
   sticker, dashboard plate — Code 39/128, DataMatrix, QR) — the VIN is
@@ -31,7 +46,9 @@ What a mechanic sees and can do:
   toggle for dark cabs). Other barcodes in the frame are ignored — only a
   valid 17-character VIN triggers. What happens next:
   - the VIN belongs to an existing unit → the customer AND unit are filled
-    in automatically and the work order starts right away;
+    in automatically and the work order starts right away — unless that
+    unit already has a work order In Progress, in which case **that** WO
+    opens (see "One truck in the shop = one work order" above);
   - the same VIN is active on **several companies** → the app asks which
     company this job is for;
   - the VIN is **not in the system** → a new unit is created automatically

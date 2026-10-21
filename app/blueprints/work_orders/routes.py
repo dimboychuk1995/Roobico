@@ -3479,6 +3479,8 @@ def api_preset_detail(preset_id):
 # services/mechanic_editor.py и services/time_tracking.py.
 
 from app.blueprints.work_orders.services.mechanic_view import (
+    active_unit_work_order_message,
+    find_active_unit_work_order,
     mechanic_unit_history,
     mechanic_wo_payload,
     strip_part_search_item,
@@ -3611,6 +3613,37 @@ def api_mechanic_unit_history(unit_id):
     return jsonify({"ok": True, **payload}), 200
 
 
+@work_orders_bp.get("/work_orders/api/mechanic/units/<unit_id>/active_work_order")
+@login_required
+@permission_required("work_orders.view")
+def api_mechanic_unit_active_work_order(unit_id):
+    """
+    WO, над которым сейчас работают по этому юниту (in_progress, не
+    подтверждён менеджером), с именами механиков с идущим таймером.
+    Страница механика и мобильное приложение зовут его при выборе юнита
+    (VIN-скан или руками): есть такой WO — открывают его вместо создания
+    нового. {"work_order": null} — юнит свободен.
+    """
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    uid = oid(unit_id)
+    if not uid:
+        return jsonify({"ok": False, "error": "invalid_unit_id"}), 400
+
+    unit = shop_db.units.find_one({"_id": uid, "shop_id": shop["_id"]}, {"_id": 1})
+    if not unit:
+        return jsonify({"ok": False, "error": "unit_not_found"}), 404
+
+    payload = find_active_unit_work_order(shop_db, shop, unit["_id"])
+    return jsonify({
+        "ok": True,
+        "work_order": payload,
+        "message": active_unit_work_order_message(payload),
+    }), 200
+
+
 @work_orders_bp.post("/work_orders/api/mechanic/work_orders")
 @login_required
 @permission_required("work_orders.create")
@@ -3633,6 +3666,20 @@ def api_mechanic_work_order_create():
     unit = shop_db.units.find_one({"_id": unit_id, "shop_id": shop["_id"], "is_active": True})
     if not unit or unit.get("customer_id") != customer_id:
         return jsonify({"ok": False, "error": "unit_not_found"}), 404
+
+    # Один юнит в цеху — один WO: механик не заводит дубль, пока по юниту
+    # идёт работа (страховка к проверке при выборе юнита на клиенте).
+    # allow_duplicate_unit_wo — явный обход для автоматизации/тестов;
+    # интерфейсы механика его не шлют.
+    if is_mechanic_mode() and not bool(data.get("allow_duplicate_unit_wo")):
+        existing = find_active_unit_work_order(shop_db, shop, unit_id)
+        if existing:
+            return jsonify({
+                "ok": False,
+                "error": "unit_has_active_work_order",
+                "message": active_unit_work_order_message(existing),
+                "work_order": existing,
+            }), 409
 
     labors_payload = data.get("labors")
     if not isinstance(labors_payload, list) or not labors_payload:

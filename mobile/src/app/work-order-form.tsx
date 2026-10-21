@@ -55,6 +55,8 @@ import {
   parseHandwrittenWo,
   polishIssueText,
   resolveVin,
+  fetchUnitActiveWorkOrder,
+  UnitActiveWorkOrder,
   searchParts,
 } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
@@ -124,6 +126,8 @@ export default function WorkOrderFormScreen() {
   const [autoSaveState, setAutoSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const loadedRef = useRef(false);
   const autoCreateFired = useRef(false);
+  // Юнит, для которого уже проверено «есть ли WO в работе» (нет — можно создавать).
+  const activeWoCheckedUnit = useRef("");
   const editRevision = useRef(0);
   const savedRevision = useRef(0);
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -762,6 +766,12 @@ export default function WorkOrderFormScreen() {
         router.back();
       }
     } catch (e) {
+      // Коллега уже завёл WO по этому юниту (гонка или старая проверка) —
+      // сервер не даёт создать дубль и возвращает тот WO: открываем его.
+      if (e instanceof ApiError && e.code === "unit_has_active_work_order" && e.data?.work_order?.id) {
+        openExistingWorkOrder(e.data.work_order, e.message);
+        return;
+      }
       // Провал авто-создания: разрешаем повторный триггер по выбору юнита.
       autoCreateFired.current = false;
       toast.show(e instanceof ApiError ? e.message : "Save failed.", "error");
@@ -770,16 +780,49 @@ export default function WorkOrderFormScreen() {
     }
   };
 
-  // Механик: WO создаётся сам, как только выбраны клиент и юнит.
+  // Один юнит в цеху — один WO: по юниту уже идёт работа (другой механик
+  // или просто in progress) → открываем тот WO вместо создания нового.
+  const openExistingWorkOrder = (wo: UnitActiveWorkOrder, message?: string) => {
+    autoCreateFired.current = true;
+    toast.show(
+      `${message || `Work order #${wo.wo_number} is already in progress for this unit.`} Opening it…`,
+      "info"
+    );
+    router.replace({ pathname: "/work-order-form", params: { id: wo.id } });
+  };
+
+  // Механик: WO создаётся сам, как только выбраны клиент и юнит — но сначала
+  // проверяем, не идёт ли по юниту работа уже (VIN-скан, выбор руками,
+  // переход из поиска юнитов — все пути сходятся сюда).
   useEffect(() => {
     if (!isMechanic || isEdit || !customer || !unit || autoCreateFired.current) return;
-    // Сначала пробег: WO создаётся уже с подтверждённым одометром.
-    if (!mileage.trim()) {
-      setMileageGate(true);
-      return;
-    }
-    autoCreateFired.current = true;
-    save("in_progress", "in_progress");
+    let cancelled = false;
+    (async () => {
+      if (activeWoCheckedUnit.current !== unit.id) {
+        try {
+          const res = await fetchUnitActiveWorkOrder(unit.id);
+          if (cancelled) return;
+          activeWoCheckedUnit.current = unit.id;
+          if (res.work_order) {
+            openExistingWorkOrder(res.work_order, res.message);
+            return;
+          }
+        } catch {
+          // Проверка не удалась — создание всё равно защищено сервером (409).
+          if (cancelled) return;
+        }
+      }
+      // Сначала пробег: WO создаётся уже с подтверждённым одометром.
+      if (!mileage.trim()) {
+        setMileageGate(true);
+        return;
+      }
+      autoCreateFired.current = true;
+      save("in_progress", "in_progress");
+    })();
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [customer, unit, mileage]);
 

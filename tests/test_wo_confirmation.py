@@ -110,6 +110,7 @@ def _create_wo_as_mechanic(client, conf_seed, description="Change oil"):
     resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
         "customer_id": str(conf_seed["customer"]["_id"]),
         "unit_id": str(conf_seed["unit"]["_id"]),
+        "allow_duplicate_unit_wo": True,  # тесты заводят несколько WO на один юнит — явный обход правила «один юнит = один WO»
         "labors": [{
             "description": description,
             "parts": [{"part_id": str(conf_seed["part"]["_id"]), "qty": 1}],

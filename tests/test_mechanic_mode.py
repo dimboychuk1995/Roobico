@@ -113,6 +113,7 @@ def _create_wo_as_mechanic(client, mech_seed, description="Replace brakes"):
         "customer_id": str(mech_seed["customer"]["_id"]),
         "unit_id": str(mech_seed["unit"]["_id"]),
         "unit_mileage": 100000,
+        "allow_duplicate_unit_wo": True,  # тесты заводят несколько WO на один юнит — явный обход правила «один юнит = один WO»
         "labors": [{
             "description": description,
             "parts": [{"part_id": str(mech_seed["part"]["_id"]), "qty": 2}],
@@ -244,6 +245,7 @@ def test_mechanic_create_ignores_client_prices_and_status(client, mech_seed, mon
     resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
         "customer_id": str(mech_seed["customer"]["_id"]),
         "unit_id": str(mech_seed["unit"]["_id"]),
+        "allow_duplicate_unit_wo": True,
         "status": "open",
         "labors": [{
             "description": "Price injection attempt",
@@ -1359,6 +1361,7 @@ def test_mechanic_mobile_create_allows_empty_labors(client, mech_seed, mongo):
         "status": "in_progress",
         "labors": [],
         "mechanic_state": "in_progress",
+        "allow_duplicate_unit_wo": True,
     })
     assert resp.status_code == 200, resp.get_data(as_text=True)
     data = resp.get_json()
@@ -1506,6 +1509,7 @@ def test_mechanic_can_delete_labor(client, mech_seed, mongo):
     resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
         "customer_id": str(mech_seed["customer"]["_id"]),
         "unit_id": str(mech_seed["unit"]["_id"]),
+        "allow_duplicate_unit_wo": True,
         "labors": [
             {"description": "Keep me", "parts": []},
             {"description": "Delete me",
@@ -1652,6 +1656,7 @@ def test_mechanic_wo_uses_customer_default_labor_rate(client, mech_seed, mongo):
         resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
             "customer_id": str(mech_seed["customer"]["_id"]),
             "unit_id": str(mech_seed["unit"]["_id"]),
+            "allow_duplicate_unit_wo": True,
             "labors": [
                 {"description": "Plain job", "parts": []},
                 {"description": "Preset job", "preset_id": str(preset_id), "parts": []},
@@ -1713,6 +1718,7 @@ def test_mechanic_part_brings_core_and_misc_charges(client, mech_seed, mongo):
     resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
         "customer_id": str(mech_seed["customer"]["_id"]),
         "unit_id": str(mech_seed["unit"]["_id"]),
+        "allow_duplicate_unit_wo": True,
         "labors": [{
             "description": "Replace battery",
             "parts": [{"part_id": str(part["_id"]), "qty": 2}],
@@ -1756,6 +1762,7 @@ def test_hours_from_preset_and_tracked_time(client, mech_seed, mongo):
     resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
         "customer_id": str(mech_seed["customer"]["_id"]),
         "unit_id": str(mech_seed["unit"]["_id"]),
+        "allow_duplicate_unit_wo": True,
         "labors": [
             {"description": "PM service", "preset_id": str(preset_id), "parts": []},
             {"description": "Plain job", "parts": []},
