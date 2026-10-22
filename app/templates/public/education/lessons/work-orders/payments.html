@@ -1,0 +1,42 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Recording a full or partial payment.</li>
+  <li>Methods, attachments and the receipt email.</li>
+  <li>Where payments are listed and how to delete one.</li>
+</ul>
+{% endcall %}
+
+<p>Recording and deleting payments needs {{ perm("work_orders.manage_payments", "Manage payments") }}.</p>
+
+{% call step(1, "Open Record Payment") %}
+<p>On the work order page click {{ ui("Paid") }}; on the list click {{ ui("Pay") }} in the row. The dialog shows <strong>Invoice Total</strong>, <strong>Already Paid</strong> and <strong>Remaining Balance</strong>, with the amount pre-filled with the balance.</p>
+{{ shot("wo-payment-modal", "Record Payment from the work order page.", "md") }}
+{% endcall %}
+{% call step(2, "Amount and method") %}
+<p>Methods: <strong>Cash, Check, Credit Card, ACH, Other</strong>. Partial payments are fine — enter a smaller amount and the balance stays open; overpaying is blocked. Set the payment date and notes (check number, reference).</p>
+{{ shot("wo-pay-modal-list", "Record Payment from the list.", "md") }}
+{% endcall %}
+{% call step(3, "Attachments and receipt") %}
+<p>Attach a check photo or a card slip; the files belong to this payment. Tick the receipt option to email a payment receipt to the customer's contacts.</p>
+{% endcall %}
+{% call step(4, "Status") %}
+<p>When the remaining balance reaches $0 the work order becomes <strong>Paid</strong> and locks. Partial payments leave it Open with a reduced balance.</p>
+{% endcall %}
+
+<h2>Where to see payments</h2>
+<ul>
+  <li>Work Orders → <strong>Payments</strong> tab — every payment with search, date filter and totals.</li>
+  <li>Customer page → <strong>Payments</strong> tab — one customer's payments; delete possible.</li>
+  <li>Reports → <strong>Payments Summary</strong> — money received per customer and period.</li>
+</ul>
+{{ shot("wo-list-payments-tab", "The Payments tab of the Work Orders list.") }}
+
+{% call warn("Deleting payments") %}
+Deleting a payment reopens the balance (and un-pays a Paid work order). Reverting a Paid work order to Open or In Progress deletes <em>all</em> its payments — see {{ lesson_link("work-orders/statuses") }}.
+{% endcall %}
+
+{% call note("No deposits or credits") %}
+Recording more than the balance is blocked and there is no deposit / credit feature. For one check covering several invoices use {{ lesson_link("work-orders/bulk-payment") }}.
+{% endcall %}

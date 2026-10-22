@@ -1,0 +1,46 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Open, In Progress, Estimate, Paid — what sets each status.</li>
+  <li>What locks a work order and how to unlock it.</li>
+  <li>The warning about reverting a paid work order.</li>
+</ul>
+{% endcall %}
+
+<table>
+  <thead><tr><th>Status</th><th>How it is set</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Open (Unpaid)</strong></td><td>Default after creation.</td><td>Yellow badge. Editable by the office.</td></tr>
+    <tr><td><strong>In Progress</strong></td><td>{{ ui("Save In Progress") }}, any mechanic save, or automatically when a mechanic starts a job timer.</td><td>Blue badge; the work order sits in the <em>In Work</em> group on the list. Saving In Progress also clears all mechanics' Done marks.</td></tr>
+    <tr><td><strong>Estimate</strong></td><td>Create dropdown → {{ ui("Save as Estimate") }}.</td><td>A quote: no parts leave stock, no payments possible, lives on the Estimates tab. See {{ lesson_link("work-orders/estimates") }}.</td></tr>
+    <tr><td><strong>Paid</strong></td><td>Automatically when the remaining balance reaches $0.</td><td>Green badge. The work order is <strong>locked</strong>.</td></tr>
+  </tbody>
+</table>
+
+{{ shot("wo-save-dropdown", "The Save dropdown on an existing work order.") }}
+{{ shot("wo-paid-locked", "A paid work order: locked, with Unpaid instead of Edit.") }}
+
+<h2>Locks</h2>
+<ul>
+  <li><strong>Paid</strong> work orders cannot be edited until made unpaid.</li>
+  <li><strong>Confirmed</strong> work orders (a manager confirmed the mechanic's work from the mobile app) are locked for mechanics only — the office can still edit.</li>
+  <li>Mechanics can never set a status themselves: every mechanic save goes to In Progress.</li>
+</ul>
+
+{% call warn("Reverting a paid work order deletes its payments") %}
+Switching a Paid work order back to Unpaid or In Progress removes all its payment records. The confirmation warns about this, and the action always needs {{ perm("work_orders.change_status", "Change work order status") }} — even for users who may otherwise save work orders. Re-record the payment after editing.
+{% endcall %}
+
+<h2>Deleting</h2>
+<p>
+  {{ ui("Delete") }} (needs {{ perm("work_orders.delete", "Delete work orders") }}) returns the work order's parts to inventory and
+  removes its payments. The Activity Journal keeps the record of who deleted it.
+</p>
+
+<h2>Mechanic done and Confirmed</h2>
+<p>
+  These are badges, not statuses. <strong>Mechanic done</strong> appears when every mechanic who worked on the job pressed Done;
+  the status stays In Progress until you complete it. <strong>Confirmed</strong> appears after a manager confirms the work from the
+  mobile app. Details: {{ lesson_link("mechanic/done-confirm") }}.
+</p>

@@ -1,0 +1,45 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The mechanic work order list and editor in a browser.</li>
+  <li>The mileage prompt and the “one unit = one work order” rule.</li>
+  <li>Unit history, presets and parts without prices.</li>
+</ul>
+{% endcall %}
+
+<p>Mechanics log in at roobico.com like everyone else and land on the mechanic list. The pages are responsive — they work on the shop computer and on a phone's browser alike.</p>
+{{ shot("mech-wo-list", "The mechanic list on a phone-sized screen.", "sm") }}
+
+{% call step(1, "Open a work order — confirm the mileage") %}
+<p>Tapping a work order shows the <strong>Current mileage</strong> window, prefilled with the last recorded odometer. The mechanic must confirm or correct it before anything else — the window cannot be dismissed; the only ways out are Confirm or back to the list. The confirmed value is written to the work order and moves the unit's odometer forward (a smaller number stays on the work order only).</p>
+{{ shot("mech-mileage-modal", "The Current mileage prompt.", "sm") }}
+{% endcall %}
+{% call step(2, "The editor") %}
+<p>Customer and unit with a {{ ui("History") }} button, the date, the mileage box, one card per job with the description, <em>Tracked</em> time and {{ ui("Start job") }} / {{ ui("Stop job") }}, the parts with − / + quantity controls and {{ ui("Add part") }}, then {{ ui("Add job") }}, {{ ui("From preset") }} and {{ ui("Save") }}. Saved work orders go to the manager for review.</p>
+{{ shot("mech-wo-details", "The mechanic editor: jobs, timers, parts, Save.", "sm") }}
+{% endcall %}
+{% call step(3, "Parts and presets") %}
+<p>{{ ui("Add part") }} searches the catalog and shows stock, never prices; cross-reference alternates are listed too. {{ ui("From preset") }} adds a template's jobs and parts.</p>
+{{ shot("mech-part-modal", "Part search without prices.", "sm") }}
+{{ shot("mech-preset-modal", "From preset.", "sm") }}
+{% endcall %}
+{% call step(4, "Unit history") %}
+<p>{{ ui("History") }} next to the unit opens its past work orders — number, date, status, jobs and parts with quantities. Money-free; a paid work order shows as Completed. Up to 30 most recent, the current one excluded.</p>
+{{ shot("mech-unit-history-modal", "Unit history inside the mechanic editor.", "sm") }}
+{% endcall %}
+
+<h2>New work order</h2>
+<p>
+  The + button opens the new work order screen: pick the customer and unit (or {{ ui("+ New unit") }}: unit number, VIN, year, make, model,
+  type, mileage), confirm the mileage, add jobs and parts, Save.
+</p>
+{{ shot("mech-new-wo", "New work order in mechanic mode.", "sm") }}
+
+{% call warn("One truck in the shop = one work order") %}
+When the mechanic picks a unit that already has a work order In Progress, they are taken into that work order instead of creating a new one — the toast names it and who is working on it. The server refuses a duplicate too. Confirmed, completed, paid work orders and estimates leave the unit free.
+{% endcall %}
+
+{% call note("The work order date follows the mechanic's save") %}
+Every save that changes something stamps the work order with that day — the invoice date on the PDF. A job started Monday and saved Wednesday is dated Wednesday.
+{% endcall %}

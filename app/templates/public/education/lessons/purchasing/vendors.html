@@ -1,0 +1,46 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The Vendors list and its Balance column.</li>
+  <li>Adding a vendor with contacts.</li>
+  <li>The Vendor Orders popup and deactivation.</li>
+</ul>
+{% endcall %}
+
+<p>Sidebar → {{ ui("Vendors") }}. Needs {{ perm("vendors.view", "View vendors") }}.</p>
+{{ shot("vendors-list", "The Vendors list with Add Vendor highlighted.") }}
+
+<h2>Columns</h2>
+<p>
+  Name, Phone, Email, Website, Primary contact, Address, <strong>Balance</strong> (unpaid total across the vendor's orders — needs
+  {{ perm("parts_orders.view", "View parts orders") }}) and Status. The search box searches every field including contacts; the status filter
+  shows active, inactive or all vendors.
+</p>
+
+<h2>Add a vendor</h2>
+{% call step(1, "Add Vendor") %}
+<p>{{ ui("Add Vendor") }} (needs {{ perm("vendors.create", "Create vendors") }}): Name (required), Website, Address with autocomplete, Notes and a <strong>Contacts</strong> block — several contacts, one always marked <strong>Main contact</strong> and used by default.</p>
+{{ shot("vendors-add-modal", "Create new vendor.", "md") }}
+{% endcall %}
+{% call step(2, "Save") %}
+<p>The vendor is available in the order dialog and the part form right away.</p>
+{% endcall %}
+
+<h2>Vendor Orders</h2>
+<p>
+  Click a vendor's name: the <strong>Vendor Orders</strong> popup lists their orders with a date filter and totals — Orders, Total Amount,
+  Paid, Unpaid, Received, Not Received. There is no separate vendor page; this popup is it.
+</p>
+{{ shot("vendors-orders-modal", "Vendor Orders popup.", "md") }}
+
+<h2>Deactivate = delete</h2>
+<p>
+  {{ ui("Delete") }} deactivates the vendor (needs {{ perm("vendors.deactivate", "Deactivate vendors") }}): hidden from pickers, history
+  stays; {{ ui("Restore") }} brings it back. Inactive vendors cannot be selected on new orders or parts. A vendor name that already
+  exists (even inactive) cannot be created twice.
+</p>
+
+{% call tip("Vendors created by AI") %}
+The AI Order Reader and the email inbox create vendors automatically when an invoice names one you do not have. If that creates a duplicate, open the order, pick the right vendor and save — the auto-created one is deleted and the sender is remembered. See {{ lesson_link("purchasing/email-orders") }}.
+{% endcall %}

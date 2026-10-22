@@ -5,7 +5,12 @@
   <div class="assistant-panel-header">
     <div>
       <div class="fw-semibold">Roobico Assistant</div>
-      <div class="small text-muted">Ask how to do something in Roobico</div>
+      <div class="small text-muted">
+        Ask how to do something in Roobico ·
+        <a href="{{ url_for('education.index') }}" class="assistant-edu-link" title="Step-by-step lessons with screenshots">
+          <i class="bi bi-mortarboard"></i> Education Center
+        </a>
+      </div>
     </div>
     <button type="button" class="assistant-close" id="assistantCloseBtn" aria-label="Close">&times;</button>
   </div>

@@ -1,0 +1,23 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>An internal profit view per job and for the whole work order.</li>
+  <li>Mechanic cost rates stay in your browser only.</li>
+</ul>
+{% endcall %}
+
+{% call step(1, "Open WO Cost") %}
+<p>On the work order page click {{ ui("WO Cost") }} (visible to users with {{ perm("work_orders.view_costs", "View part costs inside WO") }}).</p>
+{{ shot("wo-cost-modal", "The Work Order Cost dialog.", "md") }}
+{% endcall %}
+{% call step(2, "Enter mechanic cost rates") %}
+<p>Type the hourly cost of each mechanic who worked on the job. These rates are <strong>stored only in your browser</strong> — never on the server, never visible to other users or in reports.</p>
+{% endcall %}
+{% call step(3, "Read the result") %}
+<p>Per job: labor cost (hours × rate), parts cost (average cost × qty), revenue and profit. Plus totals for the whole work order.</p>
+{% endcall %}
+
+{% call note("For the real picture use reports") %}
+WO Cost is a quick what-if for one job. Shop-wide profit with real purchases and payroll lives in Reports → General Revenue ({{ lesson_link("reports/general-revenue") }}).
+{% endcall %}

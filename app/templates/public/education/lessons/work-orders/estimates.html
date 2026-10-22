@@ -1,0 +1,37 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Creating a quote and where it lives.</li>
+  <li>Sending it for approval and converting it to a work order.</li>
+  <li>Turning a work order back into an estimate.</li>
+</ul>
+{% endcall %}
+
+{% call step(1, "Create the estimate") %}
+<p>Fill the work order page as usual (customer, unit, jobs, parts), then open the dropdown next to {{ ui("Create Work Order") }} and choose {{ ui("Save as Estimate") }}.</p>
+{{ shot("wo-create-dropdown", "Save as Estimate in the Create dropdown.") }}
+{% endcall %}
+{% call step(2, "Where it lives") %}
+<p>Estimates sit on the <strong>Estimates</strong> tab of the Work Orders list (and the customer's Estimates tab). They are hidden from the main tab and its totals, take <strong>no parts from inventory</strong>, cannot receive payments and are edited only in the office web interface — mechanics and the mobile editor cannot open them.</p>
+{{ shot("wo-list-estimates-tab", "The Estimates tab.") }}
+{% endcall %}
+{% call step(3, "Send it to the customer") %}
+<p>An open estimate shows an <strong>Estimate</strong> badge on its page. {{ ui("Download PDF") }} produces the same document titled <em>Estimate</em> (file Estimate-&lt;number&gt;.pdf). {{ ui("Send for Authorization") }} works exactly like on a work order — email with the PDF and Approve / Decline buttons; a green ✓ Authorized badge appears when the customer approves. Approval does not change the status or touch inventory.</p>
+{{ shot("wo-estimate-page", "An estimate page with the Estimate badge.") }}
+{% endcall %}
+{% call step(4, "Convert when the job is approved") %}
+<p>Open the estimate → Save dropdown → {{ ui("Convert to Work Order") }}. It becomes a normal open work order; at that moment all its parts are deducted from stock and core tracking starts. The PDF title switches back to Work Order.</p>
+{{ shot("wo-save-dropdown", "Convert to Work Order in the Save dropdown.") }}
+{% endcall %}
+
+<h2>The reverse</h2>
+<p>
+  On a normal unpaid work order the Save dropdown has {{ ui("Save as Estimate") }}: the work order becomes an estimate, all its parts
+  return to inventory and pending cores are removed. A work order with recorded payments cannot become an estimate — delete the
+  payments first. Convert back and forth as many times as needed; stock moves accordingly each time.
+</p>
+
+{% call tip("A plain Save keeps it an estimate") %}
+Editing an estimate and pressing Save does not convert it. Only Convert to Work Order does.
+{% endcall %}

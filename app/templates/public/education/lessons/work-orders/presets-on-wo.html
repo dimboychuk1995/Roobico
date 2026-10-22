@@ -1,0 +1,38 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Inserting a service template into a labor block.</li>
+  <li>How template prices follow the catalog — and when they are pinned.</li>
+</ul>
+{% endcall %}
+
+<p>
+  A <strong>service template</strong> (preset) is a reusable job: name, labor hours and rate, a parts list and an
+  “Allow customer discount on parts” flag. Templates are built in Settings → Service Templates
+  ({{ lesson_link("settings/service-templates") }}).
+</p>
+
+{% call step(1, "Open the labor block menu") %}
+<p>In edit mode, click ⋮ on the labor block that should receive the job and choose {{ ui("Add Preset") }}.</p>
+{{ shot("wo-labor-menu", "Add Preset in the ⋮ menu.") }}
+{% endcall %}
+{% call step(2, "Pick the template") %}
+<p>Choose a template in the dialog. Its description, hours and rate go into the block and its parts are added to the parts table with live catalog prices.</p>
+{{ shot("wo-add-preset-modal", "Add Preset dialog.", "md") }}
+{% endcall %}
+{% call step(3, "Adjust and save") %}
+<p>Change quantities or hours as needed. Jobs applied from a preset keep the preset's hours instead of auto-filling from mechanic timers.</p>
+{% endcall %}
+
+<h2>Prices self-heal</h2>
+<p>
+  Template prices are live: each time a template is applied, each part's price is recomputed from its current selling price or the
+  pricing scale, so templates follow the catalog automatically. If a price was <strong>edited by hand in the template editor</strong>, it is
+  <em>pinned</em> and used exactly as typed — it beats the part's selling price and the pricing scale. Two things still beat a pinned price:
+  a customer with “Override part selling price”, and editing the price directly on the work order line.
+</p>
+
+{% call tip("Mechanics use templates too") %}
+In mechanic mode and the mobile app, “From preset” adds the same jobs and parts — without showing prices.
+{% endcall %}

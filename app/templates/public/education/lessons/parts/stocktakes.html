@@ -1,0 +1,35 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Starting a count with a location or category scope.</li>
+  <li>The counting screen, Recount flags and found parts.</li>
+  <li>Complete &amp; apply, Set uncounted lines to zero, and the What changed view.</li>
+</ul>
+{% endcall %}
+
+<p>Parts → <strong>Stocktakes</strong> tab. Counting needs {{ perm("parts.adjust_stock", "Adjust part stock") }}. Stocktakes are numbered ST-1, ST-2, …</p>
+{{ shot("parts-stocktakes-tab", "The Stocktakes tab.") }}
+
+{% call step(1, "New Stocktake") %}
+<p>{{ ui("New Stocktake") }}: optional name, <strong>Location scope</strong> (default Whole warehouse, sub-locations included) and <strong>Category scope</strong>. The warehouse keeps working while you count.</p>
+{{ shot("parts-stocktake-create-modal", "Start a stocktake: name, location and category scope.", "sm") }}
+{% endcall %}
+
+{% call step(2, "Count") %}
+<p>The count screen lists every part in scope with Location, Part #, Description, <strong>Expected</strong>, <strong>Counted</strong> (+ Save), Variance, Value and Status. Filter by text or with the chips All / Pending / Counted / Discrepancies. Each counted quantity is compared to the system stock at the moment of counting; if stock moves after a line was counted it is flagged <strong>Recount</strong>. {{ ui("Add found part") }} adds a part found on a shelf that is missing from the list.</p>
+{{ shot("parts-stocktake-page", "The counting screen.") }}
+{% endcall %}
+
+{% call step(3, "Complete & apply") %}
+<p>{{ ui("Complete & apply") }} applies the variances as deltas. In the confirmation, tick <strong>Set uncounted lines to zero</strong> for a full inventory — everything you did not count in the scope is treated as not found; for a cycle count leave it unticked and uncounted lines stay untouched. {{ ui("Cancel") }} discards the stocktake.</p>
+{{ shot("parts-stocktake-complete-confirm", "The Complete & apply confirmation.", "sm") }}
+{% endcall %}
+
+{% call step(4, "What changed") %}
+<p>A completed stocktake shows a was → became table of every adjusted line in three groups: <strong>Quantity changed</strong>, <strong>Went to zero</strong> (counted 0 or auto-zeroed) and <strong>Found during count</strong> (system had 0, counting found stock). Each row shows Was, Became, the ± difference and its value at average cost; header badges give the shortage / overage totals.</p>
+{% endcall %}
+
+{% call tip("Count from the phone") %}
+The mobile app's Parts → Counts screen opens the same stocktakes: walk the shelf with the phone and type quantities as you go.
+{% endcall %}

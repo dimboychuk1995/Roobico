@@ -96,6 +96,8 @@ def dashboard():
         "shops_active": master.shops.count_documents({"is_active": True}),
         "users_total": master.users.count_documents({}),
         "users_active": master.users.count_documents({"is_active": True}),
+        "contact_total": master.contact_requests.count_documents({}),
+        "contact_new": master.contact_requests.count_documents({"status": "new"}),
     }
     return render_template("admin_panel/dashboard.html", admin=admin, stats=stats)
 
@@ -644,3 +646,84 @@ def user_toggle_active(user_id: str):
         return redirect(url_for("admin_panel.tenant_detail", tenant_id=str(tenant_id)))
     return redirect(url_for("admin_panel.tenants_list"))
 
+
+
+# ---------------------------------------------------------------------------
+# Contact requests (форма «Contact us» со страницы логина)
+# ---------------------------------------------------------------------------
+
+from app.blueprints.contact import services as contact_services  # noqa: E402
+
+
+@admin_panel_bp.context_processor
+def _inject_contact_counter():
+    """Бейдж «новых заявок» в сайдбаре админки — на всех admin-страницах."""
+    if not get_current_admin():
+        return {}
+    try:
+        return {"contact_new_count": contact_services.count_new()}
+    except Exception:
+        from flask import current_app
+        current_app.logger.exception("contact_requests counter failed")
+        return {"contact_new_count": 0}
+
+
+@admin_panel_bp.get("/admin/contact-requests")
+@admin_required
+def contact_requests_list():
+    admin = get_current_admin()
+    status_filter = (request.args.get("status") or "open").strip().lower()
+    q = (request.args.get("q") or "").strip()
+
+    if status_filter == "open":
+        # new + in_progress — всё, что ещё требует действия.
+        items = [r for r in contact_services.list_requests(None, q) if r.get("status") != "closed"]
+    elif status_filter in contact_services.STATUSES:
+        items = contact_services.list_requests(status_filter, q)
+    else:
+        status_filter = "all"
+        items = contact_services.list_requests(None, q)
+
+    counts = {
+        s: get_master_db().contact_requests.count_documents({"status": s})
+        for s in contact_services.STATUSES
+    }
+    return render_template(
+        "admin_panel/contact_requests.html",
+        admin=admin,
+        items=items,
+        counts=counts,
+        q=q,
+        status_filter=status_filter,
+        status_labels=contact_services.STATUS_LABELS,
+        statuses=contact_services.STATUSES,
+    )
+
+
+@admin_panel_bp.post("/admin/contact-requests/<request_id>/status")
+@admin_required
+def contact_request_set_status(request_id: str):
+    admin = get_current_admin()
+    rid = _oid(request_id)
+    status = (request.form.get("status") or "").strip().lower()
+    note = request.form.get("admin_note")
+    if status not in contact_services.STATUSES:
+        flash("Invalid status.", "error")
+        return redirect(url_for("admin_panel.contact_requests_list"))
+
+    before = contact_services.set_status(rid, status, note, admin)
+    if before is None:
+        abort(404)
+
+    log_admin_action(
+        admin,
+        action="contact_request.set_status",
+        target_type="contact_request",
+        target_id=rid,
+        before={"status": before.get("status"), "admin_note": before.get("admin_note")},
+        after={"status": status, "admin_note": (note or "").strip()[:2000] if note is not None else before.get("admin_note")},
+        extra={"email": before.get("email"), "name": before.get("name")},
+    )
+    flash(f"Request from {before.get('name') or before.get('email')} marked as {contact_services.STATUS_LABELS[status]}.", "success")
+    back = request.form.get("back") or url_for("admin_panel.contact_requests_list")
+    return redirect(back)

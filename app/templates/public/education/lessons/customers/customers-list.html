@@ -1,0 +1,50 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Searching and filtering the Customers list.</li>
+  <li>What each column means — especially Current Balance.</li>
+  <li>Which permission unlocks which button.</li>
+</ul>
+{% endcall %}
+
+<p>Sidebar → {{ ui("Customers") }}. Companies and private clients share one list; rows are clickable.</p>
+{{ shot("customers-list", "The Customers list with search, status filter, balances and Add Customer.") }}
+
+<h2>Search and filter</h2>
+<p>
+  The search box searches every field: company, contact names, phone, email and address. Next to it is the status
+  filter — <strong>Active customers</strong> (default), <strong>Inactive customers</strong>, <strong>All customers</strong>.
+  The same filter exists on Vendors, Parts, Users and a customer's Units tab.
+</p>
+{{ shot("customers-search-filter", "Search box and the Active / Inactive / All filter.", "md") }}
+
+<h2>Columns</h2>
+<table>
+  <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>Company</td><td>Company name with the address underneath.</td></tr>
+    <tr><td>Name</td><td>The main contact; a grey <em>Inactive</em> badge marks deactivated customers.</td></tr>
+    <tr><td>Phone / Email</td><td>From the main contact — there are no separate customer-level phone or email fields.</td></tr>
+    <tr><td>Current Balance</td><td>What the customer owes right now: the sum over active work orders of max(0, total − paid). An overpaid work order never offsets another one. Shown only to users who can see prices.</td></tr>
+    <tr><td>Actions</td><td>{{ ui("Open") }} — the customer page.</td></tr>
+  </tbody>
+</table>
+
+<h2>Permissions behind the buttons</h2>
+<ul>
+  <li>{{ ui("Add Customer") }} needs {{ perm("customers.create", "Create customers") }}.</li>
+  <li>Saving the profile needs {{ perm("customers.edit", "Edit customers") }}; {{ ui("Portal Link") }} needs {{ perm("customers.manage_portal", "Manage customer portal links") }}.</li>
+  <li>Balances and all amounts need {{ perm("work_orders.view_costs", "View part costs inside WO") }} — a Senior mechanic sees the customer without money, and paid work orders appear to them as “completed”.</li>
+</ul>
+
+{% call tip("Customize the table") %}
+Hide the columns you never use with the ⚙ button above the table, drag the header dividers to resize, click a header to sort. The layout is saved to your account.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("customers/add-customer") }}</li>
+  <li>{{ lesson_link("customers/customer-page") }}</li>
+  <li>{{ lesson_link("reports/balances") }}</li>
+</ul>

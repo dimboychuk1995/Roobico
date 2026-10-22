@@ -58,36 +58,125 @@
       <div class="land-login-tagline">Shop management, minus the chaos</div>
     </div>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% for cat, msg in messages %}
-        <div class="land-alert land-alert-{{ 'success' if cat in ('success', 'info') else 'error' }}">{{ msg }}</div>
-      {% endfor %}
-    {% endwith %}
-
-    <form method="post" action="/login" autocomplete="on" id="loginForm">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <div class="land-field">
-        <div class="land-label">Email</div>
-        <input id="login_email" name="email" type="email" class="land-input" placeholder="you@company.com" required />
-      </div>
-      <div class="land-field">
-        <div class="land-label">Password</div>
-        <div class="land-input-wrap">
-          <input id="login_password" name="password" type="password" class="land-input" required />
-          <button type="button" class="land-eye" data-eye-for="login_password" aria-label="Show password" tabindex="-1">
-            <i class="bi bi-eye"></i>
-          </button>
-        </div>
-      </div>
-      <button type="submit" class="land-btn land-btn-dark land-btn-block">Log in</button>
-    </form>
-    <div class="land-form-foot">
-      <a href="/forgot-password">Forgot password?</a>
+    {# Вкладки левой панели: вход и обратная связь. #}
+    <div class="land-tabs" role="tablist" aria-label="Login or contact">
+      <button type="button" class="land-tab active" role="tab" id="tabLogin"
+              aria-selected="true" aria-controls="paneLogin" data-land-tab="login">
+        <i class="bi bi-box-arrow-in-right"></i> Log in
+      </button>
+      <button type="button" class="land-tab" role="tab" id="tabContact"
+              aria-selected="false" aria-controls="paneContact" data-land-tab="contact">
+        <i class="bi bi-chat-dots"></i> Contact us
+      </button>
     </div>
 
-    <div class="land-form-switch">
-      New to Roobico?<br>
-      <a href="#" data-open-register>Register</a> — free for 1 location + 1 user
+    <div class="land-pane active" id="paneLogin" role="tabpanel" aria-labelledby="tabLogin">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for cat, msg in messages %}
+          <div class="land-alert land-alert-{{ 'success' if cat in ('success', 'info') else 'error' }}">{{ msg }}</div>
+        {% endfor %}
+      {% endwith %}
+
+      <form method="post" action="/login" autocomplete="on" id="loginForm">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="land-field">
+          <div class="land-label">Email</div>
+          <input id="login_email" name="email" type="email" class="land-input" placeholder="you@company.com" required />
+        </div>
+        <div class="land-field">
+          <div class="land-label">Password</div>
+          <div class="land-input-wrap">
+            <input id="login_password" name="password" type="password" class="land-input" required />
+            <button type="button" class="land-eye" data-eye-for="login_password" aria-label="Show password" tabindex="-1">
+              <i class="bi bi-eye"></i>
+            </button>
+          </div>
+        </div>
+        <button type="submit" class="land-btn land-btn-dark land-btn-block">Log in</button>
+      </form>
+      <div class="land-form-foot">
+        <a href="/forgot-password">Forgot password?</a>
+      </div>
+
+      <div class="land-form-switch">
+        New to Roobico?<br>
+        <a href="#" data-open-register>Register</a> — free for 1 location + 1 user
+      </div>
+      <div class="land-form-switch land-form-switch-tight">
+        Questions? <a href="#contact" data-land-tab-link="contact">Contact us</a> or call
+        <a href="tel:{{ support_phone_tel }}">{{ support_phone_display }}</a>
+      </div>
+    </div>
+
+    <div class="land-pane" id="paneContact" role="tabpanel" aria-labelledby="tabContact" hidden>
+      <a class="land-phone" href="tel:{{ support_phone_tel }}">
+        <span class="land-phone-icon"><i class="bi bi-telephone-fill"></i></span>
+        <span>
+          <span class="land-phone-label">Call us</span>
+          <span class="land-phone-number">{{ support_phone_display }}</span>
+        </span>
+      </a>
+      <div class="land-contact-intro">
+        Questions about Roobico, a demo, pricing or help with your account —
+        leave a message and we'll reply by email.
+      </div>
+
+      <div id="contactErrors"></div>
+      <div class="land-alert land-alert-success" id="contactSuccess" hidden></div>
+
+      <form method="post" action="/contact" autocomplete="on" id="contactForm" novalidate>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        {# Анти-бот: honeypot + form_ts (как у регистрации). #}
+        <div style="position:absolute; left:-9999px; top:-9999px;" aria-hidden="true">
+          <label>Website <input type="text" name="website" tabindex="-1" autocomplete="off"></label>
+        </div>
+        <input type="hidden" name="form_ts" id="contactFormTs" value="">
+
+        <div class="land-grid-2">
+          <div class="land-field">
+            <div class="land-label">Your name</div>
+            <input id="contact_name" name="name" type="text" class="land-input" placeholder="John Smith" required maxlength="120" />
+          </div>
+          <div class="land-field">
+            <div class="land-label">Email</div>
+            <input id="contact_email" name="email" type="email" class="land-input" placeholder="you@company.com" required maxlength="200" />
+          </div>
+        </div>
+        <div class="land-grid-2">
+          <div class="land-field">
+            <div class="land-label">Phone <span class="land-optional">optional</span></div>
+            <input id="contact_phone" name="phone" type="tel" class="land-input" placeholder="+1 (555) 555-5555" maxlength="40" />
+          </div>
+          <div class="land-field">
+            <div class="land-label">Company <span class="land-optional">optional</span></div>
+            <input id="contact_company" name="company" type="text" class="land-input" placeholder="Your shop or fleet" maxlength="160" />
+          </div>
+        </div>
+        <div class="land-field">
+          <div class="land-label">Topic</div>
+          <select id="contact_topic" name="topic" class="land-input land-select">
+            <option value="general">General question</option>
+            <option value="demo">Book a demo</option>
+            <option value="sales">Pricing &amp; plans</option>
+            <option value="support">Help with my account</option>
+            <option value="billing">Billing</option>
+          </select>
+        </div>
+        <div class="land-field">
+          <div class="land-label">Message</div>
+          <textarea id="contact_message" name="message" class="land-input land-textarea" rows="4"
+                    placeholder="How can we help?" required minlength="10" maxlength="4000"></textarea>
+        </div>
+        <button type="submit" class="land-btn land-btn-primary land-btn-block" id="contactSubmit">
+          Send message
+        </button>
+      </form>
+      <div class="land-form-foot">
+        We usually reply within one business day.
+      </div>
+      <div class="land-form-switch">
+        <a href="#" data-land-tab-link="login">← Back to log in</a>
+      </div>
     </div>
   </aside>
 
@@ -104,6 +193,7 @@
       <span class="land-brand">ROOBICO<span>.</span></span>
       <div class="land-nav-spacer"></div>
       <a class="land-nav-link" href="#pricing" data-scroll-pricing>Pricing</a>
+      <a class="land-nav-link" href="#contact" data-land-tab-link="contact">Contact</a>
       <button type="button" class="land-btn land-btn-primary" data-open-register>Register</button>
     </header>
 
@@ -211,7 +301,9 @@
     </section>
 
     <footer class="land-foot">
-      Built for US repair shops &amp; fleets · © Roobico
+      Built for US repair shops &amp; fleets · © Roobico ·
+      <a href="tel:{{ support_phone_tel }}">{{ support_phone_display }}</a> ·
+      <a href="#contact" data-land-tab-link="contact">Contact us</a>
     </footer>
   </div>
 
@@ -311,8 +403,87 @@
   var overlay = document.getElementById('landOverlay');
 
   // Анти-бот: метка времени загрузки страницы (сервер требует минимум
-  // несколько секунд между загрузкой и сабмитом регистрации).
+  // несколько секунд между загрузкой и сабмитом регистрации / контакта).
   document.getElementById('registerFormTs').value = Math.floor(Date.now() / 1000);
+  document.getElementById('contactFormTs').value = Math.floor(Date.now() / 1000);
+
+  // ── Вкладки левой панели: Log in / Contact us ─────────────────────
+  var landTabs = document.querySelectorAll('[data-land-tab]');
+  var landPanes = { login: document.getElementById('paneLogin'), contact: document.getElementById('paneContact') };
+  function showLandTab(name) {
+    if (!landPanes[name]) name = 'login';
+    landTabs.forEach(function (btn) {
+      var on = btn.dataset.landTab === name;
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    Object.keys(landPanes).forEach(function (key) {
+      var on = key === name;
+      landPanes[key].classList.toggle('active', on);
+      landPanes[key].hidden = !on;
+    });
+    if (name === 'contact') {
+      // Левая панель sticky — на узких экранах докручиваем к ней.
+      var aside = document.querySelector('.land-login');
+      if (aside && window.innerWidth < 992) aside.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      setTimeout(function () { var el = document.getElementById('contact_name'); if (el && window.innerWidth >= 992) el.focus(); }, 150);
+    }
+  }
+  landTabs.forEach(function (btn) {
+    btn.addEventListener('click', function () { showLandTab(btn.dataset.landTab); });
+  });
+  document.querySelectorAll('[data-land-tab-link]').forEach(function (el) {
+    el.addEventListener('click', function (e) { e.preventDefault(); showLandTab(el.dataset.landTabLink); });
+  });
+  // Прямая ссылка на форму: roobico.com/#contact или ?contact=1
+  if (window.location.hash === '#contact' || /[?&]contact=1\b/.test(window.location.search)) {
+    showLandTab('contact');
+  }
+
+  // ── Contact us: сабмит fetch'ем, ошибки и успех прямо в панели ─────
+  var contactForm = document.getElementById('contactForm');
+  var contactErrors = document.getElementById('contactErrors');
+  var contactSuccess = document.getElementById('contactSuccess');
+  var contactSubmit = document.getElementById('contactSubmit');
+  function showContactErrors(list) {
+    contactErrors.innerHTML = list.map(function (err) {
+      var div = document.createElement('div');
+      div.className = 'land-alert land-alert-error';
+      div.textContent = err;
+      return div.outerHTML;
+    }).join('');
+  }
+  contactForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var errors = [];
+    if (document.getElementById('contact_name').value.trim().length < 2) errors.push('Please enter your name.');
+    var emailVal = document.getElementById('contact_email').value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(emailVal)) errors.push('Please enter a valid email so we can reply.');
+    if (document.getElementById('contact_message').value.trim().length < 10) errors.push('Please tell us a bit more — at least 10 characters.');
+    if (errors.length) { showContactErrors(errors); return; }
+
+    contactErrors.innerHTML = '';
+    contactSubmit.disabled = true;
+    contactSubmit.textContent = 'Sending…';
+    fetch(contactForm.action, { method: 'POST', body: new FormData(contactForm) })
+      .then(function (resp) { return resp.json().then(function (data) { return { ok: resp.ok, data: data }; }); })
+      .then(function (result) {
+        if (result.ok && result.data.ok) {
+          contactForm.hidden = true;
+          contactSuccess.textContent = result.data.message || 'Thanks! We received your message.';
+          contactSuccess.hidden = false;
+          return;
+        }
+        showContactErrors((result.data && result.data.errors) || ['Something went wrong. Please try again or call us.']);
+        contactSubmit.disabled = false;
+        contactSubmit.textContent = 'Send message';
+      })
+      .catch(function () {
+        showContactErrors(['Network error. Please try again or call us.']);
+        contactSubmit.disabled = false;
+        contactSubmit.textContent = 'Send message';
+      });
+  });
 
   function openRegister() {
     overlay.classList.add('open');

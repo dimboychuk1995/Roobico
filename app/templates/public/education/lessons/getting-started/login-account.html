@@ -1,0 +1,72 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Logging in at roobico.com and what the login page offers.</li>
+  <li>Resetting a forgotten password yourself.</li>
+  <li>The <em>Contact us</em> tab and the support phone number.</li>
+  <li>Email confirmation after signup and logging out.</li>
+</ul>
+{% endcall %}
+
+<h2>The login page</h2>
+<p>
+  Open <strong>roobico.com</strong>. The left panel is the login form; the right side describes the product and
+  shows pricing. The same email and password work in the mobile app.
+</p>
+{{ shot("login-page", "The login page: the Log in panel on the left, the product tour and pricing on the right.") }}
+
+{% call step(1, "Enter your email and password") %}
+<p>Type the email your account was created with and your password. The eye icon shows the password while you type. Click {{ ui("Log in") }}.</p>
+{{ shot("login-panel", "The Log in panel with the eye icon, Forgot password and the Register link.", "md") }}
+{% endcall %}
+{% call step(2, "Where you land") %}
+<p>Owners and managers land on the Dashboard; a user whose role has no dashboard goes to the first section they are allowed to see. Mechanics go straight to the mechanic work order list (see {{ lesson_link("mechanic/mechanic-mode") }}).</p>
+{% endcall %}
+
+{% call note("Too many attempts") %}
+After ten failed attempts from one address the login is paused for a few minutes. Wait, then try again, or use <em>Forgot password</em>.
+{% endcall %}
+
+<h2>Forgot password</h2>
+<p>
+  Click {{ ui("Forgot password?") }} under the login form, enter your email and press the button. If the email is
+  registered, a reset link arrives within a minute; it is valid for one hour. Open it, type the new password twice and log in.
+</p>
+{{ shot("login-forgot-password", "Forgot password: enter your email to receive a reset link.", "md") }}
+{% call warn("Nobody can set your password for you") %}
+Passwords in Roobico are strictly personal. Neither the owner nor a manager can see or change another user's password — the only path is the reset link sent to the account email. Invited users set their first password through the invitation email.
+{% endcall %}
+
+<h2>Contact us</h2>
+<p>
+  The login page has a second tab, {{ ui("Contact us") }}. It shows the support phone number
+  <strong>{{ support_phone_display }}</strong> (tap to call on a phone) and a short form: your name, email, optional phone
+  and company, a topic (general question, demo, pricing, help with my account, billing) and your message. We reply by email,
+  usually within one business day. The same tab opens from the <em>Contact</em> link in the top navigation and from the footer.
+</p>
+{{ shot("login-contact-tab", "The Contact us tab: phone number card and the message form.", "md") }}
+
+<h2>Registering a new shop</h2>
+<p>
+  {{ ui("Register") }} opens the signup form: company name, phone and address, then the owner's name, email and password.
+  The first location and the first full user are free forever; you get a 30-day trial with no limits on top of that.
+</p>
+{{ shot("login-register-modal", "Create your account: company details and the owner account.", "md") }}
+{{ shot("login-pricing", "Pricing: free tier, per extra location, per extra user and per mechanic; annual billing saves 20%.", "md") }}
+
+<h2>Confirming your email</h2>
+<p>
+  After signup the owner receives a confirmation email. Until the link is clicked, a yellow bar at the top of the app reminds you,
+  with a {{ ui("Resend email") }} button (the link lives 7 days; resending is limited to a few times per hour). Confirmation does
+  not block any feature — it only verifies we can reach you. Team members confirm automatically when they accept their invitation.
+</p>
+
+<h2>Logging out</h2>
+<p>The red {{ ui("Logout") }} button sits in the top-right corner of every page. On a shared shop computer, log out when you leave.</p>
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("settings/users") }} — inviting your team</li>
+  <li>{{ lesson_link("settings/billing") }}</li>
+</ul>

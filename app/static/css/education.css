@@ -1,0 +1,576 @@
+/* ─────────────────────────────────────────────────────────────────────
+   Education Center (/education). Строится на токенах public.css
+   (--surface, --border, --text, --muted, --primary), поэтому тёмная тема
+   подхватывается автоматически; точечные правки — в theme_dark.css
+   (секция "Education Center").
+   ───────────────────────────────────────────────────────────────────── */
+
+:root {
+  --edu-accent: var(--primary);
+  --edu-accent-soft: #edf7f0;
+  --edu-ring-track: #e2e8f0;
+  --edu-tip-bg: #f0fdf4;
+  --edu-tip-border: #bbf7d0;
+  --edu-tip-icon: #16a34a;
+  --edu-warn-bg: #fff7ed;
+  --edu-warn-border: #fed7aa;
+  --edu-warn-icon: #ea580c;
+  --edu-note-bg: #eff6ff;
+  --edu-note-border: #bfdbfe;
+  --edu-note-icon: #2563eb;
+  --edu-kbd-bg: #f1f5f9;
+  --edu-kbd-border: #cbd5e1;
+  --edu-shot-bg: #f8fafc;
+}
+
+/* ── Крошки ───────────────────────────────────────────────────────── */
+.edu-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0.25rem 0 1rem;
+  flex-wrap: wrap;
+}
+.edu-crumbs a { color: var(--muted); text-decoration: none; }
+.edu-crumbs a:hover { color: var(--primary); }
+
+/* ── Hero ─────────────────────────────────────────────────────────── */
+.edu-hero {
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+  padding: 1.75rem 2rem;
+  margin-bottom: 1.25rem;
+}
+.edu-hero-main { flex: 1 1 auto; min-width: 0; }
+.edu-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin-bottom: 0.4rem;
+}
+.edu-hero-title {
+  font-size: 1.6rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  margin: 0 0 0.5rem;
+}
+.edu-hero-text {
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  max-width: 640px;
+  margin: 0 0 1rem;
+}
+.edu-hero-actions { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+.edu-hero-progress {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 0 0 auto;
+  padding-left: 1.5rem;
+  border-left: 1px solid var(--border);
+}
+.edu-ring {
+  --pct: 0%;
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  background: conic-gradient(var(--primary) var(--pct), var(--edu-ring-track) 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.edu-ring-inner {
+  width: 84px;
+  height: 84px;
+  border-radius: 50%;
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.1;
+}
+.edu-ring-inner strong { font-size: 1.35rem; color: var(--text); }
+.edu-ring-inner span { font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.edu-ring-meta { font-size: 0.95rem; color: var(--text); }
+.edu-reset { font-size: 0.78rem; color: var(--muted) !important; text-decoration: none; }
+.edu-reset:hover { color: var(--danger) !important; }
+
+/* ── Поиск ────────────────────────────────────────────────────────── */
+.edu-search {
+  position: relative;
+  margin-bottom: 1rem;
+}
+.edu-search .bi {
+  position: absolute;
+  left: 0.9rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+.edu-search .form-control {
+  padding-left: 2.4rem;
+  height: 44px;
+  border-radius: 12px;
+}
+.edu-search-results {
+  margin: -0.4rem 0 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}
+.edu-search-item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.65rem 1rem;
+  text-decoration: none;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+.edu-search-item:last-child { border-bottom: 0; }
+.edu-search-item:hover { background: var(--surface-soft); }
+.edu-search-item-module {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  flex: 0 0 150px;
+}
+.edu-search-item-title { font-weight: 600; }
+.edu-search-item-summary { font-size: 0.82rem; color: var(--muted); }
+.edu-search-item mark { background: rgba(26, 122, 66, 0.18); color: inherit; padding: 0 1px; border-radius: 2px; }
+.edu-search-empty { padding: 0.9rem 1rem; color: var(--muted); font-size: 0.9rem; }
+
+/* ── Сетка модулей ────────────────────────────────────────────────── */
+.edu-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.edu-module {
+  display: flex;
+  gap: 1rem;
+  padding: 1.15rem 1.25rem;
+  text-decoration: none;
+  color: var(--text);
+  transition: none;
+}
+.edu-module:hover {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-card);
+  color: var(--text);
+}
+.edu-module.is-done { border-color: rgba(26, 122, 66, 0.45); }
+.edu-module-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  background: var(--edu-accent-soft);
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  flex: 0 0 auto;
+}
+.edu-module-icon-lg { width: 64px; height: 64px; font-size: 1.8rem; border-radius: 16px; }
+.edu-module-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.edu-module-head { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.edu-module-title { font-size: 1.02rem; font-weight: 700; margin: 0; }
+.edu-done-badge { color: var(--success); font-size: 1.1rem; }
+.edu-module-summary { font-size: 0.86rem; color: var(--muted); line-height: 1.5; margin: 0.3rem 0 0.6rem; flex: 1 1 auto; }
+.edu-module-meta {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  font-size: 0.78rem;
+  color: var(--muted);
+  margin-bottom: 0.5rem;
+}
+.edu-module-meta .bi { margin-right: 0.25rem; }
+.edu-bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--edu-ring-track);
+  overflow: hidden;
+}
+.edu-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--primary), #3da660);
+}
+.edu-bar-lg { height: 9px; }
+.edu-module-foot { font-size: 0.75rem; color: var(--muted); margin-top: 0.4rem; }
+
+/* ── Пути обучения ────────────────────────────────────────────────── */
+.edu-paths {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+.edu-path { padding: 1.1rem 1.25rem; }
+.edu-path-head { display: flex; gap: 0.75rem; align-items: center; margin-bottom: 0.75rem; }
+.edu-path-list { margin: 0; padding-left: 1.25rem; font-size: 0.9rem; }
+.edu-path-list li { padding: 0.25rem 0; display: flex; justify-content: space-between; gap: 0.5rem; }
+.edu-path-list li a { color: var(--text); text-decoration: none; }
+.edu-path-list li a:hover { color: var(--primary); }
+.edu-path-list li.is-done a { color: var(--muted); text-decoration: line-through; }
+.edu-path-list li.is-done::marker { color: var(--success); }
+.edu-path-minutes { font-size: 0.75rem; color: var(--muted); white-space: nowrap; }
+
+.edu-support {
+  display: flex;
+  gap: 0.85rem;
+  align-items: center;
+  padding: 0.9rem 1.25rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.edu-support > .bi { font-size: 1.4rem; color: var(--primary); }
+.edu-support a { color: var(--primary); }
+
+/* ── Страница модуля ──────────────────────────────────────────────── */
+.edu-module-hero {
+  display: flex;
+  gap: 1.25rem;
+  align-items: center;
+  padding: 1.5rem 1.75rem;
+  margin-bottom: 1.25rem;
+}
+.edu-module-hero-body { flex: 1 1 auto; min-width: 0; }
+.edu-module-hero-body .edu-hero-text { margin-bottom: 0.6rem; }
+.edu-module-hero-actions { flex: 0 0 auto; }
+
+.edu-lesson-list { list-style: none; margin: 0 0 1.25rem; padding: 0; display: flex; flex-direction: column; gap: 0.6rem; }
+.edu-lesson-row-link {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1.1rem;
+  text-decoration: none;
+  color: var(--text);
+}
+.edu-lesson-row:hover { border-color: var(--primary); }
+.edu-lesson-row-num {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--muted);
+  flex: 0 0 auto;
+}
+.edu-lesson-row.is-done .edu-lesson-row-num {
+  background: var(--success);
+  border-color: var(--success);
+  color: #fff;
+}
+.edu-lesson-row-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
+.edu-lesson-row-title { font-weight: 600; }
+.edu-lesson-row.is-done .edu-lesson-row-title { color: var(--muted); }
+.edu-lesson-row-summary { font-size: 0.83rem; color: var(--muted); }
+.edu-lesson-row-meta { display: flex; align-items: center; gap: 0.9rem; font-size: 0.78rem; color: var(--muted); white-space: nowrap; }
+.edu-chevron { color: var(--border); font-size: 1rem; }
+.edu-module-nav { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: 1rem; }
+
+/* ── Страница урока ───────────────────────────────────────────────── */
+.edu-lesson-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 290px;
+  gap: 1.25rem;
+  align-items: start;
+}
+.edu-lesson { padding: 0; overflow: hidden; }
+.edu-lesson-head {
+  padding: 1.5rem 2rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+.edu-lesson-kicker {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--primary);
+  margin-bottom: 0.4rem;
+}
+.edu-dot { color: var(--border); margin: 0 0.3rem; }
+.edu-lesson-title { font-size: 1.55rem; font-weight: 800; margin: 0 0 0.35rem; color: var(--text); letter-spacing: -0.01em; }
+.edu-lesson-summary { color: var(--muted); margin: 0 0 0.75rem; line-height: 1.55; }
+.edu-lesson-meta { display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.8rem; color: var(--muted); align-items: center; }
+.edu-lesson-meta .bi { margin-right: 0.25rem; }
+.edu-status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.15rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-weight: 600;
+}
+.edu-status-chip.is-done { color: var(--success); border-color: rgba(26, 122, 66, 0.4); background: var(--edu-tip-bg); }
+
+.edu-lesson-body {
+  padding: 1.5rem 2rem 0.5rem;
+  font-size: 0.97rem;
+  line-height: 1.68;
+  color: var(--text);
+}
+.edu-lesson-body h2 {
+  font-size: 1.2rem;
+  font-weight: 800;
+  margin: 1.8rem 0 0.75rem;
+  padding-top: 0.25rem;
+  color: var(--text);
+}
+.edu-lesson-body h2:first-child { margin-top: 0; }
+.edu-lesson-body p { margin: 0 0 0.9rem; }
+.edu-lesson-body ul, .edu-lesson-body ol { margin: 0 0 1rem; padding-left: 1.4rem; }
+.edu-lesson-body li { margin-bottom: 0.3rem; }
+.edu-lesson-body table { width: 100%; font-size: 0.9rem; margin-bottom: 1rem; }
+.edu-lesson-body table th, .edu-lesson-body table td { padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+.edu-lesson-body table th { font-weight: 700; color: var(--muted); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; }
+
+.edu-summary {
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--primary);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  padding: 0.85rem 1.1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.92rem;
+}
+.edu-summary-title { font-weight: 700; margin-bottom: 0.35rem; color: var(--text); }
+.edu-summary ul { margin: 0; padding-left: 1.2rem; }
+.edu-summary li { margin-bottom: 0.15rem; }
+
+.edu-step {
+  display: flex;
+  gap: 1rem;
+  margin: 0 0 1.4rem;
+}
+.edu-step-num {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  font-weight: 800;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  margin-top: 0.1rem;
+}
+.edu-step-body { flex: 1 1 auto; min-width: 0; }
+.edu-step-title { font-size: 1.05rem; font-weight: 700; margin: 0.2rem 0 0.5rem; color: var(--text); }
+
+.edu-callout {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  margin: 0 0 1.1rem;
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+.edu-callout > .bi { font-size: 1.1rem; margin-top: 0.15rem; flex: 0 0 auto; }
+.edu-callout-tip { background: var(--edu-tip-bg); border-color: var(--edu-tip-border); }
+.edu-callout-tip > .bi { color: var(--edu-tip-icon); }
+.edu-callout-warn { background: var(--edu-warn-bg); border-color: var(--edu-warn-border); }
+.edu-callout-warn > .bi { color: var(--edu-warn-icon); }
+.edu-callout-note { background: var(--edu-note-bg); border-color: var(--edu-note-border); }
+.edu-callout-note > .bi { color: var(--edu-note-icon); }
+
+.edu-ui {
+  display: inline-block;
+  font-family: inherit;
+  font-size: 0.85em;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--edu-kbd-bg);
+  border: 1px solid var(--edu-kbd-border);
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  padding: 0.05rem 0.45rem;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+.edu-perm {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+  background: var(--surface-soft);
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  padding: 0.05rem 0.55rem;
+  vertical-align: middle;
+}
+.edu-lesson-link { font-weight: 600; color: var(--primary); text-decoration: none; }
+.edu-lesson-link:hover { text-decoration: underline; }
+
+/* Скриншоты */
+.edu-shot {
+  margin: 0.5rem 0 1.4rem;
+}
+.edu-shot-link {
+  display: block;
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--edu-shot-bg);
+  box-shadow: var(--shadow-soft);
+}
+.edu-shot-link:hover { border-color: var(--primary); }
+.edu-shot-link img { display: block; width: 100%; height: auto; }
+.edu-shot-zoom {
+  position: absolute;
+  right: 0.5rem;
+  top: 0.5rem;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.65);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  opacity: 0;
+}
+.edu-shot-link:hover .edu-shot-zoom { opacity: 1; }
+.edu-shot figcaption {
+  font-size: 0.82rem;
+  color: var(--muted);
+  margin-top: 0.4rem;
+  line-height: 1.45;
+}
+.edu-shot-md { max-width: 72%; }
+.edu-shot-sm { max-width: 50%; }
+.edu-shot-mobile { max-width: 300px; }
+.edu-shot-mobile .edu-shot-link { border-radius: 22px; }
+
+/* Футер урока */
+.edu-lesson-foot {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.25rem 2rem 1.5rem;
+  border-top: 1px solid var(--border);
+  background: var(--surface-soft);
+}
+.edu-complete-btn { align-self: flex-start; }
+.edu-lesson-nav { display: flex; justify-content: space-between; gap: 0.75rem; flex-wrap: wrap; }
+.edu-lesson-nav .btn { max-width: 100%; white-space: normal; text-align: left; }
+
+/* Оглавление модуля справа */
+.edu-toc { position: sticky; top: calc(var(--topbar-height, 56px) + 1rem); }
+.edu-toc-card { padding: 1rem 1.1rem; }
+.edu-toc-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+.edu-toc-title { font-weight: 700; font-size: 0.92rem; }
+.edu-toc-title .bi { margin-right: 0.3rem; color: var(--primary); }
+.edu-toc-progress { font-size: 0.78rem; color: var(--muted); }
+.edu-toc-list { list-style: none; margin: 0.75rem 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.edu-toc-list a {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.38rem 0.5rem;
+  border-radius: 8px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.86rem;
+}
+.edu-toc-list a:hover { background: var(--surface-soft); }
+.edu-toc-list li.is-current a { background: var(--edu-accent-soft); color: var(--primary); font-weight: 600; }
+.edu-toc-mark {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  color: transparent;
+  flex: 0 0 auto;
+}
+.edu-toc-list li.is-done .edu-toc-mark { background: var(--success); border-color: var(--success); color: #fff; }
+.edu-toc-overall { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid var(--border); }
+.edu-toc-overall .edu-bar { margin: 0.35rem 0; }
+
+/* Лайтбокс */
+.edu-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1060;
+  background: rgba(4, 9, 20, 0.86);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+.edu-lightbox[hidden] { display: none; }
+.edu-lightbox figure { margin: 0; max-width: 100%; max-height: 100%; display: flex; flex-direction: column; align-items: center; }
+.edu-lightbox img { max-width: 92vw; max-height: 84vh; border-radius: 10px; box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6); background: #fff; }
+.edu-lightbox figcaption { color: rgba(255, 255, 255, 0.8); margin-top: 0.75rem; font-size: 0.9rem; text-align: center; max-width: 900px; }
+.edu-lightbox-close {
+  position: absolute;
+  top: 1rem;
+  right: 1.25rem;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.edu-lightbox-close:hover { background: rgba(255, 255, 255, 0.24); }
+
+/* ── Responsive ───────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .edu-lesson-layout { grid-template-columns: 1fr; }
+  .edu-toc { position: static; order: -1; }
+  .edu-toc-list { display: none; }
+}
+@media (max-width: 820px) {
+  .edu-hero { flex-direction: column; align-items: stretch; padding: 1.25rem; }
+  .edu-hero-progress { border-left: 0; padding-left: 0; padding-top: 1rem; border-top: 1px solid var(--border); }
+  .edu-module-hero { flex-direction: column; align-items: flex-start; }
+  .edu-lesson-head, .edu-lesson-body, .edu-lesson-foot { padding-left: 1.1rem; padding-right: 1.1rem; }
+  .edu-shot-md, .edu-shot-sm { max-width: 100%; }
+  .edu-lesson-row-meta .edu-shots-count { display: none; }
+  .edu-search-item-module { display: none; }
+}

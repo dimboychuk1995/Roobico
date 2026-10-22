@@ -1,0 +1,29 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Customer Balances — who owes you.</li>
+  <li>Vendor Balances — whom you owe.</li>
+  <li>Why neither has a date filter.</li>
+</ul>
+{% endcall %}
+
+<h2>Customer Balances</h2>
+<p>
+  Per customer: Billed / Paid / Outstanding. Outstanding is floored at 0 per work order — an overpaid work order never offsets another.
+  The same number appears on the Customers list (Current Balance column), on the customer page and as the dashboard's Outstanding
+  Balance widget.
+</p>
+{{ shot("report-customer-balances", "Customer Balances.") }}
+
+<h2>Vendor Balances</h2>
+<p>Per vendor: Orders, Total, Paid, Outstanding — for confirmed parts orders. Credits from returns never push a balance negative.</p>
+{{ shot("report-vendor-balances", "Vendor Balances.") }}
+
+{% call note("Always all-time") %}
+Both reports ignore the date filter by design — a balance is a snapshot of what is owed now, not a period figure.
+{% endcall %}
+
+{% call tip("Collecting") %}
+A customer who pays several invoices with one check → Work Orders → Bulk Payment ({{ lesson_link("work-orders/bulk-payment") }}). To chase a balance, email the open work orders from their page ({{ lesson_link("work-orders/pdf-email") }}).
+{% endcall %}

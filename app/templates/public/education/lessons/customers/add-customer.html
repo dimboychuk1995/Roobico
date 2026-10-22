@@ -1,0 +1,43 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>One record type for companies and private clients.</li>
+  <li>Contacts and the main contact.</li>
+  <li>Address, the Taxable switch and the pricing settings you can set at creation.</li>
+</ul>
+{% endcall %}
+
+{% call step(1, "Click Add Customer") %}
+<p>Customers → {{ ui("Add Customer") }} (also reachable from the dashboard quick action <em>New Customer</em>). The dialog opens.</p>
+{{ shot("customer-add-modal", "The Add Customer dialog.", "md") }}
+{% endcall %}
+
+{% call step(2, "Company name — or a named contact") %}
+<p>The rule is simple: <strong>you must enter either a Company Name or at least one contact with a name.</strong> A fleet gets a company name; a walk-in private client can be just a contact.</p>
+{% endcall %}
+
+{% call step(3, "Contacts") %}
+<p>Add any number of contacts, each with First / Last Name, Phone and Email. Exactly one is the <strong>Main contact</strong> — it is shown in tables and preselected as the email recipient for invoices, receipts and approval requests. You can edit contacts later from the Details tab or straight from any email dialog.</p>
+{% endcall %}
+
+{% call step(4, "Address, Taxable, pricing") %}
+<ul>
+  <li><strong>Address</strong> is required; start typing and pick a suggestion.</li>
+  <li><strong>Taxable</strong> — switch it off for tax-exempt customers. It presets the Taxable toggle on their work orders (you can still override per work order). Labor is never taxed for anyone.</li>
+  <li><strong>Pricing Scale</strong> and <strong>Override part selling price</strong> — special parts pricing for this customer; explained in {{ lesson_link("customers/customer-pricing") }}. Leave the defaults if the customer pays list prices.</li>
+</ul>
+{{ shot("customer-add-modal-filled", "A company filled in with its address and main contact.", "md") }}
+{% endcall %}
+
+{% call step(5, "Save") %}
+<p>The new customer opens on its page. Next: add units (the vehicles) — see {{ lesson_link("customers/add-unit") }}.</p>
+{% endcall %}
+
+{% call warn("Duplicates are blocked") %}
+A customer name that already exists in the shop (case-insensitive) is refused. If the message says the existing record is deactivated, open the list with <em>Inactive customers</em> and activate it instead — its history comes back with it.
+{% endcall %}
+
+{% call note("No notes field") %}
+There is no free-text notes field on a customer. Use attachments on the customer's Details tab for documents and notes.
+{% endcall %}

@@ -1,0 +1,42 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The storage location tree and a part's primary location.</li>
+  <li>Stock by location: Set qty and transfers.</li>
+  <li>What you cannot delete and why.</li>
+</ul>
+{% endcall %}
+
+<h2>The location tree</h2>
+<p>
+  Built on Settings → Parts &amp; Pricing, card <strong>Parts Locations</strong>: up to <strong>4 levels</strong>, e.g. Warehouse › Rack ›
+  Shelf › Bin. Each part has one primary location (set in the part form), but stock can sit in several locations at once.
+</p>
+{{ shot("settings-parts-locations", "The Parts Locations card in settings.", "md") }}
+
+<h2>Stock by location</h2>
+{% call step(1, "Open Locations on a part") %}
+<p>Parts list → row → {{ ui("Locations") }} (tracked parts only). The dialog lists per-location quantities.</p>
+{{ shot("parts-locations-modal", "Stock by location: quantities, Set qty and the transfer section.", "md") }}
+{% endcall %}
+{% call step(2, "Set qty — a manual correction") %}
+<p>Type the real quantity for a location and {{ ui("Set") }}. This changes the total and needs {{ perm("parts.edit_stock_qty", "Edit on-hand quantity directly") }}; without it the Set control is hidden.</p>
+{% endcall %}
+{% call step(3, "Transfer between locations") %}
+<p>From / To / Qty → {{ ui("Transfer") }}. Transfers never change the total and need only {{ perm("parts.adjust_stock", "Adjust part stock") }}.</p>
+{% endcall %}
+
+<h2>Receiving into a location</h2>
+<p>
+  When you receive a parts order you choose where each line goes (“Put received parts into:”) — default is the part's primary location,
+  otherwise Unassigned. A location chosen there becomes the part's default if it had none.
+</p>
+
+{% call note("Deleting a location") %}
+A location cannot be deleted while it has sub-locations, is the primary location of a part, or still holds stock — transfer the stock out first.
+{% endcall %}
+
+{% call tip("Stocktake by location") %}
+Count one rack or one shelf at a time: a stocktake can be scoped to a location (sub-locations included). See {{ lesson_link("parts/stocktakes") }}.
+{% endcall %}

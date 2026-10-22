@@ -57,6 +57,131 @@ body.public-shell {
   margin-top: 0.2rem;
 }
 
+/* ── Вкладки левой панели: Log in / Contact us ──────────────────────── */
+.land-tabs {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  background: #f1f5f9;
+  border-radius: 12px;
+  margin-bottom: 1.3rem;
+}
+.land-tab {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  font-family: inherit;
+  font-size: 0.86rem;
+  font-weight: 700;
+  padding: 0.55rem 0.6rem;
+  border-radius: 9px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+}
+.land-tab:hover {
+  color: #0f172a;
+}
+.land-tab.active {
+  background: #fff;
+  color: #0f172a;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+.land-tab.active .bi {
+  color: #16a34a;
+}
+.land-pane {
+  display: none;
+}
+.land-pane.active {
+  display: block;
+}
+.land-login {
+  overflow-y: auto;
+}
+.land-form-switch-tight {
+  margin-top: 0.6rem;
+  padding-top: 0.6rem;
+}
+
+/* Телефон поддержки — крупная карточка над формой */
+.land-phone {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.8rem 1rem;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+  border: 1px solid #bbf7d0;
+  text-decoration: none;
+  color: #0f172a;
+  margin-bottom: 0.9rem;
+}
+.land-phone:hover {
+  border-color: #86efac;
+}
+.land-phone-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: #16a34a;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.05rem;
+  flex-shrink: 0;
+}
+.land-phone-label {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #15803d;
+}
+.land-phone-number {
+  display: block;
+  font-size: 1.25rem;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: #0f172a;
+}
+.land-contact-intro {
+  font-size: 0.84rem;
+  color: #64748b;
+  line-height: 1.5;
+  margin-bottom: 0.9rem;
+}
+.land-optional {
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #94a3b8;
+}
+.land-textarea {
+  resize: vertical;
+  min-height: 96px;
+  line-height: 1.45;
+}
+.land-select {
+  appearance: none;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+  background-repeat: no-repeat;
+  background-position: right 0.8rem center;
+  padding-right: 2.2rem;
+}
+.land-foot a {
+  color: rgba(255, 255, 255, 0.55);
+  text-decoration: none;
+}
+.land-foot a:hover {
+  color: #fff;
+}
+
 .land {
   flex: 1;
   min-height: 100vh;

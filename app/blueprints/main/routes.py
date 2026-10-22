@@ -76,6 +76,8 @@ NAV_ITEMS = [
     {"key": "reports", "label": "Reports", "endpoint": "reports.reports_index"},
     {"key": "perks", "label": "Perks", "endpoint": "perks.perks_index", "perm": "work_orders.view"},
     {"key": "import_export", "label": "Import / Export", "endpoint": "import_export.import_export_index"},
+    # Учебный центр — для всех ролей, права не нужны (как у AI-помощника).
+    {"key": "education", "label": "Education Center", "endpoint": "education.index"},
 ]
 
 

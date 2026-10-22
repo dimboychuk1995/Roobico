@@ -1,0 +1,110 @@
+{% extends "layouts/app_base.html" %}
+{% block page_title %}{{ lesson.title }} — {{ module.title }} — Education Center{% endblock %}
+
+{% block extra_styles %}
+  {{ super() }}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/education.css') }}">
+{% endblock %}
+
+{% block app_content %}
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+{% set mp = progress.modules[module.id] %}
+
+<nav class="edu-crumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('education.index') }}"><i class="bi bi-mortarboard"></i> Education Center</a>
+  <span>/</span>
+  <a href="{{ module.url }}">{{ module.title }}</a>
+  <span>/</span>
+  <span>{{ lesson.title }}</span>
+</nav>
+
+<div class="edu-lesson-layout" data-lesson-key="{{ lesson.key }}" data-completed="{{ '1' if is_completed else '0' }}">
+  <article class="edu-lesson card">
+    <header class="edu-lesson-head">
+      <div class="edu-lesson-kicker">
+        <i class="bi {{ module.icon }}"></i> {{ module.title }}
+        <span class="edu-dot">·</span> Lesson {{ module.lessons.index(lesson) + 1 }} of {{ module.lessons|length }}
+      </div>
+      <h1 class="edu-lesson-title">{{ lesson.title }}</h1>
+      <p class="edu-lesson-summary">{{ lesson.summary }}</p>
+      <div class="edu-lesson-meta">
+        <span><i class="bi bi-clock"></i> ~{{ lesson.minutes }} min</span>
+        <span><i class="bi bi-image"></i> {{ lesson.shot_ids()|length }} screenshots</span>
+        <span class="edu-status-chip {% if is_completed %}is-done{% endif %}" data-edu-status>
+          {% if is_completed %}<i class="bi bi-check-circle-fill"></i> Completed{% else %}<i class="bi bi-circle"></i> Not completed yet{% endif %}
+        </span>
+      </div>
+    </header>
+
+    <div class="edu-lesson-body">
+      {% include lesson.template %}
+    </div>
+
+    <footer class="edu-lesson-foot">
+      <button type="button" class="btn {% if is_completed %}btn-outline-success{% else %}btn-success{% endif %} btn-lg edu-complete-btn" data-edu-complete>
+        {% if is_completed %}
+          <i class="bi bi-check-circle-fill"></i> Completed — click to undo
+        {% else %}
+          <i class="bi bi-check2-circle"></i> Mark lesson as complete
+        {% endif %}
+      </button>
+      <div class="edu-lesson-nav">
+        {% if prev_lesson %}
+          <a class="btn btn-outline-secondary" href="{{ prev_lesson.url }}" title="{{ prev_lesson.title }}">
+            <i class="bi bi-arrow-left"></i> Previous
+          </a>
+        {% endif %}
+        {% if next_lesson %}
+          <a class="btn btn-outline-primary" href="{{ next_lesson.url }}" title="{{ next_lesson.title }}" data-edu-next>
+            Next: {{ next_lesson.title }} <i class="bi bi-arrow-right"></i>
+          </a>
+        {% else %}
+          <a class="btn btn-outline-primary" href="{{ url_for('education.index') }}">Back to Education Center</a>
+        {% endif %}
+      </div>
+    </footer>
+  </article>
+
+  <aside class="edu-toc">
+    <div class="card edu-toc-card">
+      <div class="edu-toc-head">
+        <div class="edu-toc-title"><i class="bi {{ module.icon }}"></i> {{ module.title }}</div>
+        <div class="edu-toc-progress" data-edu-module-progress>{{ mp.done }} / {{ mp.total }}</div>
+      </div>
+      <div class="edu-bar" aria-hidden="true"><span data-edu-module-bar style="width: {{ mp.percent }}%;"></span></div>
+      <ol class="edu-toc-list">
+        {% for l in module.lessons %}
+          <li class="{% if l.key == lesson.key %}is-current{% endif %} {% if l.key in progress.completed %}is-done{% endif %}" data-toc-key="{{ l.key }}">
+            <a href="{{ l.url }}">
+              <span class="edu-toc-mark"><i class="bi bi-check-lg"></i></span>
+              <span>{{ l.title }}</span>
+            </a>
+          </li>
+        {% endfor %}
+      </ol>
+      <div class="edu-toc-overall">
+        <div class="small text-muted">Overall progress</div>
+        <div class="edu-bar" aria-hidden="true"><span data-edu-overall-bar style="width: {{ progress.percent }}%;"></span></div>
+        <div class="small" data-edu-overall-text>{{ progress.done }} of {{ progress.total }} lessons · {{ progress.percent }}%</div>
+      </div>
+      <button type="button" class="btn btn-outline-secondary btn-sm w-100 mt-2" data-edu-open-assistant>
+        <i class="bi bi-stars"></i> Ask the AI Helper about this
+      </button>
+    </div>
+  </aside>
+</div>
+
+{# Лайтбокс для скриншотов #}
+<div class="edu-lightbox" id="eduLightbox" hidden role="dialog" aria-modal="true" aria-label="Screenshot">
+  <button type="button" class="edu-lightbox-close" data-edu-lightbox-close aria-label="Close">&times;</button>
+  <figure>
+    <img src="" alt="">
+    <figcaption></figcaption>
+  </figure>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+  {{ super() }}
+  <script src="{{ url_for('static', filename='js/education.js') }}"></script>
+{% endblock %}

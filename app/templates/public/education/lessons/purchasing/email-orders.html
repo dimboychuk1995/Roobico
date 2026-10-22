@@ -1,0 +1,52 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Turning on the location's private inbox and forwarding vendor mail to it.</li>
+  <li>What AI does with every email: attachments first, then text; vendor and part matching; duplicates.</li>
+  <li>Confirming or rejecting a Not confirmed order; Suggest-only mode; the inbox history.</li>
+</ul>
+{% endcall %}
+
+<h2>Set it up</h2>
+{% call step(1, "Turn on the inbox") %}
+<p>Settings → Integrations → <strong>Parts orders from email</strong> → {{ ui("Turn on") }} (needs {{ perm("settings.manage_integrations", "Manage integrations") }}). The switch saves immediately and shows the location's private address, like <code>orders-a1b2c3d4e5f6@roobico.com</code>, that only the AI reads.</p>
+{{ shot("settings-email-orders-modal", "Parts orders from email: the switch, the address and forwarding instructions.", "md") }}
+{% endcall %}
+{% call step(2, "Forward vendor mail there") %}
+<p>Either set auto-forwarding in the mailbox where vendors write you (Gmail: Settings → Forwarding; Outlook: Settings → Mail → Forwarding — step-by-step instructions for every provider are under <em>How to set up forwarding</em>), or add the address as an extra notification email in the vendors' portals. Forwarding everything is fine — non-orders are ignored. Gmail / Yahoo / iCloud / Zoho send a confirmation code to the new address first: open that email with {{ ui("View") }} under <em>Recent emails</em>.</p>
+{% endcall %}
+
+<h2>What happens with every email</h2>
+<ol>
+  <li><strong>PDFs first.</strong> Every PDF or image attached is read by the same engine as the AI Order Reader. An order document (confirmation, invoice, packing slip) with itemized lines makes the email an order and the lines come from the PDF. A quote, statement or receipt is not an order. Only the first six pages are read; Excel / Word / ZIP and files over 6 MB are listed as <em>Not read</em> with the reason.</li>
+  <li><strong>Then the text</strong>, only when there is no decisive attachment: vendor, vendor order / invoice number, date and lines. Quotes, tracking notices, promos and the like are marked <em>Ignored</em> — kept in the history, convertible to an order with one click.</li>
+  <li><strong>Vendor</strong> is matched by name, then by a sender address learned from earlier orders, then by AI against your vendor list. No match → the vendor is <strong>created automatically</strong> with the contacts from the email.</li>
+  <li><strong>Parts</strong> are matched by part number (separators ignored). Unknown lines are kept as <em>unmatched lines</em> for you to resolve.</li>
+  <li><strong>Duplicates</strong>: the same vendor number in Vendor Bill, or a hand-typed order in the last three weeks with the same parts and quantities → the email is linked to that order instead of creating a second one.</li>
+  <li>The order is created with status <strong>ordered</strong>, the vendor number in Vendor Bill, the email files as attachments and the red <strong>Not confirmed</strong> badge. Office users get a push notification.</li>
+</ol>
+
+<h2>Confirm or reject</h2>
+{% call step(1, "Find it") %}
+<p>Parts Orders tab → filter <strong>Not confirmed (from email)</strong>, or {{ ui("Review") }} in the yellow banner. Until a person confirms, the order is on hold: it cannot be received, paid or returned and is not counted in balances, dashboard purchases or reports.</p>
+{{ shot("parts-orders-tab", "The Parts Orders tab — Not confirmed orders carry a red badge.") }}
+{% endcall %}
+{% call step(2, "Confirm") %}
+<p>Click the red {{ ui("Confirm") }} (or Edit). The dialog opens with a yellow “Created from email” block: sender, subject, vendor number, a warning if the vendor was auto-created, and <strong>Lines not found in the parts catalog</strong> with {{ ui("Create & Add") }} per line. Check quantities and prices, then {{ ui("Confirm order") }} — from now on it is a normal order. Confirming needs {{ perm("parts_orders.edit", "Edit parts orders") }}.</p>
+{% endcall %}
+{% call step(3, "Reject") %}
+<p>{{ ui("Reject") }} removes the order when the email was not an order for this shop; the email stays in the history as <em>Rejected</em> and an auto-created vendor is deleted again.</p>
+{% endcall %}
+
+<h2>Suggest-only mode and the history</h2>
+<p>
+  In the integration settings choose <strong>Suggest only</strong> while you get used to the feature: AI reads the email but creates nothing;
+  the history shows <em>Needs review</em> and you press {{ ui("Create order") }}. <strong>Inbox history</strong> (same window) lists every
+  email with its result — Order created, Linked to order, Ignored (with AI's reason), Needs review, Error — and actions View / Create order /
+  Retry / Ignore. If nothing appears within a couple of minutes, the forwarding rule on the mail side is not active.
+</p>
+
+{% call tip("Vendor created twice?") %}
+Open the order, pick the right vendor from the list and save (or Confirm): the auto-created duplicate is deleted and the sender is remembered for the vendor you chose.
+{% endcall %}

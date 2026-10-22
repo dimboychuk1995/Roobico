@@ -1,0 +1,46 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Receive Order: vendor bill and stock locations.</li>
+  <li>What receiving does to stock and average cost.</li>
+  <li>Unreceive and the frozen state of received orders.</li>
+</ul>
+{% endcall %}
+
+<p>Receiving needs {{ perm("parts_orders.receive", "Receive / un-receive parts orders") }}.</p>
+{{ shot("parts-orders-tab-with-order", "An ordered, unpaid order on the Parts Orders tab with its actions.") }}
+
+{% call step(1, "Receive Order") %}
+<p>Click {{ ui("Receive") }} in the row (or the yellow <em>ordered</em> status, or Receive inside the order dialog).</p>
+{{ shot("parts-order-receive", "The receive dialog: vendor bill and locations.", "md") }}
+{% endcall %}
+{% call step(2, "Vendor Bill") %}
+<p>Enter the vendor's invoice number (optional). It is searchable later and used to detect duplicate email orders.</p>
+{% endcall %}
+{% call step(3, "Where to put the parts") %}
+<p>If the shop uses locations, choose <em>Put received parts into:</em> for each line — default is the part's primary location, otherwise Unassigned. A location chosen here becomes the part's default if it had none.</p>
+{% endcall %}
+{% call step(4, "Confirm") %}
+<ul>
+  <li>Stock increases by the received quantities.</li>
+  <li>The part's <strong>average cost</strong> is recalculated as a weighted average of old stock and the received price (if stock was zero / negative or the average was 0, the received price becomes the average).</li>
+  <li>“Do not track inventory” parts get no stock movement — only their average cost is set to the received price.</li>
+</ul>
+{% endcall %}
+
+<h2>Unreceive</h2>
+<p>
+  {{ ui("Unreceive") }} rolls the received quantities back out of the same locations and takes that batch back out of the average cost, so
+  re-receiving does not count it twice. Not possible while the order has active returns.
+</p>
+
+{% call note("Received orders are frozen") %}
+They cannot be edited; delete requires un-receiving first. Orders from email that are still <em>Not confirmed</em> cannot be received at all — confirm them first.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("parts/stock-movements") }}</li>
+  <li>{{ lesson_link("purchasing/pay-orders") }}</li>
+</ul>

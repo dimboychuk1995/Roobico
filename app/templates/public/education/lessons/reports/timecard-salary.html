@@ -1,0 +1,33 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Payroll per employee for a period.</li>
+  <li>Salary vs hourly rows and the uAttend matching badges.</li>
+  <li>The permission a bookkeeper needs.</li>
+</ul>
+{% endcall %}
+
+<p>
+  Reports → <strong>Timecard / Salary Report</strong>. Requires {{ perm("reports.view_payroll", "View Timecard / Salary report") }} —
+  by default only Owner, General manager and Manager; tick it for a bookkeeper role in Settings → Roles.
+</p>
+{{ shot("report-timecard-salary", "Timecard / Salary report.") }}
+
+<h2>How rows are computed</h2>
+<ul>
+  <li><strong>Salary</strong> employees: weekly salary amount × weeks in the period (days ÷ 7; a shorter range prorates fractionally). Pay type and amount are set in the user form (needs {{ perm("settings.manage_pay", "Edit employees' pay type & salary") }}).</li>
+  <li><strong>Hourly</strong> employees: uAttend punches in the period × their hourly rate (set in Settings → Integrations; only employees ticked there appear).</li>
+  <li>uAttend people are auto-matched to Roobico users so nobody is counted twice: an employee matched to a <em>salary</em> user is folded into that row with a “↔ uAttend” badge; one matched to an <em>hourly</em> user keeps their own hourly row with the user's role and a “↔ Internal” badge.</li>
+</ul>
+<p>Periods: This week / Last week / This month / Last month / This year / Custom. Banners explain when the uAttend integration is missing, disabled or erroring. The same payroll numbers feed General Revenue.</p>
+
+{% call note("Nobody can change their own pay") %}
+Even with the pay permission, a user cannot edit their own pay type or salary — an owner's pay is edited from another owner account, or not at all.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("settings/integrations") }}</li>
+  <li>{{ lesson_link("settings/users") }}</li>
+</ul>

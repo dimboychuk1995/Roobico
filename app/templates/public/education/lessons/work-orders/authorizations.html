@@ -1,0 +1,31 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Sending the whole work order or a single job for approval.</li>
+  <li>What the customer sees and how the answer shows up.</li>
+</ul>
+{% endcall %}
+
+{% call step(1, "Choose the scope") %}
+<p><strong>Whole work order</strong>: {{ ui("✉ Send for Authorization") }} at the top of the labor section. <strong>One job only</strong>: ⋮ on that labor block → {{ ui("Send for Authorization") }}. Sending needs only {{ perm("work_orders.create", "Create work orders") }}.</p>
+{{ shot("wo-labor-menu", "Send for Authorization for a single job in the ⋮ menu.") }}
+{% endcall %}
+{% call step(2, "Pick recipients") %}
+<p>The email dialog lists the customer's contacts (main contact preselected). Add a new address on the fly if needed. Send.</p>
+{{ shot("wo-send-authorization-modal", "Choosing recipients for the authorization request.", "md") }}
+{% endcall %}
+{% call step(3, "The customer approves or declines") %}
+<p>The customer receives an email with the PDF and a link to a public page with {{ ui("✓ Approve") }} / {{ ui("✕ Decline") }} buttons and an optional comment. No login is required.</p>
+{% endcall %}
+{% call step(4, "See the result") %}
+<p>A green <strong>✓ Authorized</strong> or red <strong>✕ Declined</strong> badge appears on the work order (and on the labor block, for single-job requests); the comment is in the tooltip. The customer portal lists the full history under <em>Authorizations</em>.</p>
+{% endcall %}
+
+{% call note("Estimates too") %}
+Estimates can be sent for approval exactly the same way — same email, same badge. Approval does not change the status or touch inventory; it is the customer's sign-off on the quote. Convert to a work order when you are ready.
+{% endcall %}
+
+{% call tip("From the phone") %}
+Mechanics can send a single job or the whole work order for approval from the mobile app (“Send job for approval” / “Send work order for approval”). Same flow, same badges.
+{% endcall %}

@@ -56,12 +56,29 @@
       .replace(/'/g, "&#39;");
   }
 
-  // Минимальный markdown: **bold**, `code`, переводы строк.
+  // Ссылки/картинки разрешены только внутрь приложения: скриншоты
+  // Education Center и страницы уроков. Любой другой URL остаётся текстом.
+  var SHOT_URL_RE = /^\/static\/img\/education\/[a-z0-9-]+\.webp(\?[^"'\s]*)?$/;
+  var LESSON_URL_RE = /^\/education\/[a-z0-9-]+\/[a-z0-9-]*\/?$/;
+
+  // Минимальный markdown: **bold**, `code`, ![shot](url), [lesson](url),
+  // переводы строк. Текст экранируется ДО разбора разметки.
   function renderText(target, text) {
-    target.innerHTML = escapeHtml(text)
+    var html = escapeHtml(text)
+      .replace(/!\[([^\]\n]*)\]\(([^)\s]+)\)/g, function (m, alt, url) {
+        if (!SHOT_URL_RE.test(url)) return escapeHtml(alt);
+        return '<a class="assistant-shot" href="' + url + '" target="_blank" rel="noopener">' +
+          '<img src="' + url + '" alt="' + alt + '" loading="lazy">' +
+          (alt ? '<span class="assistant-shot-caption">' + alt + '</span>' : '') + '</a>';
+      })
+      .replace(/\[([^\]\n]+)\]\(([^)\s]+)\)/g, function (m, label, url) {
+        if (!LESSON_URL_RE.test(url)) return label;
+        return '<a class="assistant-lesson-link" href="' + url + '"><i class="bi bi-mortarboard"></i> ' + label + '</a>';
+      })
       .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
       .replace(/`([^`\n]+)`/g, "<code>$1</code>")
       .replace(/\n/g, "<br>");
+    target.innerHTML = html;
   }
 
   function addBubble(role) {

@@ -1,0 +1,51 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The Reports page and its groups.</li>
+  <li>Common filters: date presets, chart grouping, customer / vendor multi-select.</li>
+  <li>Generate, Download PDF and which permission opens which report.</li>
+</ul>
+{% endcall %}
+
+<p>Sidebar → {{ ui("Reports") }}. Cards grouped by topic:</p>
+<ul>
+  <li><strong>Sales &amp; Revenue</strong> — Sales Summary, General Revenue, Payments Summary.</li>
+  <li><strong>Balances</strong> — Customer Balances, Vendor Balances.</li>
+  <li><strong>Parts &amp; Inventory</strong> — Parts Orders Summary.</li>
+  <li><strong>Labor</strong> — Mechanic Hours, Timecard / Salary Report.</li>
+  <li><strong>Audit</strong> — Activity Journal.</li>
+</ul>
+{{ shot("reports-index", "The Reports page.") }}
+
+<h2>The Standard Reports page</h2>
+<p>
+  The first seven reports open one shared page as tabs. Pick filters and click {{ ui("Generate") }}; {{ ui("Download PDF") }} exports the
+  same report (needs {{ perm("reports.export", "Export reports") }}).
+</p>
+{{ shot("report-filters", "Report tabs and filters: date range, customer filter, Generate, Download PDF.") }}
+<ul>
+  <li><strong>Date Preset</strong>: All Time, Today, Yesterday, This Week, Last Week, This Month (default), Last Month, This Quarter, Last Quarter, This Year, Last Year, Custom. Weeks start Monday; dates use the shop timezone.</li>
+  <li><strong>Chart Group By</strong>: Month or Week (Sales, Payments, Parts Orders, Mechanic Hours, General Revenue).</li>
+  <li><strong>Customers</strong> multi-select (Sales, Payments, Customer Balances, General Revenue) and <strong>Vendors</strong> multi-select (Parts Orders Summary), with search and Select All / Deselect All.</li>
+  <li><strong>Customer Balances and Vendor Balances are always all-time</strong> — no date filter by design.</li>
+</ul>
+
+<h2>Who sees which card</h2>
+<table>
+  <thead><tr><th>Permission</th><th>Opens</th></tr></thead>
+  <tbody>
+    <tr><td>{{ perm("reports.view", "View reports") }}</td><td>The Reports page and the money-free Mechanic Hours report.</td></tr>
+    <tr><td>{{ perm("reports.view_financial", "View financial reports") }}</td><td>Sales &amp; Revenue, Balances, Parts &amp; Inventory.</td></tr>
+    <tr><td>{{ perm("reports.view_payroll", "View Timecard / Salary report") }}</td><td>Timecard / Salary (employee pay).</td></tr>
+    <tr><td>{{ perm("reports.view_audit", "View audit journal") }}</td><td>Activity Journal.</td></tr>
+  </tbody>
+</table>
+<p>
+  Cards you are not allowed to open are not shown. Default roles: Owner / General manager / Manager see everything; Parts manager and
+  Viewer see financial reports but not payroll; Senior mechanic and Mechanic see only Mechanic Hours (a mechanic has no Reports section at all).
+</p>
+
+{% call tip("Reports on the phone") %}
+The mobile app's More → Reports lists all standard reports with period chips.
+{% endcall %}

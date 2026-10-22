@@ -1,0 +1,57 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The fields of a labor block: description, hours, rate, labor total.</li>
+  <li>How hours auto-fill from mechanics' timers — and when they stop.</li>
+  <li>Shop supply and the block menu (⋮).</li>
+</ul>
+{% endcall %}
+
+<p>Each labor block is one job on the work order. Add more with {{ ui("+ Add Labor") }}; remove an empty one with {{ ui("Remove") }}.</p>
+{{ shot("wo-labor-block", "A labor block in edit mode.") }}
+
+<h2>Fields</h2>
+<table>
+  <thead><tr><th>Field</th><th>Behaviour</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Labor Description</strong></td><td>What was done. Printed on the PDF; a <em>Described Issue</em> (⋮ menu) prints under it as “Reported issue”.</td></tr>
+    <tr><td><strong>Hours</strong></td><td>Billed hours. For jobs mechanics created themselves, hours auto-fill from the tracked timer time and keep following it until someone types in Hours or Labor Total; jobs from a preset keep the preset's hours.</td></tr>
+    <tr><td><strong>Labor Rate</strong></td><td>Dropdown of the shop's rates shown as “Name ($X/hr)”, preselected from the customer's Default Labor Rate. The hourly rate is snapshotted on save — changing a rate later never changes old work orders.</td></tr>
+    <tr><td><strong>Labor Total</strong></td><td>Editable override. If you type a manual total it wins; otherwise labor = hours × rate.</td></tr>
+  </tbody>
+</table>
+
+{% call note("Saving is not a manual edit") %}
+Simply saving the work order does not stop the auto-fill — only typing in Hours or Labor Total does. If a mechanic tracked more time while you had the page open, saving your other edits keeps their latest tracked hours.
+{% endcall %}
+
+<h2>Mechanics line</h2>
+<p>
+  Under the fields, the <strong>Mechanics:</strong> line shows who is assigned and how much time was tracked. {{ ui("Assign") }} opens
+  the Assign Mechanics dialog; the pencil next to the tracked time edits timer sessions. Both are covered in
+  {{ lesson_link("work-orders/assign-mechanics") }}.
+</p>
+
+<h2>Shop supply</h2>
+<p>
+  Shop supply is a percentage of labor (default 5%, set in Settings → Work Order Settings). It appears as an editable
+  <em>Shop supply: $</em> field with a reset (↺) button and is part of the Labor total.
+</p>
+{{ shot("wo-totals", "Shop supply and the totals box.", "md") }}
+
+<h2>The block menu (⋮)</h2>
+<ul>
+  <li>{{ ui("Add Preset") }} — insert a service template into this block ({{ lesson_link("work-orders/presets-on-wo") }}).</li>
+  <li>{{ ui("Describe Issue") }} — AI polishes or translates the issue text into professional English for the customer.</li>
+  <li>{{ ui("Send for Authorization") }} — ask the customer to approve this job only ({{ lesson_link("work-orders/authorizations") }}).</li>
+</ul>
+{{ shot("wo-labor-menu", "The ⋮ menu of a labor block.") }}
+{{ shot("wo-describe-issue-modal", "Describe Issue dialog.", "sm") }}
+
+<h2>Attachments per job</h2>
+<p>{{ ui("Labor Attachments") }} under a block holds photos and files for that job only — separate from work-order-level attachments. Mechanics add job photos from the phone here.</p>
+
+{% call tip("Jobs added by mechanics") %}
+A job a mechanic adds without a preset gets the shop's “standard” labor rate (or the first active rate) automatically, so the office never sees a $0 labor line. Change the rate later as usual.
+{% endcall %}

@@ -1,0 +1,45 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Customers and units are deactivated, never deleted.</li>
+  <li>Finding inactive records and bringing them back.</li>
+  <li>The special “NEW Customer” that cannot be deactivated.</li>
+</ul>
+{% endcall %}
+
+<h2>Deactivating</h2>
+<p>
+  Customer page → {{ ui("Deactivate Customer") }} (needs {{ perm("customers.deactivate", "Deactivate customers") }}).
+  Unit page → Details → {{ ui("Deactivate Unit") }}. Nothing is deleted: history, work orders, units and balances stay.
+  Inactive customers and units are hidden from work order pickers, the mobile app and the customer portal until activated.
+</p>
+{{ shot("customer-page", "Deactivate Customer sits in the header area of the customer page.") }}
+
+<h2>Finding an inactive record</h2>
+{% call step(1, "Customers") %}
+<p>Customers list → status filter → <strong>Inactive customers</strong> (or <strong>All</strong>). Inactive rows carry a grey <em>Inactive</em> badge.</p>
+{{ shot("customers-search-filter", "The status filter next to the search box.", "md") }}
+{% endcall %}
+{% call step(2, "Units") %}
+<p>Customer page → <strong>Units</strong> tab → filter <strong>Inactive units</strong>.</p>
+{{ shot("customer-page-units-tab", "The Units tab has the same filter.") }}
+{% endcall %}
+
+<h2>Activating back</h2>
+<p>
+  Open the customer → {{ ui("Activate Customer") }}; open the unit → Details → {{ ui("Activate Unit") }}. Everything is where it was.
+  Creating a new customer with the name of a deactivated one is blocked — the message tells you to activate the existing record instead.
+</p>
+
+<h2>“NEW Customer”</h2>
+<p>
+  If mechanics scan VINs in the mobile app, the shop gets a technical customer named <strong>NEW Customer</strong>. Unknown VINs
+  are filed under it so work can start immediately. This customer <strong>cannot be deactivated</strong>. Instead, move its work orders
+  to the real company with the {{ ui("Transfer") }} button on the work order page — the unit follows automatically — and edit or
+  deactivate its stray units like any others once they are re-homed. See {{ lesson_link("work-orders/transfer") }}.
+</p>
+
+{% call note("No merge") %}
+There is no customer merge feature. If two records describe the same company, keep one, transfer any work orders from the other, then deactivate it.
+{% endcall %}

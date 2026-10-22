@@ -1,0 +1,32 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Scanning the VIN barcode with the camera.</li>
+  <li>The three outcomes: known unit, several companies, unknown VIN.</li>
+  <li>NEW Customer and the office's Transfer fix.</li>
+</ul>
+{% endcall %}
+
+{% call step(1, "Scan VIN") %}
+<p>On the new work order screen, before picking anything, tap {{ ui("Scan VIN") }}. Point the camera at the VIN <strong>barcode</strong> (door-jamb sticker, dashboard plate — Code 39 / 128, DataMatrix, QR). The VIN is picked up automatically — no buttons to press; a flashlight toggle helps in dark cabs. Other barcodes are ignored; only a valid 17-character VIN triggers.</p>
+{% endcall %}
+{% call step(2, "What happens next") %}
+<ul>
+  <li><strong>The VIN belongs to an existing unit</strong> → the customer and unit are filled in and the work order starts — unless that unit already has a work order In Progress, in which case <em>that</em> work order opens (one truck = one work order).</li>
+  <li><strong>The same VIN is active on several companies</strong> → the app asks which company this job is for.</li>
+  <li><strong>The VIN is not in the system</strong> → a new unit is created automatically under the technical customer <strong>NEW Customer</strong> (make / model / year decoded from the VIN) and the work order starts on it.</li>
+</ul>
+{% endcall %}
+{% call step(3, "The office re-homes it") %}
+<p>Later, on the web work order, the office presses {{ ui("Transfer") }} and picks the real company. The unit follows automatically and the real company's labor rates, part prices and tax flag are re-applied; the mechanic can keep working meanwhile. See {{ lesson_link("work-orders/transfer") }}.</p>
+{{ shot("wo-transfer-modal", "Transfer on the web work order.", "md") }}
+{% endcall %}
+
+{% call note("NEW Customer") %}
+Created per shop on the first scan and cannot be deactivated. Its stray units can be edited or deactivated like any others once they are re-homed.
+{% endcall %}
+
+{% call tip("Scanner on the New unit form too") %}
+The barcode icon next to the VIN field fills the VIN and decodes year / make / model / type. No scannable barcode? Type the VIN manually as before.
+{% endcall %}

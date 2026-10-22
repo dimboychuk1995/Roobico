@@ -1,0 +1,40 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>One column per mechanic for a single day.</li>
+  <li>Planning a job for a mechanic by drag &amp; drop.</li>
+  <li>Reading the header counters.</li>
+</ul>
+{% endcall %}
+
+<p>Toolbar → {{ ui("By mechanic") }}. One day, a column per mechanic plus <em>Unassigned</em>; ‹ › move by day.</p>
+{{ shot("calendar-by-mechanic", "The By mechanic view.") }}
+
+<ul>
+  <li>Each header shows how many different jobs (work orders / appointments) the mechanic has that day — several timer sessions on one work order count once.</li>
+  <li>A work order with several mechanics appears in each of their columns.</li>
+  <li>Dragging a block into another column reassigns the mechanic of that appointment.</li>
+  <li>The <strong>All mechanics</strong> dropdown narrows the view to one person or to unassigned blocks only.</li>
+</ul>
+
+<h2>Plan a job for a mechanic</h2>
+{% call step(1, "Click inside the mechanic's column") %}
+<p>The appointment dialog opens with the mechanic preselected. Add customer, unit, presets and the time. Save.</p>
+{% endcall %}
+{% call step(2, "Or drag a chip") %}
+<p>Drag a work order chip from the <em>Not scheduled</em> strip into the mechanic's column: a linked appointment is created for that mechanic at that time.</p>
+{% endcall %}
+{% call step(3, "Watch the day unfold") %}
+<p>When the mechanic starts the timer, the actual block appears in their column and the plan steps aside. A plan that overlaps someone's real work on a different job is flagged with a red <strong>!</strong>.</p>
+{% endcall %}
+
+{% call tip("Week view can do this too") %}
+In the week view, click a day header to expand that day into one lane per mechanic — dropping a chip into a lane assigns that mechanic, same as here.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("calendar/appointments") }}</li>
+  <li>{{ lesson_link("reports/mechanic-hours") }}</li>
+</ul>

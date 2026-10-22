@@ -1,0 +1,79 @@
+{% extends "layouts/app_base.html" %}
+{% block page_title %}{{ module.title }} — Education Center{% endblock %}
+
+{% block extra_styles %}
+  {{ super() }}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/education.css') }}">
+{% endblock %}
+
+{% block app_content %}
+{% set mp = progress.modules[module.id] %}
+<nav class="edu-crumbs" aria-label="Breadcrumb">
+  <a href="{{ url_for('education.index') }}"><i class="bi bi-mortarboard"></i> Education Center</a>
+  <span>/</span>
+  <span>{{ module.title }}</span>
+</nav>
+
+<section class="edu-module-hero card">
+  <div class="edu-module-icon edu-module-icon-lg"><i class="bi {{ module.icon }}"></i></div>
+  <div class="edu-module-hero-body">
+    <h1 class="edu-hero-title">{{ module.title }}</h1>
+    <p class="edu-hero-text">{{ module.summary }}</p>
+    <div class="edu-module-meta">
+      <span><i class="bi bi-journal-text"></i> {{ module.lessons|length }} lessons</span>
+      <span><i class="bi bi-clock"></i> ~{{ module.minutes }} min total</span>
+      <span><i class="bi bi-check2-circle"></i> {{ mp.done }} / {{ mp.total }} completed</span>
+    </div>
+    <div class="edu-bar edu-bar-lg" aria-hidden="true"><span style="width: {{ mp.percent }}%;"></span></div>
+  </div>
+  <div class="edu-module-hero-actions">
+    {% set first_open = namespace(lesson=None) %}
+    {% for l in module.lessons %}{% if first_open.lesson is none and l.key not in progress.completed %}{% set first_open.lesson = l %}{% endif %}{% endfor %}
+    {% if first_open.lesson %}
+      <a class="btn btn-primary" href="{{ first_open.lesson.url }}">
+        <i class="bi bi-play-fill"></i> {% if mp.done %}Continue{% else %}Start module{% endif %}
+      </a>
+    {% else %}
+      <span class="btn btn-success disabled"><i class="bi bi-trophy-fill"></i> Module completed</span>
+    {% endif %}
+  </div>
+</section>
+
+<ol class="edu-lesson-list">
+  {% for l in module.lessons %}
+    {% set done = l.key in progress.completed %}
+    <li class="edu-lesson-row card {% if done %}is-done{% endif %}">
+      <a href="{{ l.url }}" class="edu-lesson-row-link">
+        <span class="edu-lesson-row-num">
+          {% if done %}<i class="bi bi-check-lg"></i>{% else %}{{ loop.index }}{% endif %}
+        </span>
+        <span class="edu-lesson-row-body">
+          <span class="edu-lesson-row-title">{{ l.title }}</span>
+          <span class="edu-lesson-row-summary">{{ l.summary }}</span>
+        </span>
+        <span class="edu-lesson-row-meta">
+          <span class="edu-minutes"><i class="bi bi-clock"></i> {{ l.minutes }} min</span>
+          <span class="edu-shots-count" title="Screenshots in this lesson"><i class="bi bi-image"></i> {{ l.shot_ids()|length }}</span>
+          <i class="bi bi-chevron-right edu-chevron"></i>
+        </span>
+      </a>
+    </li>
+  {% endfor %}
+</ol>
+
+<div class="edu-module-nav">
+  {% set mods = modules|list %}
+  {% set idx = mods.index(module) %}
+  {% if idx > 0 %}
+    <a class="btn btn-outline-secondary" href="{{ mods[idx-1].url }}"><i class="bi bi-arrow-left"></i> {{ mods[idx-1].title }}</a>
+  {% else %}<span></span>{% endif %}
+  {% if idx + 1 < mods|length %}
+    <a class="btn btn-outline-secondary" href="{{ mods[idx+1].url }}">{{ mods[idx+1].title }} <i class="bi bi-arrow-right"></i></a>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+  {{ super() }}
+  <script src="{{ url_for('static', filename='js/education.js') }}"></script>
+{% endblock %}

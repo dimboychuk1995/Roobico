@@ -1,0 +1,44 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Three entry points: work order, unit page, Perks.</li>
+  <li>The dialog: carrier / inspector fields, vehicle type presets, the OK / NR / NA checklist, live preview.</li>
+  <li>History, validity and deletion.</li>
+</ul>
+{% endcall %}
+
+<p>Roobico fills out the DOT <strong>Annual Vehicle Inspection Report</strong> (49 CFR 396) as a PDF and keeps every inspection per unit.</p>
+{{ shot("perks-index", "Perks in the sidebar: quick tools outside the work order flow — Annual Inspection lives here.", "md") }}
+
+<h2>Where to start one</h2>
+<ul>
+  <li><strong>Work order</strong> → Create / Save dropdown → {{ ui("Create Annual Inspection") }} — prefilled with the unit's VIN and the customer as carrier.</li>
+  <li><strong>Unit page</strong> → {{ ui("Annual Inspection") }} in the header (or {{ ui("Inspection") }} next to a unit on the customer's Units tab).</li>
+  <li><strong>Perks → Annual Inspection</strong> → {{ ui("New Inspection") }} — for any vehicle, even one not in the system: type the VIN, pick the type, enter the customer name by hand.</li>
+</ul>
+{{ shot("perks-annual-inspection", "Perks → Annual Inspection: every saved inspection with PDF and delete.") }}
+
+<h2>The dialog</h2>
+{% call step(1, "Header fields") %}
+<p>Carrier, address, inspector, agency, date, the <em>qualified inspector</em> check and an optional <strong>Report Number</strong> (your own numbering; auto-generated when left empty).</p>
+{{ shot("wo-annual-inspection-modal", "The Annual Vehicle Inspection dialog with the checklist and live preview.") }}
+{% endcall %}
+{% call step(2, "Vehicle type") %}
+<p>Picking a type applies its OK / NA preset automatically (e.g. Semi Trailer marks steering, exhaust, coupling as N/A). Adjust any item afterwards.</p>
+{% endcall %}
+{% call step(3, "The checklist") %}
+<p>Every component (Brake System, Coupling Devices, … Windshield Wipers) starts as <strong>OK</strong>; switch an item to <strong>NR</strong> (needs repair — a repaired-date field appears) or <strong>NA</strong>. {{ ui("Mark all OK") }} / {{ ui("Clear") }} set the whole list; Clear prints an empty form to fill by hand.</p>
+{{ shot("perks-inspection-modal", "New Inspection from Perks.", "md") }}
+{% endcall %}
+{% call step(4, "Save") %}
+<p>The PDF downloads with the marks: OK items get a check in the OK column, needs-repair items an X plus the repaired date, N/A items a mark in the third column.</p>
+{% endcall %}
+
+<h2>History and validity</h2>
+<p>
+  Inspections are kept as history per unit — a new one does not erase the previous. Each is valid 12 months: the unit page shows the latest
+  with its <strong>Valid until</strong> date (yellow within 30 days of expiry, red when expired), the full history with PDFs, and Delete buttons
+  (needs {{ perm("work_orders.delete", "Delete work orders") }}).
+</p>
+{{ shot("unit-page", "The Annual Inspection card on a unit page.") }}

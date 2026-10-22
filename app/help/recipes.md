@@ -344,6 +344,28 @@ customer name by hand — no unit or customer record needed. All saved
 inspections (quick ones and those from work orders/units) are listed on
 that page with PDF download and delete.
 
+## Learning & support
+
+**Where do I learn how X works / is there a manual?** Sidebar → **Education
+Center**: type the topic into the search box (e.g. "estimate", "core",
+"payroll", "VIN") and open the lesson — numbered steps with screenshots.
+Each lesson has a **Mark lesson as complete** button; the home page shows
+how much you have covered.
+
+**Onboard a new employee.** Invite them (Settings → Users), then tell them
+to open **Education Center** and follow the learning path for their role
+(owner / manager, mechanic, parts manager) on the home page. Progress is
+per user, so ask them to tell you when they have finished.
+
+**Show me a screenshot of where the button is.** Ask the AI Helper — it
+can include the matching Education Center screenshot in the answer and
+link to the lesson.
+
+**I can't log in / I need to talk to a person.** Call **(773) 331-2795**
+or use the **Contact us** tab on the login page (roobico.com → Contact us,
+or roobico.com/#contact): name, email, topic, message — no login needed;
+the reply comes by email.
+
 ## Organization
 
 **Open a second location.** Settings → Shops → "+ Add shop". It gets its

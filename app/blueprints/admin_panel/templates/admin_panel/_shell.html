@@ -11,6 +11,13 @@
          class="{{ 'active' if active == 'dashboard' else '' }}">Dashboard</a>
       <a href="{{ url_for('admin_panel.tenants_list') }}"
          class="{{ 'active' if active == 'tenants' else '' }}">Tenants</a>
+      <a href="{{ url_for('admin_panel.contact_requests_list') }}"
+         class="{{ 'active' if active == 'contact' else '' }}">
+        Contact requests
+        {% if contact_new_count %}
+          <span class="badge bad" style="margin-left:.35rem; vertical-align:middle;">{{ contact_new_count }}</span>
+        {% endif %}
+      </a>
     </nav>
   </aside>
 

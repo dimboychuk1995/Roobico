@@ -1,0 +1,44 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The three-step import: upload, map columns, import.</li>
+  <li>Entity by entity: what columns, what is required, how duplicates are handled.</li>
+  <li>The recommended order when moving from another system.</li>
+</ul>
+{% endcall %}
+
+<p>Sidebar → {{ ui("Import / Export") }} (needs {{ perm("import_export.import", "Run data imports") }}). Entities: Customers, Units, Vendors, Parts, Work Orders. CSV or Excel (.xlsx; legacy .xls must be re-saved) with a header row.</p>
+{{ shot("import-export-page", "The Import / Export page.") }}
+
+{% call step(1, "Upload and Read Headers") %}
+<p>Pick the entity tab, choose the file, click {{ ui("Read Headers") }}.</p>
+{% endcall %}
+{% call step(2, "Map columns") %}
+<p>Each header from your file is matched to a Roobico field automatically where names match; fix the rest or choose “— Skip —”.</p>
+{{ shot("import-export-mapping", "The column mapping step.") }}
+{% endcall %}
+{% call step(3, "Import") %}
+<p>The result shows imported / skipped counts, and every skipped row is listed with the reason.</p>
+{% endcall %}
+
+<h2>Entities</h2>
+<table>
+  <thead><tr><th>Entity</th><th>Columns and rules</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Customers</strong></td><td>Company Name, First / Last Name, Phone, Email, Address, Pricing Scale Name. The shop needs at least one labor rate.</td></tr>
+    <tr><td><strong>Units</strong></td><td>Per customer: pick the customer in <em>Import units for customer</em> first — every row is linked to that customer (one file per customer; a Customer Name column in the file is ignored, rows of another customer are skipped and reported). Columns: Unit Number, VIN, Year, Make, Model, Type, Mileage. A row needs a Unit Number or a VIN; a VIN the customer already has is skipped.</td></tr>
+    <tr><td><strong>Vendors</strong></td><td>Vendor Name (+ contact, phone, email, website, address, notes).</td></tr>
+    <tr><td><strong>Parts</strong></td><td>Part Number, Description, Reference, In Stock, Average Cost, Selling Price. Starting stock gets a location row and an “initial” movement.</td></tr>
+    <tr><td><strong>Work Orders</strong></td><td>Historical records: Date and Customer Name required; unit matched by Unit Number or VIN within that customer; Status open / in_progress / completed / paid (default completed). Labor Total (or Hours), Parts Total and Sales Tax build the totals; a paid row also records the payment (or the Paid Amount column). An existing WO Number is skipped; leave it empty to auto-number.</td></tr>
+  </tbody>
+</table>
+{{ shot("import-export-units", "Units import: pick the customer first.") }}
+
+{% call warn("Duplicates are rejected, never merged") %}
+A customer, vendor or part that already exists in the shop (same name / part number, case-insensitive) is skipped and listed — including repeats inside the file. If the existing record is deactivated, the error says so: reactivate it instead of importing a copy.
+{% endcall %}
+
+{% call tip("Recommended order") %}
+Customers → Units (one file per customer) → Vendors → Parts → Work Orders. Re-running a file is safe: duplicates are skipped and reported.
+{% endcall %}

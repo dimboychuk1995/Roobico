@@ -1,0 +1,35 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Recording a vendor payment, partial payments.</li>
+  <li>The Parts Orders Payments tab and vendor credits.</li>
+  <li>Where to see what you owe.</li>
+</ul>
+{% endcall %}
+
+<p>Recording and deleting vendor payments needs {{ perm("parts_orders.manage_payments", "Manage parts order payments") }}.</p>
+
+{% call step(1, "Pay") %}
+<p>{{ ui("Pay") }} on the order → <strong>Record parts order payment</strong>: Amount, <strong>Method</strong> (Cash / Card / Bank transfer / Check / Other), Payment Date, Notes, attachments for the receipt.</p>
+{{ shot("parts-order-pay-modal", "Record parts order payment.", "md") }}
+{% endcall %}
+{% call step(2, "Partial or full") %}
+<p>Partial payments are fine — the order becomes <strong>Partially Paid</strong>; overpaying above the order total is blocked. On received orders the payment date is always today.</p>
+{% endcall %}
+{% call step(3, "The payments ledger") %}
+<p>Parts → <strong>Parts Orders Payments</strong> lists all vendor payments with totals; a payment can be deleted there and the order balance re-syncs automatically. The <strong>Vendor credits</strong> section below lists parts returns and core returns — money vendors owe you back (informational, never applied to payments).</p>
+{{ shot("parts-orders-payments-tab", "Parts Orders Payments with Vendor credits.") }}
+{% endcall %}
+
+<h2>Who you owe</h2>
+<ul>
+  <li>Reports → <strong>Vendor Balances</strong> — per vendor: Orders, Total, Paid, Outstanding.</li>
+  <li>Reports → <strong>Parts Orders Summary</strong> — spending by type: Parts / Cores / Shop Supply / Tools / Utilities / Pmt to Svc.</li>
+  <li>Vendors list → <strong>Balance</strong> column, and the Vendor Orders popup.</li>
+</ul>
+{{ shot("report-vendor-balances", "The Vendor Balances report.") }}
+
+{% call note("Not confirmed orders") %}
+An order created from email that nobody has confirmed cannot be paid and is excluded from balances — it is a proposal, not a debt.
+{% endcall %}

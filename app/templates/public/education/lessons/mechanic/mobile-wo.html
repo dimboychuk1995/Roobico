@@ -1,0 +1,40 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Opening and creating work orders on the phone.</li>
+  <li>Autosave in mechanic mode, job photos and approval requests.</li>
+  <li>What managers see on the mobile work order page.</li>
+</ul>
+{% endcall %}
+
+<h2>For mechanics</h2>
+{% call step(1, "Open a work order") %}
+<p>Work Orders tab → tap the job. The <strong>Current mileage</strong> window appears first — confirm or correct the odometer. There is no separate view screen: opening always lands in the editable view.</p>
+{{ shot("mech-mileage-modal", "The mileage prompt (web version shown; the app asks the same).", "sm") }}
+{% endcall %}
+{% call step(2, "Edit — it autosaves") %}
+<p>Every change (description, parts, mileage…) <strong>autosaves as In Progress</strong> about a second after the last edit (“Changes are saved automatically”). The only explicit button is {{ ui("Done — ready for review") }}.</p>
+{% endcall %}
+{% call step(3, "Job photos") %}
+<p>Every job card has its own attachments block (camera or gallery) — files are tied to that job; the work-order-level Attachments block is separate. Mechanics can view and upload; deleting needs the Delete attachments permission.</p>
+{% endcall %}
+{% call step(4, "Send for approval") %}
+<p>{{ ui("Send job for approval") }} on a job card, or {{ ui("Send work order for approval") }} at the bottom — the same customer authorization flow managers use from the web.</p>
+{% endcall %}
+{% call step(5, "New work order") %}
+<p>The + button: pick customer and unit, or {{ ui("Scan VIN") }} ({{ lesson_link("mechanic/vin-scan") }}), confirm the mileage, add jobs and parts.</p>
+{{ mobile_shot("shot-mobile-wo.png", "The Work Orders tab on the phone.") }}
+{% endcall %}
+
+<h2>For managers</h2>
+<ul>
+  <li>Create and edit work orders, record payments, send for authorization, email the PDF, delete.</li>
+  <li><strong>AI scan</strong> — photograph a paper work order and AI fills jobs and parts; <strong>AI edit</strong> polishes the issue description.</li>
+  <li>See <em>Tracked</em> per job — the summed clocked time of all mechanics who worked on it, with a per-person breakdown.</li>
+  <li>{{ ui("Confirm work order") }} after the Mechanic done badge, {{ ui("Mark unpaid") }} and the other status actions, each behind its permission.</li>
+</ul>
+
+{% call note("The date rule applies here too") %}
+Every autosave that actually changed jobs, parts or mileage, and the first press of Done, moves the work order date to that day. Merely opening does not.
+{% endcall %}

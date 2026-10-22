@@ -1,0 +1,38 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The company profile and where its fields are used.</li>
+  <li>What is tenant-wide and what is per shop.</li>
+</ul>
+{% endcall %}
+
+<p>Settings → {{ ui("Organization") }} (needs {{ perm("settings.manage_org", "Manage organization") }}).</p>
+{{ shot("settings-organization", "The Organization page.") }}
+
+<h2>Sections</h2>
+<ul>
+  <li><strong>Company Details</strong> — name (shown in the top bar and on invoices), legal name, DOT / MC number, tax ID, website, notes.</li>
+  <li><strong>Address</strong> — street, city, state, ZIP, country.</li>
+  <li><strong>Billing</strong> — billing email, phone and address used for your Roobico subscription invoices.</li>
+  <li><strong>Primary Contact</strong> — the person we contact about the account; timezone, currency, date format, units.</li>
+</ul>
+<p>Click {{ ui("Save Changes") }}. The organization name updates in the top bar immediately.</p>
+
+{% call note("Tenant-wide vs per shop") %}
+Users, roles, the organization profile and the subscription are shared by all your locations. Labor rates, pricing scales, categories, storage locations, tax, templates, PDF design, integrations, timezone and all operational data (customers, units, parts, work orders) belong to each shop. Per-shop details such as address, phone and logo are edited on Settings → Shops.
+{% endcall %}
+
+<h2>Notifications and Workflows</h2>
+<p>
+  The <strong>Notifications</strong> card (Communications) and the <strong>Workflows</strong> page are placeholders for upcoming email / SMS rules
+  and custom process steps — they open, but there is nothing to configure yet. Today's automatic emails (invoices, receipts,
+  authorization requests, portal links, recall digests) need no setup.
+</p>
+{{ shot("settings-notifications", "The Notifications settings page (placeholder).", "md") }}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("settings/shops") }}</li>
+  <li>{{ lesson_link("settings/billing") }}</li>
+</ul>

@@ -1,0 +1,52 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Assigning one or several mechanics to a job and splitting percentages.</li>
+  <li>What tracked time is and where it flows.</li>
+  <li>Correcting or deleting a timer session.</li>
+</ul>
+{% endcall %}
+
+<h2>Assign mechanics</h2>
+{% call step(1, "Open the dialog") %}
+<p>In the labor block click {{ ui("Assign") }} (edit mode). The <strong>Assign Mechanics</strong> dialog lists active users with the Mechanic or Senior mechanic role.</p>
+{{ shot("wo-assign-mechanics-modal", "Assign Mechanics dialog.", "md") }}
+{% endcall %}
+{% call step(2, "Tick one or several") %}
+<p>One mechanic = 100%. Several mechanics = percentages split evenly, editable. This split drives the <strong>Mechanic Hours</strong> report (billed hours per mechanic) and the Unassigned-labor badge on the list.</p>
+{% endcall %}
+{% call step(3, "Save the work order") %}
+<p>Assignments are saved with the work order. A labor line with a description, hours or parts and no mechanic shows the red <em>Unassigned labor</em> badge on the list until someone is assigned (a line with tracked time belongs to whoever tracked it).</p>
+{% endcall %}
+
+<h2>Tracked time</h2>
+<p>
+  Mechanics run a timer per job from the mobile app or the web mechanic page. The <strong>Mechanics:</strong> line shows the summed
+  tracked time of everyone who worked on the job (with a per-person breakdown when there was more than one), and the work order
+  details page shows a red <em>● working</em> marker live while a timer runs. Tracked hours auto-fill the billed Hours of jobs the
+  mechanics created ({{ lesson_link("work-orders/labor-blocks") }}), appear on the Calendar as blocks, and feed the Mechanic Hours
+  and Timecard reports.
+</p>
+
+<h2>Edit mechanic hours (the pencil)</h2>
+<p>
+  Users with {{ perm("work_orders.edit_time_logs", "Edit mechanics' actual tracked hours") }} — owner and managers by default — see a
+  small pencil next to the tracked-time summary. It opens the job's timer sessions: who, when started, how long.
+</p>
+{{ shot("wo-mechanic-hours-modal", "Mechanic hours: the job's timer sessions.", "md") }}
+<ul>
+  <li>Change a session's duration (hours / minutes) — the mechanic forgot to stop the timer overnight.</li>
+  <li>Delete a wrong session — started by accident.</li>
+  <li>After saving, everything derived from time recalculates: the job's tracked Hours, the percentage split, work order totals and the payroll / Timecard reports. Edited sessions get an <em>edited</em> badge.</li>
+</ul>
+{% call warn("Two locks") %}
+A running session must be stopped before it can be edited, and paid work orders are locked — unpay first.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("mechanic/timers") }}</li>
+  <li>{{ lesson_link("reports/mechanic-hours") }}</li>
+  <li>{{ lesson_link("calendar/wo-on-calendar") }}</li>
+</ul>

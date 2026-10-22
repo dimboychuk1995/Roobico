@@ -1,0 +1,58 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Default Labor Rate — cheaper or special labor for one customer.</li>
+  <li>Pricing Scale and Override part selling price — special parts pricing for one customer.</li>
+  <li>Taxable — tax-exempt customers.</li>
+</ul>
+{% endcall %}
+
+<p>
+  All three settings live on the customer's <strong>Details</strong> tab (and the Pricing Scale / Override can be set at creation).
+  They become the defaults for that customer's work orders; a single work order can still override any of them.
+</p>
+{{ shot("customer-page-details-tab", "Details tab with Default Labor Rate, Pricing Scale and the Override switch.") }}
+
+<h2>Default Labor Rate</h2>
+<p>
+  The labor rate preselected on every new labor line of this customer's work orders. It is never empty — if nothing is chosen, the
+  shop default (“Standard”) is used. To give a fleet a lower hourly rate: create the rate in Settings → Work Order Settings →
+  Labor Rates, then pick it here. On any single job you can still choose a different rate in the labor block.
+</p>
+
+<h2>Pricing Scale</h2>
+{% call step(1, "Create the scale once") %}
+<p>Settings → Parts &amp; Pricing → Margin / Markup Rules → {{ ui("New scale") }}. For a flat 20% margin: mode Margin, one rule From 0, To empty, 20. See {{ lesson_link("settings/pricing-scales") }}.</p>
+{% endcall %}
+{% call step(2, "Assign it to the customer") %}
+<p>Customer → Details → <strong>Pricing Scale</strong> → pick the scale → Save. From now on parts on this customer's work orders are priced from average cost through that scale. Everyone else stays on the shop default.</p>
+{% endcall %}
+{% call step(3, "Decide about fixed selling prices") %}
+<p>Some parts carry a fixed <em>Selling price</em> that normally wins over any scale. Switch on <strong>Override part selling price</strong> (“Always use the scale, ignore part's selling price”) if this customer's scale must apply even to those parts. The summary card then shows an <em>Override</em> badge.</p>
+{% endcall %}
+
+<h2>How a part price is chosen on a work order</h2>
+<ol>
+  <li>Customer has <strong>Override part selling price</strong> → price is always computed from cost via the customer's scale.</li>
+  <li>Otherwise the part's fixed <strong>Selling price</strong>, if it has one.</li>
+  <li>Otherwise average cost through the scale (margin or markup).</li>
+</ol>
+<p>A price typed by hand on the work order line is never overwritten by any of these.</p>
+
+<h2>Taxable</h2>
+<p>
+  Switch <strong>Taxable</strong> to No for tax-exempt customers. New work orders for them default to non-taxable; the per-work-order
+  Taxable toggle can still override. Tax applies to parts and taxable misc charges only — labor is never taxed.
+</p>
+
+{% call note("Price did not change after you changed the scale?") %}
+In order: (1) the part has a fixed Selling price and the customer has no Override; (2) the price was edited by hand on the work order; (3) it came from a service template where it was pinned; (4) the scale is not the one assigned to that customer.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("settings/pricing-scales") }}</li>
+  <li>{{ lesson_link("settings/wo-settings") }}</li>
+  <li>{{ lesson_link("work-orders/parts-on-wo") }}</li>
+</ul>

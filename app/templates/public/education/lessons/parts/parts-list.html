@@ -1,0 +1,57 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The six tabs of the Parts page and the header buttons.</li>
+  <li>Columns of the Parts list: In stock, Avg cost, Last price, Vendor, Location.</li>
+  <li>Row actions and the permissions behind them.</li>
+</ul>
+{% endcall %}
+
+<p>
+  Sidebar → {{ ui("Parts") }}. Tabs: <strong>Parts</strong>, <strong>Parts Orders</strong>, <strong>Parts Orders Payments</strong>,
+  <strong>Cores</strong>, <strong>Cores Returns</strong>, <strong>Stocktakes</strong>. Header buttons: {{ ui("Order") }} (new parts order)
+  and {{ ui("Add Part") }}. Categories, storage locations and pricing scales are configured on Settings → Parts &amp; Pricing.
+</p>
+{{ shot("parts-list", "The Parts tab with the header buttons highlighted.") }}
+
+<h2>Search and filter</h2>
+<p>
+  “Search parts by any field…” matches part number, description, reference, stock, cost and also vendor, category and location names.
+  The status filter offers <strong>Active parts</strong> (default), <strong>Inactive parts</strong>, <strong>All parts</strong>.
+</p>
+
+<h2>Columns</h2>
+<table>
+  <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>Part #</td><td>The part number; a ⇆ hint lists interchangeable numbers (cross references).</td></tr>
+    <tr><td>Description, Reference</td><td>Free text and the alternative / OEM number.</td></tr>
+    <tr><td>In stock</td><td>Total on hand across locations.</td></tr>
+    <tr><td>Avg cost</td><td>Weighted average cost of what is in stock — recalculated on every receiving.</td></tr>
+    <tr><td>Last price</td><td>The price on the latest parts order with this part (hover for the order #); the default price when you order it again.</td></tr>
+    <tr><td>Vendor</td><td>Always the vendor of the latest parts order with this part — it switches automatically when you buy elsewhere.</td></tr>
+    <tr><td>Category, Location</td><td>Location shows a per-location breakdown when stock is split (“Shelf A × 3, Shelf B × 1”); stock without a location is “Unassigned”.</td></tr>
+  </tbody>
+</table>
+<p>Footer: <strong>Total inventory cost</strong> (Σ stock × avg cost) and <strong>Total core cost</strong> for the parts shown by the current filter.</p>
+{{ shot("parts-list-full", "The full Parts tab with the footer totals.") }}
+
+<h2>Row actions</h2>
+<p>
+  {{ ui("Cross refs") }}, {{ ui("History") }}, {{ ui("Locations") }} (tracked parts only), {{ ui("Edit") }}
+  (needs {{ perm("parts.edit", "Edit parts") }}) and {{ ui("Deactivate") }} (needs {{ perm("parts.delete", "Delete parts") }}).
+  {{ ui("Add Part") }} needs {{ perm("parts.create", "Create parts") }}; {{ ui("Order") }} needs {{ perm("parts_orders.create", "Create parts orders") }}.
+</p>
+{{ shot("parts-row-actions", "Row actions on a part.") }}
+
+{% call note("Costs are a separate permission") %}
+Avg cost, Last price, the inventory totals and the Core Cost / Credit columns appear only with {{ perm("parts.view_costs", "View part costs") }}. Without it the server also strips costs from part search, history and cross references, and the part form has no Average cost field.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("parts/add-part") }}</li>
+  <li>{{ lesson_link("parts/locations") }}</li>
+  <li>{{ lesson_link("parts/inactive-parts") }}</li>
+</ul>

@@ -1,0 +1,45 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Sending a portal link from the customer page.</li>
+  <li>What the customer sees — and cannot do — in the portal.</li>
+  <li>Link validity and renewal.</li>
+</ul>
+{% endcall %}
+
+<p>
+  The customer portal is a <strong>read-only</strong> cabinet where your customer sees their work orders, invoices, payments, vehicles,
+  recall checks and quarterly maintenance files. Approving or declining work does <em>not</em> happen in the portal — that goes through
+  the separate authorization email ({{ lesson_link("work-orders/authorizations") }}); the portal only shows the history.
+</p>
+
+{% call step(1, "Send the link") %}
+<p>Customer page → {{ ui("Portal Link") }} → enter one or more emails → send. Needs {{ perm("customers.manage_portal", "Manage customer portal links") }}. The customer receives a “Your Customer Portal” email.</p>
+{{ shot("customer-portal-link-prompt", "Portal Link: enter the recipient emails.", "sm") }}
+{% endcall %}
+
+{% call step(2, "What the customer sees") %}
+<ul>
+  <li><strong>Work Orders</strong> — with totals, paid and balance; each opens a detailed view with Download PDF.</li>
+  <li><strong>Vehicles</strong> — clicking one filters the other tabs; a per-vehicle <em>Recalls</em> check.</li>
+  <li><strong>Payments</strong> — their payment history.</li>
+  <li><strong>Authorizations</strong> — approvals and declines they gave by email.</li>
+  <li><strong>Maintenance Files</strong> — a quarterly maintenance PDF per vehicle: pick Quarter + Year → Download PDF.</li>
+</ul>
+<p>The portal states “This is a read-only customer portal. To make changes, please contact the shop.”</p>
+{% endcall %}
+
+{% call step(3, "Validity") %}
+<p>The link is valid <strong>30 days</strong> and renews itself while it is in use. Re-sending usually keeps the same link, so you can simply send it again if the customer lost the email.</p>
+{% endcall %}
+
+{% call note("Every invoice email carries the link too") %}
+When you email a work order PDF, the message includes the customer's portal link — so most customers find the portal without a separate invitation.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("work-orders/pdf-email") }}</li>
+  <li>{{ lesson_link("work-orders/authorizations") }}</li>
+</ul>

@@ -1,0 +1,27 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Linking interchangeable part numbers.</li>
+  <li>Where the alternates show up.</li>
+</ul>
+{% endcall %}
+
+{% call step(1, "Open Cross refs on a part") %}
+<p>Parts list → row → {{ ui("Cross refs") }}. The dialog “Cross references — &lt;part&gt;” opens.</p>
+{{ shot("parts-cross-refs-modal", "The Cross references dialog.", "md") }}
+{% endcall %}
+{% call step(2, "Search and add") %}
+<p>Search a part by number and add it. Linked parts are mutually interchangeable, and linking is transitive: A–B and B–C makes A–C interchangeable.</p>
+{% endcall %}
+{% call step(3, "Remove when needed") %}
+<p>Removing a reference unlinks just that part.</p>
+{% endcall %}
+
+<h2>Where alternates appear</h2>
+<ul>
+  <li>The Parts list shows a ⇆ hint next to the part number.</li>
+  <li>Part search on <strong>work orders</strong> and <strong>parts orders</strong> lists alternates as extra rows (“⇄ Cross ref for …”) with their own stock — pick the one you have.</li>
+  <li>The <strong>mobile app</strong> shows them too (⇆ in Parts → Stock).</li>
+</ul>
+{{ shot("wo-parts-search-dropdown", "Alternates inside the work order part search.") }}

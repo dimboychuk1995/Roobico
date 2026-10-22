@@ -1,0 +1,41 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Charging the core to the customer vs keeping the old core.</li>
+  <li>The Cores tab: quantities, manual corrections, returns.</li>
+  <li>Where the vendor credit shows up.</li>
+</ul>
+{% endcall %}
+
+<h2>Two ways a core can go</h2>
+<p>
+  A part with a core charge (set in the part form) either <strong>bills the deposit</strong> to the customer — the Core toggle on the
+  work order line, on by default when the shop's Core Charge Rules say so — or, if the toggle is off, the shop <strong>keeps the
+  customer's old core</strong> and it is tracked on the <strong>Cores</strong> tab (quantity per part) to send back to the vendor.
+</p>
+{{ shot("parts-cores-tab", "The Cores tab: cores on hand per part.") }}
+
+<h2>Correcting the quantity</h2>
+<p>
+  The Quantity column is editable — type the real number of cores on hand and press {{ ui("Save") }} (a core got damaged, lost, or found).
+  This is a plain correction: it does not create a vendor credit or a Cores Returns entry. Setting it to 0 removes the row.
+</p>
+
+<h2>Returning cores to the vendor</h2>
+{% call step(1, "Return") %}
+<p>Click {{ ui("Return") }} on a core: quantity, live <strong>Credit</strong> amount (qty × core cost), optional vendor and notes (RMA #).</p>
+{{ shot("parts-core-return-modal", "Return cores to vendor.", "sm") }}
+{% endcall %}
+{% call step(2, "The ledger") %}
+<p>The <strong>Cores Returns</strong> tab is the ledger of returned cores with credit totals.</p>
+{{ shot("parts-cores-returns-tab", "Cores Returns tab.") }}
+{% endcall %}
+{% call step(3, "Where the money shows up") %}
+<p>Parts → <strong>Parts Orders Payments</strong> has a <strong>Vendor credits</strong> section listing every parts return and core return with its credit amount — the money vendors owe you back. It is informational: credits do not reduce the Payments Total and never push a vendor's balance negative.</p>
+{{ shot("parts-orders-payments-tab", "Parts Orders Payments with the Vendor credits section.") }}
+{% endcall %}
+
+{% call note("Permissions") %}
+Core Cost / Credit columns need {{ perm("parts.view_costs", "View part costs") }}; the Core Charge Rules (charge by default) live in Settings → Work Order Settings.
+{% endcall %}

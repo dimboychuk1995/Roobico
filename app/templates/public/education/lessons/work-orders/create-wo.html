@@ -1,0 +1,54 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Customer, unit, mileage and date — the four things every work order needs.</li>
+  <li>The Create button and its dropdown.</li>
+  <li>Shortcuts: from a customer or unit page, from the calendar, from a photo (Recognize WO).</li>
+</ul>
+{% endcall %}
+
+<p>Work Orders → {{ ui("Create Work Order") }} (needs {{ perm("work_orders.create", "Create work orders") }}).</p>
+{{ shot("wo-create-page", "The Create Work Order page before anything is selected.") }}
+
+{% call step(1, "Customer") %}
+<p>Pick an existing customer in the searchable picker. Customers are created in the Customers section — there is no inline customer creation here. Once chosen, a <strong>Customer Info</strong> panel appears with an <em>Open profile</em> link.</p>
+{% endcall %}
+
+{% call step(2, "Unit") %}
+<p>Pick one of the customer's units, or click {{ ui("+ Add Unit") }} to create one inline (a VIN auto-fills Make, Model, Year and Type). Under the unit row you get {{ ui("Recalls") }} and {{ ui("Parts orders") }}.</p>
+{{ shot("wo-create-with-customer", "Customer and unit selected: Customer Info panel, unit row with Recalls and Parts orders.") }}
+{% endcall %}
+
+{% call step(3, "Mileage and date") %}
+<p><strong>Mileage</strong> is required. It is stored on the work order as a snapshot: an old work order and its PDF always show the mileage as it was at that time. Editing the mileage later updates the unit's odometer only when the new value is higher. <strong>Work Order Date</strong> defaults to today; it is the invoice date on the PDF and the date lists and sales reports use.</p>
+{% endcall %}
+
+{% call step(4, "Jobs and parts") %}
+<p>Fill the first labor block (description, hours, rate), add parts, misc charges and check the totals — covered in {{ lesson_link("work-orders/labor-blocks") }}, {{ lesson_link("work-orders/parts-on-wo") }} and {{ lesson_link("work-orders/charges-tax-totals") }}.</p>
+{% endcall %}
+
+{% call step(5, "Create") %}
+<p>{{ ui("Create Work Order") }} saves it as <em>Open</em>. The dropdown arrow next to it offers <strong>Save In Progress</strong> (the job is already on the floor), <strong>Save as Estimate</strong> (a quote — no parts leave stock) and <strong>Create Annual Inspection</strong>.</p>
+{{ shot("wo-create-dropdown", "The Create dropdown.") }}
+{% endcall %}
+
+<h2>What a finished work order looks like</h2>
+<p>From top to bottom: header with number, status and Transfer / History / Back; customer &amp; unit; order totals; labor blocks with their parts; work order attachments; and the action bar — Paid, Email Work Order, Download PDF, WO Cost, Delete, Edit / Save.</p>
+{{ shot("wo-details-full", "A complete work order page, top to bottom.") }}
+
+<h2>Shortcuts</h2>
+<ul>
+  <li><strong>From a customer or unit page</strong> — {{ ui("Create Work Order") }} opens this page with the customer (and unit) preselected.</li>
+  <li><strong>From the calendar</strong> — an appointment's {{ ui("Create Work Order") }} carries over the customer, unit, presets, mechanic and note, and links the appointment to the saved work order. See {{ lesson_link("calendar/wo-on-calendar") }}.</li>
+  <li><strong>Recognize WO</strong> — {{ ui("📷 Recognize WO") }}: upload a photo or PDF of a handwritten work order and AI fills the jobs and parts; review before applying.</li>
+  <li><strong>From the mobile app</strong> — mechanics create work orders on the phone, including by scanning a VIN. See {{ lesson_link("mechanic/mobile-wo") }}.</li>
+</ul>
+
+{% call note("The date follows the mechanic's last real save") %}
+A job started on Monday and finished by a mechanic on Wednesday is invoiced for Wednesday: every save a mechanic makes that changes something (jobs, parts, mileage, the first Done) moves the work order date to that day. Merely opening it does not; office saves leave the date as set.
+{% endcall %}
+
+{% call tip("One unit in the shop = one work order") %}
+When a mechanic picks a unit that already has a work order In Progress, they are taken into that work order instead of creating another. Managers are not redirected — you can create additional work orders for the same unit deliberately.
+{% endcall %}

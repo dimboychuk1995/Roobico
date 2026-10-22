@@ -1,0 +1,26 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>One check (or transfer) that covers several invoices of the same customer.</li>
+  <li>Auto-Distribute across the oldest unpaid work orders.</li>
+</ul>
+{% endcall %}
+
+{% call step(1, "Open Bulk Payment") %}
+<p>Work Orders → {{ ui("Bulk Payment") }} in the header (needs {{ perm("work_orders.manage_payments", "Manage payments") }}).</p>
+{{ shot("wo-bulk-payment-modal", "The Bulk Payment dialog.", "md") }}
+{% endcall %}
+{% call step(2, "Pick the customer and enter the amount") %}
+<p>Select the customer — their unpaid work orders load with balances. Enter the amount received, the method, date and notes.</p>
+{% endcall %}
+{% call step(3, "Auto-Distribute") %}
+<p>Click {{ ui("Auto-Distribute") }}: the money is spread across the oldest unpaid invoices first. Adjust the per-work-order amounts by hand if the customer paid specific invoices; the summary shows how much is allocated and any leftover.</p>
+{% endcall %}
+{% call step(4, "Record") %}
+<p>{{ ui("Record Payments") }} creates one payment per work order. Fully covered work orders turn Paid; a partially covered one keeps its reduced balance.</p>
+{% endcall %}
+
+{% call note("Leftover money") %}
+The dialog does not let you allocate more than the sum of balances, and there are no customer credits — if the check is larger than what is owed, record what is due and handle the difference outside Roobico.
+{% endcall %}

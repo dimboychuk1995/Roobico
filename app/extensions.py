@@ -170,6 +170,13 @@ def ensure_master_collections_indexes(master_db):
     # ищет открытые инвойсы тенанта, админка/отчёты — историю по дате.
     _safe_create_index(master_db.billing_invoices, [("tenant_id", ASCENDING), ("status", ASCENDING), ("created_at", DESCENDING)], name="idx_billing_invoices_tenant_status_created")
 
+    # Заявки «Contact us» со страницы логина: список в админке по статусу/дате.
+    _safe_create_index(master_db.contact_requests, [("status", ASCENDING), ("created_at", DESCENDING)], name="idx_contact_requests_status_created")
+    _safe_create_index(master_db.contact_requests, [("created_at", DESCENDING)], name="idx_contact_requests_created_desc")
+
+    # Education Center: прогресс прохождения уроков — один документ на юзера.
+    _safe_create_index(master_db.education_progress, [("user_id", ASCENDING)], unique=True, name="uniq_education_progress_user")
+
 
 def ensure_shop_collections_indexes(shop_db):
     """

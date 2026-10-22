@@ -127,6 +127,8 @@ PUBLIC_HOST_ENDPOINTS = frozenset({
     "auth.forgot_password",
     "auth.reset_password_page",
     "auth.reset_password",
+    # Форма «Contact us» на странице логина.
+    "contact.submit",
 })
 
 # Admin-only endpoints (admin.roobico.com). All admin_panel.* views are
@@ -175,8 +177,13 @@ def create_app():
     # Expose selected config keys to all templates.
     @app.context_processor
     def inject_public_config():
+        from app.blueprints.contact.services import SUPPORT_PHONE_DISPLAY, SUPPORT_PHONE_TEL
+
         return {
             "mapbox_access_token": app.config.get("MAPBOX_ACCESS_TOKEN", ""),
+            # Телефон поддержки — страница логина, справка, Education Center.
+            "support_phone_display": SUPPORT_PHONE_DISPLAY,
+            "support_phone_tel": SUPPORT_PHONE_TEL,
         }
 
     # Настройки таблиц юзера (flex_tables.js) — на все страницы всех
@@ -575,6 +582,8 @@ def create_app():
     from app.blueprints.assistant import assistant_bp
     from app.blueprints.perks import perks_bp
     from app.blueprints.inbound_email import inbound_email_bp
+    from app.blueprints.contact import contact_bp
+    from app.blueprints.education import education_bp
 
     app.register_blueprint(main_bp)
     app.register_blueprint(reports_bp)
@@ -597,5 +606,7 @@ def create_app():
     app.register_blueprint(assistant_bp)
     app.register_blueprint(perks_bp)
     app.register_blueprint(inbound_email_bp)
+    app.register_blueprint(contact_bp)
+    app.register_blueprint(education_bp)
 
     return app

@@ -1,0 +1,41 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Installing and logging in; staying signed in.</li>
+  <li>The bottom tabs and what each role sees.</li>
+  <li>Switching shops and the few things that are web-only.</li>
+</ul>
+{% endcall %}
+
+{% call step(1, "Install and log in") %}
+<p>Install the Roobico app from the App Store (TestFlight during the beta). Log in with the same email and password as the web. You stay signed in permanently — closing or restarting the app does not log you out; access still ends immediately when a user is deactivated.</p>
+{{ mobile_shot("shot-mobile-dashboard.png", "The mobile dashboard for an office user.") }}
+{% endcall %}
+{% call step(2, "Bottom tabs") %}
+<ul>
+  <li><strong>Dashboard</strong> — outstanding balance, revenue / paid / unpaid, work order count, labor, parts and parts-order stats per period.</li>
+  <li><strong>Work Orders</strong> — list + Payments + Estimates segments, create / edit, payments, authorization, email PDF, AI scan of a paper work order (managers).</li>
+  <li><strong>Customers</strong> — list / search, customer and unit pages, forms.</li>
+  <li><strong>Parts</strong> — Stock (with cross references ⇆), Orders (incl. AI invoice scan), Counts (stocktakes).</li>
+  <li><strong>More</strong> — global Search, Vendors, Calendar, Reports, Settings with <strong>Active shop</strong> switching and account info.</li>
+</ul>
+<p>Tabs and buttons follow permissions exactly like the web — a mechanic sees only Work Orders + More; the server checks every request.</p>
+{{ mobile_shot("shot-mobile-wo.png", "Work orders on the phone.") }}
+{% endcall %}
+{% call step(3, "Handy details") %}
+<ul>
+  <li>A floating <em>hide keyboard</em> button appears above the keyboard while typing.</li>
+  <li>Reports show the standard reports with period chips.</li>
+  <li>Push notifications start after the first login on the phone — allow them when asked ({{ lesson_link("mechanic/done-confirm") }}).</li>
+</ul>
+{{ mobile_shot("shot-mobile-hours.png", "The mechanic labor hours chart on the phone.") }}
+{% endcall %}
+
+{% call note("Web-only for now") %}
+Import / Export, PDF design, roles editing, integrations and billing are web-only. Mobile-first: camera flows (AI scan of work orders and vendor invoices, photo attachments) and push notifications.
+{% endcall %}
+
+{% call tip("Local or custom server") %}
+The app talks to app.roobico.com by default; the server address can be changed on the login screen if your administrator tells you to.
+{% endcall %}

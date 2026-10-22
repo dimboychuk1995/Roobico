@@ -1,0 +1,61 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The summary card and the header buttons.</li>
+  <li>The five tabs: Work Orders, Units, Payments, Estimates, Details.</li>
+  <li>How Current Balance is calculated.</li>
+</ul>
+{% endcall %}
+
+<p>Open a customer from the list (click the row or {{ ui("Open") }}).</p>
+{{ shot("customer-page", "A customer page: summary card, header buttons and the Work Orders tab.") }}
+
+<h2>Header buttons</h2>
+<ul>
+  <li>{{ ui("Back") }} — to the list.</li>
+  <li>{{ ui("History") }} — the Activity Journal filtered to this customer: every edit with who, when and the old / new values.</li>
+  <li>{{ ui("Portal Link") }} — send the customer a read-only portal link ({{ lesson_link("customers/customer-portal") }}).</li>
+  <li>{{ ui("Create Work Order") }} — opens the work order page with this customer preselected.</li>
+  <li>{{ ui("Deactivate Customer") }} / {{ ui("Activate Customer") }} — soft deactivation ({{ lesson_link("customers/deactivate") }}).</li>
+</ul>
+
+<h2>Summary card</h2>
+<p>
+  Company, main contact, address and phone, the <strong>Current Balance</strong>, and the customer's pricing settings:
+  Default Labor Rate, Pricing Scale and an <em>Override</em> badge when “Override part selling price” is on.
+  <strong>Current Balance</strong> = the sum over the customer's active work orders of max(0, total − paid); an overpaid
+  work order never offsets another one. Amounts are visible only with {{ perm("work_orders.view_costs", "View part costs inside WO") }}.
+</p>
+
+<h2>Tabs</h2>
+{% call step(1, "Work Orders") %}
+<p>Every work order of the customer with search, the paid-status filter and date presets; footer totals Labor / Parts / Total / Unpaid for the current filter. Click a row to open the work order.</p>
+{% endcall %}
+{% call step(2, "Units") %}
+<p>The customer's vehicles with unit number, VIN, year / make / model and mileage. {{ ui("Add Unit") }} creates one; the {{ ui("Inspection") }} button on each row starts a DOT annual inspection for that unit. Use the status filter to see inactive units.</p>
+{{ shot("customer-page-units-tab", "Units tab with Add Unit and per-row Inspection buttons.") }}
+{% endcall %}
+{% call step(3, "Payments") %}
+<p>Payments across all of the customer's work orders; a payment can be deleted here (needs {{ perm("work_orders.manage_payments", "Manage payments") }}).</p>
+{{ shot("customer-page-payments-tab", "Payments tab.") }}
+{% endcall %}
+{% call step(4, "Estimates") %}
+<p>Work orders saved as estimates (quotes) for this customer. Edit opens the estimate page; see {{ lesson_link("work-orders/estimates") }}.</p>
+{{ shot("customer-page-estimates-tab", "Estimates tab.") }}
+{% endcall %}
+{% call step(5, "Details") %}
+<p>The edit form: contacts (one is the main contact), address, Taxable, Default Labor Rate, Pricing Scale, Override part selling price, plus attachments and the Deactivate button. Save needs {{ perm("customers.edit", "Edit customers") }}.</p>
+{{ shot("customer-page-details-tab", "Details tab: the edit form and attachments.") }}
+{% endcall %}
+
+{% call tip("Attachments instead of notes") %}
+Contracts, tax-exempt certificates, fleet lists — upload them on the Details tab. There is no separate notes field.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("customers/customer-pricing") }}</li>
+  <li>{{ lesson_link("customers/unit-page") }}</li>
+  <li>{{ lesson_link("work-orders/bulk-payment") }} — one check for several invoices</li>
+</ul>

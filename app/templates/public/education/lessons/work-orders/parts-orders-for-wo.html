@@ -1,0 +1,49 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Creating a vendor order that is linked to the job, even before the work order is saved.</li>
+  <li>Receiving and paying the order from the work order page.</li>
+  <li>PO # / WO # badges and the usage check.</li>
+</ul>
+{% endcall %}
+
+<p>
+  In the office interface (needs {{ perm("work_orders.view_costs", "View part costs inside WO") }}) the Customer &amp; Unit section has a
+  discreet {{ ui("Parts orders") }} button under the unit row — on existing work orders and on the create screen alike.
+</p>
+{{ shot("wo-parts-orders-block", "The Parts orders block expanded under the unit.") }}
+
+{% call step(1, "Create parts order") %}
+<p>Click {{ ui("Create parts order") }}. It opens the <em>same</em> order dialog as Parts → Order: vendor search, order date, part search with cross references and stock, core charges, non-inventory amounts, the running total and the AI Order Reader. The only difference: the order is linked to this work order automatically.</p>
+{{ shot("parts-order-modal", "The order dialog — identical to the one on the Parts page.", "md") }}
+{% endcall %}
+{% call step(2, "Before the work order is saved") %}
+<p>Orders can be created on the create screen too: they attach to the page and link to the work order the moment you press Create Work Order.</p>
+{% endcall %}
+{% call step(3, "Receive and pay right here") %}
+<p>Each linked order shows its status (ordered / received), payment status (unpaid / partial / paid), total and balance. {{ ui("Receive") }} asks for the vendor bill and stock locations, then updates stock; {{ ui("Pay") }} records a payment with attachments; the order number or {{ ui("Open") }} opens the full dialog.</p>
+{% endcall %}
+
+<h2>Badges in both lists</h2>
+<p>
+  The order appears on Parts → Parts Orders like any other, marked with a <strong>WO #</strong> badge that links back; the work orders
+  table shows mirror <strong>PO #</strong> badges on rows with linked orders — click one to open that order.
+</p>
+
+<h2>Usage check</h2>
+<p>
+  Once the work order is accepted (a real work order, not an estimate and not an unsaved page) each order item becomes a chip:
+  <span class="badge text-bg-success">green</span> when the work order uses that many of the part,
+  <span class="badge text-bg-warning">yellow</span> when only part of the ordered quantity is on it (e.g. “2/3”),
+  <span class="badge text-bg-danger">red</span> when the part is not on the work order at all. A warning box lists everything ordered
+  for this job but not used in it — so nothing bought for a job is forgotten on a shelf. While the work order is still an estimate the
+  chips stay neutral.
+</p>
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("purchasing/create-order") }}</li>
+  <li>{{ lesson_link("purchasing/receive") }}</li>
+  <li>{{ lesson_link("purchasing/ai-order-reader") }}</li>
+</ul>

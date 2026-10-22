@@ -1,0 +1,54 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The Taxable toggle and where the rate comes from.</li>
+  <li>What is taxed and what never is.</li>
+  <li>How the grand total is built.</li>
+</ul>
+{% endcall %}
+
+{{ shot("wo-totals", "The totals box: shop supply, Taxable toggle, labor, parts, tax and grand total.", "md") }}
+
+<h2>Taxable</h2>
+<p>
+  The <strong>Taxable</strong> toggle on the work order defaults from the customer's Taxable flag. Tax applies to
+  <strong>parts and taxable misc charges only — labor is never taxed</strong>. The rate comes from the shop ZIP code (or the custom
+  rate in Settings → Parts &amp; Pricing → Sales Tax Rate) and is <strong>locked into the work order at save time</strong>, so a later
+  rate change never alters an existing invoice.
+</p>
+{{ shot("settings-sales-tax", "Where the tax rate is configured: Settings → Parts & Pricing.", "md") }}
+
+<h2>The formula</h2>
+<table>
+  <thead><tr><th>Line</th><th>Made of</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Labor total</strong></td><td>Σ labor lines (hours × rate, or the manual Labor Total) + shop supply.</td></tr>
+    <tr><td><strong>Parts total</strong></td><td>Σ parts (price + charged cores) × qty + misc charges.</td></tr>
+    <tr><td><strong>Sales tax</strong></td><td>(parts + taxable misc) × the locked rate, when Taxable is on.</td></tr>
+    <tr><td><strong>Grand total</strong></td><td>Labor total + Parts total + Sales tax.</td></tr>
+    <tr><td><strong>Balance</strong></td><td>Grand total − payments recorded.</td></tr>
+  </tbody>
+</table>
+
+<h2>Shop supply</h2>
+<p>
+  A percentage of labor (default 5%, configurable in Settings → Work Order Settings). It shows as an editable <em>Shop supply: $</em>
+  field with a ↺ reset, and is part of the Labor total. Set it to 0 for a specific job if needed.
+</p>
+
+<h2>Misc charges</h2>
+<p>
+  Added with {{ ui("+ Add Misc Charge") }} or carried automatically by catalog parts. Each has its own <strong>Taxable</strong>
+  checkbox, so a disposal fee can be taxed while a mileage fee is not.
+</p>
+
+{% call tip("Internal profit view") %}
+{{ ui("WO Cost") }} shows cost, revenue and profit per job using mechanic hourly cost rates you enter — stored only in your browser. See {{ lesson_link("work-orders/wo-cost") }}.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("settings/pricing-scales") }} — the tax override lives on the same page as pricing scales</li>
+  <li>{{ lesson_link("customers/customer-pricing") }} — tax-exempt customers</li>
+</ul>

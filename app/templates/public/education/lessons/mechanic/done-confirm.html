@@ -1,0 +1,53 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Done — ready for review: what it does and does not change.</li>
+  <li>Several mechanics on one work order.</li>
+  <li>Manager confirmation and the two push notifications.</li>
+</ul>
+{% endcall %}
+
+<h2>Done — ready for review</h2>
+<p>
+  Pressing {{ ui("Done — ready for review") }} does <strong>not</strong> change the status. It shows managers a green <strong>Mechanic done</strong>
+  badge (web list, mobile list, work order details) meaning the mechanic finished and the job awaits review. Any new change or a restarted
+  job timer clears the badge.
+</p>
+{{ shot("wo-list", "The Work Orders list — Mechanic done and ✓ Name marks appear under the status badge.") }}
+
+<h2>Several mechanics — Done is per mechanic</h2>
+<p>
+  Everyone who worked on the work order (started a timer on it, or is assigned to one of its jobs) presses Done themselves. Until the
+  last one does, the work order stays in the manager's <em>In Work</em> group, shows no Mechanic done badge and sends no “finished” push;
+  the list shows who already finished as a green <strong>✓ Name</strong>. In your own app the work order shows <em>Done</em> as soon as
+  <em>you</em> pressed it — your mark, not the whole job. When a manager saves the work order as In Progress, all marks are cleared.
+</p>
+
+<h2>Manager confirmation</h2>
+{% call step(1, "Review") %}
+<p>Open the work order (web or app): check jobs, tracked hours, parts and photos.</p>
+{% endcall %}
+{% call step(2, "Confirm work order (mobile)") %}
+<p>In the app, {{ ui("Confirm work order") }} after the Mechanic done badge. The work order gets a <strong>Confirmed</strong> badge and is <strong>locked for mechanics</strong> — they cannot open, edit or start a timer on it until the manager cancels the confirmation. The status does not change — complete it and collect payment as usual.</p>
+{% endcall %}
+{% call step(3, "Send it back if needed") %}
+<p>On the web, {{ ui("Save In Progress") }} clears every Done mark and returns the work order to the In Work group.</p>
+{% endcall %}
+
+<h2>Push notifications (office users)</h2>
+<ul>
+  <li><strong>“WO #… in work”</strong> — a mechanic started their first job timer on it, saved it from mechanic mode, or picked a finished work order back up after Done.</li>
+  <li><strong>“WO #… finished”</strong> — the (last) mechanic pressed Done; the work order awaits review.</li>
+</ul>
+<p>
+  Tapping the notification opens the work order in the app (switching the active shop first if needed). Notifications are per device:
+  they start after the first login on the phone and stop on logout. Mechanics do not receive them; actions by office users do not trigger
+  them. Requires the installed app (not the Expo Go development client).
+</p>
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("work-orders/live-updates") }}</li>
+  <li>{{ lesson_link("work-orders/statuses") }}</li>
+</ul>

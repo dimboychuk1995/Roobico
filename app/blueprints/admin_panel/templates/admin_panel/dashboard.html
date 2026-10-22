@@ -19,6 +19,10 @@
     <div class="lbl">Users</div>
     <div class="num">{{ stats.users_active }} <small>/ {{ stats.users_total }}</small></div>
   </div>
+  <a class="stat" href="{{ url_for('admin_panel.contact_requests_list') }}" style="text-decoration:none;">
+    <div class="lbl">New contact requests</div>
+    <div class="num">{{ stats.contact_new }} <small>/ {{ stats.contact_total }}</small></div>
+  </a>
 </div>
 
 <p style="color:#64748b; font-size:.85rem;">

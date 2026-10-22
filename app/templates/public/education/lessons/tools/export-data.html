@@ -1,0 +1,26 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Downloading all records of an entity as CSV or Excel.</li>
+  <li>Round-tripping to another shop.</li>
+</ul>
+{% endcall %}
+
+{% call step(1, "Pick the entity tab") %}
+<p>Import / Export → Customers, Units, Vendors, Parts or Work Orders (needs {{ perm("import_export.export", "Run data exports") }}).</p>
+{{ shot("import-export-page", "Download CSV / Download Excel on each tab.") }}
+{% endcall %}
+{% call step(2, "Download CSV or Download Excel") %}
+<p>The file contains <strong>all</strong> records of that entity for the current shop. Work Orders additionally include Grand Total, Paid Amount and Balance.</p>
+{% endcall %}
+
+<h2>Moving data to another shop</h2>
+<p>
+  Export columns match the import fields, so a file exported from one shop imports into another with automatic column mapping — except
+  units, which are imported per customer: split a whole-shop units export by the Customer Name column and import one file per customer.
+</p>
+
+{% call tip("Backups") %}
+Roobico keeps its own daily backups, but an occasional export of customers, units and parts is a convenient offline copy for your records.
+{% endcall %}

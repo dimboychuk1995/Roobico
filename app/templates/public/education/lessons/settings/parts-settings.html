@@ -1,0 +1,29 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Parts categories.</li>
+  <li>The 4-level storage location tree.</li>
+</ul>
+{% endcall %}
+
+<p>Settings → {{ ui("Parts & Pricing") }} (needs {{ perm("settings.manage_parts_settings", "Manage parts settings") }}). The page also holds pricing scales and sales tax — see {{ lesson_link("settings/pricing-scales") }}.</p>
+{{ shot("settings-parts-settings", "Parts & Pricing: locations, categories, pricing rules and sales tax.") }}
+
+<h2>Parts Categories</h2>
+<p>Type a name and {{ ui("Add") }}. Categories are a filter and a stocktake scope; Edit renames, Delete removes an unused category. A new shop comes with a seeded set.</p>
+
+<h2>Parts Locations</h2>
+<p>
+  Build the tree up to <strong>4 levels</strong>: Warehouse › Rack › Shelf › Bin. Pick the parent and type the new location's name. Each part has
+  one primary location (set in the part form); stock can still sit in several locations at once ({{ lesson_link("parts/locations") }}).
+</p>
+{{ shot("settings-parts-locations", "The Parts Locations tree.", "md") }}
+
+{% call note("Deleting a location") %}
+Not possible while it has sub-locations, is the primary location of a part, or still holds stock — transfer the stock out first.
+{% endcall %}
+
+{% call tip("Name locations the way the shelf is labeled") %}
+Receiving asks where to put each line and stocktakes can be scoped to a location — short, physical names (A-3, Bin 12) make both faster.
+{% endcall %}

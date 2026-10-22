@@ -1,0 +1,43 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Downloading the invoice PDF and what it contains.</li>
+  <li>Emailing the work order to the customer's contacts.</li>
+  <li>Managing contacts straight from the email dialog.</li>
+</ul>
+{% endcall %}
+
+<h2>Download PDF</h2>
+<p>
+  {{ ui("Download PDF") }} on the work order page or the list (needs {{ perm("work_orders.export_pdf", "Export PDF") }}) produces
+  <em>WorkOrder-&lt;number&gt;.pdf</em>. For an estimate the same document is titled <em>Estimate</em>. The layout — logo, colors,
+  which fields print, footer text — is configured in Settings → PDF Design ({{ lesson_link("settings/pdf-design") }}). If a labor
+  line has a <em>Described Issue</em>, it prints under the description as “Reported issue: …”.
+</p>
+{{ shot("settings-pdf-design", "PDF Design settings with the live preview.") }}
+
+<h2>Email Work Order</h2>
+{% call step(1, "Open the dialog") %}
+<p>Click {{ ui("Email Work Order") }} (needs {{ perm("work_orders.send_to_customer", "Send to customer") }}). The dialog lists the customer's saved contacts with the main contact preselected.</p>
+{{ shot("wo-email-modal", "The Send Email dialog with the customer's contacts.", "md") }}
+{% endcall %}
+{% call step(2, "Pick or add recipients") %}
+<p>Tick the contacts to send to. Need another address? Add it on the fly — it shows a green <em>New</em> badge and can be saved to the customer card. The PDF is attached and the email includes the customer's portal link.</p>
+{% endcall %}
+{% call step(3, "Send") %}
+<p>The email goes out from Roobico; the Activity Journal records who sent what and to whom.</p>
+{% endcall %}
+
+<h2>Managing contacts in the dialog</h2>
+<p>
+  Each saved contact in the recipients list has a <strong>pencil</strong> (edit name / email / phone) and a <strong>trash</strong> icon
+  (delete the contact from the customer, after an “are you sure” prompt). Changes save to the customer card immediately, exactly as if
+  you edited them on the Customers page, and apply to all email dialogs (work order, payment receipt, authorization). Deleting the main
+  contact promotes the next one. The icons are controlled by {{ perm("work_orders.manage_email_contacts", "Edit / delete customer contacts in email dialogs") }}
+  — on for every role by default; switch it off for a role to make the list read-only (adding a new recipient still works).
+</p>
+
+{% call tip("Receipts") %}
+A payment receipt email is offered when you record a payment — same contacts dialog. See {{ lesson_link("work-orders/payments") }}.
+{% endcall %}

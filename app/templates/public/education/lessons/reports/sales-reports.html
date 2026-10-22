@@ -1,0 +1,31 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Sales Summary — billed totals per customer.</li>
+  <li>Payments Summary — money received.</li>
+  <li>Parts Orders Summary — vendor spending by type.</li>
+</ul>
+{% endcall %}
+
+<p>All three need {{ perm("reports.view_financial", "View financial reports") }} and use the standard filters (date preset, group by, customer / vendor multi-select).</p>
+
+<h2>Sales Summary</h2>
+<p>
+  Billed totals per customer for the period: Orders, Labor, Parts, Parts Cost, Tax, Hours, Revenue. Work orders are dated by their
+  Work Order Date (falling back to creation date); work orders without a customer and estimates are excluded. The summary adds the
+  average ticket and invoiced hours.
+</p>
+{{ shot("report-sales-summary", "Sales Summary.") }}
+
+<h2>Payments Summary</h2>
+<p>Money received per customer: payment count, amount, average payment — dated by <em>payment date</em>, not work order date.</p>
+{{ shot("report-payments-summary", "Payments Summary.") }}
+
+<h2>Parts Orders Summary</h2>
+<p>Vendor spending split by type — Parts, Cores, Shop Supply, Tools, Utilities, Pmt to Svc — with totals, paid and balance per vendor. Orders from email that are not confirmed are excluded; returns subtract.</p>
+{{ shot("report-parts-orders-summary", "Parts Orders Summary.") }}
+
+{% call tip("Sales vs payments") %}
+Sales Summary answers “what did we bill this month”; Payments Summary answers “what cash came in this month”. A job billed in March and paid in April appears in March sales and April payments.
+{% endcall %}

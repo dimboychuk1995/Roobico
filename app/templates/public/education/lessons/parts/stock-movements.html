@@ -1,0 +1,41 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Everything that increases or decreases stock.</li>
+  <li>Negative stock and how to fix it.</li>
+  <li>Reading a part's History.</li>
+</ul>
+{% endcall %}
+
+<table>
+  <thead><tr><th>Stock goes up</th><th>Stock goes down</th></tr></thead>
+  <tbody>
+    <tr><td>A parts order is <strong>received</strong></td><td>Parts are put on a <strong>work order</strong> (on save)</td></tr>
+    <tr><td>A work order is <strong>deleted</strong> or turned into an <strong>estimate</strong> (parts return)</td><td>An estimate is <strong>converted</strong> to a work order</td></tr>
+    <tr><td>A vendor <strong>return</strong> is deleted</td><td>A vendor <strong>return</strong> is created (from a received order)</td></tr>
+    <tr><td>A received order is <strong>un-received</strong> → down; receiving again → up</td><td>Manual <strong>Set qty</strong>, <strong>stocktake</strong> adjustments (either direction)</td></tr>
+  </tbody>
+</table>
+<p>Transfers between locations move stock without changing the total. One-time parts and “do not track” parts never move stock. Every change is journaled internally.</p>
+
+<h2>Negative stock</h2>
+<p>
+  Work orders deliberately save even without enough stock — you get a warning, the job is not blocked. Fix it by receiving the pending
+  order (the average cost then takes the received price, since stock was zero or negative) or by adjusting the count.
+</p>
+
+<h2>Part History</h2>
+<p>Parts list → row → {{ ui("History") }}: the orders and work orders that moved this part, with dates and quantities and a date filter. The fastest way to see why a number drifted.</p>
+{{ shot("parts-history-modal", "Part history: orders and work orders.", "md") }}
+
+{% call tip("Stock number is wrong?") %}
+Small fix: part → Locations → Set qty. Bigger audit: Stocktakes → New Stocktake by location or category, count, Complete &amp; apply. See {{ lesson_link("parts/stocktakes") }}.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("purchasing/receive") }}</li>
+  <li>{{ lesson_link("purchasing/returns") }}</li>
+  <li>{{ lesson_link("parts/locations") }}</li>
+</ul>

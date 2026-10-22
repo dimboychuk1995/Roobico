@@ -28,6 +28,52 @@ inspection of the shop with PDF download and delete.
   follows you to any device; "Reset table" in the Columns menu restores
   defaults. Other users are not affected.
 
+## Education Center
+
+Sidebar → **Education Center** (available to every role, no permission
+needed). An in-app course with step-by-step lessons and real screenshots
+for every section of the app: 11 modules (Getting Started, Dashboard,
+Customers & Units, Work Orders, Calendar, Parts & Inventory, Vendors &
+Parts Orders, Reports, Settings, Mechanic Mode & Mobile App, Perks /
+Import / Export / AI) with about 80 lessons.
+
+- **Home page** — overall progress ring, a **Continue** button (the last
+  lesson you opened but did not finish, or the next unfinished one), a
+  search box that matches lesson titles and descriptions, module cards with
+  progress bars, and three suggested learning paths (owner / manager,
+  mechanic, parts manager).
+- **Lesson page** — "In this lesson" summary, numbered steps with
+  screenshots (click a screenshot to zoom), tips and warnings, the
+  permission keys each action needs, links to related lessons, and the
+  module table of contents on the right. **Mark lesson as complete** at
+  the bottom saves your progress; click again to undo. ← / → arrow keys
+  move between lessons.
+- **Progress is personal**: saved to your account, follows you to any
+  device, not visible to other users. **Reset progress** on the home page
+  clears it.
+- Mechanics reach it from the graduation-cap button in the header of the
+  mechanic work order list.
+- The AI Helper knows every lesson and screenshot: ask "how do I …" and it
+  can show the relevant screenshot in its answer and link to the lesson.
+
+How to use it: "Learn how to do X" → Education Center → type X in the
+search box → open the lesson. New employee onboarding → send them the
+Education Center and ask them to follow the path for their role; the
+owner can see nothing of their progress, so ask them to say when they are
+done.
+
+## Contact & support
+
+- **Phone**: **(773) 331-2795**.
+- **Contact us form**: on the login page (roobico.com) there is a second
+  tab, **Contact us**, next to **Log in** — name, email, optional phone and
+  company, a topic (general question, demo, pricing, help with my account,
+  billing) and a message. It works without logging in, so it is the right
+  channel when you cannot get into your account. Direct link:
+  roobico.com/#contact. We reply by email, usually within one business day.
+- Inside the app, the **Roobico AI Helper** (sidebar) answers "how do I"
+  questions instantly; the **Education Center** has the lessons.
+
 ## Users, roles, permissions
 
 Access is role-based (Owner, General manager, Manager, Parts manager,

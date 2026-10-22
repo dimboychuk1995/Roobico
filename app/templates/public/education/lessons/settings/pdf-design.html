@@ -1,0 +1,29 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Colors, logo and which fields print on invoices and estimates.</li>
+  <li>Footer text and the live preview.</li>
+</ul>
+{% endcall %}
+
+<p>Settings → {{ ui("PDF Design") }} (needs {{ perm("settings.manage_pdf_design", "Manage PDF design") }}). Per shop, with a live preview on the right.</p>
+{{ shot("settings-pdf-design", "PDF Design with the live preview.") }}
+
+<ul>
+  <li><strong>Colors &amp; Branding</strong> — header and accent colors; <em>Show logo</em> (the logo itself is uploaded on Settings → Shops).</li>
+  <li><strong>Customer &amp; Unit Info</strong> — toggles for customer email / phone, unit number, VIN, mileage.</li>
+  <li><strong>Services &amp; Parts</strong> — labor hours, rate code, parts detail, core and misc charges, shop supply, paid &amp; balance due.</li>
+  <li><strong>Footer</strong> — a thank-you message and terms / notes printed at the bottom.</li>
+</ul>
+<p>Click {{ ui("Save PDF Design") }}. Download any work order's PDF to check the result; estimates use the same design with the title Estimate.</p>
+
+{% call tip("Hide what the customer does not need") %}
+Fleet customers often prefer invoices without hours and rate codes; private customers like to see the parts detail. Toggle accordingly — each shop has its own design.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("work-orders/pdf-email") }}</li>
+  <li>{{ lesson_link("settings/shops") }} — uploading the logo</li>
+</ul>

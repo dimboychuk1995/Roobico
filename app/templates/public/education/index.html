@@ -1,0 +1,165 @@
+{% extends "layouts/app_base.html" %}
+{% block page_title %}Education Center{% endblock %}
+
+{% block extra_styles %}
+  {{ super() }}
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/education.css') }}">
+{% endblock %}
+
+{% block app_content %}
+{% set remaining = namespace(minutes=0) %}
+{% for m in modules %}{% for l in m.lessons %}{% if l.key not in progress.completed %}{% set remaining.minutes = remaining.minutes + l.minutes %}{% endif %}{% endfor %}{% endfor %}
+
+<section class="edu-hero card">
+  <div class="edu-hero-main">
+    <div class="edu-kicker"><i class="bi bi-mortarboard-fill"></i> Education Center</div>
+    <h1 class="edu-hero-title">Learn Roobico, block by block</h1>
+    <p class="edu-hero-text">
+      Step-by-step lessons with real screenshots for every section of the app —
+      from the first login to payroll reports. Mark a lesson complete when you are done;
+      your progress is saved to your account and follows you to any device.
+    </p>
+    <div class="edu-hero-actions">
+      {% if progress.continue %}
+        <a class="btn btn-primary" href="{{ progress.continue.url }}">
+          <i class="bi bi-play-fill"></i>
+          {% if progress.done %}Continue: {{ progress.continue.title }}{% else %}Start learning{% endif %}
+        </a>
+      {% else %}
+        <span class="btn btn-success disabled"><i class="bi bi-trophy-fill"></i> All lessons completed</span>
+      {% endif %}
+      <a class="btn btn-outline-secondary" href="#modules"><i class="bi bi-grid"></i> Browse modules</a>
+      <button type="button" class="btn btn-outline-secondary" data-edu-open-assistant>
+        <i class="bi bi-stars"></i> Ask the AI Helper
+      </button>
+    </div>
+  </div>
+  <div class="edu-hero-progress">
+    <div class="edu-ring" style="--pct: {{ progress.percent }}%;" role="img" aria-label="{{ progress.percent }}% complete">
+      <div class="edu-ring-inner">
+        <strong>{{ progress.percent }}%</strong>
+        <span>complete</span>
+      </div>
+    </div>
+    <div class="edu-ring-meta">
+      <div><strong>{{ progress.done }}</strong> of {{ progress.total }} lessons</div>
+      <div class="text-muted small">
+        {% if remaining.minutes %}about {{ remaining.minutes }} min of reading left{% else %}nothing left — well done{% endif %}
+      </div>
+      {% if progress.done %}
+        <button type="button" class="btn btn-link btn-sm p-0 edu-reset" data-edu-reset>Reset progress</button>
+      {% endif %}
+    </div>
+  </div>
+</section>
+
+<div class="edu-search">
+  <i class="bi bi-search" aria-hidden="true"></i>
+  <input type="search" id="eduSearch" class="form-control" placeholder="Search lessons — e.g. estimate, core charge, payroll, VIN…" autocomplete="off" aria-label="Search lessons">
+</div>
+<div id="eduSearchResults" class="edu-search-results d-none" aria-live="polite"></div>
+
+<section id="modules" class="edu-grid">
+  {% for m in modules %}
+    {% set mp = progress.modules[m.id] %}
+    <a class="edu-module card {% if mp.percent == 100 %}is-done{% endif %}" href="{{ m.url }}">
+      <div class="edu-module-icon"><i class="bi {{ m.icon }}"></i></div>
+      <div class="edu-module-body">
+        <div class="edu-module-head">
+          <h2 class="edu-module-title">{{ m.title }}</h2>
+          {% if mp.percent == 100 %}
+            <span class="edu-done-badge" title="Module completed"><i class="bi bi-check-circle-fill"></i></span>
+          {% endif %}
+        </div>
+        <p class="edu-module-summary">{{ m.summary }}</p>
+        <div class="edu-module-meta">
+          <span><i class="bi bi-journal-text"></i> {{ m.lessons|length }} lessons</span>
+          <span><i class="bi bi-clock"></i> ~{{ m.minutes }} min</span>
+        </div>
+        <div class="edu-bar" aria-hidden="true"><span style="width: {{ mp.percent }}%;"></span></div>
+        <div class="edu-module-foot">{{ mp.done }} / {{ mp.total }} completed</div>
+      </div>
+    </a>
+  {% endfor %}
+</section>
+
+<section class="edu-paths">
+  <div class="card edu-path">
+    <div class="edu-path-head">
+      <span class="icon-tile icon-tile-green"><i class="bi bi-person-badge"></i></span>
+      <div>
+        <h2 class="h6 mb-0">Owner / manager path</h2>
+        <div class="small text-muted">The shortest route from a blank account to invoicing your first job.</div>
+      </div>
+    </div>
+    <ol class="edu-path-list">
+      {% for key in ["getting-started/setup-checklist", "settings/wo-settings", "settings/pricing-scales", "settings/users", "customers/add-customer", "customers/add-unit", "parts/add-part", "work-orders/create-wo", "work-orders/payments", "reports/general-revenue"] %}
+        {% set l = edu_lesson(key) %}
+        {% if l %}
+          <li class="{% if l.key in progress.completed %}is-done{% endif %}">
+            <a href="{{ l.url }}">{{ l.title }}</a>
+            <span class="edu-path-minutes">{{ l.minutes }} min</span>
+          </li>
+        {% endif %}
+      {% endfor %}
+    </ol>
+  </div>
+  <div class="card edu-path">
+    <div class="edu-path-head">
+      <span class="icon-tile icon-tile-blue"><i class="bi bi-wrench-adjustable"></i></span>
+      <div>
+        <h2 class="h6 mb-0">Mechanic path</h2>
+        <div class="small text-muted">Everything a technician needs to work from the phone or the shop computer.</div>
+      </div>
+    </div>
+    <ol class="edu-path-list">
+      {% for key in ["mechanic/mechanic-mode", "mechanic/mobile-app", "mechanic/mobile-wo", "mechanic/timers", "mechanic/vin-scan", "mechanic/done-confirm", "work-orders/attachments", "tools/annual-inspection"] %}
+        {% set l = edu_lesson(key) %}
+        {% if l %}
+          <li class="{% if l.key in progress.completed %}is-done{% endif %}">
+            <a href="{{ l.url }}">{{ l.title }}</a>
+            <span class="edu-path-minutes">{{ l.minutes }} min</span>
+          </li>
+        {% endif %}
+      {% endfor %}
+    </ol>
+  </div>
+  <div class="card edu-path">
+    <div class="edu-path-head">
+      <span class="icon-tile icon-tile-amber"><i class="bi bi-box-seam"></i></span>
+      <div>
+        <h2 class="h6 mb-0">Parts manager path</h2>
+        <div class="small text-muted">Catalog, purchasing, receiving, counts and cores.</div>
+      </div>
+    </div>
+    <ol class="edu-path-list">
+      {% for key in ["parts/parts-list", "parts/add-part", "purchasing/vendors", "purchasing/create-order", "purchasing/ai-order-reader", "purchasing/receive", "parts/locations", "parts/stocktakes", "parts/cores", "purchasing/email-orders"] %}
+        {% set l = edu_lesson(key) %}
+        {% if l %}
+          <li class="{% if l.key in progress.completed %}is-done{% endif %}">
+            <a href="{{ l.url }}">{{ l.title }}</a>
+            <span class="edu-path-minutes">{{ l.minutes }} min</span>
+          </li>
+        {% endif %}
+      {% endfor %}
+    </ol>
+  </div>
+</section>
+
+<div class="edu-support card">
+  <i class="bi bi-life-preserver"></i>
+  <div>
+    Can't find something? Ask the <button type="button" class="btn btn-link p-0 align-baseline" data-edu-open-assistant>Roobico AI Helper</button>
+    (bottom of the sidebar) — it knows every lesson here and can show you the right screenshot —
+    or call us at <a href="tel:{{ support_phone_tel }}">{{ support_phone_display }}</a>.
+  </div>
+</div>
+
+{# Индекс уроков для живого поиска #}
+<script type="application/json" id="eduLessonIndex">{{ lesson_index | tojson }}</script>
+{% endblock %}
+
+{% block extra_scripts %}
+  {{ super() }}
+  <script src="{{ url_for('static', filename='js/education.js') }}"></script>
+{% endblock %}

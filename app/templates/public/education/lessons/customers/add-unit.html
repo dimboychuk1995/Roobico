@@ -1,0 +1,46 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Two places to add a unit: the customer's Units tab and the work order page.</li>
+  <li>VIN auto-fill, unit number, mileage.</li>
+  <li>Duplicates and the import option for large fleets.</li>
+</ul>
+{% endcall %}
+
+<p>
+  A <strong>unit</strong> is a vehicle — truck, trailer, van, car. Units belong to a customer. Both entry points open the same form.
+  Creating units needs {{ perm("customers.manage_units", "Create/edit customer units") }}; a deactivated customer cannot get new units.
+</p>
+
+{% call step(1, "Open the form") %}
+<p>Customer page → <strong>Units</strong> tab → {{ ui("Add Unit") }}. Or, while creating a work order, {{ ui("+ Add Unit") }} next to the unit picker.</p>
+{{ shot("unit-add-modal", "Create New Unit dialog.", "md") }}
+{% endcall %}
+
+{% call step(2, "Type the VIN (or at least a unit number)") %}
+<p>A 17-character VIN fills Year, Make, Model and Type automatically from the national VIN decoder. Without a VIN, give the unit at least a <strong>Unit Number</strong> (the fleet's own number). License plates are not stored.</p>
+{{ shot("unit-add-modal-vin", "A VIN typed in — year, make, model and type decoded automatically.", "md") }}
+{% endcall %}
+
+{% call step(3, "Mileage and save") %}
+<p>Enter the current odometer and click {{ ui("Create Unit") }}. Mileage is updated later by work orders — every work order stores the mileage at the time of the job and moves the unit's odometer forward when the value is higher.</p>
+{% endcall %}
+
+{% call warn("Duplicate VINs") %}
+A VIN the customer already has is refused as a duplicate. If the unit exists but is deactivated, switch the Units tab filter to <em>Inactive units</em> and activate it instead. The same VIN may exist under a different customer — a truck that changed owners.
+{% endcall %}
+
+{% call tip("Large fleets: import") %}
+Import / Export → Units tab → pick the customer in <em>Import units for customer</em> → upload a CSV / Excel with Unit Number / VIN (Year, Make, Model, Type, Mileage optional) → map columns → Import. One file per customer. See {{ lesson_link("tools/import-data") }}.
+{% endcall %}
+
+{% call note("Mechanics and the mobile app") %}
+Mechanics can create units too — from the new work order screen or by scanning the VIN barcode with the phone camera. A VIN not yet in the system lands under the technical customer <em>NEW Customer</em>; see {{ lesson_link("mechanic/vin-scan") }}.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("customers/unit-page") }}</li>
+  <li>{{ lesson_link("work-orders/create-wo") }}</li>
+</ul>

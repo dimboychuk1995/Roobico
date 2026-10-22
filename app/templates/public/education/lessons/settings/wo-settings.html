@@ -1,0 +1,37 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Labor rates: add, edit, delete, and the snapshot rule.</li>
+  <li>Shop supply percentage.</li>
+  <li>Core charge rules.</li>
+</ul>
+{% endcall %}
+
+<p>Settings → {{ ui("Work Order Settings") }} (needs {{ perm("settings.manage_wo_settings", "Manage work order settings") }}). Per shop.</p>
+{{ shot("settings-wo-settings", "Work Order Settings.") }}
+
+<h2>Labor Rates</h2>
+{% call step(1, "+ Add Labor Rate") %}
+<p>Name, code and hourly rate. Defaults seeded for a new shop: Standard $100, After Hours $150.</p>
+{{ shot("settings-labor-rate-modal", "Add Labor Rate.", "sm") }}
+{% endcall %}
+{% call step(2, "Where rates are used") %}
+<p>Picked on every work order labor line (shown as “Name ($X/hr)”) and as each customer's Default Labor Rate. The “standard” rate is also what jobs created by mechanics get automatically.</p>
+{% endcall %}
+{% call step(3, "Edit or delete") %}
+<p>Editing a rate changes it for <em>future</em> jobs only — the hourly rate is snapshotted into each work order on save. Delete is soft; old work orders keep their snapshotted rate.</p>
+{% endcall %}
+
+<h2>Shop Supply Amount</h2>
+<p>The shop supply percentage (default 5) applied to labor on work orders. It appears on every work order as an editable amount with a reset button, so you can zero it on a specific job.</p>
+
+<h2>Core Charge Rules</h2>
+<p><strong>Charge core by default</strong> — whether the Core toggle on work order part lines starts switched on. Off means the shop keeps cores by default and tracks them on the Cores tab.</p>
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("work-orders/labor-blocks") }}</li>
+  <li>{{ lesson_link("customers/customer-pricing") }}</li>
+  <li>{{ lesson_link("parts/cores") }}</li>
+</ul>

@@ -1,0 +1,47 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Mechanic mode is not a switch — it follows one permission.</li>
+  <li>What a mechanic sees, what is hidden, what they cannot do.</li>
+  <li>Why every mechanic save goes to In Progress.</li>
+</ul>
+{% endcall %}
+
+<h2>Who gets mechanic mode</h2>
+<p>
+  Any user whose role lacks {{ perm("work_orders.view_costs", "View part costs inside WO") }} — the default <strong>Mechanic</strong> and
+  <strong>Senior mechanic</strong> roles. Such users are redirected from the normal Work Orders pages to a simplified no-price interface
+  (web: <em>/mechanic/work_orders</em>; the mobile app shows the same mode automatically).
+</p>
+{{ shot("mech-wo-list-desktop", "The mechanic work order list in a desktop browser.") }}
+
+<h2>What a mechanic sees</h2>
+<ul>
+  <li><strong>Job list</strong> — search, an <em>In work now</em> section with everyone's running timers, a “My timer running” marker, a + button for a new work order. Only <strong>In Progress</strong> work orders are listed — active work, including ones marked Done awaiting review. Completed, paid and estimate work orders never appear (past work is available through the unit's history).</li>
+  <li><strong>No money anywhere</strong> — no prices, costs, totals or balances; stripped server-side, even for managers who open the mechanic pages.</li>
+  <li><strong>Create / edit work orders</strong> — pick customer and unit (or create a unit), add jobs (“What was done…”), add parts by search (quantities only; a non-catalog entry becomes “one-time part — manager fills the price”), apply presets.</li>
+  <li><strong>Job timers</strong>, job photos, unit history, Send for approval.</li>
+</ul>
+
+<h2>What a mechanic cannot do</h2>
+<ul>
+  <li>Set a status: every mechanic save is <strong>In Progress</strong>; only a user who sees prices completes, pays or reopens a work order. Paid work orders are locked entirely; confirmed ones are locked for mechanics until the manager cancels the confirmation.</li>
+  <li>Delete existing jobs (manager-only). Prices, hours and rates the office entered are preserved when a mechanic edits.</li>
+  <li>Open estimates — quotes live in the office interface only.</li>
+</ul>
+
+{% call note("Jobs get a rate automatically") %}
+A job a mechanic adds without a preset gets the shop's “standard” labor rate (or the first active rate) on the server, so the office never sees a $0 labor line.
+{% endcall %}
+
+{% call tip("Senior mechanic") %}
+The Senior mechanic role additionally sees customers, units and the parts catalog — still without a single dollar amount — and the Mechanic Hours report.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("mechanic/mechanic-web") }}</li>
+  <li>{{ lesson_link("mechanic/mobile-app") }}</li>
+  <li>{{ lesson_link("settings/roles") }}</li>
+</ul>

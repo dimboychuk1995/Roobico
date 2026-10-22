@@ -1,0 +1,123 @@
+{% extends "admin_panel/_shell.html" %}
+{% set active = "contact" %}
+
+{% block content %}
+<div class="page-head">
+  <h2>Contact requests</h2>
+  <form method="get" action="{{ url_for('admin_panel.contact_requests_list') }}" class="filters">
+    <input type="text" name="q" value="{{ q }}" placeholder="Search name / email / company / text">
+    <select name="status">
+      <option value="open"        {% if status_filter == 'open' %}selected{% endif %}>Open (new + in progress)</option>
+      <option value="new"         {% if status_filter == 'new' %}selected{% endif %}>New ({{ counts.new }})</option>
+      <option value="in_progress" {% if status_filter == 'in_progress' %}selected{% endif %}>In progress ({{ counts.in_progress }})</option>
+      <option value="closed"      {% if status_filter == 'closed' %}selected{% endif %}>Closed ({{ counts.closed }})</option>
+      <option value="all"         {% if status_filter == 'all' %}selected{% endif %}>All</option>
+    </select>
+    <button type="submit" class="btn">Filter</button>
+  </form>
+</div>
+
+<div class="stat-cards">
+  <div class="stat">
+    <div class="lbl">New</div>
+    <div class="num">{{ counts.new }}</div>
+  </div>
+  <div class="stat">
+    <div class="lbl">In progress</div>
+    <div class="num">{{ counts.in_progress }}</div>
+  </div>
+  <div class="stat">
+    <div class="lbl">Closed</div>
+    <div class="num">{{ counts.closed }}</div>
+  </div>
+</div>
+
+<p style="color:#64748b; font-size:.85rem; margin-top:0;">
+  Messages sent through the <strong>Contact us</strong> tab on the login page
+  (roobico.com). Support phone shown to visitors: <strong>(773) 331-2795</strong>.
+  Reply by email, then move the request to <em>In progress</em> or <em>Closed</em>.
+</p>
+
+{% if items %}
+<div class="contact-list">
+  {% for r in items %}
+  <article class="contact-card" id="req-{{ r._id }}">
+    <header class="contact-card__head">
+      <div>
+        <strong>{{ r.name or '(no name)' }}</strong>
+        {% if r.company %}<span class="contact-card__company">· {{ r.company }}</span>{% endif %}
+        <div class="contact-card__meta">
+          <a href="mailto:{{ r.email }}?subject=Re:%20your%20Roobico%20request">{{ r.email }}</a>
+          {% if r.phone %} · <a href="tel:{{ r.phone }}">{{ r.phone }}</a>{% endif %}
+          · <span class="badge muted">{{ r.topic or 'general' }}</span>
+          · {{ r.created_at.strftime('%Y-%m-%d %H:%M') if r.created_at else '' }} UTC
+          {% if r.ip %}· <span title="IP / user agent">{{ r.ip }}</span>{% endif %}
+        </div>
+      </div>
+      <div>
+        {% if r.status == 'new' %}
+          <span class="badge bad">New</span>
+        {% elif r.status == 'in_progress' %}
+          <span class="badge muted" style="background:#1e3a8a; color:#dbeafe;">In progress</span>
+        {% else %}
+          <span class="badge ok">Closed</span>
+        {% endif %}
+      </div>
+    </header>
+
+    <div class="contact-card__msg">{{ r.message }}</div>
+
+    <form method="post"
+          action="{{ url_for('admin_panel.contact_request_set_status', request_id=r._id|string) }}"
+          class="contact-card__form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="back" value="{{ request.full_path }}">
+      <input type="text" name="admin_note" value="{{ r.admin_note or '' }}"
+             placeholder="Internal note (who replied, outcome…)" maxlength="2000">
+      <select name="status">
+        {% for s in statuses %}
+          <option value="{{ s }}" {% if r.status == s %}selected{% endif %}>{{ status_labels[s] }}</option>
+        {% endfor %}
+      </select>
+      <button type="submit" class="btn success">Save</button>
+      {% if r.handled_by %}
+        <span class="contact-card__handled">last update by {{ r.handled_by }}</span>
+      {% endif %}
+    </form>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty">No contact requests match the current filter.</div>
+{% endif %}
+
+<style>
+  .contact-list { display: flex; flex-direction: column; gap: .9rem; }
+  .contact-card {
+    background: #111827; border: 1px solid #1f2937; border-radius: 10px;
+    padding: 1rem 1.15rem;
+  }
+  .contact-card__head {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    gap: 1rem; margin-bottom: .6rem;
+  }
+  .contact-card__company { color: #94a3b8; font-weight: 400; }
+  .contact-card__meta { font-size: .78rem; color: #64748b; margin-top: .2rem; }
+  .contact-card__meta a { color: #93c5fd; }
+  .contact-card__msg {
+    white-space: pre-wrap; font-size: .9rem; line-height: 1.5; color: #e2e8f0;
+    background: #0b1220; border: 1px solid #1f2937; border-radius: 8px;
+    padding: .7rem .9rem; margin-bottom: .75rem;
+  }
+  .contact-card__form { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+  .contact-card__form input[type="text"] {
+    flex: 1 1 320px; background: #0b1220; color: #e2e8f0; border: 1px solid #1f2937;
+    padding: .4rem .6rem; border-radius: 6px; font-size: .85rem;
+  }
+  .contact-card__form select {
+    background: #0b1220; color: #e2e8f0; border: 1px solid #1f2937;
+    padding: .4rem .5rem; border-radius: 6px; font-size: .85rem;
+  }
+  .contact-card__handled { font-size: .75rem; color: #64748b; }
+</style>
+{% endblock %}

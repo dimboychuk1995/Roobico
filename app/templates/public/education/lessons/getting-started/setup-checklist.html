@@ -1,0 +1,67 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box("Why the order matters") %}
+<ul>
+  <li>Labor rates, pricing scales and tax are snapshotted into every work order — set them before the first job.</li>
+  <li>Customers need at least one labor rate to exist; parts need categories and locations to be filed properly.</li>
+  <li>Users and roles decide who sees prices — invite the team after the money settings are right.</li>
+</ul>
+{% endcall %}
+
+{{ shot("settings-index", "The Settings page: every card below is one step of this checklist.") }}
+
+{% call step(1, "Organization and your first shop") %}
+<p>Settings → {{ ui("Organization") }}: company name, address, phone, billing details and the primary contact. Then Settings → {{ ui("Shops") }}: check the shop's address, phone, logo and timezone — the timezone decides what “today” means on every list.</p>
+<p>Lessons: {{ lesson_link("settings/organization") }}, {{ lesson_link("settings/shops") }}.</p>
+{% endcall %}
+
+{% call step(2, "Labor rates, shop supply, cores") %}
+<p>Settings → {{ ui("Work Order Settings") }}: rename or add labor rates (defaults: Standard $100, After Hours $150), set the shop supply percentage (default 5% of labor) and whether cores are charged by default.</p>
+<p>Lesson: {{ lesson_link("settings/wo-settings") }}.</p>
+{{ shot("settings-wo-settings", "Work Order Settings: shop supply, core rules and labor rates.", "md") }}
+{% endcall %}
+
+{% call step(3, "Parts pricing and sales tax") %}
+<p>Settings → {{ ui("Parts & Pricing") }}: review the default margin / markup scale (parts are priced from cost through it), add categories and the storage location tree, and confirm the sales tax rate (automatic by ZIP or a custom override).</p>
+<p>Lessons: {{ lesson_link("settings/pricing-scales") }}, {{ lesson_link("settings/parts-settings") }}.</p>
+{% endcall %}
+
+{% call step(4, "PDF design") %}
+<p>Settings → {{ ui("PDF Design") }}: colors, logo, which fields to print, footer text. Download a test PDF later from any work order.</p>
+<p>Lesson: {{ lesson_link("settings/pdf-design") }}.</p>
+{% endcall %}
+
+{% call step(5, "Service templates") %}
+<p>Settings → {{ ui("Service Templates") }}: build presets for the jobs you do every week (PM service, brake job, DOT inspection) with labor hours and the usual parts. They save minutes on every work order.</p>
+<p>Lesson: {{ lesson_link("settings/service-templates") }}.</p>
+{% endcall %}
+
+{% call step(6, "Roles, then users") %}
+<p>Settings → {{ ui("Roles & Permissions") }}: the system roles cover most shops — Mechanic and Senior mechanic never see prices. Then Settings → {{ ui("Users & Roles") }} → {{ ui("+ New user") }}: each person gets an invitation email and sets their own password.</p>
+<p>Lessons: {{ lesson_link("settings/roles") }}, {{ lesson_link("settings/users") }}.</p>
+{{ shot("settings-users", "Users & Roles: invite the team once the money settings are in place.", "md") }}
+{% endcall %}
+
+{% call step(7, "Vendors and parts") %}
+<p>Add the vendors you buy from, then the parts — by hand ({{ ui("Add Part") }}), from a CSV / Excel file (Import / Export) or simply by receiving your first parts orders. Starting stock can be typed into the <em>In stock</em> field when creating a part.</p>
+<p>Lessons: {{ lesson_link("purchasing/vendors") }}, {{ lesson_link("parts/add-part") }}, {{ lesson_link("tools/import-data") }}.</p>
+{% endcall %}
+
+{% call step(8, "Customers and units") %}
+<p>Create customers with their contacts and addresses; add units under each customer (VIN auto-fills the details). Fleets with long unit lists import them per customer from a spreadsheet.</p>
+<p>Lessons: {{ lesson_link("customers/add-customer") }}, {{ lesson_link("customers/add-unit") }}.</p>
+{% endcall %}
+
+{% call step(9, "Integrations (optional)") %}
+<p>Settings → {{ ui("Integrations") }}: connect the uAttend time clock for payroll hours and turn on the email inbox that converts vendor confirmations into parts orders.</p>
+<p>Lesson: {{ lesson_link("settings/integrations") }}.</p>
+{% endcall %}
+
+{% call step(10, "Your first work order") %}
+<p>Work Orders → {{ ui("Create Work Order") }}: pick the customer and unit, enter the mileage, add a job and parts, save. Download the PDF to check the design, then record a payment to see the status turn to Paid.</p>
+<p>Lesson: {{ lesson_link("work-orders/create-wo") }}.</p>
+{% endcall %}
+
+{% call tip("Mobile app for mechanics") %}
+Once mechanics are invited, they install the Roobico app and log in with the same email — the app shows them the no-price mechanic mode automatically. See {{ lesson_link("mechanic/mobile-app") }}.
+{% endcall %}

@@ -1,0 +1,35 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Every place AI works for you in Roobico, in one list.</li>
+  <li>What each one needs from you and what it never does on its own.</li>
+</ul>
+{% endcall %}
+
+<table>
+  <thead><tr><th>Feature</th><th>Where</th><th>What it does</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Recognize WO</strong></td><td>Work order page → {{ ui("📷 Recognize WO") }}; mobile app → AI scan</td><td>Reads a photo or PDF of a handwritten work order and fills the jobs and parts. You review before applying.</td></tr>
+    <tr><td><strong>Describe Issue</strong></td><td>Labor block ⋮ → {{ ui("Describe Issue") }}; mobile “AI edit”</td><td>Rewrites the mechanic's notes into professional English for the customer; prints on the PDF as the reported issue.</td></tr>
+    <tr><td><strong>AI Order Reader</strong></td><td>Parts → Order → {{ ui("AI Order Reader") }}; mobile invoice scan</td><td>Reads a vendor invoice, matches the vendor and parts, corrects unit prices, offers Create &amp; Add for unknown parts. Nothing is saved until Create order.</td></tr>
+    <tr><td><strong>Orders from email</strong></td><td>Settings → Integrations → Parts orders from email</td><td>Reads every email forwarded to the location's inbox and creates <em>Not confirmed</em> parts orders; a person confirms or rejects.</td></tr>
+    <tr><td><strong>uAttend matching</strong></td><td>Dashboard, Timecard / Salary, Mechanic Hours</td><td>Matches time-clock employees to Roobico users so hours land in the right row and nobody is counted twice.</td></tr>
+    <tr><td><strong>AI Helper</strong></td><td>Sidebar → {{ ui("Roobico AI Helper") }}</td><td>Answers “how do I…” questions from the documentation and this Education Center, shows screenshots, links lessons and looks up your shop's numbers read-only.</td></tr>
+  </tbody>
+</table>
+
+{{ shot("wo-describe-issue-modal", "Describe Issue on a labor block.", "sm") }}
+{{ shot("parts-order-modal", "The AI Order Reader button in the order dialog.", "md") }}
+{{ shot("ai-helper-panel", "The AI Helper panel.", "sm") }}
+
+{% call note("AI proposes, people decide") %}
+Every AI feature stops at a review step: recognized jobs are applied by you, scanned orders are created by you, emailed orders wait for Confirm, and the helper never changes data. Prices suggested by AI are worth a glance — the Total column makes a mismatch with the paper obvious.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("purchasing/ai-order-reader") }}</li>
+  <li>{{ lesson_link("purchasing/email-orders") }}</li>
+  <li>{{ lesson_link("getting-started/help-and-ai") }}</li>
+</ul>

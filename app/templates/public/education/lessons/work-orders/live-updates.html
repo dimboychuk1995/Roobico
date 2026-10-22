@@ -1,0 +1,36 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The list and the work order page refresh themselves.</li>
+  <li>What triggers a reload and how you are protected while editing.</li>
+  <li>The In Work group as a live shop-floor board.</li>
+</ul>
+{% endcall %}
+
+<h2>The list is live</h2>
+<p>
+  Every few seconds the Work Orders list checks the server and reloads itself when anything changed: a mechanic starts or stops a
+  timer (the green <em>● working</em> names and the In Work group update), saves a work order or marks it Done, or someone creates,
+  edits, pays or deletes a work order from another computer. Your filters, page, active tab and scroll position are preserved. The
+  reload politely waits if you are typing in a filter field or have a dialog (e.g. payment) open, and resumes when you finish.
+</p>
+{{ shot("wo-list", "The Work Orders list with the In Work group at the top.") }}
+
+<h2>The work order page is live</h2>
+<ul>
+  <li><strong>Running timers show up live.</strong> When a mechanic starts a job timer, a red <em>● working</em> indicator with their name appears on that job's Mechanics line within seconds, and tracked time keeps accumulating on screen.</li>
+  <li><strong>Changes reload the page.</strong> When a mechanic saves, marks Done, or a timer changes the status / hours, the page reloads by itself to show fresh jobs, parts and totals (scroll position preserved). Same when another manager updates or pays it elsewhere.</li>
+  <li><strong>You are protected while editing.</strong> In Edit (or Confirm) mode the page does <em>not</em> reload under you — a warning toast tells you the work order was just updated so you can refresh before saving. Saving without refreshing may overwrite the mechanic's changes, since a save writes the whole job list.</li>
+</ul>
+{{ shot("wo-details", "A work order page — keep it open on an office screen as a live status board for that job.") }}
+
+{% call note("Nothing to configure") %}
+Your own saves never trigger a reload, polling pauses while the browser tab is in the background and catches up when you return, and mechanics do not need to do anything special in the app.
+{% endcall %}
+
+<h2>Push notifications</h2>
+<p>
+  Office users with the mobile app installed also get a phone notification when a mechanic takes a work order into work and when they
+  mark it Done — see {{ lesson_link("mechanic/done-confirm") }}.
+</p>

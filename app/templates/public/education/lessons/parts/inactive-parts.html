@@ -1,0 +1,28 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>What Deactivate does to a part.</li>
+  <li>Finding inactive parts later.</li>
+  <li>The only way back: a parts order.</li>
+</ul>
+{% endcall %}
+
+{% call step(1, "Deactivate") %}
+<p>Parts list → row → {{ ui("Deactivate") }} (needs {{ perm("parts.delete", "Delete parts") }}). The part disappears from work order part search, the mobile app, stocktakes and the inventory totals. Nothing is deleted — history, stock quantity and locations stay on the part; if it still has stock the confirmation says so.</p>
+{{ shot("parts-deactivate-confirm", "The Deactivate confirmation.", "sm") }}
+{% endcall %}
+
+{% call step(2, "Find it later") %}
+<p>Switch the filter next to the search box to <strong>Inactive parts</strong> or <strong>All parts</strong>. Inactive parts carry a grey <em>Inactive</em> badge and have only the History button.</p>
+{{ shot("parts-list", "The status filter next to the search box.") }}
+{% endcall %}
+
+{% call step(3, "Bring it back — through a parts order") %}
+<p>There is <strong>no Restore button</strong>. In the order dialog the part search also finds inactive parts (marked <em>Inactive</em>): add the part to the order and click {{ ui("Create order") }} — the part is active again at that moment. The same happens when an inactive part is in an order you receive, save, or in an email order you confirm; the AI Order Reader matches inactive parts too.</p>
+{{ shot("parts-order-modal", "The order dialog is the way back for an inactive part.", "md") }}
+{% endcall %}
+
+{% call warn("Creating a copy is blocked") %}
+A new part with the number of an inactive one is refused with “already exists but is inactive. Add it to a parts order…” — order it instead, so the stock history continues.
+{% endcall %}

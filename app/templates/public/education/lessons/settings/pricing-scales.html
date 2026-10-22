@@ -1,0 +1,47 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Margin vs markup and tiered rules by cost range.</li>
+  <li>Several named scales, the default, assignment per customer.</li>
+  <li>Sales tax: automatic by ZIP or a custom override.</li>
+</ul>
+{% endcall %}
+
+<p>Settings → Parts &amp; Pricing → card <strong>Margin / Markup Rules</strong>. Parts without a fixed selling price are priced from average cost through the scale.</p>
+{{ shot("settings-pricing-rules", "The Margin / Markup Rules card.") }}
+
+<h2>Mode</h2>
+<ul>
+  <li><strong>Margin</strong> — price = cost ÷ (1 − %); the percentage must be below 100.</li>
+  <li><strong>Markup</strong> — price = cost × (1 + %).</li>
+</ul>
+
+<h2>Rules by cost range</h2>
+<p>
+  From / To / %. Leave <em>To</em> empty for ∞. Example one-rule scale: From 0, To empty, 20 → 20% on everything. The seeded “Default” scale is
+  markup-mode with tiers from 500% (parts under $1) down to 15% (over $5000). {{ ui("Add range") }} adds a row, {{ ui("Auto-fill next From") }}
+  closes gaps, {{ ui("Save") }} stores the scale.
+</p>
+
+<h2>Several scales</h2>
+{% call step(1, "New scale") %}
+<p>{{ ui("New scale") }} → name → set mode and rules → Save.</p>
+{% endcall %}
+{% call step(2, "Default") %}
+<p>{{ ui("Set as default") }} makes it the shop default used for every customer without an assigned scale. The default scale cannot be deleted, nor the last one.</p>
+{% endcall %}
+{% call step(3, "Assign to a customer") %}
+<p>Customer → Details → <strong>Pricing Scale</strong> — that is how one customer gets special parts pricing. Add “Override part selling price” if fixed selling prices must follow the scale too. See {{ lesson_link("customers/customer-pricing") }}.</p>
+{% endcall %}
+
+<h2>Sales Tax Rate</h2>
+<p>
+  On the same page: automatic by the shop's ZIP code, or a <strong>Custom Rate (Override)</strong> with {{ ui("Reset to API") }}. The rate is
+  locked into each work order at save time; labor is never taxed.
+</p>
+{{ shot("settings-sales-tax", "The Sales Tax Rate card.", "md") }}
+
+{% call tip("Change pricing for the whole shop") %}
+Edit the default scale's rules, or create a new scale and Set as default. Existing work orders keep their prices; new lines use the new rules.
+{% endcall %}

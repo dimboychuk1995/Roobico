@@ -1,0 +1,55 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The seven system roles and what each sees.</li>
+  <li>Cloning a role and editing the permission tree.</li>
+  <li>The keys that decide who sees money.</li>
+</ul>
+{% endcall %}
+
+<p>Settings → {{ ui("Roles & Permissions") }} (needs {{ perm("settings.manage_roles", "Manage roles & permissions") }}). Roles are tenant-wide.</p>
+{{ shot("settings-roles", "Roles & Permissions.") }}
+
+<h2>System roles</h2>
+<table>
+  <thead><tr><th>Role</th><th>Scope</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Owner</strong></td><td>Always all permissions; cannot be edited.</td></tr>
+    <tr><td><strong>General manager</strong></td><td>Everything except Roobico billing.</td></tr>
+    <tr><td><strong>Manager</strong></td><td>Everything except roles and billing.</td></tr>
+    <tr><td><strong>Parts manager</strong></td><td>Parts, vendors, parts orders, parts settings, financial reports (no payroll), work orders read-only with costs.</td></tr>
+    <tr><td><strong>Senior mechanic</strong></td><td>Work orders, calendar, customers, units and the parts catalog — <em>without any prices</em>; only the Mechanic Hours report.</td></tr>
+    <tr><td><strong>Mechanic</strong></td><td>Mechanic mode: work orders without prices, calendar view, attachments.</td></tr>
+    <tr><td><strong>Viewer</strong></td><td>Read-only access to everything with prices, balances, financial reports and the Activity Journal; no create / edit / delete / payment keys.</td></tr>
+  </tbody>
+</table>
+<p>System roles cannot be deleted; a custom role in use by active users cannot be deleted either.</p>
+
+<h2>Create or clone a role</h2>
+{% call step(1, "Clone the closest system role") %}
+<p>Select a role → {{ ui("Clone") }} → name it. {{ ui("New role") }} starts empty.</p>
+{% endcall %}
+{% call step(2, "Tick permissions in the tree") %}
+<p>Groups: Dashboard, Calendar, Customers, Vendors, Parts, Parts Orders, Work Orders, Attachments, Reports, Import / Export, Settings. Use the filter box and Select all / Clear all; Expand / Collapse all for the tree.</p>
+{{ shot("settings-roles-tree", "Editing a role's permission tree.") }}
+{% endcall %}
+{% call step(3, "Save") %}
+<p>{{ ui("Save") }}. Changes apply to every user with that role immediately. You can only grant permissions you have yourself; removing is always allowed.</p>
+{% endcall %}
+
+<h2>Keys that decide who sees money</h2>
+<ul>
+  <li>{{ perm("work_orders.view_costs", "View part costs inside WO") }} — the master switch. Without it a user with work-order access works in <strong>mechanic mode</strong>: no prices anywhere, including customer balances, the customer's Payments / Estimates tabs, dashboard money blocks and the WO Cost button.</li>
+  <li>{{ perm("parts.view_costs", "View part costs") }} — the purchase side of the catalog: Avg cost, Last price, inventory totals, Core Cost / Credit, the Average cost field.</li>
+  <li>{{ perm("reports.view_financial", "View financial reports") }} and {{ perm("reports.view_payroll", "View Timecard / Salary report") }} — reports with money and employee pay.</li>
+  <li>{{ perm("settings.manage_pay", "Edit employees' pay type & salary") }} — pay fields in the user form.</li>
+</ul>
+
+{% call note("Every checkbox is enforced by the server") %}
+Pages render only the buttons a role may use, and the server re-checks each action, so what you see is exactly what you can do — a hand-crafted request gets 403.
+{% endcall %}
+
+{% call tip("Common recipes") %}
+Bookkeeper: clone Viewer and tick View Timecard / Salary (+ View financial reports). HR who must not see salaries: Manage users without the pay key. An office person who changes nothing: Viewer.
+{% endcall %}

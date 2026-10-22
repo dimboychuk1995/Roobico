@@ -1,0 +1,37 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Building a reusable job with labor and parts.</li>
+  <li>Live prices vs pinned prices.</li>
+  <li>The customer discount flag.</li>
+</ul>
+{% endcall %}
+
+<p>Settings → {{ ui("Service Templates") }} (needs {{ perm("settings.manage_wo_presets", "Manage work order presets") }}). Per shop.</p>
+{{ shot("settings-service-templates", "Service Templates: one card per preset.") }}
+
+{% call step(1, "+ Add Preset") %}
+<p>Name and description, <strong>labor hours</strong> and <strong>rate</strong> (“— Use customer default —” is allowed), the parts list with quantities, and <strong>Allow customer discount on parts</strong>. The live estimate shows labor / parts / total.</p>
+{{ shot("settings-preset-modal", "New Preset dialog.", "md") }}
+{% endcall %}
+{% call step(2, "Add parts") %}
+<p>Search the catalog and add lines; set quantities. Leave prices alone for automatic pricing.</p>
+{{ shot("settings-preset-edit-modal", "Editing an existing template with its parts.", "md") }}
+{% endcall %}
+{% call step(3, "Use it") %}
+<p>On a work order: labor block ⋮ → Add Preset ({{ lesson_link("work-orders/presets-on-wo") }}); in the calendar appointment dialog (presets become labor blocks when you create the work order); in the mobile app and mechanic mode (“From preset”).</p>
+{% endcall %}
+
+<h2>Live vs pinned prices</h2>
+<p>
+  By default prices are <strong>live</strong>: each time a template is shown or applied, each part's price recomputes from its current selling
+  price or the pricing scale. If you <strong>edit a price by hand</strong>, it becomes a <em>pinned price</em> — highlighted in the editor, saved with
+  the template and used on work orders exactly as typed, beating the part's selling price and the scale. Two things still beat it: a customer
+  with “Override part selling price”, and editing the price on the work order line. To un-pin, clear the price field and click away. Costs
+  always stay live.
+</p>
+
+{% call tip("Special price for one service") %}
+Pin the price in the template for a promotional package; everything else keeps following the catalog.
+{% endcall %}

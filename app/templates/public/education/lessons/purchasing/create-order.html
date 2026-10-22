@@ -1,0 +1,52 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The order dialog step by step: vendor, date, lines, cores, non-inventory amounts.</li>
+  <li>Where the default price comes from.</li>
+  <li>What happens after Create order.</li>
+</ul>
+{% endcall %}
+
+<p>
+  Three ways an order appears: typed in by hand ({{ ui("Order") }} button), scanned from a vendor invoice (AI Order Reader), or created
+  automatically from the location's email inbox. This lesson covers the first; the others follow in this module. One order = one vendor.
+  Creating needs {{ perm("parts_orders.create", "Create parts orders") }}.
+</p>
+
+{% call step(1, "Open the dialog") %}
+<p>Parts → {{ ui("Order") }} (or the dashboard quick action <em>Create PO</em>, or the Parts orders block on a work order).</p>
+{{ shot("parts-order-modal", "Order parts (one vendor) — empty.", "md") }}
+{% endcall %}
+{% call step(2, "Vendor and date") %}
+<p>Pick the <strong>Vendor</strong> (searchable; only active vendors). <strong>Order Date</strong> defaults to today.</p>
+{% endcall %}
+{% call step(3, "Find part") %}
+<p>Type 2+ characters of a part number or description and click a result to add a line. Lines have Part #, Description, In Stock, <strong>Qty</strong>, <strong>Price</strong> and <strong>Total</strong>. Adding the same part again increases Qty. The search also finds inactive parts (grey <em>Inactive</em> badge) — adding one reactivates it when the order is created.</p>
+{{ shot("parts-order-modal-filled", "Vendor picked and part lines added.", "md") }}
+{% endcall %}
+{% call step(4, "Price, core charge") %}
+<p>The price defaults to the part's <strong>Last price</strong> — what you paid on the latest order with it (results show “Last $X · Avg $Y”); only a never-ordered part defaults to its average cost. If the part has a core charge, a toggle <strong>+ Core $X</strong> appears (on by default) and adds qty × core charge to the total.</p>
+{% endcall %}
+{% call step(5, "Non inventory amount") %}
+<p>Spending that is not parts and does not touch stock: types <strong>shop supply / tools / utilities / payment to another service</strong>, plus description and amount. An order may consist of non-inventory lines only.</p>
+{% endcall %}
+{% call step(6, "Create order") %}
+<p>The order gets a sequential <strong>Order #</strong> (starts at 1000), status <strong>ordered</strong> and payment status <strong>Unpaid</strong>. The dialog then offers {{ ui("Receive") }} and {{ ui("Pay") }} without closing.</p>
+{{ shot("parts-order-created", "Right after Create order.", "md") }}
+{% endcall %}
+
+{% call note("Vendor invoice number") %}
+The vendor's own invoice number is not entered here — it goes into <strong>Vendor Bill</strong> when you receive the order.
+{% endcall %}
+
+{% call tip("Side effects on the part") %}
+Creating (or saving) an order updates the part's <strong>Last price</strong> and sets its <strong>Vendor</strong> to this order's vendor — the Vendor column always shows where you bought the part last.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("purchasing/ai-order-reader") }}</li>
+  <li>{{ lesson_link("purchasing/receive") }}</li>
+  <li>{{ lesson_link("work-orders/parts-orders-for-wo") }}</li>
+</ul>

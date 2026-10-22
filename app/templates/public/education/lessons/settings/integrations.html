@@ -1,0 +1,41 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>uAttend: API key, enabling, choosing employees and hourly rates.</li>
+  <li>Where uAttend hours show up.</li>
+  <li>Parts orders from email: the switch and the address.</li>
+</ul>
+{% endcall %}
+
+<p>Settings → {{ ui("Integrations") }} (needs {{ perm("settings.manage_integrations", "Manage integrations") }}). Each shop configures its own.</p>
+{{ shot("settings-integrations", "Integrations: uAttend and Parts orders from email.") }}
+
+<h2>uAttend time clock</h2>
+{% call step(1, "Connect") %}
+<p>{{ ui("Connect") }} → paste the API key → {{ ui("Test connection") }} → enable. Keys are stored encrypted.</p>
+{{ shot("settings-uattend-modal", "uAttend integration dialog.", "md") }}
+{% endcall %}
+{% call step(2, "Employees") %}
+<p>In <em>Employees in uAttend</em> tick the people whose time counts and set their <strong>$/hr</strong> rate. Employees are AI-matched to Roobico users so nobody is counted twice — same name or email in both systems helps.</p>
+{% endcall %}
+{% call step(3, "Where the hours go") %}
+<ul>
+  <li>Timecard / Salary report — hourly pay = punches × rate.</li>
+  <li>General Revenue — payroll in the cash view.</li>
+  <li>Dashboard — the uAttend line in the hours chart.</li>
+  <li>Mechanic Hours report — the uAttend Hours column.</li>
+</ul>
+{% endcall %}
+
+<h2>Parts orders from email</h2>
+<p>
+  One switch, <em>Create parts orders from vendor emails</em>. Turning it on shows the location's private address (<code>orders-&lt;code&gt;@roobico.com</code>)
+  with forwarding instructions for every mail provider, the <strong>Suggest only</strong> option and the <strong>Recent emails</strong> history.
+  <em>Issue a new address</em> if the old one leaked to spammers. The full flow is in {{ lesson_link("purchasing/email-orders") }}.
+</p>
+{{ shot("settings-email-orders-modal", "Parts orders from email dialog.", "md") }}
+
+{% call note("Planned") %}
+A built-in time clock in the mobile app (punch in / out) is on the roadmap — it will remove the need for a separate uAttend subscription.
+{% endcall %}

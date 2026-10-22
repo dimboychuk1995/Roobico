@@ -1,0 +1,33 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Billed Hours vs Tracked Hours per mechanic.</li>
+  <li>The uAttend Hours column.</li>
+  <li>How the numbers are built.</li>
+</ul>
+{% endcall %}
+
+<p>Reports → <strong>Mechanic Hours</strong> — the one report every role with {{ perm("reports.view", "View reports") }} can open; it contains no money.</p>
+{{ shot("report-mechanic-hours", "Mechanic Hours.") }}
+
+<table>
+  <thead><tr><th>Column</th><th>Source</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Billed Hours</strong></td><td>Labor hours from work orders, allocated to mechanics by the assignment percentages set with the Assign button.</td></tr>
+    <tr><td><strong>Tracked Hours</strong></td><td>Real job timer time from the mobile app / mechanic page.</td></tr>
+    <tr><td><strong>uAttend Hours</strong></td><td>Attendance from the time clock for the same period — shown only when the uAttend integration is connected. Employees are matched to app users automatically; hours of an employee matched to a mechanic land in that mechanic's row, employees matched to non-mechanics are excluded, unmatched employees get their own rows.</td></tr>
+    <tr><td>WO / labor counts</td><td>How many work orders and labor entries the mechanic touched.</td></tr>
+  </tbody>
+</table>
+
+{% call tip("Is a mechanic efficient?") %}
+Compare Billed to Tracked: above 100% you bill more than the time spent. A mechanic who never presses the job timer still shows uAttend hours — you see who was at work even when Tracked is empty.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("work-orders/assign-mechanics") }}</li>
+  <li>{{ lesson_link("mechanic/timers") }}</li>
+  <li>{{ lesson_link("dashboard/dashboard-overview") }} — the same hours as a cumulative chart</li>
+</ul>

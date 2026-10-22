@@ -1,0 +1,51 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The two kinds of blocks: appointments and work orders.</li>
+  <li>Colors, the legend and mechanic markers.</li>
+  <li>Toolbar: navigation, Week / By mechanic, the mechanic filter and the Work orders switch.</li>
+</ul>
+{% endcall %}
+
+<p>
+  Sidebar → {{ ui("Calendar") }} — the shop's schedule and its activity log in one grid (Mon–Sun, 06:00–21:00, 15-minute steps).
+  Needs {{ perm("calendar.view", "View calendar") }}.
+</p>
+{{ shot("calendar-week", "The week view.") }}
+
+<h2>Two kinds of blocks</h2>
+<ul>
+  <li><strong>Appointments</strong> — what you planned by hand. Click an empty slot to create one, click a block to edit, drag &amp; drop to move. See {{ lesson_link("calendar/appointments") }}.</li>
+  <li><strong>Work orders</strong> — every active work order appears automatically, even if nobody scheduled it, so you can see who did what, when, and what is still waiting. A WO block has a left edge in the mechanic's color, their initials in the corner and a status chip. See {{ lesson_link("calendar/wo-on-calendar") }}.</li>
+</ul>
+
+<h2>Colors</h2>
+<table>
+  <thead><tr><th>Chip</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>Not started</td><td>The work order exists, no mechanic has started it.</td></tr>
+    <tr><td>In progress</td><td>A mechanic is working on it — a pulsing chip means a timer is running right now.</td></tr>
+    <tr><td>Mechanic done</td><td>All mechanics pressed Done; the manager has not reviewed it yet.</td></tr>
+    <tr><td>Completed</td><td>Work finished, payment pending.</td></tr>
+    <tr><td>Paid</td><td>Invoice paid. Mechanic-mode users see it as Completed.</td></tr>
+  </tbody>
+</table>
+<p>Estimates are not shown — they are quotes, not work. The legend under the toolbar explains the colors.</p>
+
+<h2>Who is who</h2>
+<p>
+  Every mechanic has a color. The row of markers on top (color, initials, name) is the key; each block carries the same color on its
+  left edge and the initials in its corner. Click a marker to show only that mechanic; click again to show everyone.
+</p>
+
+<h2>Toolbar</h2>
+<ul>
+  <li>{{ ui("‹") }} {{ ui("Today") }} {{ ui("›") }} — move by week (or by day in the By mechanic view).</li>
+  <li>{{ ui("Week") }} — the classic 7-day grid; inside each day every mechanic with blocks gets their own narrow lane. Click a day header to expand that day into one lane per mechanic; click again to make it wider; a third time returns to normal.</li>
+  <li>{{ ui("By mechanic") }} — one day, a column per mechanic plus Unassigned ({{ lesson_link("calendar/by-mechanic") }}).</li>
+  <li><strong>All mechanics</strong> dropdown — show one mechanic or only unassigned blocks.</li>
+  <li><strong>Work orders</strong> switch — hide the automatic WO blocks and keep only appointments; remembered in this browser.</li>
+  <li>⚙ — calendar settings: appointment statuses and colors.</li>
+</ul>
+{{ shot("calendar-controls", "Toolbar with the mechanic filter, the Work orders switch and the view buttons highlighted.") }}

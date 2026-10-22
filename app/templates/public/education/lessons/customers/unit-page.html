@@ -1,0 +1,62 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The unit header and its buttons.</li>
+  <li>Service history with labor details.</li>
+  <li>NHTSA recalls and the DOT annual inspection card.</li>
+  <li>The Details tab: editing and deactivating.</li>
+</ul>
+{% endcall %}
+
+<p>Open a unit from the customer's Units tab, from global search or from a work order's unit row.</p>
+{{ shot("unit-page", "A unit page: header, buttons, inspection card and service history.") }}
+
+<h2>Header and buttons</h2>
+<p>
+  The header shows the unit number, year, make, model and VIN with the customer underneath. Buttons:
+  {{ ui("Files") }} (attachments), {{ ui("Recalls") }}, {{ ui("Annual Inspection") }} and {{ ui("Create Work Order") }}
+  (opens the work order page with the customer and unit preselected).
+</p>
+
+<h2>Work Orders tab — the service history</h2>
+<p>
+  Every work order ever performed on the unit, with search, date presets and totals (totals only for users who can see prices).
+  {{ ui("Show labor details") }} expands a card per job: description, hours badge, labor total and a parts table with quantity,
+  price, line totals and a parts subtotal. Paid work orders appear to mechanic-mode users as “completed”.
+</p>
+{{ shot("unit-page-labor-details", "Show labor details: jobs with hours and the parts used.") }}
+
+<h2>Recalls</h2>
+<p>
+  {{ ui("Recalls") }} checks NHTSA safety recalls for the unit — it needs Year + Make + Model or a valid VIN. New recalls show a
+  <em>NEW</em> badge. A nightly job also emails customers a digest when new recalls appear for their vehicles, so you do not need
+  to check manually.
+</p>
+{{ shot("unit-recalls-modal", "NHTSA Recalls dialog.", "md") }}
+
+<h2>Annual Inspection card</h2>
+<p>
+  The card shows the unit's latest DOT annual inspection with its <strong>Valid until</strong> date — an inspection lasts 12 months;
+  the card turns yellow within 30 days of expiry and red once expired. <strong>History</strong> expands all previous inspections,
+  each with Download PDF; users with {{ perm("work_orders.delete", "Delete work orders") }} can delete a record. The
+  {{ ui("Annual Inspection") }} button creates a new one, prefilled with the VIN and the customer as the carrier.
+</p>
+{{ shot("unit-inspection-modal", "Annual Vehicle Inspection dialog opened from the unit page.", "md") }}
+
+<h2>Details tab</h2>
+<p>
+  Edit the unit's fields, upload attachments, {{ ui("Deactivate Unit") }} / {{ ui("Activate Unit") }}, or create a work order.
+  A unit's mileage can be corrected here if a wrong value was entered on a job.
+</p>
+{{ shot("unit-page-details-tab", "Unit Details tab.") }}
+
+{% call tip("Mileage rule") %}
+A work order updates the unit's odometer only when its mileage is higher than the unit's current value — so correcting an old work order never rolls the unit back. If the unit's mileage itself is wrong, fix it on this tab.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("tools/annual-inspection") }}</li>
+  <li>{{ lesson_link("customers/deactivate") }}</li>
+</ul>

@@ -1,0 +1,34 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Adding a second location and what it gets.</li>
+  <li>Granting access and switching shops.</li>
+  <li>Timezone and deactivation.</li>
+</ul>
+{% endcall %}
+
+<p>Settings → {{ ui("Shops") }} (needs {{ perm("settings.manage_locations", "Manage shops / locations") }}).</p>
+{{ shot("settings-shops", "The Shops page: shop list, Add shop, timezone for the active shop.") }}
+
+{% call step(1, "+ Add shop") %}
+<p>Name, email, address, phone, billing address and logo (the logo prints on PDFs when PDF Design says so). A new shop gets its own database with seeded categories, a default pricing scale, labor rates and rules; owners automatically get access.</p>
+{{ shot("settings-shop-add-modal", "Add Shop dialog.", "sm") }}
+{% endcall %}
+{% call step(2, "Grant access") %}
+<p>Settings → Users → edit a user → tick the shop in <strong>Shop access</strong>. The change applies on their next request — no re-login. Users see only their allowed shops in the top-bar Active shop switcher.</p>
+{% endcall %}
+{% call step(3, "Switch and configure") %}
+<p>Pick the new shop in the top bar and set its labor rates, pricing, tax, templates, PDF design and integrations — each shop has its own.</p>
+{{ shot("topbar-shop-switcher", "The Active shop switcher.") }}
+{% endcall %}
+
+<h2>Timezone</h2>
+<p>The <strong>Timezone For Active Shop</strong> selector on this page decides what “today” means on every list, report and PDF of that shop. Save Timezone after changing it.</p>
+
+<h2>Deactivating a shop</h2>
+<p>{{ ui("Inactive") }} deactivates a location (never deletes it). Inactive shops disappear from the switcher; the data stays. Deactivated locations are not billed.</p>
+
+{% call note("Billing") %}
+The first active location is free; each additional active location is billed per month — see {{ lesson_link("settings/billing") }}.
+{% endcall %}

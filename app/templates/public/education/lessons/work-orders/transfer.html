@@ -1,0 +1,41 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Moving a work order to the right customer.</li>
+  <li>How the unit follows and what gets re-priced.</li>
+</ul>
+{% endcall %}
+
+<p>
+  The typical case: a mechanic created the work order on a brand-new customer (or on <em>NEW Customer</em> after a VIN scan) when it
+  really belongs to an existing company. {{ ui("Transfer") }} sits top-right of an existing work order's page for users who can edit
+  work orders.
+</p>
+
+{% call step(1, "Open Transfer and pick the customer") %}
+{{ shot("wo-transfer-modal", "Transfer work order dialog.", "md") }}
+{% endcall %}
+{% call step(2, "Confirm — the unit follows") %}
+<ul>
+  <li>If the new customer <strong>already has a unit with the same VIN</strong>, the work order is simply re-linked to it (a deactivated duplicate gets reactivated with the fresh mileage).</li>
+  <li>If not, the unit <strong>moves</strong>: it is deactivated for the old customer and an identical unit (same VIN, unit number, make / model / year, mileage) is created for the new one.</li>
+</ul>
+{% endcall %}
+{% call step(3, "Prices are recalculated for the new customer") %}
+<p>Every job gets that customer's default labor rate (jobs from a preset keep the preset rate) and its amount is recalculated from the hours; catalog parts get the price from the customer's pricing scale; the Taxable flag follows the customer. Hours, quantities, manually entered parts and the locked tax rate do not change. Payments history and tracked mechanic time are untouched.</p>
+{% endcall %}
+
+{% call warn("Paid work orders cannot be transferred") %}
+Unpay first (this deletes the payments), transfer, then re-record the payment.
+{% endcall %}
+
+{% call tip("The mechanic can keep working") %}
+Transferring does not interrupt a mechanic — their next save picks up the new rates and prices.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("mechanic/vin-scan") }} — where NEW Customer comes from</li>
+  <li>{{ lesson_link("customers/deactivate") }}</li>
+</ul>

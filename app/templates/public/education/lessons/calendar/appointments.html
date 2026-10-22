@@ -1,0 +1,39 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Creating, editing, moving and cancelling appointments.</li>
+  <li>Statuses and the settings dialog.</li>
+  <li>The “one mechanic, one job at a time” rule.</li>
+</ul>
+{% endcall %}
+
+{% call step(1, "Click an empty slot") %}
+<p>In the week view click the slot where the job should start (in By mechanic view, click inside the mechanic's column — that assigns the mechanic). Needs {{ perm("calendar.create", "Create appointments") }}.</p>
+{% endcall %}
+{% call step(2, "Fill the dialog") %}
+<p>Customer, Unit, Service Presets (several allowed), Date, Start / End, Assign to Mechanic, Status and a Title / Note. Save.</p>
+{{ shot("calendar-appointment-modal", "The New Appointment dialog.", "md") }}
+{% endcall %}
+{% call step(3, "Edit, move, delete") %}
+<p>Click a block to edit (needs {{ perm("calendar.edit", "Edit appointments") }}); drag &amp; drop to move it; in By mechanic view dragging into another column reassigns the mechanic. {{ ui("Delete") }} in the dialog removes it ({{ perm("calendar.delete", "Delete appointments") }}).</p>
+{% endcall %}
+
+<h2>Statuses</h2>
+<p>
+  Scheduled, Confirmed, In Progress, Completed, Cancelled — editable per shop via ⚙ → <strong>Calendar Settings</strong>
+  (needs {{ perm("calendar.manage_settings", "Manage calendar settings") }}): rename, recolor, add your own.
+</p>
+{{ shot("calendar-settings-modal", "Calendar Settings: appointment statuses with colors.", "sm") }}
+
+<h2>One mechanic, one job at a time</h2>
+<p>
+  An appointment cannot be saved or moved onto a slot where the same mechanic already has another appointment (cancelled ones do not
+  count) or where the mechanic's timer shows they were actually working on a different work order. The calendar refuses with the
+  conflicting time and work order — pick another time or mechanic. An older appointment that overlaps such actual work gets a red
+  <strong>!</strong> badge; fix or delete it.
+</p>
+
+{% call tip("Turn the plan into a work order") %}
+Fill customer and unit, then press {{ ui("Create Work Order") }} in the dialog — the work order page opens with everything prefilled and the appointment is linked to it. See {{ lesson_link("calendar/wo-on-calendar") }}.
+{% endcall %}

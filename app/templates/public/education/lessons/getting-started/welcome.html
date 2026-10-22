@@ -1,0 +1,74 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>What Roobico is for and who uses it in a shop.</li>
+  <li>The seven building blocks and how a repair job moves through them.</li>
+  <li>Where money comes in, where it goes out, and where you see the result.</li>
+</ul>
+{% endcall %}
+
+<h2>What Roobico is</h2>
+<p>
+  Roobico is shop-management software for auto repair shops and fleets. It keeps
+  your <strong>customers</strong> and their <strong>units</strong> (trucks, trailers, cars),
+  the <strong>work orders</strong> you perform on them, the <strong>parts</strong> you stock
+  and buy from <strong>vendors</strong>, the <strong>payments</strong> customers make, and the
+  <strong>reports</strong> that tell you how the business is doing. Mechanics use the same
+  system — on the shop computer or the mobile app — without ever seeing a price.
+</p>
+
+{{ shot("app-shell", "The app after login: sidebar on the left, top bar with your organization and active shop, and the page content.") }}
+
+<h2>The building blocks</h2>
+<table>
+  <thead><tr><th>Block</th><th>What lives there</th><th>Lesson</th></tr></thead>
+  <tbody>
+    <tr><td>Customers &amp; Units</td><td>Companies and private clients, contacts, vehicles, balances, the read-only customer portal.</td><td>{{ lesson_link("customers/customers-list") }}</td></tr>
+    <tr><td>Work Orders</td><td>The job itself: labor lines, parts, charges, tax, estimates, authorizations, payments, PDF invoices.</td><td>{{ lesson_link("work-orders/wo-list") }}</td></tr>
+    <tr><td>Parts &amp; Inventory</td><td>The catalog, stock by location, stocktakes, cores, cross references.</td><td>{{ lesson_link("parts/parts-list") }}</td></tr>
+    <tr><td>Vendors &amp; Parts Orders</td><td>Buying parts: orders, receiving, paying, returns, AI invoice reading, orders from email.</td><td>{{ lesson_link("purchasing/vendors") }}</td></tr>
+    <tr><td>Calendar</td><td>Appointments and the real timeline of work orders by mechanic.</td><td>{{ lesson_link("calendar/calendar-basics") }}</td></tr>
+    <tr><td>Reports &amp; Dashboard</td><td>Sales, revenue, balances, mechanic hours, payroll, the audit journal.</td><td>{{ lesson_link("reports/reports-overview") }}</td></tr>
+    <tr><td>Settings</td><td>Shops, users and roles, labor rates, pricing scales, templates, PDF design, integrations, billing.</td><td>{{ lesson_link("settings/organization") }}</td></tr>
+  </tbody>
+</table>
+
+<h2>How a job flows through Roobico</h2>
+{% call step(1, "A customer and a unit exist") %}
+<p>Every job belongs to a customer and (almost always) a unit. Create the customer once; add units as they come in. A VIN fills in year, make, model and type automatically.</p>
+{% endcall %}
+{% call step(2, "A work order is opened") %}
+<p>The office creates it on the web, a mechanic creates it on the phone, or the calendar turns an appointment into one. The work order collects labor lines (jobs), parts from the catalog, misc charges and tax.</p>
+{% endcall %}
+{% call step(3, "Mechanics work with timers") %}
+<p>Mechanics see the job without prices, run a timer per job, add parts and photos, and press <em>Done</em>. The office sees the job live and gets a push notification.</p>
+{% endcall %}
+{% call step(4, "The office reviews and invoices") %}
+<p>A manager checks hours and prices, sends the PDF or an approval request to the customer, and records the payment. When the balance hits $0 the work order becomes <em>Paid</em> and locks.</p>
+{% endcall %}
+{% call step(5, "Numbers roll into reports") %}
+<p>Revenue, parts cost, purchases and payroll meet in the General Revenue report; balances show who owes you; the Activity Journal keeps the history of every change.</p>
+{% endcall %}
+
+{{ shot("dashboard-overview", "The dashboard summarizes the whole flow for a period: paid vs unpaid, parts orders, goals and mechanic hours.") }}
+
+<h2>Money in one paragraph</h2>
+<p>
+  Money <strong>comes in</strong> through work orders — labor, parts and tax billed to the customer,
+  with payments recorded on the work order. Money <strong>goes out</strong> through parts orders
+  (buying from vendors) and payroll (salaries plus hourly time from the uAttend clock).
+  The <strong>General Revenue</strong> report puts these together; <strong>Customer Balances</strong>
+  shows who owes you and <strong>Vendor Balances</strong> whom you owe.
+</p>
+
+{% call tip("Where to start") %}
+If you are setting up a new shop, follow {{ lesson_link("getting-started/setup-checklist") }} — it lists the settings that everything else depends on, in the right order.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("getting-started/navigation") }}</li>
+  <li>{{ lesson_link("getting-started/help-and-ai") }}</li>
+  <li>{{ lesson_link("mechanic/mechanic-mode") }}</li>
+</ul>

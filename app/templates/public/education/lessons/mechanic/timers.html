@@ -1,0 +1,35 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Start / stop a timer per job; one running timer per person.</li>
+  <li>What tracked time drives: status, hours, calendar, reports, payroll.</li>
+  <li>Fixing a forgotten timer.</li>
+</ul>
+{% endcall %}
+
+{% call step(1, "Start job") %}
+<p>Every saved job shows <strong>Tracked: H:MM:SS</strong> and a {{ ui("Start job") }} button. Starting a timer immediately sets the work order to In Progress (no save needed) and clears the “Mechanic done” badge if it was set.</p>
+{{ shot("mech-timer-running", "A running timer with the bottom timer bar.", "sm") }}
+{% endcall %}
+{% call step(2, "Keep working") %}
+<p>A sticky bottom bar shows the running timer with {{ ui("Stop") }} on every page. One running timer per person — starting another job auto-stops the previous one. There is no pause: stop and start again, time accumulates. Several mechanics can run timers on the same job at once (the row shows “&lt;names&gt; working”).</p>
+{{ shot("mech-wo-list-in-work", "The list while a timer runs: the work order under In work now.", "sm") }}
+{% endcall %}
+{% call step(3, "Stop job") %}
+<p>The session is saved to the job's tracked time.</p>
+{{ shot("mech-timer-stopped", "After Stop: the session is added to Tracked.", "sm") }}
+{% endcall %}
+
+<h2>Where tracked time goes</h2>
+<ul>
+  <li><strong>Work order</strong> — the office sees a red <em>● working</em> marker live and the summed tracked time per job; hours of mechanic-created jobs auto-fill from it ({{ lesson_link("work-orders/labor-blocks") }}).</li>
+  <li><strong>Work Orders list</strong> — the green <em>● names</em> line and the In Work group.</li>
+  <li><strong>Calendar</strong> — one block per mechanic per session, exactly when the timer ran ({{ lesson_link("calendar/wo-on-calendar") }}).</li>
+  <li><strong>Reports</strong> — Mechanic Hours (Tracked vs Billed), the dashboard hours chart, and payroll where hourly pay is based on tracked work.</li>
+  <li><strong>Push</strong> — the first timer on a work order sends “WO #… in work” to office phones.</li>
+</ul>
+
+{% call tip("Forgot to stop the timer?") %}
+A manager fixes it on the web work order: the pencil next to the Mechanics line opens the sessions — change the duration or delete the session. Everything recalculates. See {{ lesson_link("work-orders/assign-mechanics") }}.
+{% endcall %}

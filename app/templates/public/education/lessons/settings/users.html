@@ -1,0 +1,54 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Inviting a user — the only way to create one — and what they receive.</li>
+  <li>Role, pay type, shop access, per-user permission overrides.</li>
+  <li>Deactivate, re-hire, and the rules about passwords and roles.</li>
+</ul>
+{% endcall %}
+
+<p>Settings → {{ ui("Users & Roles") }} (needs {{ perm("settings.manage_users", "Manage users") }}).</p>
+{{ shot("settings-users", "Users & Roles with + New user highlighted.") }}
+
+<h2>Invite a user</h2>
+{% call step(1, "+ New user") %}
+<p>First / Last name, Email (globally unique), Phone, <strong>Role</strong> (Manager, Parts manager, Senior mechanic, Mechanic, Viewer, General manager — Owner is not assignable here), Active flag, <strong>Pay type</strong> (Salary with a weekly amount, or Hourly — hourly rates are set per employee in the uAttend integration) and <strong>Shop access</strong> checkboxes.</p>
+{{ shot("settings-user-create-modal", "Create new user.", "md") }}
+{% endcall %}
+{% call step(2, "The invitation") %}
+<p>The new user gets an email with an <strong>Accept Invitation</strong> link (valid 7 days) where they create their own password. Until then they show an orange <em>Invited</em> badge, cannot log in, and have a {{ ui("Resend invite") }} button.</p>
+{% endcall %}
+{% call step(3, "Edit later") %}
+<p>{{ ui("Edit") }} opens the same fields plus the Active switch; shop access changes apply immediately.</p>
+{{ shot("settings-user-edit-modal", "Edit user.", "md") }}
+{% endcall %}
+
+{% call warn("Passwords are strictly personal") %}
+Neither the owner nor managers can set or change another user's password anywhere. Forgotten password → the user resets it from the login page. Re-hiring a deactivated user goes through a fresh invitation (the old password is cleared).
+{% endcall %}
+
+<h2>Per-user permissions</h2>
+<p>
+  {{ ui("Permissions") }} on a row: the role provides a baseline; <strong>Allow</strong> grants extra permissions on top, <strong>Deny</strong>
+  removes them. <strong>Deny always wins.</strong> Changes apply immediately. Nobody can change their own overrides, and you can only
+  grant permissions you have yourself.
+</p>
+{{ shot("settings-user-permissions-modal", "Per-user permissions with Allow / Deny overrides.", "md") }}
+
+<h2>Deactivate and re-hire</h2>
+<ul>
+  <li>{{ ui("Deactivate") }} blocks login but keeps history; you cannot deactivate yourself. Deactivated users leave the default list — switch the status filter to <strong>Inactive users</strong> / <strong>All users</strong>; each inactive row has {{ ui("Activate") }}.</li>
+  <li>Creating a user with the email of a deactivated user of your company reactivates that user with the data you enter (a fresh profile). An email of an active user, or of another company, is refused.</li>
+</ul>
+
+<h2>Rules worth knowing</h2>
+<ul>
+  <li>You can assign only a role whose permissions you have yourself (the Owner can assign any role).</li>
+  <li>Only an Owner can edit, deactivate or re-assign the role of another owner account.</li>
+  <li>Pay type / Salary amount are visible and saved only with {{ perm("settings.manage_pay", "Edit employees' pay type & salary") }}; nobody can change their own pay.</li>
+</ul>
+
+{% call note("Mechanic roles and billing") %}
+Users with the Mechanic or Senior mechanic role work in no-price mechanic mode and are billed per mechanic; other roles are “full users”. Deactivated staff is free. See {{ lesson_link("settings/billing") }}.
+{% endcall %}

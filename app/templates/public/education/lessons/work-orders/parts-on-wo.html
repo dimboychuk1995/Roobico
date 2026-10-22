@@ -1,0 +1,55 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Searching the catalog from the Part Number cell; one-time parts; cross references.</li>
+  <li>Where the price comes from and what never gets overwritten.</li>
+  <li>Cores, negative stock and misc charges attached to parts.</li>
+</ul>
+{% endcall %}
+
+{{ shot("wo-parts-table", "The parts table of a work order in edit mode.") }}
+
+{% call step(1, "Search the catalog") %}
+<p>Type three or more characters in the <strong>Part Number</strong> cell. The dropdown shows catalog results with stock, average cost and cross-reference alternates (“⇄ Cross ref for …”) so you can pick an interchangeable part when the exact one is out.</p>
+{{ shot("wo-parts-search-dropdown", "Part search dropdown with stock, cost and the One-time part option.") }}
+{% endcall %}
+{% call step(2, "Or add a one-time part") %}
+<p>The dropdown always offers {{ ui("+ One-time part") }} — a manual line with no inventory link: editable cost, never deducted from stock. Use it for parts bought for this job only.</p>
+{% endcall %}
+{% call step(3, "Quantity, price, core") %}
+<p>Set the quantity; the price fills in automatically (see below). On parts with a core charge a <strong>Core</strong> toggle appears: line total = (price + core) × qty. If you do <em>not</em> charge the core, the quantity is tracked in the shop's Cores list to send back to the vendor ({{ lesson_link("parts/cores") }}).</p>
+{% endcall %}
+
+<h2>Where the price comes from</h2>
+<ol>
+  <li>Customer has <strong>Override part selling price</strong> → always computed from cost via the customer's pricing scale.</li>
+  <li>Else the part's fixed <strong>Selling price</strong>, if set.</li>
+  <li>Else average cost through the pricing scale (margin or markup).</li>
+</ol>
+<p>A price you edit by hand is never overwritten. Details: {{ lesson_link("customers/customer-pricing") }}.</p>
+
+<h2>Inventory</h2>
+<p>
+  Stock is deducted when the work order is saved (one-time and “do not track” parts excluded). <strong>Stock may go negative</strong> —
+  the work order always saves and shortages appear as warnings; fix them by receiving the pending order or adjusting the count.
+  Deleting a work order, or turning it into an estimate, returns its parts to inventory.
+</p>
+
+<h2>Misc charges</h2>
+<p>
+  {{ ui("+ Add Misc Charge") }}: description, quantity, price and a Taxable checkbox — for shop fees, disposal, freight. Parts can also
+  carry their own automatic misc charges from the catalog (e.g. an environmental fee on every oil filter).
+</p>
+{{ shot("wo-add-misc-charge-modal", "Add Misc Charge dialog.", "sm") }}
+
+{% call tip("Need a part you do not have?") %}
+Order it for this job without leaving the page: the <em>Parts orders</em> block under the unit row creates a vendor order linked to the work order. See {{ lesson_link("work-orders/parts-orders-for-wo") }}.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("parts/cross-refs") }}</li>
+  <li>{{ lesson_link("parts/stock-movements") }}</li>
+  <li>{{ lesson_link("work-orders/charges-tax-totals") }}</li>
+</ul>

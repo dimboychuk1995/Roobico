@@ -1367,3 +1367,56 @@ html[data-theme="dark"] .cal-lane-sep { border-left-color: #3a3a3a; }
 html[data-theme="dark"] .cal-lane-names { border-top-color: var(--border); }
 html[data-theme="dark"] .cal-lane-name { color: #e8eaed; border-left-color: var(--border); }
 html[data-theme="dark"] .cal-lane-name--unassigned { color: #9aa0a6; }
+
+/* ── Education Center (/education) ─────────────────────────────────
+   Основа education.css строится на --surface/--border/--text/--muted,
+   которые уже переопределены выше; здесь — только жёстко заданные
+   оттенки выносок, трека прогресса, kbd и подложки скриншотов. */
+html[data-theme="dark"] {
+  --edu-accent-soft: rgba(34, 197, 94, 0.14);
+  --edu-ring-track: #3a3a3a;
+  --edu-tip-bg: rgba(34, 197, 94, 0.1);
+  --edu-tip-border: rgba(34, 197, 94, 0.35);
+  --edu-tip-icon: #4ade80;
+  --edu-warn-bg: rgba(245, 158, 11, 0.1);
+  --edu-warn-border: rgba(245, 158, 11, 0.35);
+  --edu-warn-icon: #fbbf24;
+  --edu-note-bg: rgba(59, 130, 246, 0.1);
+  --edu-note-border: rgba(59, 130, 246, 0.35);
+  --edu-note-icon: #7ab8ff;
+  --edu-kbd-bg: #333333;
+  --edu-kbd-border: #4a4a4a;
+  --edu-shot-bg: #1a1a1a;
+}
+html[data-theme="dark"] .edu-hero-title,
+html[data-theme="dark"] .edu-lesson-title,
+html[data-theme="dark"] .edu-module-title,
+html[data-theme="dark"] .edu-step-title,
+html[data-theme="dark"] .edu-lesson-body,
+html[data-theme="dark"] .edu-lesson-body h2,
+html[data-theme="dark"] .edu-summary-title,
+html[data-theme="dark"] .edu-ring-inner strong,
+html[data-theme="dark"] .edu-ring-meta,
+html[data-theme="dark"] .edu-ui,
+html[data-theme="dark"] .edu-toc-list a,
+html[data-theme="dark"] .edu-search-item,
+html[data-theme="dark"] .edu-lesson-row-link,
+html[data-theme="dark"] .edu-module,
+html[data-theme="dark"] .edu-module:hover,
+html[data-theme="dark"] .edu-path-list li a {
+  color: var(--text);
+}
+html[data-theme="dark"] .edu-module-icon { background: var(--edu-accent-soft); color: #4ade80; }
+html[data-theme="dark"] .edu-step-num { background: var(--primary); color: #0b1220; }
+html[data-theme="dark"] .edu-lesson-row.is-done .edu-lesson-row-num,
+html[data-theme="dark"] .edu-toc-list li.is-done .edu-toc-mark { color: #0b1220; }
+html[data-theme="dark"] .edu-toc-list li.is-current a { color: #4ade80; }
+html[data-theme="dark"] .edu-search-item mark { background: rgba(34, 197, 94, 0.3); }
+html[data-theme="dark"] .edu-shot-link { border-color: var(--border); }
+html[data-theme="dark"] .edu-shot-link img { filter: brightness(0.96); }
+html[data-theme="dark"] .edu-lightbox img { background: #2a2a2a; }
+html[data-theme="dark"] .edu-status-chip.is-done { color: #4ade80; border-color: rgba(34, 197, 94, 0.4); }
+html[data-theme="dark"] .edu-path-list li.is-done a { color: var(--muted); }
+html[data-theme="dark"] .assistant-shot { background: #1a1a1a; border-color: var(--border); }
+html[data-theme="dark"] .assistant-lesson-link,
+html[data-theme="dark"] .assistant-edu-link { color: #4ade80; }

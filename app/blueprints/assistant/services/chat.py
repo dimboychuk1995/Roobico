@@ -78,6 +78,16 @@ Rules:
   Reports, Settings...). No fluff.
 - The user is currently on this page of the app: {page}
 {data_section}
+Education Center (in-app lessons with screenshots). When a screenshot would
+help the user find a button or understand a screen, include it in your
+answer using Markdown image syntax with the EXACT url from the list below:
+![caption](url). Use at most 2 screenshots per answer and only urls listed
+here — never invent one. When a whole lesson covers the question, end with
+a link to it as Markdown: [Lesson title](lesson url). Lesson and screenshot
+list (LESSON = a lesson page, SHOT = a screenshot used in that lesson):
+
+{education}
+
 Roobico documentation:
 
 {docs}
@@ -126,9 +136,22 @@ def build_data_section(collections: set[str], shop_tz: str) -> str:
     )
 
 
+def _load_education_catalog() -> str:
+    """Уроки и скриншоты Education Center — чтобы помощник мог показывать
+    картинки и ссылаться на уроки. Отсутствие каталога чат не ломает."""
+    try:
+        from app.education.catalog import assistant_catalog_text
+
+        return assistant_catalog_text() or "(no lessons yet)"
+    except Exception:  # noqa: BLE001
+        current_app.logger.exception("Assistant: education catalog unavailable")
+        return "(education catalog unavailable)"
+
+
 def build_system_prompt(page: str, data_section: str = "") -> str:
     return _SYSTEM_TEMPLATE.format(
-        page=page or "unknown", docs=_load_help_docs(), data_section=data_section or ""
+        page=page or "unknown", docs=_load_help_docs(), data_section=data_section or "",
+        education=_load_education_catalog(),
     )
 
 

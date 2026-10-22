@@ -1,0 +1,46 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The two headline numbers and the formulas behind them.</li>
+  <li>The detail table: Money In, Money Out, Bottom Line, Mechanic Hours.</li>
+  <li>Why payroll can be $0.</li>
+</ul>
+{% endcall %}
+
+<p>Reports → <strong>General Revenue</strong> (needs {{ perm("reports.view_financial", "View financial reports") }}). Pick a period and click Generate.</p>
+{{ shot("report-general-revenue", "The General Revenue report.") }}
+
+<h2>Two headline blocks</h2>
+<ul>
+  <li><strong>Revenue − Parts Cost</strong> — all income minus the shop's cost of parts used on work orders (payroll <em>not</em> subtracted). The “job view”.</li>
+  <li><strong>Revenue − Parts Orders − Salaries</strong> — all income minus real vendor spending minus payroll. The “cash view”.</li>
+</ul>
+<p>Under them the same formulas are printed with the actual numbers, then an Activity strip (work orders, parts orders, hours billed, mechanic hours, weeks).</p>
+
+<h2>The detail table</h2>
+<p>Every row has a “What is this” explanation. Groups:</p>
+<ul>
+  <li><strong>Money In</strong> — labor, parts, cores, misc, tax → Total Revenue (sales tax collected is included).</li>
+  <li><strong>Money Out — Parts Orders</strong> — vendor orders in the period (confirmed ones; returns subtract).</li>
+  <li><strong>Money Out — Payroll</strong> — salaries × weeks plus uAttend hourly, per employee.</li>
+  <li><strong>Bottom Line</strong> — the Cash view and the Job view.</li>
+  <li><strong>Mechanic Hours</strong> — billed vs tracked.</li>
+</ul>
+
+<h2>Why is payroll $0?</h2>
+<ul>
+  <li>Salary users need Pay type = Salary with a weekly amount (Settings → Users).</li>
+  <li>Hourly users must be ticked in Settings → Integrations → uAttend with an $/hr rate; without the integration there are no hourly hours.</li>
+  <li>A <strong>customer filter</strong> is applied — payroll and parts orders cannot be split per customer, so they are counted as $0 and a banner explains it.</li>
+</ul>
+
+{% call note("Revenue looks too high?") %}
+Total Revenue includes collected sales tax, and sales reports date work orders by their Work Order Date. Work orders without a customer are excluded from per-customer reports.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("reports/timecard-salary") }}</li>
+  <li>{{ lesson_link("settings/integrations") }}</li>
+</ul>

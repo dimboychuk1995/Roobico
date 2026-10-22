@@ -1,0 +1,44 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>What is recorded and what is not.</li>
+  <li>Reading a row and its Before / After details.</li>
+  <li>Filters and the History shortcut on records.</li>
+</ul>
+{% endcall %}
+
+<p>
+  Reports → <strong>Activity Journal</strong> (needs {{ perm("reports.view_audit", "View audit journal") }}) — the complete history of who
+  did what in the shop. Every change made through the web app, the mobile app, the customer portal or the email inbox lands here;
+  reads / views are not logged. Passwords and tokens are masked everywhere.
+</p>
+{{ shot("report-activity-journal", "The Activity Journal with its filters.") }}
+
+<h2>A row</h2>
+<ul>
+  <li><strong>When</strong> (shop time), <strong>Who</strong> (user and role, or Customer for portal actions, System for automatic ones).</li>
+  <li><strong>Action</strong> — Created, Updated, Deleted, Status changed, Payment, Sent, Received, Returned, Activated / Deactivated, Signed in / out, Timer, Marked done, Confirmed, Transferred, Imported, Uploaded, Permissions changed, Settings changed, Access denied, Failed request.</li>
+  <li><strong>Object</strong> — a link to the work order, unit, customer, part, parts order, vendor, user, role, appointment…</li>
+  <li><strong>What happened</strong> — a plain sentence such as “WO #1042: status open → paid”.</li>
+</ul>
+{% call step(1, "Click a row to expand") %}
+<p>A <strong>Before / After</strong> table of every field that changed, extra details (amounts, quantities, recipients, files) and the technical trace (HTTP method and path, status code, IP, user id).</p>
+{{ shot("report-activity-journal-row", "An expanded entry with its details.") }}
+{% endcall %}
+
+<h2>Filters</h2>
+<p>
+  Free-text search (WO number, customer, part number, user name, any changed value), period presets or a custom range, user, object type,
+  action, source (web / mobile / portal / system), location for multi-location tenants, and <em>Show</em>: everything, business events only
+  or technical requests only.
+</p>
+
+{% call tip("Fastest path") %}
+Open the work order or customer and press {{ ui("History") }} — the journal opens filtered to that one record.
+{% endcall %}
+{{ shot("wo-history-button", "The History button on a work order.") }}
+
+{% call note("Attempts are visible too") %}
+Failed requests and access denials are journaled, so attempts to do something without permission show up here.
+{% endcall %}

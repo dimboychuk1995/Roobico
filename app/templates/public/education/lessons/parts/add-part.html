@@ -1,0 +1,53 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Every field of the part form and what it drives.</li>
+  <li>In stock vs average cost vs last price.</li>
+  <li>Selling price, do-not-track, core charge and misc charges.</li>
+</ul>
+{% endcall %}
+
+{% call step(1, "Open the form") %}
+<p>Parts → {{ ui("Add Part") }} (needs {{ perm("parts.create", "Create parts") }}).</p>
+{{ shot("parts-add-modal", "The Create new part dialog.", "md") }}
+{% endcall %}
+
+{% call step(2, "Identity") %}
+<ul>
+  <li><strong>Part number</strong> — the only required field. Unique within the shop (case-insensitive): a number that already exists is refused; if the message says the existing part is inactive, add it to a parts order instead of creating a copy.</li>
+  <li><strong>Reference</strong> — alternative / OEM number. <strong>Description</strong> — free text.</li>
+  <li><strong>Vendor</strong>, <strong>Category</strong>, <strong>Location</strong> (the primary storage location).</li>
+</ul>
+{% endcall %}
+
+{% call step(3, "Stock and cost") %}
+<ul>
+  <li><strong>In stock</strong> — the starting quantity. Afterwards stock changes only through orders, work orders, transfers, stocktakes and manual adjustments. Editing this number on an existing part is a manual override and needs {{ perm("parts.edit_stock_qty", "Edit on-hand quantity directly") }} (by default Owner, General manager, Manager).</li>
+  <li><strong>Average cost</strong> — the weighted average of what is in stock, recalculated on every receiving: (old avg × old qty + received price × received qty) ÷ total qty. Example: 2 in stock at $100, you receive 2 at $200 → 4 at $150. If stock is zero / negative or the average is 0, the received price simply becomes the average. Work orders never change it. You can type it by hand here.</li>
+  <li><strong>Last price</strong> — read-only: the price on the latest parts order with this part; it pre-fills the price when you order again.</li>
+</ul>
+{% endcall %}
+
+{% call step(4, "Toggles") %}
+<ul>
+  <li><strong>This part has selling price</strong> → a fixed <strong>Selling price</strong> that overrides the pricing scale (unless the customer has “Override part selling price”).</li>
+  <li><strong>Do not track inventory for this part</strong> — usable on work orders and orders, but stock is never adjusted (turning it on zeroes stock and disables the core charge). For fluids, consumables, shop supplies.</li>
+  <li><strong>This part has Core charge</strong> → <strong>Core cost</strong>, the refundable deposit per unit.</li>
+  <li><strong>Add Misc charge for this part</strong> → a list of misc charges (description, price, taxable) added automatically whenever the part goes on a work order — an environmental fee on every filter, for example.</li>
+</ul>
+{{ shot("parts-add-modal-toggles", "The three toggles switched on, revealing their fields.", "md") }}
+{% endcall %}
+
+{% call step(5, "Save") %}
+<p>The part appears in the list. Attachments (datasheets, photos) can be added in edit mode.</p>
+{{ shot("parts-edit-modal", "Editing an existing part — In stock is a locked override without the right permission.", "md") }}
+{% endcall %}
+
+{% call tip("Thousands of parts? Import them") %}
+Import / Export → Parts: Part Number, Description, Reference, In Stock, Average Cost, Selling Price from CSV / Excel. Starting stock is recorded properly with a location row and an “initial” movement. See {{ lesson_link("tools/import-data") }}.
+{% endcall %}
+
+{% call note("No reorder points") %}
+There is no low-stock / minimum-quantity feature. Use the stocktake and history tools to watch consumption.
+{% endcall %}

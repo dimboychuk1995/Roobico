@@ -1,0 +1,40 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Uploading a vendor invoice and reviewing what AI read.</li>
+  <li>Matched parts, new parts, Create &amp; Add.</li>
+  <li>The unit-price rule and what the reader ignores.</li>
+</ul>
+{% endcall %}
+
+{% call step(1, "AI Order Reader") %}
+<p>In the order dialog click {{ ui("AI Order Reader") }}. Upload the vendor's invoice — PDF or photo (jpg / png / gif / webp / bmp / tiff, up to 16 MB).</p>
+{{ shot("parts-order-modal", "The AI Order Reader button at the bottom of the order dialog.", "md") }}
+{% endcall %}
+{% call step(2, "Review the panel") %}
+<ul>
+  <li><strong>Vendor</strong> matched by name — or a {{ ui("Create Vendor") }} button prefilled from the invoice.</li>
+  <li><strong>Matched parts</strong> — lines recognized as existing parts, with editable Qty / Price, a Total column (Qty × Price), {{ ui("Add") }} and {{ ui("Add All Matched") }}. Inactive parts are matched too and become active when the order is created.</li>
+  <li><strong>New parts (not in database)</strong> — lines with a {{ ui("Create & Add") }} button that creates the part first, then puts it on the order.</li>
+</ul>
+{% endcall %}
+{% call step(3, "Create order") %}
+<p>Nothing is saved until you click {{ ui("Create order") }}. Check quantities and prices in the main table first.</p>
+{% endcall %}
+
+<h2>Price = unit price, never the line amount</h2>
+<p>
+  The reader extracts two numbers per line — the net unit price and the printed line amount — and checks that price × qty equals the
+  amount. If AI put the line amount into the price (qty 3, amount $150 → “price” $150), it is corrected to amount ÷ qty ($50) before you
+  see it; such a price shows a tooltip on hover. It uses the net (discounted) unit price and the Shipped quantity, and ignores tax, freight
+  and signature lines.
+</p>
+
+{% call tip("Also on the phone") %}
+The mobile app's Parts → Orders has the same invoice scan with the camera — photograph the invoice at the counter.
+{% endcall %}
+
+{% call note("Want it fully automatic?") %}
+Forward vendor emails to your location's inbox and orders create themselves — {{ lesson_link("purchasing/email-orders") }}.
+{% endcall %}

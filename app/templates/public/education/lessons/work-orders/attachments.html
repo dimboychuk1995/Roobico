@@ -1,0 +1,34 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Three attachment levels on a work order.</li>
+  <li>Uploading, viewing and deleting — and the permissions behind each.</li>
+</ul>
+{% endcall %}
+
+<h2>Three levels</h2>
+<ul>
+  <li><strong>Work order</strong> — {{ ui("Work Order Attachments") }} at the bottom of the page: inspection photos, the signed paper copy, the customer's purchase order.</li>
+  <li><strong>Labor block</strong> — {{ ui("Labor Attachments") }} under each job: before / after photos of that specific repair. Mechanics upload here from the phone.</li>
+  <li><strong>Payment</strong> — inside the Record Payment dialog: a check photo or card slip tied to that payment.</li>
+</ul>
+{{ shot("wo-attachments", "Work Order Attachments expanded.") }}
+
+{% call step(1, "Upload") %}
+<p>Expand the attachments block and click the upload button; choose photos, PDFs or other files (up to 16 MB each). Needs {{ perm("attachments.upload", "Upload attachments") }}.</p>
+{% endcall %}
+{% call step(2, "View") %}
+<p>Thumbnails open the file in a new tab. Viewing needs {{ perm("attachments.view", "View attachments") }}. Customers see work order attachments in their portal.</p>
+{% endcall %}
+{% call step(3, "Delete") %}
+<p>The × on a thumbnail removes the file; it appears only with {{ perm("attachments.delete", "Delete attachments") }}. All attachments are deleted together with the work order.</p>
+{% endcall %}
+
+{% call note("Other records have attachments too") %}
+Customers (Details tab), units (Files button), parts (edit form), vendors, parts orders, payments on parts orders and vendor returns each have their own attachments block.
+{% endcall %}
+
+{% call tip("Photos from the phone") %}
+In the mobile app every job card has a camera / gallery button; the files land in that job's Labor Attachments and are visible on the web immediately.
+{% endcall %}

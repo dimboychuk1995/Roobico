@@ -1,0 +1,74 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Filters, columns and footer totals of the Work Orders list.</li>
+  <li>Status badges: Paid, In Progress, Mechanic done, Unassigned labor, Confirmed.</li>
+  <li>The In Work group that ignores the date filter.</li>
+  <li>The Payments and Estimates tabs.</li>
+</ul>
+{% endcall %}
+
+<p>
+  Sidebar → {{ ui("Work Orders") }}. A work order (WO) is the central document of a repair job; its number doubles as the
+  invoice number (numbering starts at 1000, per shop).
+</p>
+{{ shot("wo-list", "The Work Orders list for All Time with the header buttons highlighted.") }}
+
+<h2>Filters</h2>
+<p>
+  Search by any field, the paid-status dropdown (All / Paid / Unpaid / In Progress) and date presets from Today to All Time
+  (default <em>This Month</em>) filtering by the <strong>work order date</strong>. {{ ui("Reset") }} clears everything.
+</p>
+{{ shot("wo-list-filters", "Search, paid status and the date preset.") }}
+
+<h2>Columns and actions</h2>
+<table>
+  <thead><tr><th>Column</th><th>Meaning</th></tr></thead>
+  <tbody>
+    <tr><td>WO #, Customer, Date, Unit, Mileage</td><td>Identity of the job. Mileage is the snapshot stored on the work order.</td></tr>
+    <tr><td>Labor, Parts, Tax, Total, Balance</td><td>Money columns (Labor includes shop supply; Parts includes cores and misc charges).</td></tr>
+    <tr><td>Paid</td><td>The status badge plus mechanic activity lines (see below). <em>PO #</em> badges mark linked parts orders.</td></tr>
+    <tr><td>Actions</td><td>{{ ui("Pay") }} needs {{ perm("work_orders.manage_payments", "Manage payments") }}; {{ ui("Download PDF") }} needs {{ perm("work_orders.export_pdf", "Export PDF") }}; {{ ui("Delete") }} needs {{ perm("work_orders.delete", "Delete work orders") }}. Without {{ perm("work_orders.edit", "Edit work orders") }} the button reads <em>Open</em> and the work order is read-only.</td></tr>
+  </tbody>
+</table>
+{{ shot("wo-list-totals", "Footer totals: Labor, Parts, Tax, Total, Unpaid for the current filter.") }}
+
+<h2>Status badges and mechanic activity</h2>
+<ul>
+  <li><strong>Paid</strong> (green), <strong>In Progress</strong> (blue), <strong>Open / Unpaid</strong> (yellow).</li>
+  <li>A green <strong>● names</strong> line — mechanics with a running job timer on this work order right now; grey ● — taken but idle; green <strong>✓ Name</strong> — this mechanic already pressed Done.</li>
+  <li><strong>Mechanic done</strong> — every mechanic who worked on it pressed Done; the work order stays In Progress until you complete it.</li>
+  <li><strong>Unassigned labor</strong> (red) — a labor line with a description, hours or parts has no mechanic yet. Open the work order and assign someone in that block. Never shown on paid work orders.</li>
+  <li><strong>Confirmed</strong> — a manager confirmed the mechanic's work from the mobile app; the work order is locked for mechanics until the confirmation is cancelled.</li>
+</ul>
+
+<h2>The In Work group</h2>
+<p>
+  Work orders that mechanics have taken but not marked done are grouped at the top under <em>In Work · taken by mechanics, not marked
+  done yet</em>. This group <strong>ignores the date filter</strong> — whatever range you pick, everything currently on the shop floor is
+  shown (search and the paid-status dropdown still apply). Each work order appears once. Note the footer totals still follow the
+  selected date range.
+</p>
+
+{% call tip("The list is live") %}
+No manual refresh needed. Every few seconds the page checks the server and reloads itself when a mechanic starts or stops a timer, saves or marks Done, or when someone pays, edits, creates or deletes a work order elsewhere. Your filters, page and scroll position are preserved, and the reload waits politely while you type in a filter or have a dialog open. See {{ lesson_link("work-orders/live-updates") }}.
+{% endcall %}
+
+<h2>Payments and Estimates tabs</h2>
+<p>
+  <strong>Payments</strong> lists every payment recorded on any work order with its own search and date filter; the totals row sums exactly
+  the filtered payments. <strong>Estimates</strong> lists all quotes — they are hidden from the main tab and its totals; Edit opens the estimate.
+</p>
+{{ shot("wo-list-payments-tab", "Payments tab.") }}
+{{ shot("wo-list-estimates-tab", "Estimates tab.") }}
+
+<h2>Header buttons</h2>
+<p>{{ ui("Create Work Order") }} (needs {{ perm("work_orders.create", "Create work orders") }}) and {{ ui("Bulk Payment") }} — see {{ lesson_link("work-orders/bulk-payment") }}.</p>
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("work-orders/create-wo") }}</li>
+  <li>{{ lesson_link("work-orders/statuses") }}</li>
+  <li>{{ lesson_link("mechanic/done-confirm") }}</li>
+</ul>

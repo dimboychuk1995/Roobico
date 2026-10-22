@@ -1,0 +1,85 @@
+{# ── Макросы уроков Education Center ─────────────────────────────────
+   Использование в теле урока:
+     {% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot %}
+
+   shot(id, caption, size)   — скриншот из static/img/education/<id>.webp
+                               size: "lg" (во всю ширину, по умолчанию),
+                               "md", "sm" (модалки, фрагменты)
+   step(n, title)            — нумерованный шаг (с caller-блоком)
+   tip / warn / note         — выноски (с caller-блоком)
+   ui("Button name")         — название кнопки/пункта меню
+   perm("work_orders.edit")  — какое право нужно
+   lesson_link("mod/les", text) — ссылка на другой урок
+   mobile_shot(file, caption)   — скриншот мобильного приложения (static/img/landing)
+#}
+
+{% macro shot(id, caption, size="lg") -%}
+<figure class="edu-shot edu-shot-{{ size }}">
+  <a href="{{ url_for('static', filename='img/education/' ~ id ~ '.webp') }}"
+     class="edu-shot-link" data-edu-lightbox data-caption="{{ caption }}">
+    <img src="{{ url_for('static', filename='img/education/' ~ id ~ '.webp') }}"
+         alt="{{ caption }}" loading="lazy" decoding="async">
+    <span class="edu-shot-zoom" aria-hidden="true"><i class="bi bi-arrows-fullscreen"></i></span>
+  </a>
+  <figcaption>{{ caption }}</figcaption>
+</figure>
+{%- endmacro %}
+
+{% macro mobile_shot(file, caption) -%}
+<figure class="edu-shot edu-shot-mobile">
+  <a href="{{ url_for('static', filename='img/landing/' ~ file) }}"
+     class="edu-shot-link" data-edu-lightbox data-caption="{{ caption }}">
+    <img src="{{ url_for('static', filename='img/landing/' ~ file) }}" alt="{{ caption }}" loading="lazy">
+  </a>
+  <figcaption>{{ caption }}</figcaption>
+</figure>
+{%- endmacro %}
+
+{% macro step(n, title) -%}
+<div class="edu-step" id="step-{{ n }}">
+  <div class="edu-step-num" aria-hidden="true">{{ n }}</div>
+  <div class="edu-step-body">
+    <h3 class="edu-step-title">{{ title }}</h3>
+    {{ caller() }}
+  </div>
+</div>
+{%- endmacro %}
+
+{% macro tip(title="Tip") -%}
+<div class="edu-callout edu-callout-tip">
+  <i class="bi bi-lightbulb-fill" aria-hidden="true"></i>
+  <div><strong>{{ title }}.</strong> {{ caller() }}</div>
+</div>
+{%- endmacro %}
+
+{% macro warn(title="Careful") -%}
+<div class="edu-callout edu-callout-warn">
+  <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+  <div><strong>{{ title }}.</strong> {{ caller() }}</div>
+</div>
+{%- endmacro %}
+
+{% macro note(title="Note") -%}
+<div class="edu-callout edu-callout-note">
+  <i class="bi bi-info-circle-fill" aria-hidden="true"></i>
+  <div><strong>{{ title }}.</strong> {{ caller() }}</div>
+</div>
+{%- endmacro %}
+
+{% macro ui(text) -%}<kbd class="edu-ui">{{ text }}</kbd>{%- endmacro %}
+
+{% macro perm(key, label=None) -%}
+<span class="edu-perm" title="Permission key: {{ key }}"><i class="bi bi-shield-lock" aria-hidden="true"></i> {{ label or key }}</span>
+{%- endmacro %}
+
+{% macro lesson_link(key, text=None) -%}
+{%- set l = edu_lesson(key) -%}
+{%- if l -%}<a class="edu-lesson-link" href="{{ l.url }}"><i class="bi bi-journal-text" aria-hidden="true"></i> {{ text or l.title }}</a>{%- else -%}{{ text or key }}{%- endif -%}
+{%- endmacro %}
+
+{% macro summary_box(title="In this lesson") -%}
+<div class="edu-summary">
+  <div class="edu-summary-title"><i class="bi bi-list-check" aria-hidden="true"></i> {{ title }}</div>
+  {{ caller() }}
+</div>
+{%- endmacro %}

@@ -1,0 +1,50 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Every widget on the dashboard and what its numbers include.</li>
+  <li>The period filter and the one widget that ignores it.</li>
+  <li>Who sees money and who sees only hours.</li>
+</ul>
+{% endcall %}
+
+<p>Sidebar → {{ ui("Dashboard") }}. The dashboard is a summary of the active shop for the selected period (default <em>This Month</em>).</p>
+{{ shot("dashboard-overview", "The dashboard for a period: money cards, donuts, goals and the hours chart.") }}
+
+<h2>Period filter and quick actions</h2>
+<p>
+  The date presets are the same as in reports: Today, Yesterday, This Week, Last Week, This Month, Last Month, This Quarter,
+  Last Quarter, This Year, Last Year, All Time, or a custom range. {{ ui("Reset") }} returns to the default.
+</p>
+{{ shot("dashboard-filters", "Date presets and the custom range.") }}
+<p>Quick actions open the right form in one click: {{ ui("Create WO") }}, {{ ui("Create PO") }}, {{ ui("New Customer") }}, {{ ui("New Vendor") }}.</p>
+{{ shot("dashboard-quick-actions", "Quick actions row.") }}
+
+<h2>Widgets</h2>
+<table>
+  <thead><tr><th>Widget</th><th>What it shows</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Work Orders Paid vs Unpaid</strong></td><td>A donut with the paid percentage, the number of work orders and the Labor / Parts / Total / Unpaid totals for the period. Estimates are excluded.</td></tr>
+    <tr><td><strong>Parts Orders: Received vs Ordered</strong></td><td>Received % (by count) and paid % (by amount), with Items, Non-inventory and Spend. Orders from email that are still <em>Not confirmed</em> do not count.</td></tr>
+    <tr><td><strong>Goals Progress</strong></td><td>Three rings — Labor, Parts Sales, Total — against the monthly goals set with {{ ui("Edit Goals") }}. Other periods prorate the monthly target by days.</td></tr>
+    <tr><td><strong>Labor Hours — Cumulative</strong></td><td>A line chart with up to three running totals: <em>Actual</em> (mechanics' job timers), <em>Invoiced</em> (labor hours billed on work orders) and <em>uAttend</em> (time clock, only when the integration is connected). Below it: totals, Invoiced ÷ Actual, Actual ÷ uAttend and a per-mechanic table.</td></tr>
+    <tr><td><strong>Outstanding Balance (All Time)</strong></td><td>The total customers owe you. It ignores the date filter on purpose — a balance is always all-time.</td></tr>
+  </tbody>
+</table>
+
+{% call note("Who counts as a mechanic") %}
+Only users with the Mechanic or Senior mechanic role feed the hours chart. A manager who starts a job timer is ignored; a uAttend employee matched to a manager is excluded too. Hours with no assigned mechanic show as the <em>Unassigned labor</em> row so the table always adds up.
+{% endcall %}
+
+<h2>Who sees what</h2>
+<p>
+  The money blocks need the permission {{ perm("work_orders.view_costs", "View part costs inside WO") }}. A Senior mechanic with
+  dashboard access sees only the hours chart. Editing goals needs {{ perm("dashboard.edit_goals", "Edit dashboard goals") }}.
+</p>
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("dashboard/dashboard-goals") }}</li>
+  <li>{{ lesson_link("reports/mechanic-hours") }} — the same hours as a report</li>
+  <li>{{ lesson_link("settings/integrations") }} — connecting uAttend</li>
+</ul>

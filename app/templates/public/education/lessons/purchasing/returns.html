@@ -1,0 +1,36 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Returning wrong or defective parts to the vendor.</li>
+  <li>The credit document R-&lt;number&gt; and its stock effect.</li>
+  <li>Finding returns and attaching paperwork.</li>
+</ul>
+{% endcall %}
+
+{% call step(1, "Return") %}
+<p>On a parts order that is <strong>received or fully paid</strong>, click {{ ui("Return") }} (needs {{ perm("parts_orders.receive", "Receive / un-receive parts orders") }}). Enter quantities per line (capped by what is still returnable) and an optional note — reason, RMA number.</p>
+{{ shot("parts-orders-tab", "Return is one of the row actions on the Parts Orders tab.") }}
+{% endcall %}
+{% call step(2, "The credit document") %}
+<p>A separate return document <strong>R-&lt;number&gt;</strong> is created with a <em>Credit</em> badge — it is a vendor credit, not a debt; payments cannot be applied to it. Returns subtract from purchase totals in the orders tab and reports and show up under Vendor credits on the Parts Orders Payments tab.</p>
+{% endcall %}
+{% call step(3, "Stock") %}
+<p>If the source order was received, the returned parts are deducted from stock (from the same locations); deleting the return puts them back.</p>
+{% endcall %}
+
+<h2>Finding returns</h2>
+<p>
+  The status filter on the Parts Orders tab has a <strong>Returns</strong> option — only return documents are shown and the footer totals sum
+  just the returns (as negative amounts). Search and the date filter work as usual.
+</p>
+
+<h2>Paperwork</h2>
+<p>
+  Every return row has a {{ ui("Files") }} button — attach the vendor's credit invoice or RMA paperwork there. These files belong to the
+  return itself and are not shown on the original order.
+</p>
+
+{% call note("Cores are separate") %}
+Old cores go back through the Cores tab → Return, not through a parts return. See {{ lesson_link("parts/cores") }}.
+{% endcall %}

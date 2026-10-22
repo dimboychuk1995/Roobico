@@ -1,0 +1,23 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Setting the three monthly goals.</li>
+  <li>How progress is measured for periods other than a month.</li>
+</ul>
+{% endcall %}
+
+{% call step(1, "Open Edit Goals") %}
+<p>On the Dashboard, click {{ ui("Edit Goals") }} in the Goals Progress card. You need {{ perm("dashboard.edit_goals", "Edit dashboard goals") }}.</p>
+{% endcall %}
+{% call step(2, "Enter the targets") %}
+<p>Three monthly amounts in dollars: <strong>Labor</strong>, <strong>Parts Sales</strong> and <strong>Total</strong>. Save. New shops start with sample goals ($60,000 / $80,000 / $140,000) — replace them with yours.</p>
+{{ shot("dashboard-goals-modal", "Monthly Goals dialog.", "sm") }}
+{% endcall %}
+{% call step(3, "Read the rings") %}
+<p>Each ring fills as the period's labor, parts sales and total revenue approach the goal. For a period shorter or longer than a month the monthly target is prorated by days, so <em>This Week</em> compares against roughly a quarter of the monthly goal.</p>
+{{ shot("dashboard-overview", "Goal rings on the dashboard.") }}
+{% endcall %}
+{% call tip("Goals are per shop") %}
+Each location has its own goals; switch the active shop in the top bar to set the others.
+{% endcall %}

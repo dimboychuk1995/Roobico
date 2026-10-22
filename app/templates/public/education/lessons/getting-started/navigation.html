@@ -1,0 +1,69 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The sidebar, the top bar and the active shop switcher.</li>
+  <li>Global search from anywhere in the app.</li>
+  <li>Light and dark themes.</li>
+  <li>Personal table layouts: hide columns, resize, sort.</li>
+</ul>
+{% endcall %}
+
+<h2>Sidebar</h2>
+<p>
+  The left sidebar lists every section your role can open: Dashboard, Calendar, Parts, Vendors, Customers, Work Orders,
+  Settings, Reports, Perks, Import / Export and this Education Center. Below the sections sits the
+  {{ ui("Roobico AI Helper") }} button and, at the very bottom, the theme toggle.
+</p>
+{{ shot("sidebar-expanded", "The expanded sidebar with global search, sections, the AI Helper and the theme toggle.", "sm") }}
+<p>
+  The hamburger button collapses the sidebar to icons to give tables more room; the choice is remembered in your browser.
+  If a section is missing from your sidebar, your role does not include it — ask the account owner.
+</p>
+{{ shot("sidebar-collapsed", "Collapsed sidebar: icons only.", "sm") }}
+
+<h2>Top bar</h2>
+<p>
+  The top bar shows who is logged in, the organization name, the <strong>Active shop</strong> dropdown and {{ ui("Logout") }}.
+  Organizations with several locations switch between them here — every page then shows only that shop's customers,
+  parts and work orders. Users only see the shops they were granted access to.
+</p>
+{{ shot("topbar-shop-switcher", "Active shop switcher in the top bar.") }}
+
+<h2>Global search</h2>
+{% call step(1, "Start typing in the Search box") %}
+<p>The <em>Search…</em> box at the top of the sidebar searches as you type (two or more characters).</p>
+{% endcall %}
+{% call step(2, "Pick a result") %}
+<p>Results are grouped: Units (by unit number or VIN, with the customer), Customers, Vendors, Work Orders (with total and paid status), Parts (with stock) and Part Orders. Click a result to open it. Inactive records carry an <em>Inactive</em> badge.</p>
+{% endcall %}
+{{ shot("global-search", "Global search results grouped by type.") }}
+{% call note("Permissions apply") %}
+Search shows only the sections you may open, and amounts only to users who can see prices.
+{% endcall %}
+
+<h2>Themes</h2>
+<p>
+  The toggle at the bottom of the sidebar switches between the light and dark theme. The choice is saved in the browser,
+  so each computer and each user can have their own.
+</p>
+{{ shot("theme-dark-dashboard", "The dashboard in the dark theme.") }}
+
+<h2>Every table is personal</h2>
+<p>Every table in Roobico can be adjusted per user, and the layout follows you to any device:</p>
+<ul>
+  <li><strong>Hide / show columns</strong> — hover the table and click the small ⚙ button in its top-right corner, then tick the columns you need. At least one column always stays visible.</li>
+  <li><strong>Resize</strong> — drag the thin divider on the right edge of a column header.</li>
+  <li><strong>Sort</strong> — click a header; arrows show the direction. Paginated lists sort on the server across all pages.</li>
+  <li><strong>Reset</strong> — ⚙ → {{ ui("Reset table") }} restores the defaults.</li>
+</ul>
+{{ shot("table-columns-menu", "The ⚙ table settings menu above the Customers table.") }}
+{% call tip("Nothing you do here affects colleagues") %}
+Column choices, widths and sort order are saved to your account only. Other users keep their own layouts.
+{% endcall %}
+
+<h2>Related lessons</h2>
+<ul>
+  <li>{{ lesson_link("settings/shops") }} — adding locations that appear in the Active shop switcher</li>
+  <li>{{ lesson_link("getting-started/help-and-ai") }}</li>
+</ul>

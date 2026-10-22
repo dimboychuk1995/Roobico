@@ -1,0 +1,42 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>The free tier and per-unit pricing.</li>
+  <li>Monthly vs annual billing, the card, invoices.</li>
+  <li>What happens when a subscription expires.</li>
+</ul>
+{% endcall %}
+
+<p>Settings → {{ ui("Subscription & Billing") }} (owner only — {{ perm("settings.manage_billing", "Manage subscription & billing") }}).</p>
+{{ shot("settings-billing", "Subscription & Billing: status, price breakdown, Pay now, Switch to annual, invoices.") }}
+
+<h2>Pricing</h2>
+<ul>
+  <li><strong>Free tier</strong>: the first active location and the first active full user cost nothing — forever. A solo shop pays $0 and is never blocked.</li>
+  <li>Beyond that: <strong>$100/mo</strong> per extra active location, <strong>$50/mo</strong> per extra active full user, <strong>$25/mo</strong> per active mechanic (Mechanic and Senior mechanic roles).</li>
+  <li>Only active locations and users count — deactivated staff is free.</li>
+  <li>The 30-day trial has no limits at all.</li>
+</ul>
+<p>Example: 1 location, an owner and 2 mechanics = 2 × $25 = $50/mo. 2 locations, 3 office users, 4 mechanics = $100 + 2 × $50 + 4 × $25 = $300/mo.</p>
+
+<h2>Annual billing — save 20%</h2>
+<p>
+  {{ ui("Switch to annual") }} in the Monthly price card: billed once a year at 12 × the monthly price minus 20% (e.g. $50/mo → $480/yr), each
+  payment extends the subscription by a full year, and the price is recalculated from the active locations / users at each renewal. Switch
+  back to monthly any time — the change applies to the next invoice.
+</p>
+
+<h2>Paying</h2>
+<p>
+  The page shows the subscription status (Active / Renews soon / Payment failed / Expired), the “Paid until” date, the saved card, the invoice
+  history and {{ ui("Pay now") }} (Stripe). Renewal is charged automatically about 3 days before the period ends; a failed charge gets a 7-day grace.
+</p>
+
+{% call warn("When a paid subscription expires") %}
+Only the owner can log in — straight to this page — until it is renewed; other users are blocked. A shop that fits the free tier is never blocked.
+{% endcall %}
+
+{% call tip("Custom pricing") %}
+Discounts or fixed prices arranged with Roobico appear on this page automatically and apply to future invoices.
+{% endcall %}

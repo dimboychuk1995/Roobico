@@ -1,0 +1,55 @@
+{% from "public/education/_macros.html" import shot, step, tip, warn, note, ui, perm, lesson_link, mobile_shot, summary_box with context %}
+
+{% call summary_box() %}
+<ul>
+  <li>Asking the built-in AI Helper in plain words — and what it can look up for you.</li>
+  <li>How the Education Center is organized and how progress is tracked.</li>
+  <li>Where to call or write when you need a human.</li>
+</ul>
+{% endcall %}
+
+<h2>The Roobico AI Helper</h2>
+<p>
+  The {{ ui("Roobico AI Helper") }} button at the bottom of the sidebar opens a chat panel. Ask how to do something
+  in your own words — “how do I give one customer 20% on parts”, “who owes me money”, “где посмотреть часы механика” —
+  and it answers with numbered steps and the exact names of buttons and sections. It replies in the language you write in.
+</p>
+{{ shot("ai-helper-panel", "The AI Helper panel: ask a question, get steps.", "sm") }}
+<ul>
+  <li><strong>It knows the whole documentation</strong> and every lesson in this Education Center, so it can show you the right screenshot or link to the lesson that covers your question.</li>
+  <li><strong>It can read your shop's data</strong> (read-only): “how many open work orders do we have”, “does Globeks owe us anything”, “what is in stock for part 123”. It sees exactly what you are allowed to see — a mechanic never gets prices.</li>
+  <li><strong>It cannot change anything.</strong> It will tell you where to click, never click for you.</li>
+</ul>
+{{ shot("ai-helper-answer", "An answer with steps and a link to the matching lesson.", "sm") }}
+{% call note("Limits") %}
+Each organization has a monthly usage allowance for the assistant, and each user can send about twenty messages in five minutes. The chat keeps your conversation while you move between pages in the same tab.
+{% endcall %}
+
+<h2>The Education Center</h2>
+<p>
+  You are in it now. Lessons are grouped into modules — one per section of the app — and each lesson walks through a screen
+  or a task with real screenshots. Click any screenshot to zoom.
+</p>
+{{ shot("education-home", "Education Center home: progress ring, Continue, search and the module cards.") }}
+{% call step(1, "Find a lesson") %}
+<p>Use the search box on the home page (it matches titles and descriptions), open a module card, or follow one of the suggested learning paths (owner, mechanic, parts manager).</p>
+{% endcall %}
+{% call step(2, "Read and mark complete") %}
+<p>At the bottom of every lesson press {{ ui("Mark lesson as complete") }}. Your progress is saved to your account — the ring on the home page, the module bars and the check marks update everywhere, on any device. Click the button again to undo.</p>
+{{ shot("education-lesson", "A lesson page with steps, screenshots and the complete button.", "md") }}
+{% endcall %}
+{% call step(3, "Continue where you left off") %}
+<p>The {{ ui("Continue") }} button on the home page opens the last lesson you viewed but did not finish, or the next unfinished one. Use the ← → arrow keys on a lesson page to move between lessons.</p>
+{{ shot("education-module", "A module page: lessons with numbers or check marks.", "md") }}
+{% endcall %}
+{% call tip("Progress is personal") %}
+Each user has their own progress. A mechanic and the owner can both learn at their own pace; nobody sees the other's checklist. <em>Reset progress</em> on the home page clears yours.
+{% endcall %}
+
+<h2>Talking to a human</h2>
+<p>
+  Call <strong><a href="tel:{{ support_phone_tel }}">{{ support_phone_display }}</a></strong> or use the <em>Contact us</em>
+  tab on the login page (roobico.com → Contact us) to leave a message; we reply by email. For account problems that block
+  login, the Contact us form is the right channel — it works without logging in.
+</p>
+{{ shot("login-contact-tab", "Contact us on the login page.", "sm") }}
