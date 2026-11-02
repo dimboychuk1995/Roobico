@@ -56,6 +56,16 @@ DataMatrix, QR, PDF417) живьём: навёл — подхватилось, �
 в вебе и mobile). Тап по пушу открывает WO (с переключением магазина).
 В Expo Go remote push не работает (SDK 53+) — проверять в TestFlight-сборке.
 
+**Календарь v2 готов** (2026-11-02): отдельная вкладка для всех с
+`calendar.view` — механик тоже (таб-бар у механика показывается, когда
+вкладок две). Виды как в Google Calendar: Schedule / Day / 3 Day / Week /
+Month, выпадающий месяц по тапу на заголовок, свайпы, фильтр «только мои»
+(AsyncStorage), WO-блоки с сервера (`include_work_orders=1`: сессии
+таймеров + полоса «не расписанных» WO), деталка с Open work order,
+создание/редактирование записи с выбором времени чипами, «Create work
+order» из записи с привязкой (`calendarEventId` → PUT work_order_id).
+Код — `src/components/calendar/*`, экран — `src/app/(tabs)/calendar.tsx`.
+
 Осталось: AVIR (годовая инспекция), chart в отчётах,
 labor-scope авторизация, выбор кандидатов при AI-скане (сейчас топ-1).
 
@@ -124,7 +134,7 @@ labor-scope авторизация, выбор кандидатов при AI-с
 
 ## v3 — Календарь, отчёты, вложения, PDF
 
-- [ ] Calendar: неделя списком по дням, создание/редактирование записи
+- [x] Calendar: Schedule/Day/3 Day/Week/Month, создание/редактирование записи, WO-блоки
   (все `/calendar/api/*` уже JSON: events, customers, units, presets,
   mechanics, statuses)
 - [ ] Reports: standard-отчёты таблицей (`/reports/api/standard/<key>`

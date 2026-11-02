@@ -74,7 +74,6 @@ function RootNavigator() {
       <Stack.Protected guard={loggedIn}>
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="vendors" options={{ title: "Vendors" }} />
-        <Stack.Screen name="calendar" options={{ title: "Calendar" }} />
         <Stack.Screen name="reports" options={{ title: "Reports" }} />
         <Stack.Screen name="settings" options={{ title: "Settings" }} />
         <Stack.Screen name="work-order/[id]" options={{ title: "Work Order" }} />

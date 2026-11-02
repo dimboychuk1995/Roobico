@@ -55,6 +55,7 @@ import {
   parseHandwrittenWo,
   polishIssueText,
   resolveVin,
+  updateCalendarEvent,
   fetchUnitActiveWorkOrder,
   UnitActiveWorkOrder,
   searchParts,
@@ -73,11 +74,19 @@ function emptyLabor(): WoFormLabor {
 }
 
 export default function WorkOrderFormScreen() {
-  const { id, customerId: presetCustomerId, unitId: presetUnitId, mileage: presetMileage } = useLocalSearchParams<{
+  const {
+    id,
+    customerId: presetCustomerId,
+    unitId: presetUnitId,
+    mileage: presetMileage,
+    calendarEventId,
+  } = useLocalSearchParams<{
     id?: string;
     customerId?: string;
     unitId?: string;
-   mileage?: string;
+    mileage?: string;
+    /** «Create work order» из записи календаря — после создания привязываем её к WO. */
+    calendarEventId?: string;
   }>();
   const isEdit = !!id;
   const theme = useTheme();
@@ -757,6 +766,17 @@ export default function WorkOrderFormScreen() {
         isEdit ? "Work order saved." : `Work order #${res.wo_number} created.`,
         "success"
       );
+      if (!isEdit && calendarEventId && res.id) {
+        // Запись календаря становится «расписанной» для этого WO (как на вебе).
+        try {
+          await updateCalendarEvent(calendarEventId, { work_order_id: res.id });
+        } catch (linkErr) {
+          toast.show(
+            linkErr instanceof ApiError ? linkErr.message : "Work order created, but the appointment was not linked.",
+            "error"
+          );
+        }
+      }
       if (!isEdit && isMechanic && res.id) {
         // Механик после создания сразу попадает в рабочий edit-вид WO —
         // с таймерами, фото и отправкой на утверждение.

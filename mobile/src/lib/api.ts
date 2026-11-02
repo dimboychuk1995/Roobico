@@ -1329,11 +1329,22 @@ export function cancelStocktake(id: string) {
 
 // ── Calendar ────────────────────────────────────────────────────────
 
+/**
+ * Событие календаря. Два вида (как на вебе):
+ *  - `appointment` — запись календаря (редактируется);
+ *  - `work_order` — виртуальный блок WO (сессия таймера механика или чип
+ *    «не расписан» на дате WO), `is_virtual`, только просмотр.
+ * Время — настенные часы магазина без зоны ("2026-11-02T09:00:00").
+ */
 export interface CalendarEvent {
   id: string;
+  kind: "appointment" | "work_order";
+  is_virtual: boolean;
+  editable: boolean;
   title: string;
   start_time: string;
   end_time: string;
+  /** Статус записи; у WO-блока — то же, что wo_state. */
   status: string;
   customer_id: string;
   customer_label: string;
@@ -1341,17 +1352,37 @@ export interface CalendarEvent {
   unit_label: string;
   mechanic_id: string;
   mechanic_name: string;
+  mechanics: { id: string; name: string }[];
+  mechanic_ids: string[];
   presets: { id: string; name: string }[];
+  work_order_id: string;
+  wo_number: number | null;
+  wo_state: string;
+  wo_status?: string;
+  labor_summary: string[];
+  labor_hours?: number;
+  worked?: { id: string; name: string; seconds: number; running: boolean }[];
+  running?: boolean;
+  source?: "time_logs" | "work_order_date";
+  /** WO без времени: чип на дате WO, на сетку не кладётся. */
+  unscheduled?: boolean;
+  /** План, перекрытый реальной работой по тому же WO — на сетке не рисуется. */
+  superseded?: boolean;
 }
 
-export function fetchCalendarEvents(startIso: string, endIso: string) {
+export function fetchCalendarEvents(
+  startIso: string,
+  endIso: string,
+  opts: { includeWorkOrders?: boolean } = {}
+) {
   const params = new URLSearchParams({ start: startIso, end: endIso });
+  if (opts.includeWorkOrders) params.set("include_work_orders", "1");
   return request<{ events?: CalendarEvent[]; items?: CalendarEvent[] } | CalendarEvent[]>(
     `/calendar/api/events?${params.toString()}`
-  ).then((d: any) => (Array.isArray(d) ? d : d.events || d.items || []));
+  ).then((d: any) => (Array.isArray(d) ? d : d.events || d.items || []) as CalendarEvent[]);
 }
 
-export function createCalendarEvent(payload: {
+export interface CalendarEventPayload {
   start_time: string;
   end_time: string;
   customer_id?: string;
@@ -1362,8 +1393,11 @@ export function createCalendarEvent(payload: {
   mechanic_name?: string;
   status?: string;
   title?: string;
-}) {
-  return request<{ ok?: boolean; id?: string }>("/calendar/api/events", {
+  work_order_id?: string;
+}
+
+export function createCalendarEvent(payload: CalendarEventPayload) {
+  return request<CalendarEvent>("/calendar/api/events", {
     method: "POST",
     body: JSON.stringify(payload),
   });
@@ -1379,22 +1413,13 @@ export function fetchCalendarStatuses() {
   return request<CalendarStatus[]>("/calendar/api/statuses");
 }
 
-export function updateCalendarEvent(
-  id: string,
-  payload: Partial<{
-    start_time: string;
-    end_time: string;
-    customer_id: string;
-    customer_label: string;
-    unit_id: string;
-    unit_label: string;
-    mechanic_id: string;
-    mechanic_name: string;
-    status: string;
-    title: string;
-  }>
-) {
-  return request<{ ok?: boolean }>(`/calendar/api/events/${encodeURIComponent(id)}`, {
+/** Статусы WO-блоков на календаре (фиксированные; механику paid не отдаётся). */
+export function fetchCalendarWoStates() {
+  return request<CalendarStatus[]>("/calendar/api/wo_states");
+}
+
+export function updateCalendarEvent(id: string, payload: Partial<CalendarEventPayload>) {
+  return request<CalendarEvent>(`/calendar/api/events/${encodeURIComponent(id)}`, {
     method: "PUT",
     body: JSON.stringify(payload),
   });

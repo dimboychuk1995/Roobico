@@ -207,6 +207,17 @@ linked to the new WO, so its status updates automatically. An existing WO
 can be scheduled too: drag its chip from the "Not scheduled" strip into a
 mechanic's lane, or open it → **Add to schedule** and pick the time.
 
+**Check the schedule from the phone (mechanic: "what's my day?").** Open
+the **Calendar** tab in the app — every role with "View calendar" has it,
+mechanics included. Tap the person icon for **Only mine**: just your
+appointments and your own timer blocks remain; the choice sticks. Tap
+the view icon (top-left) for Schedule / Day / 3 Day / Week / Month; tap
+the month name to jump to a date. Tap any WO block → **Open work order**
+to go straight to the job. Office users can create an appointment from
+the **+** button or an empty slot and turn it into a WO with **Create
+work order** — customer and unit are carried over and the appointment is
+linked automatically.
+
 **An old appointment is still hanging around after the job was done.**
 The calendar hides a plan once the planned mechanic actually worked on
 that WO at that time (the timer block replaces it), but the appointment

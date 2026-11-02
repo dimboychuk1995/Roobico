@@ -160,9 +160,10 @@ permanently — closing or restarting the app does not log you out, and the
 session renews itself on every use, so there is no periodic re-login. You
 only leave the account by tapping Log out yourself. (Access still ends
 immediately when a user is deactivated — session lifetime never overrides
-that.) Bottom tabs: **Dashboard**, **Work Orders**, **Customers**,
-**Parts**, **More** — tabs and rows hide according to the user's
-permissions (a mechanic sees only Work Orders + More). Inside the screens
+that.) Bottom tabs: **Dashboard**, **Work Orders**, **Calendar**,
+**Customers**, **Parts**, **More** — tabs and rows hide according to the
+user's permissions (a mechanic sees only Work Orders + Calendar; the gear
+in the header opens Settings). Inside the screens
 the action buttons follow the same keys as the web: the pencil on a
 customer / unit / vendor needs the edit (or "manage units") key, "+ Add
 unit", "+ New order", "+ New count", Receive / Pay / Return on a parts
@@ -183,11 +184,63 @@ checks each request itself and answers 403 if the key is missing.
   "AI edit" polishes the issue description.
 - A floating **hide-keyboard button** appears above the keyboard on every
   screen while typing.
+- **Calendar**: the shop schedule in a Google-Calendar-style layout — see
+  "Calendar on the phone" below.
 - **Customers**: list/search, customer and unit pages, forms.
 - **Parts**: Stock (with cross references ⇆), Orders (parts orders incl. AI
   invoice scan), Counts (stocktakes).
-- **More**: global Search, Vendors, Calendar, Reports (all standard reports
-  with period chips), Settings — **Active shop** switching and account info.
+- **More**: global Search, Vendors, Reports (all standard reports with
+  period chips), Settings — **Active shop** switching and account info.
+
+### Calendar on the phone
+
+The **Calendar** tab shows the same schedule as the web calendar (needs
+"View calendar", which every default role has, mechanics included) and
+works like Google Calendar on a phone:
+
+- **Views** — tap the icon at the top-left to switch: **Schedule** (a
+  running list of days with events, empty days skipped, "Show earlier /
+  Show more" extend the list), **Day** (hourly timeline with a week strip
+  above it), **3 Day**, **Week** (seven narrow columns) and **Month** (a
+  full-screen grid with coloured event chips; tap a day to open it in Day
+  view). The app remembers the last view. Swipe left/right in any grid to
+  move to the next/previous day, 3 days, week or month.
+- **Jump to a date** — tap the month name in the header to drop down a
+  month picker (dots mark days with events); the square "today" icon
+  returns to today.
+- **What is on the grid** — both kinds of blocks from the web calendar:
+  **appointments** (colour = appointment status) and **work orders**
+  (colour = WO state: Not started / In progress / Mechanic done /
+  Completed / Paid; a ▶ before the title means a timer is running right
+  now). A WO with tracked time appears exactly when the mechanic's timer
+  was running; a WO nobody has started yet sits in the **WO strip** under
+  the day header (and as an outlined chip in Month/Schedule) with "Not
+  scheduled" — the phone never invents a time either. Mechanics see "Paid"
+  as "Completed" and never see money here.
+- **Only mine** — the person icon in the header filters the calendar to
+  events assigned to you (appointments where you are the mechanic and WO
+  blocks of your own timers). Handy for a mechanic's "what's my day"; the
+  choice is remembered.
+- **Open an event** — tap a block for the details: time, customer, unit,
+  mechanic(s), presets, jobs and planned hours, time worked per mechanic.
+  A WO block (or an appointment linked to a WO) has **Open work order**,
+  which opens the WO screen (mechanics get their mechanic view with
+  timers).
+- **Create an appointment** (needs "Create appointments") — tap an empty
+  slot (30-minute steps) or the **+** button. Fields: optional title,
+  customer (search), unit chips, date (arrows), start/end (tap the time,
+  pick an hour from the strip and :00 / :15 / :30 / :45), mechanic. The
+  server refuses a slot where that mechanic already has a job (same rule
+  as the web) and the app shows the reason.
+- **Edit / status / delete** — in the event details: status chips switch
+  the appointment status in one tap ("Edit appointments"), **Edit** opens
+  the full form, **Delete** removes it ("Delete appointments"). **Create
+  work order** (office roles with "Create work orders") opens the new-WO
+  form with the customer and unit pre-filled and links the appointment to
+  the WO once it is saved — the appointment then shows as scheduled on
+  the web, no duplicate "Not scheduled" chip.
+- Pull down in Day/3 Day/Week/Schedule to refresh; the calendar also
+  reloads every time you return to the tab.
 
 ### Push notifications (managers)
 

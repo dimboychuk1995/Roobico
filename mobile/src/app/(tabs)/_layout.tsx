@@ -8,14 +8,18 @@ import { useTheme } from "@/lib/theme";
 export default function TabsLayout() {
   const theme = useTheme();
   const router = useRouter();
-  // Механик видит единственную вкладку Work Orders; настройки (логаут,
-  // адрес сервера) доступны ему через шестерёнку в шапке.
+  // Механик видит Work Orders и Calendar; настройки (логаут, адрес
+  // сервера) доступны ему через шестерёнку в шапке обоих экранов.
   const isMechanic = useIsMechanic();
   // Табы гейтятся по правам: у роли mechanic нет dashboard/customers/parts —
   // сервер и так вернёт 403, но пустые экраны показывать незачем.
   const canDashboard = useHasPermission("dashboard.view") && !isMechanic;
   const canCustomers = useHasPermission("customers.view") && !isMechanic;
   const canParts = useHasPermission("parts.view") && !isMechanic;
+  const canCalendar = useHasPermission("calendar.view");
+  // У механика без календаря остаётся единственная вкладка Work Orders —
+  // таб-бар из одной кнопки не нужен, прячем его целиком.
+  const hideTabBar = isMechanic && !canCalendar;
 
   const addButton = (onPress: () => void) => () => (
     <Pressable onPress={onPress} hitSlop={8} style={{ paddingHorizontal: 14 }}>
@@ -28,9 +32,7 @@ export default function TabsLayout() {
       screenOptions={{
         tabBarActiveTintColor: theme.primary,
         tabBarInactiveTintColor: theme.muted,
-        // У механика остаётся единственная вкладка Work Orders — таб-бар
-        // из одной кнопки не нужен, прячем его целиком.
-        tabBarStyle: isMechanic
+        tabBarStyle: hideTabBar
           ? { display: "none" }
           : { backgroundColor: theme.tabBar, borderTopColor: theme.border },
         headerStyle: { backgroundColor: theme.surface },
@@ -65,6 +67,16 @@ export default function TabsLayout() {
                 </Pressable>
               )
             : undefined,
+        }}
+      />
+      <Tabs.Screen
+        name="calendar"
+        options={{
+          title: "Calendar",
+          href: canCalendar ? undefined : null,
+          // Шапка своя (заголовок-месяц с выпадающим пикером, меню видов).
+          headerShown: false,
+          tabBarIcon: ({ color, size }) => <Ionicons name="calendar-outline" color={color} size={size} />,
         }}
       />
       <Tabs.Screen

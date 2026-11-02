@@ -1,7 +1,8 @@
 /**
  * Автосъёмка сырых скриншотов из веб-рендера приложения (react-native-web).
- * Требует поднятого стенда: Flask :5000 + same-origin прокси :7777 (см.
- * scratchpad/shots/proxy.mjs). Результат кладёт в raw/iphone и raw/ipad.
+ * Требует поднятого стенда: Flask :5000 + same-origin прокси :7777
+ * (`node proxy.mjs <dist>` из этой папки, dist — результат
+ * `npx expo export --platform web`). Результат кладёт в raw/iphone и raw/ipad.
  *
  *   node capture.mjs         # светлая тема
  *   node capture.mjs dark    # тёмная тема -> raw/iphone-dark, raw/ipad-dark

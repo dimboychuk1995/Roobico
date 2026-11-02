@@ -8,7 +8,6 @@ import { useTheme } from "@/lib/theme";
 const ITEMS: { title: string; subtitle: string; icon: string; href: Href; perm?: string }[] = [
   { title: "Search", subtitle: "Find anything across the shop", icon: "search-outline", href: "/search" },
   { title: "Vendors", subtitle: "Suppliers and balances", icon: "business-outline", href: "/vendors", perm: "vendors.view" },
-  { title: "Calendar", subtitle: "Appointments", icon: "calendar-outline", href: "/calendar", perm: "calendar.view" },
   { title: "Reports", subtitle: "Sales, payments, parts", icon: "bar-chart-outline", href: "/reports", perm: "reports.view" },
   { title: "Settings", subtitle: "Shop, account", icon: "settings-outline", href: "/settings" },
 ];
