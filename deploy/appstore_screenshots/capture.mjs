@@ -62,13 +62,15 @@ for (const [base, dev] of Object.entries(DEVICES)) {
   await page.goto(`${BASE}/parts`, { waitUntil: "networkidle" });
   await shoot(page, `raw/${name}/04-parts.png`, 2500);
 
-  // 05 Reports
+  // 05 Reports — «All time», иначе за текущий месяц у тест-тенанта нули
   await page.goto(`${BASE}/reports`, { waitUntil: "networkidle" });
-  await shoot(page, `raw/${name}/05-reports.png`, 2500);
+  await page.getByText("All time", { exact: true }).click().catch(() => {});
+  await shoot(page, `raw/${name}/05-reports.png`, 3000);
 
-  // 06 Calendar
-  await page.goto(`${BASE}/calendar`, { waitUntil: "networkidle" });
-  await shoot(page, `raw/${name}/06-calendar.png`, 3000);
+  // 06 Calendar — Day view на дне с данными тестового тенанта (WO-блоки +
+  // записи; см. seed в README). ?date/?view поддерживает сам экран.
+  await page.goto(`${BASE}/calendar?view=day&date=2026-08-04`, { waitUntil: "networkidle" });
+  await shoot(page, `raw/${name}/06-calendar.png`, 3500);
 
   await browser.close();
 }

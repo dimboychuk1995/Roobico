@@ -7,7 +7,7 @@
  */
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import { useFocusEffect, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -63,6 +63,8 @@ export default function CalendarScreen() {
   const canDelete = useHasPermission("calendar.delete");
   const canCreateWo = useHasPermission("work_orders.create") && !isMechanic;
   const userId = session?.user.id || "";
+  // Диплинк / стенд скриншотов: /calendar?date=YYYY-MM-DD&view=week.
+  const params = useLocalSearchParams<{ date?: string; view?: string }>();
 
   const [view, setView] = useState<CalendarView>("day");
   const [prefsReady, setPrefsReady] = useState(false);
@@ -90,12 +92,17 @@ export default function CalendarScreen() {
     (async () => {
       try {
         const [v, m] = await Promise.all([AsyncStorage.getItem(VIEW_KEY), AsyncStorage.getItem(MINE_KEY)]);
-        if (v && VIEWS.some((x) => x.key === v)) setView(v as CalendarView);
+        const paramView = VIEWS.some((x) => x.key === params.view) ? (params.view as CalendarView) : null;
+        if (paramView) setView(paramView);
+        else if (v && VIEWS.some((x) => x.key === v)) setView(v as CalendarView);
         if (m === "1") setMine(true);
+        const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(params.date || "");
+        if (dm) setSelectedDay(new Date(Number(dm[1]), Number(dm[2]) - 1, Number(dm[3])));
       } finally {
         setPrefsReady(true);
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const changeView = (v: CalendarView) => {
     setView(v);
