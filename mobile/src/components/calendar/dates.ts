@@ -186,7 +186,7 @@ export interface PositionedEvent {
  * пересекающиеся события делят ширину, остальные занимают всю колонку.
  * События, выходящие за сутки, обрезаются по границам дня.
  */
-export function layoutDayEvents(events: CalendarEvent[], day: Date): PositionedEvent[] {
+export function layoutDayEvents(events: CalendarEvent[], day: Date, hourH: number = HOUR_H): PositionedEvent[] {
   const dayStart = startOfDay(day).getTime();
   const dayEnd = dayStart + DAY_MS;
   const items = events
@@ -223,8 +223,8 @@ export function layoutDayEvents(events: CalendarEvent[], day: Date): PositionedE
     for (const p of placed) {
       out.push({
         ev: p.ev,
-        top: (p.startMin / 60) * HOUR_H,
-        height: Math.max(22, ((p.endMin - p.startMin) / 60) * HOUR_H - 2),
+        top: (p.startMin / 60) * hourH,
+        height: Math.max(22, ((p.endMin - p.startMin) / 60) * hourH - 2),
         col: p.col,
         cols,
         startMin: p.startMin,

@@ -208,6 +208,12 @@ works like Google Calendar on a phone:
   or month. **The calendar is the only screen of the app that rotates**:
   turn the phone sideways for a wider Week / 3 Day grid (the rest of the
   app stays portrait).
+- **Pinch to zoom** (Day / 3 Day / Week) — pinch up/down with two fingers
+  to stretch or squeeze the hours (the spot under your fingers stays
+  put); pinch left/right in 3 Day or Week to make the days wider — zoom
+  a portrait phone week in until the mechanic lanes appear, then the grid
+  scrolls sideways. The zoom level is remembered; the view menu
+  (top-left icon) gets a **Reset zoom** item while it is changed.
 - **Jump to a date** — tap the month name in the header to drop down a
   month picker (dots mark days with events); the square "today" icon
   returns to today.

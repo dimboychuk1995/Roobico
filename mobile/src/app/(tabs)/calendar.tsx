@@ -17,6 +17,7 @@ import {
   CalendarView,
   DAY_LETTERS,
   DateRange,
+  HOUR_H,
   Lane,
   MONTHS,
   Mechanic,
@@ -39,7 +40,7 @@ import { EventDetailModal, EventFormModal, EventFormState } from "@/components/c
 import { MonthPicker } from "@/components/calendar/month-picker";
 import { MonthView } from "@/components/calendar/month-view";
 import { ScheduleView } from "@/components/calendar/schedule-view";
-import { TimeGrid } from "@/components/calendar/time-grid";
+import { TimeGrid, ZOOM_HOUR_MAX, ZOOM_HOUR_MIN, ZOOM_X_MAX } from "@/components/calendar/time-grid";
 import { useAuth, useHasPermission, useIsMechanic } from "@/context/auth";
 import { useToast } from "@/context/toast";
 import {
@@ -56,6 +57,9 @@ import { useTheme } from "@/lib/theme";
 const VIEW_KEY = "roobico.calendar.view";
 const MINE_KEY = "roobico.calendar.mine";
 const LANES_KEY = "roobico.calendar.lanes";
+const ZOOM_KEY = "roobico.calendar.zoom";
+
+const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
 
 export default function CalendarScreen() {
   const theme = useTheme();
@@ -80,6 +84,8 @@ export default function CalendarScreen() {
   // Дорожки механиков внутри дня (как «By mechanic» на вебе) — по умолчанию включены.
   const [lanesOn, setLanesOn] = useState(true);
   const [mechanics, setMechanics] = useState<Mechanic[]>([]);
+  // Масштаб сетки (щипок): высота часа и множитель ширины дня — запоминаются.
+  const [zoom, setZoom] = useState({ hourH: HOUR_H, zoomX: 1 });
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(() => startOfDay(new Date()));
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
@@ -101,11 +107,23 @@ export default function CalendarScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const [v, m, l] = await Promise.all([
+        const [v, m, l, z] = await Promise.all([
           AsyncStorage.getItem(VIEW_KEY),
           AsyncStorage.getItem(MINE_KEY),
           AsyncStorage.getItem(LANES_KEY),
+          AsyncStorage.getItem(ZOOM_KEY),
         ]);
+        if (z) {
+          try {
+            const saved = JSON.parse(z) as { h?: number; x?: number };
+            setZoom({
+              hourH: clamp(Number(saved.h) || HOUR_H, ZOOM_HOUR_MIN, ZOOM_HOUR_MAX),
+              zoomX: clamp(Number(saved.x) || 1, 1, ZOOM_X_MAX),
+            });
+          } catch {
+            // битое значение — дефолтный масштаб
+          }
+        }
         const paramView = VIEWS.some((x) => x.key === params.view) ? (params.view as CalendarView) : null;
         if (paramView) setView(paramView);
         else if (v && VIEWS.some((x) => x.key === v)) setView(v as CalendarView);
@@ -142,6 +160,12 @@ export default function CalendarScreen() {
       return !on;
     });
   };
+  // Во время щипка — только state (каждый кадр), в хранилище — по отпусканию.
+  const onZoom = useCallback((hourH: number, zoomX: number, done: boolean) => {
+    setZoom({ hourH, zoomX });
+    if (done) AsyncStorage.setItem(ZOOM_KEY, JSON.stringify({ h: hourH, x: zoomX })).catch(() => {});
+  }, []);
+  const zoomed = zoom.hourH !== HOUR_H || zoom.zoomX !== 1;
 
   const today = startOfDay(new Date(nowTick));
   const days = useMemo(() => visibleDays(view, selectedDay), [view, selectedDay]);
@@ -416,6 +440,9 @@ export default function CalendarScreen() {
             refreshing={refreshing}
             mechanics={mechanics}
             lanesOn={lanesOn && !mine}
+            hourH={zoom.hourH}
+            zoomX={zoom.zoomX}
+            onZoom={onZoom}
             onRefresh={onRefresh}
             onPressEvent={setDetailEvent}
             onPressSlot={openCreate}
@@ -486,6 +513,18 @@ export default function CalendarScreen() {
                 color={lanesOn ? theme.primary : theme.muted}
               />
             </Pressable>
+            {zoomed ? (
+              <Pressable
+                onPress={() => {
+                  onZoom(HOUR_H, 1, true);
+                  setViewMenuOpen(false);
+                }}
+                style={styles.menuItem}
+              >
+                <Ionicons name="contract-outline" size={20} color={theme.muted} />
+                <Text style={{ color: theme.text, fontSize: 15, fontWeight: "500", flex: 1 }}>Reset zoom</Text>
+              </Pressable>
+            ) : null}
           </View>
         </Pressable>
       </Modal>

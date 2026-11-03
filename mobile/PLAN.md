@@ -77,7 +77,10 @@ order» из записи с привязкой (`calendarEventId` → PUT work_
 Done механика, линковка). Week всегда целиком на экране (дорожки — только
 если влезают, ≥28px), поворот экрана разрешён только на календаре
 (`expo-screen-orientation`: unlock на фокусе вкладки, портрет — в корне;
-`app.json` orientation=default).
+`app.json` orientation=default). Pinch-zoom сетки (RNGH `Gesture.Pinch` +
+`onTouchesMove` по осям): вертикально — высота часа 36–160px с якорем
+под пальцами, горизонтально — множитель ширины дня ×1–4 (3 Day / Week);
+хранится в `roobico.calendar.zoom`, «Reset zoom» в меню видов.
 
 Осталось: AVIR (годовая инспекция), chart в отчётах,
 labor-scope авторизация, выбор кандидатов при AI-скане (сейчас топ-1).
