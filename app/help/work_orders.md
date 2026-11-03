@@ -103,11 +103,14 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
    **"📷 Recognize WO"** — upload a photo/PDF of a handwritten work order and
    AI fills the jobs and parts (review before applying).
 5. **From the Calendar** — an appointment's "Create Work Order" button opens
-   this page with the customer, unit, presets, mechanic and note already in
-   place, and links the appointment to the saved WO (the calendar then shows
-   the live WO status instead of the appointment status). Every saved WO
-   also appears on the Calendar by itself — see Reports → Calendar in the
-   help for how it is placed and colored.
+   this page with the customer, unit, presets, mechanic (the first one, if
+   the appointment has a crew of several) and note already in place, and
+   links the appointment to the saved WO: the calendar then shows the live
+   WO status, and the appointment's own status follows the work (In
+   Progress once a mechanic starts, Completed on Done / completed / paid).
+   On the phone a mechanic does the same with **Start work** in the
+   appointment. Every saved WO also appears on the Calendar by itself — see
+   Reports → Calendar in the help for how it is placed and colored.
 
 ## Transfer to another customer
 

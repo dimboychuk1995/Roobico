@@ -102,10 +102,16 @@ Pricing scales: `name`, `mode` ("margin"/"markup"), `rules: [{from, to,
 value_percent}]`, `is_default: bool`.
 
 ### calendar_events
-Appointments: `title`, `start_time`/`end_time: datetime`, `status`
-("scheduled", ... — per-shop statuses), `customer_id`, `customer_label`,
-`unit_id`, `unit_label`, `mechanic_id`, `mechanic_name`,
-`presets: [{id, name}]`.
+Appointments: `title`, `start_time`/`end_time: datetime` (shop wall-clock,
+no timezone), `status` ("scheduled", "confirmed", "in_progress",
+"completed", "cancelled" — per-shop statuses; a WO-linked appointment's
+status follows the work automatically), `customer_id`, `customer_label`,
+`unit_id`, `unit_label`, `presets: [{id, name}]`, `work_order_id` →
+work_orders (linked plan), `wo_number`. Mechanics (one or a crew):
+`mechanic_ids: [ObjectId]` (filter by a mechanic with
+`{"mechanic_ids": <id>}`), `mechanics: [{id, name}]`; legacy
+`mechanic_id`/`mechanic_name` = the first mechanic only — older records
+may have only these.
 
 ### wo_time_logs
 Mechanic timers: `work_order_id` → work_orders, `wo_number: int`, `labor_id`,
