@@ -72,6 +72,7 @@
   var cachedWoStates = [];
   var cachedPresets = [];
   var drag = null; // active drag state
+  var resize = null; // active resize state (the bottom edge of a plan)
   var dragJustEnded = false;
 
   /* ── DOM refs ── */
@@ -904,7 +905,7 @@
   function pollLiveSignature() {
     if (liveStopped || liveBusy || !weekStart) return;
     if (document.visibilityState !== "visible") return;
-    if (drag || document.querySelector(".modal.show")) return;
+    if (drag || resize || document.querySelector(".modal.show")) return;
     liveBusy = true;
     var ws = toISODate(weekStart);
     var we = toISODate(addDays(weekStart, 7));
@@ -926,7 +927,7 @@
         if (!data || typeof data.signature === "undefined") return;
         // a drag or a dialog started while the request was in flight: leave the
         // grid alone, the next tick compares again
-        if (drag || document.querySelector(".modal.show")) return;
+        if (drag || resize || document.querySelector(".modal.show")) return;
         var sig = String(data.signature || "");
         if (liveSignature === null) { liveSignature = sig; return; }
         if (sig !== liveSignature) {
@@ -1377,6 +1378,21 @@
       } else {
         blk.classList.add("cal-event--static");
       }
+      // (not while a timer runs on it - the block shows the fact's edge - and
+      // not when the plan sticks out of the grid)
+      if (draggable && !isVirtual(evt) && !evt.running && startH >= HOURS_START && endHr <= HOURS_END) {
+        // bottom edge of a plan: drag it to change the end time (Google-style)
+        var handle = document.createElement("div");
+        handle.className = "cal-event-resize";
+        handle.title = "Drag to change the end time";
+        handle.addEventListener("mousedown", function (e) {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          e.stopPropagation();
+          startResize(evt, blk, e);
+        });
+        blk.appendChild(handle);
+      }
     })(ev, block);
 
     col.appendChild(block);
@@ -1447,6 +1463,8 @@
       startX: mouseEvt.clientX,
       startY: mouseEvt.clientY,
       origTop: parseFloat(blockEl.style.top),
+      origLeft: blockEl.style.left,
+      origWidth: blockEl.style.width,
       origColIdx: origColIdx,
       currentColIdx: origColIdx,
       fromLaneKey: fromLaneKey,
@@ -1511,6 +1529,7 @@
 
   function onDragMove(e) {
     if (!drag) return;
+    if (e.buttons === 0) { cancelDrag(); return; } // button released outside the window
     var dx = e.clientX - drag.startX;
     var dy = e.clientY - drag.startY;
     if (Math.abs(dy) > 3 || Math.abs(dx) > 3) drag.moved = true;
@@ -1532,6 +1551,26 @@
     if (colIdx >= 0 && colIdx !== drag.currentColIdx) {
       drag.cols[colIdx].appendChild(drag.el);
       drag.currentColIdx = colIdx;
+    }
+    // week view: the block slides into the mechanic lane under the cursor,
+    // so a move to another mechanic is visible before the drop
+    if (viewMode === "week" && colIdx >= 0) {
+      var laneCol = getColumns()[drag.currentColIdx];
+      var laneRect = drag.cols[drag.currentColIdx].getBoundingClientRect();
+      var overLane = laneCol ? laneAtX(laneCol, e.clientX, laneRect) : null;
+      if (overLane) {
+        var laneList = dayLanes(columnEvents(laneCol, cachedEvents));
+        var laneIdx = -1;
+        for (var li = 0; li < laneList.length; li++) { if (laneList[li].key === overLane.key) { laneIdx = li; break; } }
+        var backHome = drag.currentColIdx === drag.origColIdx && overLane.key === drag.fromLaneKey;
+        if (laneIdx >= 0 && laneList.length > 1 && !backHome) {
+          drag.el.style.left = (laneIdx / laneList.length * 100) + "%";
+          drag.el.style.width = (100 / laneList.length) + "%";
+        } else if (drag.origLeft) {
+          drag.el.style.left = drag.origLeft;
+          drag.el.style.width = drag.origWidth;
+        }
+      }
     }
     // Is the cursor over the time grid at all? A chip dragged around the
     // strip and released there must not be scheduled at 06:00.
@@ -1647,6 +1686,101 @@
       .then(function () { loadEvents(); })
       .catch(function (e) { notify(e.message || "Could not move the event.", "error"); loadEvents(); });
   }
+
+  /* ── resize: the bottom edge of a plan changes its end time ── */
+
+  function startResize(evt, blockEl, mouseEvt) {
+    var st = new Date(evt.start_time);
+    var en = new Date(evt.end_time);
+    var startMin = Math.round(((st.getHours() + st.getMinutes() / 60) - HOURS_START) * 60);
+    resize = {
+      evt: evt,
+      el: blockEl,
+      startY: mouseEvt.clientY,
+      origHeight: parseFloat(blockEl.style.height),
+      // the real duration, not the drawn height (a block may be clamped to the grid)
+      origDurMin: Math.max(STEP_MINUTES, Math.round((en - st) / 60000)),
+      startMin: Math.max(0, startMin),
+      endMin: null,
+      moved: false
+    };
+    blockEl.classList.add("cal-resizing");
+    document.addEventListener("mousemove", onResizeMove);
+    document.addEventListener("mouseup", onResizeEnd);
+  }
+
+  function onResizeMove(e) {
+    if (!resize) return;
+    if (e.buttons === 0) { cancelResize(); return; } // button released outside the window
+    var dy = e.clientY - resize.startY;
+    if (Math.abs(dy) > 3) resize.moved = true;
+    var gridMinutes = (HOURS_END - HOURS_START) * 60;
+    // 15-minute steps from the real duration, at least one step, never past the grid
+    var durMin = snapTo15(resize.origDurMin + dy / PX_PER_MINUTE);
+    durMin = Math.max(STEP_MINUTES, Math.min(durMin, gridMinutes - resize.startMin));
+    resize.endMin = resize.startMin + durMin;
+    resize.el.style.height = Math.max(12, durMin * PX_PER_MINUTE) + "px";
+    var endH = HOURS_START + Math.floor(resize.endMin / 60);
+    var endM = resize.endMin % 60;
+    resize.el.setAttribute("data-resize-end", pad2(endH) + ":" + pad2(endM));
+  }
+
+  function onResizeEnd() {
+    document.removeEventListener("mousemove", onResizeMove);
+    document.removeEventListener("mouseup", onResizeEnd);
+    if (!resize) return;
+    var r = resize;
+    resize = null;
+    r.el.classList.remove("cal-resizing");
+    r.el.removeAttribute("data-resize-end");
+    if (!r.moved || r.endMin === null || r.endMin - r.startMin === r.origDurMin) {
+      r.el.style.height = r.origHeight + "px"; // nothing changed: put the drawn height back
+      return;
+    }
+
+    // suppress the click that follows the mouseup
+    dragJustEnded = true;
+    setTimeout(function () { dragJustEnded = false; }, 300);
+
+    var day = toISODate(new Date(r.evt.start_time));
+    var endH = HOURS_START + Math.floor(r.endMin / 60);
+    var endM = r.endMin % 60;
+    var endISO = day + "T" + pad2(endH) + ":" + pad2(endM) + ":00";
+    // only the end changes - a move someone else made meanwhile is not clobbered
+    sendJSON("/calendar/api/events/" + r.evt.id, "PUT", { end_time: endISO })
+      .then(function () { loadEvents(); })
+      .catch(function (e) { notify(e.message || "Could not change the end time.", "error"); loadEvents(); });
+  }
+
+  function cancelResize() {
+    document.removeEventListener("mousemove", onResizeMove);
+    document.removeEventListener("mouseup", onResizeEnd);
+    if (!resize) return;
+    resize.el.style.height = resize.origHeight + "px";
+    resize.el.classList.remove("cal-resizing");
+    resize.el.removeAttribute("data-resize-end");
+    resize = null;
+  }
+
+  function cancelDrag() {
+    document.removeEventListener("mousemove", onDragMove);
+    document.removeEventListener("mouseup", onDragEnd);
+    if (!drag) return;
+    var d = drag;
+    drag = null;
+    d.el.classList.remove("cal-dragging");
+    if (d.fromChip) { d.el.remove(); return; }
+    if (d.cols[d.origColIdx] && d.el.parentNode !== d.cols[d.origColIdx]) d.cols[d.origColIdx].appendChild(d.el);
+    d.el.style.top = d.origTop + "px";
+    if (d.origLeft) { d.el.style.left = d.origLeft; d.el.style.width = d.origWidth; }
+  }
+
+  // Escape, or losing the window (alt-tab, a context menu), abandons a drag / resize
+  // instead of leaving the block half-moved and live refresh paused
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape") { cancelDrag(); cancelResize(); }
+  });
+  window.addEventListener("blur", function () { cancelDrag(); cancelResize(); });
 
   /* ── now line ── */
 

@@ -211,7 +211,11 @@ Sidebar → **Calendar** — the shop's schedule and its activity log in one
 grid (Mon–Sun, 06:00–21:00, 15-minute steps). It shows two kinds of blocks:
 
 - **Appointments** — what you planned by hand. Click an empty slot to
-  create one, click a block to edit, drag & drop to move. Fields: Customer,
+  create one, click a block to edit, drag & drop to move it (while you
+  drag, the block slides into the mechanic lane under the cursor), and
+  **drag its bottom edge** to make it longer or shorter — 15-minute steps,
+  the new end time shows in the corner, no need to open the dialog (a busy
+  mechanic blocks a stretch the same way as a move). Fields: Customer,
   Unit, Service Presets, Start/End, Assign to Mechanics, Status,
   Title/Note. The **date is the day you clicked** — the dialog only shows
   it; to move a plan to another day drag the block. **Several mechanics**

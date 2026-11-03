@@ -1045,6 +1045,7 @@ html[data-theme="dark"] .cal-event:hover {
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.7);
 }
 
+html[data-theme="dark"] .cal-event.cal-resizing,
 html[data-theme="dark"] .cal-event.cal-dragging {
   box-shadow: 0 6px 14px rgba(0, 0, 0, 0.8);
 }
