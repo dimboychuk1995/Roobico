@@ -187,10 +187,34 @@ checks each request itself and answers 403 if the key is missing.
 - **Calendar**: the shop schedule in a Google-Calendar-style layout — see
   "Calendar on the phone" below.
 - **Customers**: list/search, customer and unit pages, forms.
-- **Parts**: Stock (with cross references ⇆), Orders (parts orders incl. AI
-  invoice scan), Counts (stocktakes).
+- **Parts**: Stock (with cross references ⇆, minimum-stock badges and the
+  All / Below min / Near min chips — see "Parts on the phone" below),
+  Orders (parts orders incl. AI invoice scan), Counts (stocktakes).
 - **More**: global Search, Vendors, Reports (all standard reports with
   period chips), Settings — **Active shop** switching and account info.
+
+### Parts on the phone
+
+- **Stock** lists active parts that have something on hand; each card shows
+  the quantity in the part's unit — "×12" for pieces, "12 gal" / "3 qt" for
+  other units — and, for parts with a minimum stock, "Min 5" (with the
+  unit) under the name and a red **Below min** or amber **Near min** badge
+  next to the quantity (the quantity itself turns red / amber). The rule is
+  the one from Parts & Inventory → "Minimum stock": below = fewer than the
+  minimum, near = at the minimum or up to 20 % above it (at least 1).
+- Chips under the search box: **All**, **Below min**, **Near min**. A chip
+  shows how many parts it lists ("Below min · 2") — and **Near min counts
+  the below ones too** (it is "below or near", everything that would be
+  marked), so its number is never smaller than Below min's. With Below min
+  or Near min selected the list also includes parts with **0 on hand**,
+  which the All list hides; search and pull-to-refresh work inside the
+  filter, and the chip you picked is remembered on the phone. Empty results
+  say "No parts below minimum" / "No parts near minimum".
+- The part screen shows the stock the same way plus two rows: **Unit of
+  measure** (Each, Gallon, Quart…) and **Minimum stock** (the minimum with
+  its unit and the badge; "—" when the part does not require one or its
+  inventory is not tracked). The minimum and the unit are set on the web in
+  the part form; the phone only shows them.
 
 ### Calendar on the phone
 
@@ -261,19 +285,48 @@ works like Google Calendar on a phone:
   the appointment status in one tap ("Edit appointments"), **Edit** opens
   the full form, **Delete** removes it ("Delete appointments"). **Create
   work order** (office roles with "Create work orders") opens the new-WO
-  form with the customer and unit pre-filled; the server links the
-  appointment to the WO once it is saved — the appointment then shows as
+  form with the customer, unit, one job per preset and the note
+  pre-filled (a toast says how many presets were applied; the note sits
+  in the first job's *Describe issue*, or — without presets — becomes the
+  job line when it is short, up to 200 characters, and the issue text
+  otherwise; an office user still needs at least one job line to
+  save); on save the server assigns the appointment's crew to the jobs
+  and links the appointment to the WO — the appointment then shows as
   scheduled on the web, no duplicate "Not scheduled" chip.
 - **Mechanic: Start work from the calendar** — a mechanic who taps an
   appointment sees **Start work** (or **Open work order** if it is
   already linked). Start work opens the new-WO flow with the customer and
-  unit pre-filled (mileage prompt as usual); if that unit already has a
-  work order in progress, the app opens that WO instead and the
-  appointment is linked to it. **The appointment's colour then follows
-  the work**: it turns In Progress the moment the WO is in work (a timer
-  is started or the mechanic saves), and Completed when the mechanic
-  presses Done (or the office completes / pays the WO). This is automatic
-  on the web calendar too; a Cancelled appointment is never touched.
+  unit pre-filled (mileage prompt as usual) and the server builds the
+  work order from the appointment: **one job per service preset** with
+  the preset's planned hours and parts (priced by the shop's rules, as on
+  the web), the **whole crew** of the appointment assigned to every job,
+  and the appointment's **note** in the first job's *Describe issue*
+  field — it opens expanded under the job, so the mechanic sees (and can
+  add to) what the office wrote ("customer hears grinding front left").
+  An appointment
+  without presets but with a note gives one job whose description is the
+  note itself. The WO screen also shows a **Scheduled** card at the top
+  with the planned time, crew and note. Fine print: presets, crew and
+  note are copied only when the appointment is for the same unit as the
+  WO (an appointment without a unit counts as a match; one for another
+  unit is linked but not copied), and a
+  crew member who is no longer an active mechanic is skipped. If that
+  unit already has a work order in progress, the app opens that WO
+  instead and the appointment is linked to it. **The
+  appointment's colour then follows the work**: it turns In Progress the
+  moment the WO is in work (a timer is started or the mechanic saves),
+  and Completed when the mechanic presses Done (or the office completes /
+  pays the WO); if the office reopens a job nobody has started yet (no
+  tracked time, payment or Done) it goes back to Scheduled. This is
+  automatic on the web calendar too; a Cancelled appointment is never
+  touched.
+- **Linked appointments are driven by the work order** — in a linked
+  appointment the customer and unit cannot be edited (change them on the
+  WO; Transfer moves the appointment along), and the In progress /
+  Completed status chips follow the WO while it is in work — only
+  Cancelled can be set by hand. The web calendar shows such changes
+  within seconds; the phone reloads whenever you return to the tab or
+  pull down.
 - Pull down in Day/3 Day/Week/Schedule to refresh; the calendar also
   reloads every time you return to the tab.
 

@@ -11,11 +11,14 @@ from bson import ObjectId
 from app.extensions import get_master_db
 from app.utils.contacts import get_main_contact_email, get_main_contact_phone
 from app.utils.display_datetime import format_date_mmddyyyy
+from app.constants.part_units import unit_short
 from app.blueprints.work_orders.services.common import (
     f64,
     format_dt_label,
     i32,
     oid,
+    part_qty_label,
+    part_unit_key,
     round2,
 )
 from app.blueprints.work_orders.services.lookups import customer_label, unit_label
@@ -199,11 +202,16 @@ def _build_wo_pdf_context(shop_db, shop, wo):
             # the JSON blob as a per-part description (legacy fallback only).
             raw_misc_desc = str(p.get("misc_charge_description") or "").strip()
             legacy_misc_desc = "" if has_json_misc else raw_misc_desc
+            unit_key = part_unit_key(p.get("unit"))
             parts_detail.append({
                 "part_number": part_number,
                 "description": description,
                 "label": part_number or description,
                 "qty": qty,
+                "unit": unit_key,
+                "unit_short": unit_short(unit_key),
+                # Что печатают PDF/портал/письма: «2 gal» для не-штучных единиц, «2» для each
+                "qty_label": part_qty_label(qty, unit_key),
                 "price": price,
                 "price_fmt": f"${price:.2f}",
                 "total": round2(price * qty),

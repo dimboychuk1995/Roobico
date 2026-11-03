@@ -1,30 +1,83 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useRouter } from "expo-router";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import { ListScreen } from "@/components/list-screen";
 import { Badge, RowCard } from "@/components/ui";
 import {
   PartRow,
+  PartStockLevel,
+  PartsListResponse,
   PartsOrderRow,
   StocktakeRow,
   fetchParts,
   fetchPartsOrders,
   fetchStocktakes,
   money,
+  stockLabel,
+  stockQty,
 } from "@/lib/api";
 import { useHasPermission } from "@/context/auth";
 import { useTheme } from "@/lib/theme";
 
+// Фильтр «ниже / близко к минимуму» помним между запусками, как вид календаря.
+const STOCK_LEVEL_KEY = "roobico.parts.stockLevel";
+
+type StockFilter = PartStockLevel | "";
+
+const STOCK_FILTERS: { key: StockFilter; label: string; tone: "primary" | "danger" | "warning" }[] = [
+  { key: "", label: "All", tone: "primary" },
+  { key: "below", label: "Below min", tone: "danger" },
+  { key: "near", label: "Near min", tone: "warning" },
+];
+
+const STOCK_EMPTY: Record<StockFilter, { title: string; hint: string }> = {
+  "": { title: "No parts in stock", hint: "Parts with stock on hand will appear here." },
+  below: {
+    title: "No parts below minimum",
+    hint: "Parts whose stock dropped under their minimum will show up here.",
+  },
+  near: {
+    title: "No parts near minimum",
+    hint: "Parts at or close to their minimum stock will show up here.",
+  },
+};
+
+function isStockLevel(value: unknown): value is PartStockLevel {
+  return value === "below" || value === "near";
+}
+
+/** Бейдж состояния запаса относительно минимума; null — минимум не задан или запаса хватает. */
+function StockStateBadge({ state }: { state: PartRow["stock_state"] }) {
+  if (state === "below") return <Badge label="Below min" tone="danger" />;
+  if (state === "near") return <Badge label="Near min" tone="warning" />;
+  return null;
+}
+
 function PartCard({ item }: { item: PartRow }) {
   const theme = useTheme();
+  // Остаток относительно минимума: ниже — красным, близко — жёлтым.
+  const state = item.stock_state ?? null;
+  const stockColor = state === "below" ? theme.danger : state === "near" ? theme.warning : theme.primary;
+  const meta = [
+    item.min_stock_enabled ? `Min ${stockQty(item.min_stock, item.unit_short)}` : "",
+    item.reference ? `Ref ${item.reference}` : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return (
     <RowCard>
       <View style={styles.topRow}>
         <Text style={[styles.number, { color: theme.text }]} numberOfLines={1}>
           {item.part_number}
         </Text>
-        <Text style={[styles.stock, { color: theme.primary }]}>×{item.in_stock}</Text>
+        <View style={styles.stockWrap}>
+          <StockStateBadge state={state} />
+          <Text style={[styles.stock, { color: stockColor }]}>
+            {stockLabel(item.in_stock, item.unit_short)}
+          </Text>
+        </View>
       </View>
       {item.description ? (
         <Text style={[styles.desc, { color: theme.muted }]} numberOfLines={2}>
@@ -38,9 +91,9 @@ function PartCard({ item }: { item: PartRow }) {
       ) : null}
       <View style={styles.bottomRow}>
         <Text style={[styles.cost, { color: theme.text }]}>Avg cost {money(item.average_cost)}</Text>
-        {item.reference ? (
+        {meta ? (
           <Text style={[styles.ref, { color: theme.muted }]} numberOfLines={1}>
-            Ref {item.reference}
+            {meta}
           </Text>
         ) : null}
       </View>
@@ -132,6 +185,69 @@ export default function PartsScreen() {
   const canCreateOrder = useHasPermission("parts_orders.create");
   const canAdjustStock = useHasPermission("parts.adjust_stock");
   const [segment, setSegment] = useState<"stock" | "orders" | "counts">("stock");
+  const [stockLevel, setStockLevel] = useState<StockFilter>("");
+  const [stockPrefReady, setStockPrefReady] = useState(false);
+  const [counts, setCounts] = useState<PartsListResponse["counts"]>(undefined);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const saved = await AsyncStorage.getItem(STOCK_LEVEL_KEY);
+        if (isStockLevel(saved)) setStockLevel(saved);
+      } catch {
+        // нет стораджа — фильтр по умолчанию «All»
+      } finally {
+        setStockPrefReady(true);
+      }
+    })();
+  }, []);
+
+  const changeStockLevel = (level: StockFilter) => {
+    setStockLevel(level);
+    AsyncStorage.setItem(STOCK_LEVEL_KEY, level).catch(() => {});
+  };
+
+  // Счётчики для чипов приходят вместе с каждой страницей списка.
+  const fetchStockPage = useCallback(
+    (q: string, page: number) =>
+      fetchParts(q, page, { stockLevel }).then((data) => {
+        if (data.counts) setCounts(data.counts);
+        return data;
+      }),
+    [stockLevel]
+  );
+
+  const stockFilterRow = (
+    <View style={styles.filterRow}>
+      {STOCK_FILTERS.map((f) => {
+        const active = stockLevel === f.key;
+        const count = f.key ? counts?.[f.key] ?? 0 : 0;
+        const color =
+          f.tone === "danger" ? theme.danger : f.tone === "warning" ? theme.warning : theme.primary;
+        // На янтарном фоне белый текст не читается — тёмный в обеих темах.
+        const textColor = !active ? theme.text : f.tone === "warning" ? "#1a2e22" : "#fff";
+        return (
+          <Pressable
+            key={f.key || "all"}
+            onPress={() => changeStockLevel(f.key)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: active }}
+            style={[
+              styles.filterChip,
+              {
+                backgroundColor: active ? color : theme.surface,
+                borderColor: active ? color : theme.border,
+              },
+            ]}
+          >
+            <Text style={{ color: textColor, fontWeight: "600", fontSize: 12 }}>
+              {count > 0 ? `${f.label} · ${count}` : f.label}
+            </Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
 
   const segmentBar = (
     <View style={styles.segmentRow}>
@@ -216,20 +332,33 @@ export default function PartsScreen() {
     );
   }
 
+  // Пока не прочитан сохранённый фильтр — список не стартуем, иначе он
+  // загрузился бы дважды (сначала «All», потом сохранённый).
+  if (!stockPrefReady) {
+    return <View style={{ flex: 1, backgroundColor: theme.bg }} />;
+  }
+
+  // key по фильтру: смена чипа перемонтирует список и грузит первую страницу
+  // уже с новым stock_level; pull-to-refresh и подгрузка идут через тот же fetchPage.
   return (
     <ListScreen<PartRow>
-      key="stock"
-      fetchPage={fetchParts}
+      key={`stock-${stockLevel}`}
+      fetchPage={fetchStockPage}
       renderItem={(item) => (
         <Pressable onPress={() => router.push({ pathname: "/part/[id]", params: { id: item.id } })}>
           <PartCard item={item} />
         </Pressable>
       )}
       keyExtractor={(item) => item.id}
-      searchPlaceholder="Search parts in stock..."
-      emptyTitle="No parts in stock"
-      emptyHint="Parts with stock on hand will appear here."
-      header={segmentBar}
+      searchPlaceholder={stockLevel ? "Search parts..." : "Search parts in stock..."}
+      emptyTitle={STOCK_EMPTY[stockLevel].title}
+      emptyHint={STOCK_EMPTY[stockLevel].hint}
+      header={
+        <>
+          {segmentBar}
+          {stockFilterRow}
+        </>
+      }
     />
   );
 }
@@ -237,6 +366,7 @@ export default function PartsScreen() {
 const styles = StyleSheet.create({
   topRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
   number: { fontSize: 15, fontWeight: "700", flexShrink: 1 },
+  stockWrap: { flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 0 },
   stock: { fontSize: 15, fontWeight: "800" },
   desc: { fontSize: 13 },
   crossRefs: { fontSize: 12, marginTop: 2 },
@@ -251,4 +381,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   segmentChip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 6 },
+  filterRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingBottom: 6,
+    alignItems: "center",
+  },
+  filterChip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: 12, paddingVertical: 4 },
 });

@@ -172,6 +172,17 @@ html[data-theme="dark"] input[type="date"]:focus {
   box-shadow: 0 0 0 0.2rem rgba(34, 197, 94, 0.18);
 }
 
+/* Заблокированные поля (например, клиент/юнит привязанной записи
+   календаря) должны отличаться от обычных, как в светлой теме. */
+html[data-theme="dark"] .form-control:disabled,
+html[data-theme="dark"] .form-select:disabled,
+html[data-theme="dark"] textarea.form-control:disabled {
+  background-color: #2a2a2a;
+  border-color: #3a3a3a;
+  color: var(--muted);
+  opacity: 1;
+}
+
 html[data-theme="dark"] input[type="date"]::-webkit-calendar-picker-indicator {
   filter: invert(1) hue-rotate(180deg) brightness(0.95);
   background-color: rgba(34, 197, 94, 0.18);
@@ -257,6 +268,23 @@ html[data-theme="dark"] .table > tbody > tr:hover > td {
 
 html[data-theme="dark"] .table > tbody > tr:focus-within > td {
   background-color: #3a3a3a !important;
+}
+
+/* Склад: строки ниже / близко к минимальному остатку (Parts, min stock) */
+html[data-theme="dark"] .table > tbody > tr.stock-row--below > td {
+  background-color: rgba(239, 68, 68, 0.12);
+}
+
+html[data-theme="dark"] .table > tbody > tr.stock-row--below > td:first-child {
+  box-shadow: inset 3px 0 0 #f87171;
+}
+
+html[data-theme="dark"] .table > tbody > tr.stock-row--near > td {
+  background-color: rgba(245, 158, 11, 0.12);
+}
+
+html[data-theme="dark"] .table > tbody > tr.stock-row--near > td:first-child {
+  box-shadow: inset 3px 0 0 #fbbf24;
 }
 
 /* ── AI assistant widget ─────────────────────────────────────────── */
@@ -359,7 +387,10 @@ html[data-theme="dark"] .btn-outline-light {
   --bs-btn-hover-bg: #353535;
   --bs-btn-hover-border-color: #5a5a5a;
   --bs-btn-hover-color: #fff;
-  --bs-btn-active-bg: #1f1f1f;
+  /* нажатое/активное состояние (тумблер видов календаря и т.п.) должно читаться */
+  --bs-btn-active-bg: #3a3f47;
+  --bs-btn-active-border-color: #6b7280;
+  --bs-btn-active-color: #fff;
 }
 
 html[data-theme="dark"] .btn-success {
@@ -1365,7 +1396,9 @@ html[data-theme="dark"] .cal-mech-marker.active { border-color: #8ab4f8; backgro
 html[data-theme="dark"] .cal-event-mechs .cal-mech-badge { box-shadow: 0 0 0 1px rgba(0, 0, 0, .55); }
 html[data-theme="dark"] .cal-lane-sep { border-left-color: #3a3a3a; }
 html[data-theme="dark"] .cal-lane-names { border-top-color: var(--border); }
-html[data-theme="dark"] .cal-lane-name { color: #e8eaed; border-left-color: var(--border); }
+html[data-theme="dark"] .cal-lane-name { color: #e8eaed; box-shadow: inset 1px 0 0 var(--border); }
+html[data-theme="dark"] .cal-lane-name:first-child { box-shadow: none; }
+html[data-theme="dark"] .cal-chip--more { border-color: #5c5c5c; color: #9aa0a6; background: #2a2a2a; }
 html[data-theme="dark"] .cal-lane-name--unassigned { color: #9aa0a6; }
 html[data-theme="dark"] .cal-mech-badge--unassigned { background: #3a3a3a; color: #9aa0a6; }
 html[data-theme="dark"] .cal-lane-name:hover .cal-mech-badge { box-shadow: 0 0 0 2px rgba(255, 255, 255, .25); }

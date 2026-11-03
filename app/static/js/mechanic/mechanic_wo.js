@@ -427,6 +427,10 @@
           "</div>" +
           '<div class="mech-labor-body">' +
             '<textarea class="form-control mech-labor-desc" placeholder="What was done..." rows="2">' + esc(labor.description) + "</textarea>" +
+            // описание проблемы (офис / заметка записи календаря) — механику только для чтения
+            (labor.issue_description
+              ? '<div class="text-muted small mt-1"><i class="bi bi-info-circle me-1"></i>' + esc(labor.issue_description) + "</div>"
+              : "") +
             timerSection +
             '<div class="mech-parts">' +
               '<div class="mech-parts-title">Parts</div>' +
@@ -443,6 +447,46 @@
     function render() {
       laborsContainer.innerHTML = state.labors.map(laborHtml).join("");
       startTicker();
+    }
+
+    // План из календаря (payload.appointments: [{start_time, end_time,
+    // mechanics: [{name}], presets: [{name}], note}]): когда запланировано,
+    // кто в бригаде, заметка менеджера. Записей нет (или сервер без этого
+    // поля) — карточка скрыта.
+    function renderScheduled(items) {
+      var card = $("mechScheduledCard");
+      var body = $("mechScheduledBody");
+      if (!card || !body) return;
+      var rows = (Array.isArray(items) ? items : []).filter(function (a) { return a && a.start_time; });
+      if (!rows.length) { card.style.display = "none"; return; }
+      function pad2(v) { return String(v).padStart(2, "0"); }
+      function fmtTime(d) { return pad2(d.getHours()) + ":" + pad2(d.getMinutes()); }
+      function names(arr) {
+        return (Array.isArray(arr) ? arr : [])
+          .map(function (x) { return String((x && x.name) || "").trim(); })
+          .filter(Boolean);
+      }
+      body.innerHTML = '<div class="mech-parts-title">Scheduled</div>' + rows.map(function (a) {
+        // времена записи — настенные часы магазина без зоны, как в календаре
+        var st = new Date(a.start_time);
+        var en = a.end_time ? new Date(a.end_time) : null;
+        var when = Number.isFinite(st.getTime())
+          ? st.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric" }) + " · " + fmtTime(st) +
+            (en && Number.isFinite(en.getTime()) ? "–" + fmtTime(en) : "")
+          : "—";
+        var crew = names(a.mechanics);
+        var presets = names(a.presets);
+        var note = String(a.note || "").trim();
+        return (
+          '<div class="mech-info-row"><i class="bi bi-calendar-check"></i><span>' + esc(when) + "</span></div>" +
+          '<div class="mech-info-row"><i class="bi bi-people"></i>' +
+            (crew.length ? "<span>" + esc(crew.join(", ")) + "</span>" : '<span class="text-muted">No mechanic assigned</span>') +
+          "</div>" +
+          (presets.length ? '<div class="mech-info-row"><i class="bi bi-lightning-charge"></i><span>' + esc(presets.join(", ")) + "</span></div>" : "") +
+          (note ? '<div class="mech-info-row"><i class="bi bi-chat-left-text"></i><span class="text-muted">' + esc(note) + "</span></div>" : "")
+        );
+      }).join('<hr class="my-2">');
+      card.style.display = "";
     }
 
     // Живое время работы: завершённые сессии + все идущие таймеры
@@ -528,6 +572,7 @@
         $("mechInfoCustomer").textContent = (data.customer && data.customer.label) || "—";
         $("mechInfoUnit").textContent = (data.unit && data.unit.label) || "—";
         $("mechInfoDate").textContent = data.date || "—";
+        renderScheduled(data.appointments);
 
         state.mileageRequired = !!data.mileage_required && data.status !== "paid";
         var unitMileage = (data.unit && data.unit.mileage != null && data.unit.mileage !== "") ? String(data.unit.mileage) : "";

@@ -12,9 +12,14 @@ Work orders & estimates. `wo_number: int` (human number, starts 1000),
 "in_progress", "paid"; estimates: "estimate"/"estimated"/"quote"/"quoted"),
 `work_order_date: datetime`, `authorizations: array` (customer approvals).
 `labors: array` of blocks: `{labor_id, labor: {description, hours (string),
-rate_code, hourly_rate, labor_full_total, issue_description, assigned_mechanics:
-[{user_id, name, percent}]}, parts: [{part_id, part_number, description, qty,
-cost, price, core_charge, misc_charge, one_time_part}]}`.
+hours_source ("preset" = hours taken from the service preset, "tracked" =
+from mechanic timers, "" = typed by hand), rate_code,
+hourly_rate, labor_full_total, issue_description (the "Describe issue"
+text; a WO created from a calendar appointment carries the appointment's
+note here), assigned_mechanics: [{user_id, name, percent}]}, parts:
+[{part_id, part_number, description, qty, cost, price, core_charge,
+misc_charge, one_time_part, unit (unit-of-measure key copied from the part
+when it was added, e.g. "gallon"; absent = "each")}]}`.
 `totals: dict` — money rollup: `{labor_total, parts_total, core_total,
 misc_total, cost_total, shop_supply_total, sales_tax_rate, sales_tax_total,
 grand_total, is_taxable}`. Unpaid balance = grand_total minus sum of active
@@ -40,7 +45,18 @@ Catalog + inventory. `part_number`, `description`, `reference`, `vendor_id` →
 vendors, `category_id` → parts_categories, `location_id` → parts_locations,
 `do_not_track_inventory: bool`, `in_stock: int` (total on hand; absent when not
 tracked), `average_cost`, `selling_price` (+`has_selling_price`), `core_cost`
-(+`core_has_charge`), `misc_charges: [{description, price, taxable}]`.
+(+`core_has_charge`), `misc_charges: [{description, price, taxable}]`,
+`unit_of_measure` (catalog key, absent = "each": each, gallon, quart, pint,
+fl_oz, liter, milliliter, pound, ounce, kilogram, gram, foot, inch, meter, box,
+case, pack, pair, set, roll, can, bottle, tube, drum, pail, kit),
+`min_stock_enabled: bool` ("This part requires minimum stock"; absent = false),
+`min_stock: int` (the minimum; 0 when disabled). The low-stock state is NOT
+stored — compute it: below = `in_stock < min_stock`; near = `min_stock <=
+in_stock <= max(min_stock + 1, ceil(1.2 * min_stock))`; both only when
+`min_stock_enabled` is true and `do_not_track_inventory` is not true. Parts
+below minimum: `{"min_stock_enabled": true, "do_not_track_inventory": {"$ne":
+true}, "$expr": {"$lt": [{"$ifNull": ["$in_stock", 0]}, {"$ifNull":
+["$min_stock", 0]}]}}`.
 
 ### part_location_stock
 Per-location stock rows: `part_id` → parts, `part_number`, `location_id` →
@@ -102,12 +118,24 @@ Pricing scales: `name`, `mode` ("margin"/"markup"), `rules: [{from, to,
 value_percent}]`, `is_default: bool`.
 
 ### calendar_events
-Appointments: `title`, `start_time`/`end_time: datetime` (shop wall-clock,
+Appointments: `title` (doubles as the note for the mechanic; when the
+user typed nothing it equals `customer_label`, so treat it as a note only
+when it differs), `start_time`/`end_time: datetime` (shop wall-clock,
 no timezone), `status` ("scheduled", "confirmed", "in_progress",
 "completed", "cancelled" — per-shop statuses; a WO-linked appointment's
-status follows the work automatically), `customer_id`, `customer_label`,
-`unit_id`, `unit_label`, `presets: [{id, name}]`, `work_order_id` →
-work_orders (linked plan), `wo_number`. Mechanics (one or a crew):
+status follows the work automatically: WO in work → "in_progress",
+mechanic done / completed / paid → "completed", WO back to open with no
+time logs, payments or Done → back to "scheduled"; "cancelled" is never
+touched), `customer_id`,
+`customer_label`, `unit_id`, `unit_label` (for a linked appointment these
+are copied from the WO and follow transfers / unit changes), `presets:
+[{id, name}]` → wo_presets, `work_order_id` → work_orders (linked plan;
+a WO a mechanic starts from the appointment gets one labor per preset with
+`hours_source: "preset"`, the crew in `assigned_mechanics` and the note
+in `issue_description` — the office web/phone forms prefill the same
+things on the client; reassigning a mechanic on the WO moves its
+future appointments and vice versa), `wo_number`. Mechanics (one or a
+crew):
 `mechanic_ids: [ObjectId]` (filter by a mechanic with
 `{"mechanic_ids": <id>}`), `mechanics: [{id, name}]`; legacy
 `mechanic_id`/`mechanic_name` = the first mechanic only — older records

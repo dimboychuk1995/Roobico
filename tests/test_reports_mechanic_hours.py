@@ -111,7 +111,13 @@ def test_mechanic_hours_with_uattend(client, mech_seed, seed, mongo, monkeypatch
     """uid 11 «Greg Manager» матчится на менеджера — исключается ещё до
     запроса; uid 22 «Mykola Klyuch» вливается в строку механика; uid 33
     «Solo Person» без аккаунта — отдельная строка."""
+    import app.utils.employee_matcher as employee_matcher
     import app.utils.integrations.uattend_hours as uattend_hours
+    import app.utils.integrations.uattend_match as uattend_match
+
+    # Матчинг — детерминированный фолбэк, а не живой вызов OpenAI: ключ есть в .env,
+    # а ответ модели от прогона к прогону разный (тест флакал).
+    monkeypatch.setattr(uattend_match, "match_employees", employee_matcher._deterministic_match)
 
     master = mongo["roobico_test_master"]
     shop_db = mongo[SHOP_A_DB]

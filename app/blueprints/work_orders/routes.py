@@ -110,6 +110,7 @@ from app.blueprints.work_orders.services.common import (
     get_date_range_filters,
     i32,
     oid,
+    part_unit_fields,
     round2,
     utcnow,
 )
@@ -224,6 +225,27 @@ from app.utils.tenant import tenant_id_variants, get_shop_db as _tenant_get_shop
 
 def get_shop_db():
     return _tenant_get_shop_db(get_master_db())
+
+
+def _sync_calendar_with_wo(shop_db, shop, work_order_id, *, identity=False, mechanics=False):
+    """
+    Записи календаря, привязанные к WO, следуют за ним: статус — по факту
+    работы (всегда), клиент/юнит — когда их поменяли на WO (identity),
+    бригада будущих записей — когда переназначили механиков (mechanics).
+    Зовётся после записи WO и вне транзакций (у синка нет session); ошибки
+    логируются внутри сервиса, наружу не идут.
+    """
+    from app.blueprints.calendar.services.work_orders import (
+        follow_wo_mechanics,
+        refresh_linked_appointments_identity,
+        sync_linked_appointments_status,
+    )
+
+    if identity:
+        refresh_linked_appointments_identity(shop_db, shop, work_order_id)
+    sync_linked_appointments_status(shop_db, shop, work_order_id)
+    if mechanics:
+        follow_wo_mechanics(shop_db, shop, work_order_id)
 
 
 
@@ -351,6 +373,15 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
             )
         ]
 
+    # Записи календаря, привязанные к открытому WO (план: когда, кто,
+    # пресеты, заметка) — для блока на странице деталей.
+    linked_appointments = []
+    existing_wo_id = oid((form_state or {}).get("created_work_order_id"))
+    if existing_wo_id:
+        from app.blueprints.calendar.services.work_orders import linked_appointments_for_wo
+
+        linked_appointments = linked_appointments_for_wo(shop_db, shop, existing_wo_id)
+
     ctx = {
         "sales_tax_context": sales_tax_context,
         "active_page": "work_orders",
@@ -390,6 +421,7 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
         "wo_updated_at": (form_state or {}).get("wo_updated_at") or "",
         "pending_attachment_id": pending_attachment_id,
         "calendar_event_id": (form_state or {}).get("calendar_event_id") or "",
+        "linked_appointments": linked_appointments,
         "initial_authorizations": (form_state or {}).get("authorizations") or [],
         "avi_checklist": annual_inspection_checklist(),
         "avi_type_defaults": VEHICLE_TYPE_COMPONENT_DEFAULTS,
@@ -765,7 +797,7 @@ def create_work_order():
     labor_re = re.compile(r"^(?:labors|blocks)\[(\d+)\]\[(labor_id|labor_description|labor_hours|labor_rate_code|labor_total_ui|labor_full_total|assigned_mechanics_json|issue_description)\]$")
     # parts
     parts_re = re.compile(
-        r"^(?:labors|blocks)\[(\d+)\]\[parts\]\[(\d+)\]\[(part_id|part_number|description|qty|cost|price|core_charge|misc_charge|misc_charge_description|one_time_part)\]$"
+        r"^(?:labors|blocks)\[(\d+)\]\[parts\]\[(\d+)\]\[(part_id|part_number|description|qty|cost|price|core_charge|misc_charge|misc_charge_description|one_time_part|unit)\]$"
     )
 
     for key, val in request.form.items():
@@ -801,7 +833,7 @@ def create_work_order():
             while len(b["parts"]) <= ridx:
                 b["parts"].append({})
 
-            if field in ("part_id", "part_number", "description"):
+            if field in ("part_id", "part_number", "description", "unit"):
                 b["parts"][ridx][field] = (val or "").strip()
             elif field == "qty":
                 b["parts"][ridx]["qty"] = (val or "").strip()
@@ -1060,6 +1092,7 @@ def api_parts_search():
         "core_cost": 1,
         "misc_has_charge": 1,
         "misc_charges": 1,
+        "unit_of_measure": 1,
     }
 
     def _serialize_item(p):
@@ -1086,6 +1119,8 @@ def api_parts_search():
             "core_cost": float(p.get("core_cost") or 0),
             "misc_has_charge": bool(p.get("misc_has_charge")),
             "misc_charges": misc_items,
+            # unit (ключ) + unit_short — подпись у количества в строке WO
+            **part_unit_fields(p),
         }
 
     fetch_limit = min(300, max(50, limit * 6))
@@ -1251,6 +1286,7 @@ def api_parse_handwritten_work_order():
         "in_stock": 1, "do_not_track_inventory": 1,
         "core_has_charge": 1, "core_cost": 1,
         "misc_has_charge": 1, "misc_charges": 1,
+        "unit_of_measure": 1,
     }
     catalog_cursor = parts_col.find(
         {"shop_id": shop_id, "is_active": True},
@@ -1285,6 +1321,7 @@ def api_parse_handwritten_work_order():
                 "core_cost": float(d.get("core_cost") or 0),
                 "misc_has_charge": bool(d.get("misc_has_charge")),
                 "misc_charges": misc_items,
+                **part_unit_fields(d),
                 "score": int(c.get("score") or 0),
                 "reason": c.get("reason") or "",
             })
@@ -1849,6 +1886,12 @@ def api_work_order_update(work_order_id):
     time_tracking.sync_labor_assignments_from_time(
         shop_db, shop, wo_id, mechanics_by_id=mechanics_by_id
     )
+    # Привязанные записи календаря: статус по сохранённому WO, клиент/юнит —
+    # если их поменяли, бригада будущих записей — по новым назначениям.
+    _sync_calendar_with_wo(
+        shop_db, shop, wo_id,
+        identity=bool(new_customer_id or new_unit_id), mechanics=True,
+    )
 
     return jsonify({
         "ok": True,
@@ -1962,6 +2005,8 @@ def api_work_order_payment(work_order_id):
         return new_payment_id, summary
 
     payment_id, payment_summary = run_atomically(get_mongo_client(), _apply_payment)
+    # Статус WO мог стать paid — привязанные записи календаря следом (после транзакции).
+    _sync_calendar_with_wo(shop_db, shop, wo_id)
     audit_log.log_event("payment", "work_order", wo_id, label=audit_log.wo_label(wo),
                         summary=f"Payment ${round2(amount):.2f} ({payment_method}) recorded for {audit_log.wo_label(wo)} - balance ${remaining_balance:.2f}",
                         details={"amount": round2(amount), "method": payment_method, "remaining_balance": remaining_balance,
@@ -2095,6 +2140,8 @@ def api_delete_work_order_payment(payment_id):
         }
 
     summary = run_atomically(get_mongo_client(), _apply_delete)
+    # Оплата снята — WO снова open, привязанные записи календаря следом.
+    _sync_calendar_with_wo(shop_db, shop, wo_id)
     audit_log.log_event("payment_delete", "work_order", wo_id, label=audit_log.wo_label(wo),
                         summary=f"Payment ${float(payment.get('amount') or 0):.2f} removed from {audit_log.wo_label(wo)}",
                         details={"amount": payment.get("amount"), "payment_id": str(pay_id), "status": summary.get("status")})
@@ -2179,6 +2226,9 @@ def api_bulk_payment():
         customer_id=oid(data.get("customer_id")),
     )
     if isinstance(result, dict) and result.get("ok"):
+        # Оплаченные WO — привязанные записи календаря следом (после транзакции).
+        for item in result.get("results") or []:
+            _sync_calendar_with_wo(shop_db, shop, item.get("work_order_id"))
         audit_log.log_event("payment", "customer", data.get("customer_id"),
                             summary=f"Bulk payment recorded ({data.get('payment_method') or 'cash'}) for {len(data.get('allocations') or [])} invoice(s)",
                             details={"allocations": len(data.get("allocations") or []), "method": data.get("payment_method")})
@@ -2425,6 +2475,9 @@ def api_work_order_set_status(work_order_id):
     if status == "in_progress" and not is_mechanic_mode():
         status_fields.update(clear_mechanic_done_fields())
     shop_db.work_orders.update_one({"_id": wo_id}, {"$set": status_fields})
+    # Привязанные записи календаря: paid → completed, in_progress → in_progress,
+    # open (не начат) → обратно в scheduled.
+    _sync_calendar_with_wo(shop_db, shop, wo_id)
 
     audit_log.log_event("status", "work_order", wo_id, label=audit_log.wo_label(wo),
                         summary=f"{audit_log.wo_label(wo)}: status {wo.get('status') or 'open'} -> {status}",
@@ -2470,6 +2523,9 @@ def api_work_order_set_confirmed(work_order_id):
             }
         },
     )
+
+    # Подтверждение закрывает работу (completed для календаря), снятие — возвращает план.
+    _sync_calendar_with_wo(shop_db, shop, wo_id)
 
     audit_log.log_event("confirm", "work_order", wo_id, label=audit_log.wo_label(wo),
                         summary=f"{audit_log.wo_label(wo)}: mechanic work {'confirmed' if confirmed else 'un-confirmed'} by manager")
@@ -3374,6 +3430,7 @@ def api_preset_detail(preset_id):
         "misc_charges": 1,
         "has_selling_price": 1,
         "selling_price": 1,
+        "unit_of_measure": 1,
     }
 
     by_id = {}
@@ -3429,6 +3486,8 @@ def api_preset_detail(preset_id):
                     })
             ep["misc_has_charge"] = bool(live.get("misc_has_charge"))
             ep["misc_charges"] = misc_items
+            # Единица измерения из каталога — подпись у количества строки из пресета
+            ep.update(part_unit_fields(live))
 
             # Dynamic pricing: always reflect the part's current cost/price.
             # A price manually pinned in the preset wins over the part's selling
@@ -3657,6 +3716,9 @@ def api_mechanic_work_order_create():
     data = request.get_json(silent=True) or {}
     customer_id = oid(data.get("customer_id"))
     unit_id = oid(data.get("unit_id"))
+    # WO создаётся из записи календаря («Start work» у механика) — запись
+    # привяжем к WO, её содержимое (пресеты, бригада, заметка) — в новый WO.
+    calendar_event_id = oid(data.get("calendar_event_id"))
     if not customer_id or not unit_id:
         return jsonify({"ok": False, "error": "customer_unit_required"}), 400
 
@@ -3674,6 +3736,12 @@ def api_mechanic_work_order_create():
     if is_mechanic_mode() and not bool(data.get("allow_duplicate_unit_wo")):
         existing = find_active_unit_work_order(shop_db, shop, unit_id)
         if existing:
+            if calendar_event_id:
+                # Старт работы из записи, а по юниту WO уже идёт: запись
+                # привязываем к нему — клиент откроет этот WO.
+                from app.blueprints.calendar.routes import link_event_to_work_order
+
+                link_event_to_work_order(shop_db, shop, calendar_event_id, existing.get("id"), existing.get("wo_number"))
             return jsonify({
                 "ok": False,
                 "error": "unit_has_active_work_order",
@@ -3682,11 +3750,47 @@ def api_mechanic_work_order_create():
             }), 409
 
     labors_payload = data.get("labors")
-    if not isinstance(labors_payload, list) or not labors_payload:
+
+    # Старт работы из записи календаря: пресеты, бригада и заметка записи —
+    # в новый WO (как в мобильном create), если запись про этот юнит или без
+    # юнита; иначе запись лишь привяжем после вставки. Best effort: ошибки
+    # предзаполнения логируются, WO создаётся всё равно.
+    appointment = None
+    server_built = False  # работы собраны сервером из пресетов записи
+    if calendar_event_id:
+        from app.blueprints.work_orders.services.appointment_prefill import (
+            appointment_prefill_applies,
+            appointment_preset_labors,
+            apply_appointment_defaults,
+            crew_assignments,
+            load_appointment,
+        )
+
+        appointment = load_appointment(shop_db, shop, calendar_event_id)
+        if not appointment_prefill_applies(appointment, unit_id):
+            appointment = None
+        if appointment and not labors_payload:
+            labors_payload = appointment_preset_labors(shop_db, shop, customer_id, appointment["presets"])
+            server_built = True
+
+    # Без работ WO не создаём — кроме случая, когда у записи без пресетов есть
+    # заметка: она станет строкой работы (см. apply_appointment_defaults).
+    if not isinstance(labors_payload, list) or not (labors_payload or (appointment and appointment["note"])):
         return jsonify({"ok": False, "error": "labors_required"}), 400
 
     # Клиентские цены/часы/статус игнорируются; сервер автозаполняет цены.
-    enriched = build_mechanic_labors_payload(shop_db, shop, customer_id, labors_payload)
+    # Собранные из пресетов работы уже прошли через это — второй раз не гоняем.
+    enriched = labors_payload if server_built else build_mechanic_labors_payload(shop_db, shop, customer_id, labors_payload)
+    if appointment:
+        # Бригада записи — на строки без назначений; заметка — в описание
+        # проблемы, если его ещё никто не заполнил.
+        set_note = server_built or not any(
+            str(l.get("issue_description") or "").strip() for l in enriched if isinstance(l, dict)
+        )
+        enriched = apply_appointment_defaults(
+            enriched, crew_assignments(shop, appointment["mechanics"]), appointment["note"], set_note,
+            shop_db=shop_db, shop=shop, customer_id=customer_id,
+        )
     labors, totals_raw = compute_labors_and_totals(shop_db, shop, enriched)
     totals = align_totals_with_labors(normalize_totals_payload(totals_raw), labors)
     shop_tax = _get_shop_sales_tax_context(shop, shop_db)
@@ -3738,12 +3842,19 @@ def api_mechanic_work_order_create():
     audit_log.log_event("create", "work_order", res.inserted_id, label=audit_log.wo_label(doc),
                         summary=f"{audit_log.wo_label(doc)} created by mechanic for {audit_log.customer_label(customer)} ({audit_log.unit_label(unit)})",
                         details={"customer_id": str(customer_id), "customer": audit_log.customer_label(customer),
-                                 "unit_id": str(unit_id), "unit": audit_log.unit_label(unit), "jobs": audit_log.labor_summary(doc)})
+                                 "unit_id": str(unit_id), "unit": audit_log.unit_label(unit), "jobs": audit_log.labor_summary(doc),
+                                 "calendar_event_id": str(calendar_event_id or "")})
     core_sync = sync_work_order_cores(shop_db, shop, [], labors, user_id)
 
     from app.blueprints.work_orders.services.push_events import notify_after_mechanic_save
 
     notify_after_mechanic_save(shop, None, doc, res.inserted_id, doc["wo_number"], user_id)
+
+    if calendar_event_id:
+        # Запись календаря теперь следует за этим WO (статус — по факту работы).
+        from app.blueprints.calendar.routes import link_event_to_work_order
+
+        link_event_to_work_order(shop_db, shop, calendar_event_id, res.inserted_id, doc["wo_number"])
 
     return jsonify({
         "ok": True,
@@ -3916,6 +4027,7 @@ def api_mechanic_timer_start():
             refresh_time_derived_fields(
                 shop_db, shop, prev_wo_id, mechanics_by_id=mechanics_by_id,
             )
+            _sync_calendar_with_wo(shop_db, shop, prev_wo_id)
 
     stopped_prev = stopped_prev_logs[-1] if stopped_prev_logs else None
     audit_log.log_event("timer", "time_log", log.get("_id"), label=f"WO #{log.get('wo_number')}",
@@ -3962,6 +4074,10 @@ def api_mechanic_timer_stop():
         refresh_time_derived_fields(
             shop_db, shop, stopped_wo_id, mechanics_by_id=mechanics_by_id,
         )
+        # Статус привязанных записей — по факту работы. Бригаду по таймерам
+        # не двигаем: план остаётся планом, переезжает он только когда офис
+        # переназначил механика на WO.
+        _sync_calendar_with_wo(shop_db, shop, stopped_wo_id)
 
     return jsonify({
         "ok": True,
@@ -4051,6 +4167,7 @@ def api_work_order_transfer(work_order_id):
                 {"_id": wo_id}, {"$set": wo_set}, session=session
             ),
         )
+        _sync_calendar_with_wo(shop_db, shop, wo_id, identity=True)
         audit_log.log_event("transfer", "work_order", wo_id, label=audit_log.wo_label(wo),
                             summary=f"{audit_log.wo_label(wo)} transferred to {audit_log.customer_label(target)}",
                             details={"to_customer_id": str(target_id), "unit_action": unit_action})
@@ -4111,6 +4228,8 @@ def api_work_order_transfer(work_order_id):
 
         run_atomically(get_mongo_client(), _tx)
 
+    # Привязанные записи календаря переезжают к новому клиенту/юниту вместе с WO.
+    _sync_calendar_with_wo(shop_db, shop, wo_id, identity=True)
     audit_log.log_event("transfer", "work_order", wo_id, label=audit_log.wo_label(wo),
                         summary=f"{audit_log.wo_label(wo)} transferred to {audit_log.customer_label(target)} (unit: {unit_action})",
                         details={"to_customer_id": str(target_id), "unit_action": unit_action, "unit_id": str(wo_set.get("unit_id") or "")})
@@ -4135,6 +4254,9 @@ def _refresh_after_time_log_change(shop_db, shop, work_order_id):
         shop_db, shop, work_order_id,
         mechanics_by_id={m["id"]: m for m in get_assignable_mechanics(shop)},
     )
+    # Правка/удаление сессии меняет факт работы — статус записей календаря следом
+    # (бригаду будущих записей двигает только явное переназначение офисом).
+    _sync_calendar_with_wo(shop_db, shop, work_order_id)
 
 
 def _load_time_log_for_edit(shop_db, shop, log_id):

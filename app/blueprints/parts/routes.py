@@ -63,6 +63,19 @@ from app.blueprints.parts.services.email_orders import (
     serialize_unmatched as serialize_email_order_unmatched,
     vendor_changed_on_email_order,
 )
+from app.blueprints.parts.services.min_stock import (
+    STOCK_LEVELS,
+    min_stock_state,
+    near_limit,
+    stock_level_filter,
+)
+from app.constants.part_units import (
+    DEFAULT_PART_UNIT,
+    normalize_unit,
+    part_unit_options,
+    unit_label,
+    unit_short,
+)
 
 from . import parts_bp
 
@@ -123,6 +136,106 @@ def _parse_float(value: str, default: float = 0.0) -> float:
         return float(str(value).strip())
     except Exception:
         return default
+
+
+def _flag(value) -> bool:
+    """Чекбокс формы ("1"/"on") или JSON-булево → bool."""
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+# Подписи полей парта для журнала изменений: базовый набор из audit_log +
+# минимальный остаток и единица измерения.
+PART_AUDIT_FIELDS = {
+    **audit_log.PART_FIELDS,
+    "min_stock_enabled": "Requires minimum stock",
+    "min_stock": "Minimum stock",
+    "unit_of_measure": "Unit of measure",
+}
+
+MIN_STOCK_REQUIRED_MSG = "Minimum stock is required when the part requires minimum stock"
+MIN_STOCK_INVALID_MSG = "Minimum stock must be a whole number (0 or more)"
+UNKNOWN_UNIT_MSG = "Unknown unit of measure"
+
+
+def _parse_part_stock_settings(get, do_not_track_inventory: bool, current: dict | None = None):
+    """
+    Минимальный остаток и единица измерения из формы/JSON.
+
+    get(key) → сырое значение поля (request.form.get / data.get); ключи
+    min_stock_enabled, min_stock, unit_of_measure. Возвращает (fields, error):
+    fields — {min_stock_enabled, min_stock, unit_of_measure} для документа,
+    error — текст для 400 / flash. Правила:
+      * минимум включён → min_stock обязателен, целое >= 0;
+      * выключен → min_stock_enabled False, min_stock 0;
+      * do_not_track_inventory → минимум принудительно выключен;
+      * пустая единица → "each", неизвестная → ошибка.
+    current — существующий документ при обновлении: поля, которых нет в
+    payload вовсе (get вернул None), остаются как были — старые клиенты
+    (мобильное приложение до обновления) не должны сбрасывать настройку.
+    """
+    current = current or {}
+    enabled_raw = get("min_stock_enabled")
+    min_raw = get("min_stock")
+    unit_raw = get("unit_of_measure")
+
+    if enabled_raw is None and min_raw is None and current:
+        enabled = bool(current.get("min_stock_enabled"))
+        min_stock = max(0, _parse_int(current.get("min_stock"), default=0))
+    else:
+        enabled = _flag(enabled_raw)
+        min_stock = 0
+        if enabled:
+            if isinstance(min_raw, bool):
+                return None, MIN_STOCK_INVALID_MSG
+            if min_raw is None or str(min_raw).strip() == "":
+                return None, MIN_STOCK_REQUIRED_MSG
+            try:
+                value = float(str(min_raw).strip())
+                if value < 0 or value != int(value):
+                    raise ValueError("not a whole number")
+                min_stock = int(value)
+            except (TypeError, ValueError, OverflowError):
+                return None, MIN_STOCK_INVALID_MSG
+    if do_not_track_inventory:
+        enabled = False
+    if not enabled:
+        min_stock = 0
+
+    if unit_raw is None and current:
+        unit = normalize_unit(current.get("unit_of_measure")) or DEFAULT_PART_UNIT
+    else:
+        unit = normalize_unit(unit_raw)
+        if unit is None:
+            return None, UNKNOWN_UNIT_MSG
+
+    return {
+        "min_stock_enabled": bool(enabled),
+        "min_stock": int(min_stock),
+        "unit_of_measure": unit,
+    }, None
+
+
+def _part_stock_fields(part: dict) -> dict:
+    """
+    Единица измерения и состояние минимального остатка парта — для JSON
+    (GET /api/<id>, /api/search) и строк списка. Отсутствие полей в старых
+    документах = each / минимум не задан.
+    """
+    unit = normalize_unit(part.get("unit_of_measure")) or DEFAULT_PART_UNIT
+    return {
+        "unit": unit,
+        "unit_short": unit_short(unit),
+        "unit_label": unit_label(unit),
+        "min_stock_enabled": bool(part.get("min_stock_enabled")),
+        "min_stock": max(0, _parse_int(part.get("min_stock"), default=0)),
+        "stock_state": min_stock_state(part),
+    }
 
 
 def _parse_non_inventory_amounts(raw_lines):
@@ -691,13 +804,20 @@ def parts_page():
     if part_status not in ("active", "inactive", "all"):
         part_status = "active"
 
+    # Фильтр по минимальному остатку: all / below (ниже минимума) / near
+    # (ниже ИЛИ близко к минимуму — всё, что подсвечено в списке).
+    stock_level = (request.args.get("stock_level") or "all").strip().lower()
+    if stock_level not in STOCK_LEVELS:
+        stock_level = "all"
+    stock_counts = {"below": 0, "near": 0, "highlighted": 0}
+
     if active_tab == "parts":
         if part_status == "inactive":
-            parts_query = {"is_active": False, **ORDERABLE_PART_FILTER}
+            parts_query = {"shop_id": shop["_id"], "is_active": False, **ORDERABLE_PART_FILTER}
         elif part_status == "all":
-            parts_query = {**ORDERABLE_PART_FILTER}
+            parts_query = {"shop_id": shop["_id"], **ORDERABLE_PART_FILTER}
         else:
-            parts_query = {"is_active": True}
+            parts_query = {"shop_id": shop["_id"], "is_active": True}
         parts_search_filter = build_regex_search_filter(
             q,
             text_fields=["part_number", "description", "reference", "search_terms"],
@@ -719,6 +839,22 @@ def parts_page():
                 parts_query = {"$and": [parts_query, parts_search_filter]}
             elif extra:
                 parts_query = {"$and": [parts_query, {"$or": extra}]}
+
+        # Сколько партов ниже / близко к минимуму в текущей выборке (статус +
+        # поиск) — сводка над таблицей. "near"-фильтр считает всё подсвеченное,
+        # поэтому «близко» = подсвеченные минус «ниже».
+        below_count = parts_coll.count_documents({"$and": [parts_query, stock_level_filter("below")]})
+        highlighted_count = parts_coll.count_documents({"$and": [parts_query, stock_level_filter("near")]})
+        stock_counts = {
+            "below": int(below_count),
+            "near": int(max(0, highlighted_count - below_count)),
+            "highlighted": int(highlighted_count),
+        }
+        # Сам фильтр списка: без ограничения in_stock > 0 — парт ниже
+        # минимума часто с нулевым остатком.
+        level_filter = stock_level_filter(stock_level)
+        if level_filter:
+            parts_query = {"$and": [parts_query, level_filter]}
 
         parts_totals = _get_parts_inventory_totals(parts_coll, parts_query)
 
@@ -778,6 +914,11 @@ def parts_page():
             cid = p.get("category_id")
             lid = p.get("location_id")
 
+            # Единица измерения + состояние минимального остатка (бейдж,
+            # подсветка строки, подсказка «near = up to N»).
+            p.update(_part_stock_fields(p))
+            p["near_limit"] = near_limit(p["min_stock"])
+
             if vid:
                 p["vendor_name"] = vendor_map.get(vid) or ""
             if cid:
@@ -835,6 +976,9 @@ def parts_page():
                 "core_cost": float(_parse_float(p.get("core_cost"), default=0.0)),
                 "misc_has_charge": bool(p.get("misc_has_charge")),
                 "misc_charges": misc_charges_safe,
+                "min_stock_enabled": bool(p.get("min_stock_enabled")),
+                "min_stock": int(p.get("min_stock") or 0),
+                "unit_of_measure": p.get("unit"),
             }
 
         # Кросс-референсы для видимых партов (одним запросом на страницу).
@@ -1393,6 +1537,9 @@ def parts_page():
         active_tab=active_tab,
         q=q,
         part_status=part_status,
+        stock_level=stock_level,
+        stock_counts=stock_counts,
+        part_units=part_unit_options(),
         can_view_part_costs=can_view_part_costs,
         parts=parts_in_stock,
         pagination=pagination,
@@ -1506,6 +1653,13 @@ def parts_create():
         flash("In stock cannot be negative.", "error")
         return redirect(url_for("parts.parts_page"))
 
+    # Минимальный остаток + единица измерения (ошибка — как у остальных
+    # полей формы: flash и назад на список).
+    stock_settings, err = _parse_part_stock_settings(request.form.get, do_not_track_inventory)
+    if err:
+        flash(err, "error")
+        return redirect(url_for("parts.parts_page"))
+
     # Do-not-track parts cannot have core charge.
     if do_not_track_inventory:
         core_has_charge = False
@@ -1594,6 +1748,7 @@ def parts_create():
         "location_id": location_oid,
 
         "do_not_track_inventory": bool(do_not_track_inventory),
+        **stock_settings,
         "average_cost": float(average_cost),
         "has_selling_price": bool(has_selling_price),
         "selling_price": float(selling_price) if has_selling_price else None,
@@ -1620,7 +1775,9 @@ def parts_create():
 
     res = parts_coll.insert_one(doc)
     audit_log.log_event("create", "part", res.inserted_id, label=audit_log.part_label(doc),
-                        details={"part_number": doc.get("part_number"), "in_stock": doc.get("in_stock"), "average_cost": doc.get("average_cost")})
+                        details={"part_number": doc.get("part_number"), "in_stock": doc.get("in_stock"), "average_cost": doc.get("average_cost"),
+                                 "min_stock": doc["min_stock"] if doc["min_stock_enabled"] else None,
+                                 "unit_of_measure": doc["unit_of_measure"]})
 
     # Стартовый остаток проводим через сервис остатков: строка локации + движение.
     if not do_not_track_inventory and in_stock:
@@ -1675,6 +1832,10 @@ def parts_api_create():
     core_has_charge = bool(data.get("core_has_charge"))
     core_cost = _parse_float(data.get("core_cost"), default=0.0) if core_has_charge else None
 
+    stock_settings, err = _parse_part_stock_settings(data.get, do_not_track)
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+
     vendor_oid = None
     if vendor_id_raw and vendors_coll is not None:
         vendor_oid, _ = _validate_ref(vendors_coll, vendor_id_raw, "Vendor")
@@ -1699,6 +1860,7 @@ def parts_api_create():
         "category_id": category_oid,
         "location_id": location_oid,
         "do_not_track_inventory": do_not_track,
+        **stock_settings,
         "average_cost": float(average_cost),
         "has_selling_price": has_selling_price,
         "selling_price": float(selling_price) if selling_price is not None else None,
@@ -1721,7 +1883,9 @@ def parts_api_create():
 
     res = parts_coll.insert_one(doc)
     audit_log.log_event("create", "part", res.inserted_id, label=audit_log.part_label(doc),
-                        details={"part_number": doc.get("part_number"), "in_stock": doc.get("in_stock"), "average_cost": doc.get("average_cost")})
+                        details={"part_number": doc.get("part_number"), "in_stock": doc.get("in_stock"), "average_cost": doc.get("average_cost"),
+                                 "min_stock": doc["min_stock"] if doc["min_stock_enabled"] else None,
+                                 "unit_of_measure": doc["unit_of_measure"]})
 
     if not do_not_track and in_stock:
         apply_stock_change(
@@ -1793,9 +1957,14 @@ def parts_api_search():
         "core_cost": 1,
         "is_active": 1,
         "last_price": 1,
+        "do_not_track_inventory": 1,
+        "min_stock_enabled": 1,
+        "min_stock": 1,
+        "unit_of_measure": 1,
     }
 
     def _serialize_item(p):
+        stock_fields = _part_stock_fields(p)
         return {
             "id": str(p["_id"]),
             "part_number": p.get("part_number") or "",
@@ -1804,12 +1973,20 @@ def parts_api_search():
             # Цена последнего заказа — дефолт для строки парт-ордера (None — заказов не было).
             "last_price": float(p["last_price"]) if p.get("last_price") is not None else None,
             "in_stock": int(p.get("in_stock") or 0),
+            "do_not_track_inventory": bool(p.get("do_not_track_inventory")),
             "vendor_id": str(p["vendor_id"]) if p.get("vendor_id") else "",
             "has_selling_price": bool(p.get("has_selling_price")),
             "selling_price": float(p.get("selling_price") or 0.0),
             "core_has_charge": bool(p.get("core_has_charge", False)),
             "core_cost": float(p.get("core_cost") or 0.0),
             "is_active": p.get("is_active") is not False,
+            # Единица измерения и минимальный остаток: модалка заказа партов
+            # показывает "12 gal" и пометку below/near min в подсказке поиска.
+            "unit": stock_fields["unit"],
+            "unit_short": stock_fields["unit_short"],
+            "min_stock_enabled": stock_fields["min_stock_enabled"],
+            "min_stock": stock_fields["min_stock"],
+            "stock_state": stock_fields["stock_state"],
         }
 
     fetch_limit = min(300, max(50, limit * 6))
@@ -3558,6 +3735,12 @@ def parts_api_get(part_id: str):
             for x in get_cross_refs(parts_coll, shop["_id"], part)
         ],
     }
+    # Минимальный остаток и единица измерения (модалка редактирования и
+    # мобильное приложение): unit_of_measure — ключ для селекта, unit /
+    # unit_short / unit_label / stock_state — как в /api/search.
+    stock_fields = _part_stock_fields(part)
+    item.update(stock_fields)
+    item["unit_of_measure"] = stock_fields["unit"]
     if not has_permission("parts.view_costs"):
         strip_part_cost_fields(item)
     return jsonify({"ok": True, "item": item})
@@ -3925,6 +4108,12 @@ def parts_api_update(part_id: str):
         core_has_charge = False
         core_cost = 0.0
 
+    # Минимальный остаток + единица: поля, которых нет в payload, остаются
+    # прежними (current=part), присланные — валидируются.
+    stock_settings, err = _parse_part_stock_settings(data.get, do_not_track_inventory, current=part)
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+
     misc_has_charge = data.get("misc_has_charge", False)
     misc_charges_raw = data.get("misc_charges", []) or []
     if misc_has_charge and not isinstance(misc_charges_raw, list):
@@ -3977,6 +4166,7 @@ def parts_api_update(part_id: str):
             "category_id": category_oid,
             "location_id": location_oid,
             "do_not_track_inventory": bool(do_not_track_inventory),
+            **stock_settings,
             "average_cost": float(average_cost),
             "has_selling_price": bool(has_selling_price),
             "selling_price": float(selling_price) if has_selling_price else None,
@@ -4023,7 +4213,7 @@ def parts_api_update(part_id: str):
             )
 
     audit_log.log_event("update", "part", pid, label=audit_log.part_label(part),
-                        changes=audit_log.diff_fields(part, set_doc, audit_log.PART_FIELDS)
+                        changes=audit_log.diff_fields(part, set_doc, PART_AUDIT_FIELDS)
                         + ([audit_log.change("in_stock", old_stock, in_stock, "in stock")]
                            if (not do_not_track_inventory and in_stock != old_stock) else []),
                         details={"part_number": part_number})

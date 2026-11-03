@@ -18,10 +18,11 @@ import {
 import * as ImagePicker from "expo-image-picker";
 
 import { AttachmentsBlock } from "@/components/attachments-block";
+import { fmtDayShort, fmtTime, parseEventDate } from "@/components/calendar/dates";
 import { Field, SubmitButton } from "@/components/form";
 import { LaborTimer } from "@/components/labor-timer";
 import { SearchPickerModal } from "@/components/search-picker";
-import { Badge, RowCard } from "@/components/ui";
+import { Badge, KV, RowCard } from "@/components/ui";
 import { VinScannerModal } from "@/components/vin-scanner";
 import { MileageGateModal } from "@/components/mileage-gate-modal";
 import { WoAuthorizationModal } from "@/components/wo-authorization-modal";
@@ -36,6 +37,7 @@ import {
   PresetListItem,
   TimerResponse,
   VinMatch,
+  WoAppointment,
   WoFormLabor,
   WoFormPart,
   createWorkOrder,
@@ -72,20 +74,72 @@ function emptyLabor(): WoFormLabor {
   return { description: "", hours: "", rate_code: "", labor_total: null, parts: [] };
 }
 
+/** Какие описания проблемы раскрыть при загрузке WO: все непустые. */
+function openIssuesFor(items: { issue_description?: string | null }[]): Record<number, boolean> {
+  const open: Record<number, boolean> = {};
+  items.forEach((l, i) => {
+    if ((l.issue_description || "").trim()) open[i] = true;
+  });
+  return open;
+}
+
+/** Пустой единственный лейбор заменяем, иначе добавляем новые. */
+function appendLabors(prev: WoFormLabor[], added: WoFormLabor[]): WoFormLabor[] {
+  const only = prev.length === 1 && !prev[0].description && prev[0].parts.length === 0;
+  return only ? added : [...prev, ...added];
+}
+
+// Заметка записи такой длины становится самой строкой работы (как на вебе),
+// длиннее — описанием проблемы.
+const NOTE_AS_JOB_MAX_LEN = 200;
+
+/** «Wed, Aug 5 · 14:00 – 16:00» — время записи настенное (магазина), как в календаре и в деталке WO. */
+function appointmentWhen(a: WoAppointment): string {
+  const start = parseEventDate(a.start_time || "");
+  if (Number.isNaN(start.getTime())) return a.start_time || "";
+  const end = parseEventDate(a.end_time || "");
+  const range = Number.isNaN(end.getTime()) ? fmtTime(start) : `${fmtTime(start)} – ${fmtTime(end)}`;
+  return `${fmtDayShort(start)} · ${range}`;
+}
+
+// Статусы записей настраиваются по магазину — тона только для дефолтных ключей.
+const APPOINTMENT_TONES: Record<string, "success" | "warning" | "muted" | "danger" | "info"> = {
+  scheduled: "info",
+  confirmed: "success",
+  in_progress: "warning",
+  completed: "success",
+  cancelled: "muted",
+};
+
+/** Ключ статуса записи → подпись («in_progress» → «In progress»). */
+function appointmentStatusLabel(key: string): string {
+  const s = String(key || "").replace(/_/g, " ").trim();
+  return s ? s[0].toUpperCase() + s.slice(1) : "";
+}
+
 export default function WorkOrderFormScreen() {
   const {
     id,
     customerId: presetCustomerId,
+    customerLabel: presetCustomerLabel,
     unitId: presetUnitId,
     mileage: presetMileage,
     calendarEventId,
+    presetIds: appointmentPresetIds,
+    note: appointmentNote,
   } = useLocalSearchParams<{
     id?: string;
     customerId?: string;
+    /** Имя клиента из записи календаря: у механика нет customers.view, деталку клиента он не загрузит. */
+    customerLabel?: string;
     unitId?: string;
     mileage?: string;
     /** «Create work order» из записи календаря — после создания привязываем её к WO. */
     calendarEventId?: string;
+    /** Пресеты записи (id через запятую) — офис применяет их в форме сам. */
+    presetIds?: string;
+    /** Заметка записи — в описание проблемы первой работы (без пресетов — сама работа). */
+    note?: string;
   }>();
   const isEdit = !!id;
   const theme = useTheme();
@@ -124,6 +178,9 @@ export default function WorkOrderFormScreen() {
     mechanic_done: boolean;
     customer_email: string;
   } | null>(null);
+  // Записи календаря, привязанные к WO — сервер отдаёт их и механику (без денег).
+  // В зависимости автосейва не входят: это только отображение.
+  const [appointments, setAppointments] = useState<WoAppointment[]>([]);
   const [mileage, setMileage] = useState("");
   // Обязательный пробег: окно открыто, пока механик не подтвердит одометр.
   const [mileageGate, setMileageGate] = useState(false);
@@ -143,6 +200,8 @@ export default function WorkOrderFormScreen() {
   const suppressAutosave = useRef(false);
   // Структурные изменения (пресет, парты) сохраняем сразу, без debounce.
   const flushAutosave = useRef(false);
+  // Пресеты/заметка записи календаря применяются к форме один раз.
+  const appointmentPrefillDone = useRef(false);
 
   const isPaid = woMeta?.status === "paid";
 
@@ -253,6 +312,7 @@ export default function WorkOrderFormScreen() {
             mechanic_done: !!wo.mechanic_done,
             customer_email: wo.customer_email || "",
           });
+          setAppointments(Array.isArray(wo.appointments) ? wo.appointments : []);
           const lastKnown = wo.unit.mileage != null && wo.unit.mileage !== "" ? String(wo.unit.mileage) : "";
           // Пробег, только что подтверждённый при создании WO (router.replace
           // перемонтирует форму) — второй раз не спрашиваем.
@@ -287,6 +347,10 @@ export default function WorkOrderFormScreen() {
               }))
             );
           }
+          // Описания проблемы (в т.ч. заметка записи календаря, которую
+          // сервер положил в первую работу) видны сразу: после создания WO
+          // форма перемонтируется (router.replace) со свёрнутыми полями.
+          setIssueOpen(openIssuesFor(wo.labors));
         } else if (isEdit && id) {
           const wo = await fetchWorkOrderDetails(id);
           setCustomer({ id: wo.customer_id, label: wo.cust_name });
@@ -317,16 +381,33 @@ export default function WorkOrderFormScreen() {
                 })),
               }))
             );
+            setIssueOpen(openIssuesFor(raw));
           }
         } else if (presetCustomerId) {
-          const c = await fetchCustomerDetails(presetCustomerId);
-          setCustomer({ id: c.id, label: c.label });
-          const opts = c.units.map((u) => ({ id: u.id, label: u.label, mileage: u.mileage ?? null }));
+          // Механик без customers.view деталку клиента не получит: юниты —
+          // из WO-эндпоинта, имя клиента — параметром из записи календаря.
+          let opts: UnitOption[];
+          if (isMechanic) {
+            setCustomer({ id: presetCustomerId, label: String(presetCustomerLabel || "").trim() || "Customer" });
+            opts = await fetchWoFormUnits(presetCustomerId);
+          } else {
+            const c = await fetchCustomerDetails(presetCustomerId);
+            setCustomer({ id: c.id, label: c.label });
+            opts = c.units.map((u) => ({ id: u.id, label: u.label, mileage: u.mileage ?? null }));
+          }
           setUnits(opts);
           // Переход из общего поиска юнитов: юнит уже выбран.
           if (presetUnitId) {
             const preset = opts.find((u) => u.id === presetUnitId);
             if (preset) setUnit(preset);
+          }
+          // Переход из записи календаря (офис): пресеты записи — строками
+          // работ, заметка — в описание проблемы. Механику не подставляем
+          // ничего: его работы из записи собирает сервер при создании WO с
+          // calendar_event_id (иначе автосейв продублировал бы их).
+          if (!isMechanic && !isEdit && !appointmentPrefillDone.current) {
+            appointmentPrefillDone.current = true;
+            await applyAppointmentPrefill(presetCustomerId);
           }
         }
       } catch (e) {
@@ -502,10 +583,21 @@ export default function WorkOrderFormScreen() {
   };
 
   // ── пресеты ───────────────────────────────────────────────────────
-  const applyPreset = async (item: PresetListItem) => {
-    setPresetModal(false);
+  /**
+   * Строка работы из пресета. Механик: только парт + qty, часы/ставка пустые
+   * (сервер по preset_id берёт их из пресета и сам проставляет цены); офис:
+   * часы/ставка пресета, парты по закреплённой цене пресета, иначе по
+   * прайсинг-матрице клиента. quiet — ошибку тостом не показывать (пакетное
+   * применение из записи календаря даёт один общий тост). null — пресет не
+   * загрузился.
+   */
+  const buildLaborFromPreset = async (
+    presetId: string,
+    customerId: string,
+    opts: { quiet?: boolean } = {}
+  ): Promise<WoFormLabor | null> => {
     try {
-      const preset = await fetchPresetDetail(item.id);
+      const preset = await fetchPresetDetail(presetId);
       const parts: WoFormPart[] = [];
       for (const p of preset.parts || []) {
         if (isMechanic) {
@@ -522,7 +614,7 @@ export default function WorkOrderFormScreen() {
         if (price == null) {
           // Нет фиксированной цены — считаем по прайсинг-матрице клиента.
           try {
-            const priced = await fetchPartPrice(p.part_id, customer?.id || "");
+            const priced = await fetchPartPrice(p.part_id, customerId);
             price = priced.price;
           } catch {
             price = p.cost;
@@ -538,25 +630,68 @@ export default function WorkOrderFormScreen() {
           core_charge: p.core_has_charge ? p.core_cost || 0 : 0,
         });
       }
-      const newLabor: WoFormLabor = {
+      return {
         description: preset.name || preset.description || "",
         hours: isMechanic ? "" : preset.labor_hours != null ? String(preset.labor_hours) : "",
         rate_code: isMechanic ? "" : preset.labor_rate_code || "",
         labor_total: null,
         // Сервер по preset_id берёт часы/ставку пресета для работы механика.
-        preset_id: item.id,
+        preset_id: presetId,
         parts,
       };
-      flushAutosave.current = true;
-      setLabors((prev) => {
-        // Пустой единственный лейбор заменяем, иначе добавляем новый.
-        const only = prev.length === 1 && !prev[0].description && prev[0].parts.length === 0;
-        return only ? [newLabor] : [...prev, newLabor];
-      });
-      toast.show(`Preset "${preset.name}" applied.`, "success");
     } catch (e) {
-      toast.show(e instanceof ApiError ? e.message : "Failed to load preset.", "error");
+      if (!opts.quiet) toast.show(e instanceof ApiError ? e.message : "Failed to load preset.", "error");
+      return null;
     }
+  };
+
+  const applyPreset = async (item: PresetListItem) => {
+    setPresetModal(false);
+    const newLabor = await buildLaborFromPreset(item.id, customer?.id || "");
+    if (!newLabor) return;
+    flushAutosave.current = true;
+    setLabors((prev) => appendLabors(prev, [newLabor]));
+    toast.show(`Preset "${item.name}" applied.`, "success");
+  };
+
+  /**
+   * Переход из записи календаря (офис): каждый пресет записи — строка
+   * работы, заметка — описание проблемы первой строки. Без пресетов короткая
+   * заметка становится самой работой, длинная — описанием проблемы пустой
+   * строки. Один тост на всё.
+   */
+  const applyAppointmentPrefill = async (customerId: string) => {
+    const ids = String(appointmentPresetIds || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const note = String(appointmentNote || "").trim();
+    if (!ids.length && !note) return;
+    const built: WoFormLabor[] = [];
+    for (const pid of ids) {
+      // Последовательно: цены партов считает сервер, запрос на каждый парт.
+      const labor = await buildLaborFromPreset(pid, customerId, { quiet: true });
+      if (labor) built.push(labor);
+    }
+    if (built.length) {
+      if (note) built[0] = { ...built[0], issue_description: note };
+      setLabors((prev) => appendLabors(prev, built));
+      setIssueOpen({ 0: !!note });
+      const missing = ids.length - built.length;
+      toast.show(
+        `${built.length} preset(s) from the appointment applied${missing ? `, ${missing} could not be loaded` : ""}.`,
+        missing ? "info" : "success"
+      );
+      return;
+    }
+    if (note) {
+      const asJob = note.length <= NOTE_AS_JOB_MAX_LEN;
+      setLabors((prev) =>
+        appendLabors(prev, [asJob ? { ...emptyLabor(), description: note } : { ...emptyLabor(), issue_description: note }])
+      );
+      setIssueOpen({ 0: !asJob });
+    }
+    if (ids.length) toast.show("Could not load the appointment presets — add labors manually.", "error");
   };
 
   // ── AI-полировка описания проблемы ────────────────────────────────
@@ -684,6 +819,8 @@ export default function WorkOrderFormScreen() {
             if (l.labor_id) times[l.labor_id] = l.time;
           });
           setLaborTimes(times);
+          // Статус записи идёт за работой — после сохранения он мог смениться.
+          setAppointments(Array.isArray(fresh.appointments) ? fresh.appointments : []);
         }
       }
     } catch (e) {
@@ -780,7 +917,7 @@ export default function WorkOrderFormScreen() {
       // Коллега уже завёл WO по этому юниту (гонка или старая проверка) —
       // сервер не даёт создать дубль и возвращает тот WO: открываем его.
       if (e instanceof ApiError && e.code === "unit_has_active_work_order" && e.data?.work_order?.id) {
-        openExistingWorkOrder(e.data.work_order, e.message);
+        openExistingWorkOrder(e.data.work_order, e.message, mileage.trim());
         return;
       }
       // Провал авто-создания: разрешаем повторный триггер по выбору юнита.
@@ -793,23 +930,32 @@ export default function WorkOrderFormScreen() {
 
   // Один юнит в цеху — один WO: по юниту уже идёт работа (другой механик
   // или просто in progress) → открываем тот WO вместо создания нового.
-  const openExistingWorkOrder = (wo: UnitActiveWorkOrder, message?: string) => {
+  const openExistingWorkOrder = (wo: UnitActiveWorkOrder, message?: string, confirmedMileage?: string) => {
     autoCreateFired.current = true;
     toast.show(
       `${message || `Work order #${wo.wo_number} is already in progress for this unit.`} Opening it…`,
       "info"
     );
-    router.replace({ pathname: "/work-order-form", params: { id: wo.id } });
+    // Пробег, уже подтверждённый механиком перед созданием (путь через 409),
+    // передаём в форму того WO — юнит тот же, второй раз не спрашиваем.
+    router.replace({
+      pathname: "/work-order-form",
+      params: confirmedMileage ? { id: wo.id, mileage: confirmedMileage } : { id: wo.id },
+    });
   };
 
   // Механик: WO создаётся сам, как только выбраны клиент и юнит — но сначала
   // проверяем, не идёт ли по юниту работа уже (VIN-скан, выбор руками,
-  // переход из поиска юнитов — все пути сходятся сюда).
+  // переход из поиска юнитов — все пути сходятся сюда). Исключение — «Start
+  // work» из записи календаря: запись привязывает к WO только сервер в POST
+  // work_orders, в т.ч. когда по юниту WO уже идёт (409 — тот WO откроет
+  // обработчик в save). Открыв его отсюда, по предварительной проверке, мы
+  // оставили бы запись без привязки — поэтому проверку пропускаем.
   useEffect(() => {
     if (!isMechanic || isEdit || !customer || !unit || autoCreateFired.current) return;
     let cancelled = false;
     (async () => {
-      if (activeWoCheckedUnit.current !== unit.id) {
+      if (!calendarEventId && activeWoCheckedUnit.current !== unit.id) {
         try {
           const res = await fetchUnitActiveWorkOrder(unit.id);
           if (cancelled) return;
@@ -937,6 +1083,28 @@ export default function WorkOrderFormScreen() {
             keyboardType="number-pad"
             placeholder="e.g. 152300"
           />
+        ) : null}
+
+        {/* Записи календаря, привязанные к WO — как в деталке WO у офиса */}
+        {isMechanic && isEdit && appointments.length ? (
+          <>
+            <Text style={[styles.sectionTitle, { color: theme.muted }]}>SCHEDULED</Text>
+            {appointments.map((a, idx) => (
+              <RowCard key={a.id || String(idx)}>
+                <View style={styles.apptHeader}>
+                  <Text style={[styles.apptTitle, { color: theme.text }]} numberOfLines={1}>
+                    {appointmentWhen(a)}
+                  </Text>
+                  {a.status ? (
+                    <Badge label={appointmentStatusLabel(a.status)} tone={APPOINTMENT_TONES[a.status] || "muted"} />
+                  ) : null}
+                </View>
+                <KV label="Mechanics" value={(a.mechanics || []).map((m) => m.name).filter(Boolean).join(", ")} />
+                <KV label="Presets" value={(a.presets || []).map((p) => p.name).filter(Boolean).join(", ")} />
+                {a.note ? <Text style={[styles.apptNote, { color: theme.muted }]}>Note: {a.note}</Text> : null}
+              </RowCard>
+            ))}
+          </>
         ) : null}
 
         {/* Лейборы */}
@@ -1622,6 +1790,9 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   laborHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
+  apptHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
+  apptTitle: { fontSize: 14, fontWeight: "700", flex: 1 },
+  apptNote: { fontSize: 12, fontStyle: "italic" },
   hoursRow: { flexDirection: "row", gap: 8 },
   fieldLabel: { fontSize: 11, fontWeight: "700", letterSpacing: 1, marginTop: 10, marginBottom: 4 },
   rateRow: { flexDirection: "row", flexWrap: "wrap", gap: 6 },

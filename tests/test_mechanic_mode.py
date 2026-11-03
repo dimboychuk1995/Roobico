@@ -1852,7 +1852,8 @@ def test_mechanic_unit_history_no_money_and_excludes_current(client, mech_seed, 
         assert set(labor.keys()) == {"description", "parts"}
         assert labor["description"] == "Replace brakes"
         part = labor["parts"][0]
-        assert set(part.keys()) == {"part_number", "description", "qty"}
+        # unit / unit_short — единица измерения ("2 gal"), не деньги.
+        assert set(part.keys()) == {"part_number", "description", "qty", "unit", "unit_short"}
         assert part["qty"] == 2
     finally:
         _deactivate_wos(mongo, first["id"], second["id"])

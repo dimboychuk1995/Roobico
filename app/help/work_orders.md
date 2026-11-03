@@ -103,14 +103,35 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
    **"📷 Recognize WO"** — upload a photo/PDF of a handwritten work order and
    AI fills the jobs and parts (review before applying).
 5. **From the Calendar** — an appointment's "Create Work Order" button opens
-   this page with the customer, unit, presets, mechanic (the first one, if
-   the appointment has a crew of several) and note already in place, and
-   links the appointment to the saved WO: the calendar then shows the live
-   WO status, and the appointment's own status follows the work (In
-   Progress once a mechanic starts, Completed on Done / completed / paid).
-   On the phone a mechanic does the same with **Start work** in the
-   appointment. Every saved WO also appears on the Calendar by itself — see
-   Reports → Calendar in the help for how it is placed and colored.
+   this page with the customer, unit, one labor block per preset, the
+   whole crew of the appointment assigned to every block (even split:
+   50/50 for two mechanics) and the note already in place — a short note
+   becomes the first block's description, a long one (or one next to a
+   preset that already named the job) goes into the block's **Describe
+   Issue** text, which the mechanic sees under the job. Saving links the
+   appointment to the WO: the page then shows a **Scheduled** card at the
+   top (date, time, mechanics, presets and note of every live appointment
+   of this WO), the calendar shows the live WO status, and the appointment's
+   own status follows the work (In Progress once a mechanic starts,
+   Completed on Done / completed / paid, back to Scheduled if the office
+   reopens a job nobody has started yet — no tracked time, no payment, no
+   Done). The link keeps the two in step the other way too:
+   Transfer and a unit change move the appointment to the new
+   customer/unit, reassigning the mechanic in a labor block moves the
+   WO's future appointments to that mechanic (only the plans of the
+   mechanic you replaced; the rest of the crew keeps its slots), and
+   dragging the appointment onto another mechanic in the calendar changes
+   the labor assignments as long as nobody has tracked time on the WO
+   yet (and the person dragging may edit work orders). Change customer
+   and unit on the WO, not in the
+   appointment (its dialog keeps them read-only while linked). On the
+   phone a mechanic does the same with **Start work** in the appointment:
+   the server builds the jobs from the presets (hours, rate and pinned
+   part prices of each preset, crew on every job) and puts the note into
+   the first job's issue description — or makes the note the only job
+   line when the appointment has no presets. Every saved WO also appears on the
+   Calendar by itself — see Reports → Calendar in the help for how it is
+   placed and colored.
 
 ## Transfer to another customer
 
@@ -283,8 +304,9 @@ need to do anything special in the app.
 Type in the Part Number cell (3+ characters) to search the catalog. The
 dropdown always offers **"+ One-time part"** — a manual line with no
 inventory link (editable cost, never deducted from stock). Catalog results
-show stock, avg cost and cross-reference alternates ("⇄ Cross ref for ...")
-so you can pick an interchangeable part.
+show stock (in the part's unit of measure, e.g. "Stock: 12 gal"), avg cost
+and cross-reference alternates ("⇄ Cross ref for ...") so you can pick an
+interchangeable part.
 
 Price auto-fill precedence:
 1. customer has **Override part selling price** → price is always computed
@@ -301,6 +323,10 @@ A price you edit by hand is never overwritten.
   warnings.
 - **"+ Add Misc Charge"**: description, quantity, price, Taxable checkbox.
   Parts can also carry their own automatic misc charges from the catalog.
+- **Unit of measure**: a part counted in gallons, quarts, pounds etc. (set
+  in the parts catalog) shows its unit under the Count field ("gal") and
+  prints the quantity with it on the PDF, in emails and in the customer
+  portal ("2 gal"); parts counted in pieces show just the number.
 
 ## Tax and totals
 

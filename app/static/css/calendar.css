@@ -54,14 +54,21 @@
   min-width: 0;
 }
 
+/* one vertical rhythm for every state (normal / widened / strip): same
+   padding, top-aligned, the lane markers row always reserves its space —
+   so the header never steps or jumps when a day is widened */
+.cal-grid:not(.cal-grid--mechanics) .cal-header-row {
+  height: 88px;
+}
+
 .cal-header-cell {
   flex: 1 1 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 8px 0 4px;
+  justify-content: flex-start;
+  padding: 6px 0 4px;
   cursor: pointer;
   user-select: none;
   border-left: 1px solid #dadce0;
@@ -119,6 +126,7 @@
   overflow: hidden;
   position: relative;
   padding-top: 6px;
+  padding-bottom: 12px; /* the closing "21:00" label hangs below the last slot */
 }
 
 /* ── time gutter ── */
@@ -189,16 +197,6 @@
 
 .cal-header-cell.cal-expanded {
   background: #f8f9fa;
-}
-
-.cal-header-cell.cal-collapsed .cal-day-name {
-  font-size: .55rem;
-}
-
-.cal-header-cell.cal-collapsed .cal-day-number {
-  font-size: 1.1rem;
-  width: 30px;
-  height: 30px;
 }
 
 .cal-day-col.cal-expanded,
@@ -482,7 +480,11 @@
 .cal-unscheduled-row {
   display: flex;
   flex-shrink: 0;
-  height: 66px;
+  /* grows with its chips (narrow lane-days stack them) up to 4 chip rows
+     (18.67px chip + 3px gap, 6px padding, 1px border); past that the cell
+     shows "+N more". The hour slots are re-fitted to what is left. */
+  min-height: 34px;
+  max-height: 94px;
   border-bottom: 1px solid #dadce0;
   background: #fafbfc;
 }
@@ -514,19 +516,30 @@
   min-width: 0;
   transition: flex .25s ease;
   border-left: 1px solid #dadce0;
-  padding: 4px 4px 2px;
-  overflow-y: auto;
+  /* no horizontal padding: with flex-basis 0 it would make this cell's base
+     size 8px wider than the header cell / day column above and below, and
+     the strip would drift sideways when a day is widened (chips carry the
+     inset instead) */
+  padding: 4px 0 2px;
+  overflow: hidden;
   display: flex;
   flex-wrap: wrap;
   align-content: flex-start;
   gap: 3px;
 }
 
+/* "+N more": the rest of the chips, click shows them all (cell scrolls) */
+.cal-unscheduled-cell--all {
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+
 .cal-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  max-width: 100%;
+  max-width: calc(100% - 8px);
+  margin-left: 4px;
   padding: 1px 7px 1px 5px;
   border: 1px solid;
   border-radius: 999px;
@@ -543,6 +556,16 @@
 
 .cal-chip:hover {
   box-shadow: 0 1px 3px rgba(0, 0, 0, .25);
+}
+
+/* "+N more" chip: dashed, a button rather than a draggable card
+   (after .cal-chip so its border / weight / cursor win) */
+.cal-chip.cal-chip--more {
+  border-style: dashed;
+  border-color: #9aa0a6;
+  color: #5f6368;
+  font-weight: 600;
+  cursor: pointer;
 }
 
 .cal-chip-dot {
@@ -677,19 +700,11 @@
   z-index: 2;
 }
 
-.cal-header-cell.cal-expanded {
-  padding: 3px 0 0;
-  justify-content: flex-start;
-}
-
-.cal-header-cell.cal-expanded .cal-day-number {
-  width: 30px;
-  height: 30px;
-  font-size: 1.1rem;
-}
-
+/* the lane markers row always takes its 22px (visibility, not display),
+   so cells of every state share one height */
 .cal-lane-names {
-  display: none;
+  display: flex;
+  visibility: hidden;
   width: 100%;
   height: 22px;
   margin-top: 2px;
@@ -700,7 +715,7 @@
 /* lanes exist on every day; the normal week shows badges only, a widened
    day adds the names */
 .cal-lane-names.has-lanes {
-  display: flex;
+  visibility: visible;
 }
 
 .cal-lane-name {
@@ -718,12 +733,14 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  border-left: 1px solid #e0e0e0;
+  /* divider as an inset shadow: a border would make this lane 1px wider
+     than the first and the header line would miss the dashed body separator */
+  box-shadow: inset 1px 0 0 #e0e0e0;
   cursor: pointer;
 }
 
 .cal-lane-name:first-child {
-  border-left: 0;
+  box-shadow: none;
 }
 
 .cal-lane-name:hover .cal-mech-badge {
@@ -740,9 +757,10 @@
   display: inline;
 }
 
-/* full-width day: the other days are narrow strips — no room for markers */
+/* full-width day: the other days are narrow strips — no room for markers
+   (the row keeps its height so the header stays level) */
 .cal-grid--full .cal-header-cell.cal-collapsed .cal-lane-names {
-  display: none;
+  visibility: hidden;
 }
 
 .cal-lane-name--unassigned {

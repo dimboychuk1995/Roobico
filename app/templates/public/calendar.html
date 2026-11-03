@@ -113,6 +113,8 @@
           <input type="hidden" id="apptUnit" value="">
           <input type="text" class="form-control" id="apptUnitSearch" placeholder="Search unit..." autocomplete="off" disabled>
           <div id="apptUnitDrop" class="list-group position-absolute shadow-sm dd-scroll w-100" style="display:none;"></div>
+          {# привязанная к WO запись: клиент и юнит берутся из WO — поля заблокированы, текст ставит JS #}
+          <div class="form-text d-none" id="apptLinkedFieldsHint"></div>
         </div>
 
         <div class="mb-3 position-relative">
@@ -154,6 +156,8 @@
         <div class="mb-3">
           <label class="form-label">Status</label>
           <div id="apptStatusGroup" class="d-flex gap-2 flex-wrap"></div>
+          {# WO в работе / сделан: статус записи выводится из WO, вручную — только Cancelled #}
+          <div class="form-text d-none" id="apptStatusHint">Status follows the work order</div>
         </div>
 
         <div class="mb-3">

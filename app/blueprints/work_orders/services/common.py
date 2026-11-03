@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 from bson import ObjectId
 
+from app.constants.part_units import DEFAULT_PART_UNIT, normalize_unit, unit_short
 from app.utils.date_filters import build_date_range_filters
 from app.utils.display_datetime import format_date_mmddyyyy, format_preferred_shop_date
 
@@ -195,3 +196,47 @@ def build_preferred_date_range_filter(date_field: str, created_from=None, create
 
 def format_preferred_date_label(primary_dt, fallback_dt):
     return format_preferred_shop_date(primary_dt, fallback=fallback_dt)
+
+
+# ---------------- единицы измерения строк запчастей ----------------
+# В строке запчасти WO хранится ключ каталога (`unit`: each/gallon/quart…);
+# отсутствие поля у старых WO = each. Каталог parts держит то же значение
+# в `unit_of_measure`.
+
+def part_unit_key(value) -> str:
+    """Единица измерения с клиента/из базы → ключ каталога; пустое или
+    неизвестное значение → each (сохранение WO из-за единицы не падает)."""
+    return normalize_unit(value) or DEFAULT_PART_UNIT
+
+
+def catalog_part_unit(part_doc) -> str:
+    """Ключ единицы из документа каталога parts (`unit_of_measure`)."""
+    return part_unit_key((part_doc or {}).get("unit_of_measure"))
+
+
+def part_unit_payload(value) -> dict:
+    """Поля unit (ключ) / unit_short (подпись) для JSON-ответов по значению
+    строки WO (`unit`); пустое/неизвестное → each / ea."""
+    key = part_unit_key(value)
+    return {"unit": key, "unit_short": unit_short(key)}
+
+
+def part_unit_fields(part_doc) -> dict:
+    """То же по документу каталога parts (`unit_of_measure`) — поиск запчастей
+    на странице WO, пресеты, AI-скан бумажного WO."""
+    return part_unit_payload((part_doc or {}).get("unit_of_measure"))
+
+
+def part_qty_label(qty, unit=None) -> str:
+    """Количество строки для печати и портала: «2 gal» для не-штучной
+    единицы, просто «2» для each (как печаталось раньше)."""
+    if qty is None:
+        qty_text = ""
+    elif isinstance(qty, float):
+        qty_text = f"{qty:g}"
+    else:
+        qty_text = str(qty)
+    key = part_unit_key(unit)
+    if key == DEFAULT_PART_UNIT:
+        return qty_text
+    return f"{qty_text} {unit_short(key)}".strip()

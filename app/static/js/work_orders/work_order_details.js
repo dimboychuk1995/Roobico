@@ -428,7 +428,13 @@
         </div>
       </td>
       <td class="p-1 align-middle"><div class="p-1"><input class="form-control form-control-sm part-description" name="labors[${laborIndex}][parts][${rowIndex}][description]" maxlength="200" autocomplete="off" style="width: 96%;"></div></td>
-      <td class="p-1 align-middle"><div class="p-1"><input class="form-control form-control-sm part-qty" name="labors[${laborIndex}][parts][${rowIndex}][qty]" inputmode="numeric" style="width: 86%;"></div></td>
+      <td class="p-1 align-middle">
+        <div class="p-1">
+          <input class="form-control form-control-sm part-qty" name="labors[${laborIndex}][parts][${rowIndex}][qty]" inputmode="numeric" style="width: 86%;">
+          <input type="hidden" class="part-unit" name="labors[${laborIndex}][parts][${rowIndex}][unit]" value="">
+          <div class="small text-muted mt-1 part-unit-label" hidden></div>
+        </div>
+      </td>
       <td class="p-1 align-middle">
         <div class="p-1">
           <input class="form-control form-control-sm part-cost" name="labors[${laborIndex}][parts][${rowIndex}][cost]" inputmode="decimal" readonly tabindex="-1" style="width: 88%;">
@@ -490,6 +496,21 @@
     const input = tr.querySelector(".part-one-time");
     if (!input) return;
     input.value = enabled ? "1" : "0";
+  }
+
+  // Единица измерения строки — ключ каталога (each/gallon/quart…) в скрытом
+  // поле; подпись у количества показываем только для не-штучных единиц,
+  // each — просто число. Ручные (one-time) строки — всегда each.
+  function setRowUnit(tr, unitKey, unitShort) {
+    const key = String(unitKey || "").trim().toLowerCase() || "each";
+    const input = tr.querySelector(".part-unit");
+    if (input) input.value = key;
+    const label = tr.querySelector(".part-unit-label");
+    if (label) {
+      const text = key === "each" ? "" : String(unitShort || key).trim();
+      label.textContent = text;
+      label.hidden = !text;
+    }
   }
 
   function updatePartCostEditableState(tr) {
@@ -1298,6 +1319,49 @@
       .replaceAll("'", "&#039;");
   }
 
+  // ── "Scheduled" card: calendar appointments linked to this work order ──
+  // [{start_time, end_time, status, mechanics: [{name}], presets: [{name}], note}]
+  // Times are the shop's wall clock without a zone, exactly as the calendar
+  // stores them, so they are parsed as local time like on the calendar page.
+  // Nothing to show (no block in the template / empty list) — the card hides.
+  function renderLinkedAppointments(items) {
+    const block = document.getElementById("woScheduledBlock");
+    const list = document.getElementById("woScheduledList");
+    if (!block || !list) return;
+    const rows = (Array.isArray(items) ? items : []).filter((a) => a && a.start_time);
+    if (!rows.length) { block.style.display = "none"; return; }
+    const pad2 = (v) => String(v).padStart(2, "0");
+    const fmtTime = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+    const names = (arr) => (Array.isArray(arr) ? arr : [])
+      .map((x) => String((x && x.name) || "").trim())
+      .filter(Boolean);
+    list.innerHTML = rows.map((a) => {
+      const st = new Date(a.start_time);
+      const en = a.end_time ? new Date(a.end_time) : null;
+      let when = "—";
+      if (Number.isFinite(st.getTime())) {
+        when = st.toLocaleDateString(undefined, { weekday: "short", month: "short", day: "numeric", year: "numeric" }) +
+          " · " + fmtTime(st) + (en && Number.isFinite(en.getTime()) ? "–" + fmtTime(en) : "");
+      }
+      const status = String(a.status || "").replace(/_/g, " ");
+      const crew = names(a.mechanics);
+      const presets = names(a.presets);
+      const note = String(a.note || "").trim();
+      return (
+        '<div class="d-flex flex-wrap align-items-center gap-2 py-1">' +
+          '<span class="fw-semibold">' + escapeHtml(when) + "</span>" +
+          (status ? '<span class="badge text-bg-light border text-capitalize">' + escapeHtml(status) + "</span>" : "") +
+          (crew.length
+            ? '<span><i class="bi bi-people me-1 text-muted"></i>' + escapeHtml(crew.join(", ")) + "</span>"
+            : '<span class="text-muted">No mechanic assigned</span>') +
+          (presets.length ? '<span><i class="bi bi-lightning-charge me-1 text-muted"></i>' + escapeHtml(presets.join(", ")) + "</span>" : "") +
+          (note ? '<span class="text-muted fst-italic">' + escapeHtml(note) + "</span>" : "") +
+        "</div>"
+      );
+    }).join("");
+    block.style.display = "";
+  }
+
   function renderDropdown(dd, items) {
     const list = Array.isArray(items) ? items : [];
     const oneTimeItem = { __one_time_part: true };
@@ -1331,7 +1395,8 @@
         : "";
       const trackingText = it.do_not_track_inventory ? " • Not tracked" : "";
       const altText = it.__alt_for ? `⇄ Cross ref for ${it.__alt_for} • ` : "";
-      const meta = `${altText}Stock: ${it.in_stock ?? 0} • Avg cost: $${money(toNum(it.average_cost) ?? 0)}${trackingText}${chargesText}`;
+      const unitText = (it.unit && it.unit !== "each" && it.unit_short) ? ` ${it.unit_short}` : "";
+      const meta = `${altText}Stock: ${it.in_stock ?? 0}${unitText} • Avg cost: $${money(toNum(it.average_cost) ?? 0)}${trackingText}${chargesText}`;
       return `
         <div class="parts-dd-item${it.__alt_for ? " parts-dd-item-alt" : ""}" data-idx="${idx}">
           <div class="parts-dd-title">${escapeHtml(title)}</div>
@@ -1364,6 +1429,7 @@
 
     setOneTimePartRow(tr, false);
     updatePartCostEditableState(tr);
+    setRowUnit(tr, part?.unit, part?.unit_short);
 
     if (pn) pn.value = part.part_number || "";
     if (partIdInput) partIdInput.value = String(part?.id || "").trim();
@@ -1502,6 +1568,7 @@
     if (partIdInput) partIdInput.value = "";
     setOneTimePartRow(tr, true);
     updatePartCostEditableState(tr);
+    setRowUnit(tr, "each");
 
     const typed = String(searchText || "").trim();
     if (pn && !String(pn.value || "").trim() && typed) {
@@ -1588,6 +1655,8 @@
       tr.querySelector(".part-misc-charge-description").name = `labors[${idx}][parts][${rIdx}][misc_charge_description]`;
       tr.querySelector(".part-description").name = `labors[${idx}][parts][${rIdx}][description]`;
       tr.querySelector(".part-qty").name = `labors[${idx}][parts][${rIdx}][qty]`;
+      const unitInput = tr.querySelector(".part-unit");
+      if (unitInput) unitInput.name = `labors[${idx}][parts][${rIdx}][unit]`;
       tr.querySelector(".part-cost").name = `labors[${idx}][parts][${rIdx}][cost]`;
       tr.querySelector(".part-price").name = `labors[${idx}][parts][${rIdx}][price]`;
     });
@@ -1979,6 +2048,7 @@
         if (pid) pid.value = String(p.part_id || "");
         if (desc) desc.value = String(p.description || "");
         if (qty) qty.value = String(p.qty || 1);
+        setRowUnit(tr, p.unit, p.unit_short);
         if (cost) cost.value = (p.cost != null) ? String(p.cost) : "";
 
         // If the customer overrides part selling price, ignore the price stored
@@ -2261,6 +2331,7 @@
         setOneTimePartRow(tr, !!p?.one_time_part);
         tr.querySelector(".part-description").value = String(p?.description ?? "");
         tr.querySelector(".part-qty").value = String(p?.qty ?? "");
+        setRowUnit(tr, p?.unit, p?.unit_short);
         tr.querySelector(".part-cost").value = String(p?.cost ?? "");
         updatePartCostEditableState(tr);
         tr.querySelector(".part-price").value = String(p?.price ?? "");
@@ -2320,6 +2391,7 @@
         const one_time_part = isOneTimePartRow(tr);
         const description = String(tr.querySelector(".part-description")?.value || "").trim();
         const qty = String(tr.querySelector(".part-qty")?.value || "").trim();
+        const unit = String(tr.querySelector(".part-unit")?.value || "").trim();
         const cost = String(tr.querySelector(".part-cost")?.value || "").trim();
         const price = String(tr.querySelector(".part-price")?.value || "").trim();
         const coreCharge = String(tr.querySelector(".part-core-charge")?.value || "").trim();
@@ -2346,6 +2418,7 @@
           one_time_part,
           part_number,
           description,
+          unit,
           qty: qty === "" ? 0 : Number(qty),
           cost: cost === "" ? 0 : Number(cost),
           price: price === "" ? 0 : Number(price),
@@ -2662,6 +2735,7 @@
     const customersData = readJsonScript("customersData", []);
     const laborRates = readJsonScript("laborRatesData", []);
     const mechanicsData = readJsonScript("mechanicsData", []);
+    renderLinkedAppointments(readJsonScript("linkedAppointmentsData", []));
     let pricing = readJsonScript("partsPricingRulesData", null);
     currentPricing = pricing;
     const shopSupplyData = readJsonScript("shopSupplyData", { percentage: 0 });
@@ -4122,6 +4196,8 @@
                     core_cost: top.core_cost || 0,
                     misc_has_charge: !!top.misc_has_charge,
                     misc_charges: Array.isArray(top.misc_charges) ? top.misc_charges : [],
+                    unit: top.unit || "each",
+                    unit_short: top.unit_short || "",
                   },
                 }
               : {
@@ -4246,6 +4322,8 @@
               core_cost: c.core_cost || 0,
               misc_has_charge: !!c.misc_has_charge,
               misc_charges: Array.isArray(c.misc_charges) ? c.misc_charges : [],
+              unit: c.unit || "each",
+              unit_short: c.unit_short || "",
             },
           });
         });
@@ -4322,6 +4400,8 @@
                       core_cost: Number(it.core_cost) || 0,
                       misc_has_charge: !!it.misc_has_charge,
                       misc_charges: Array.isArray(it.misc_charges) ? it.misc_charges : [],
+                      unit: it.unit || "each",
+                      unit_short: it.unit_short || "",
                     },
                   });
                   input.value = "";
@@ -4385,6 +4465,8 @@
                 core_cost: top.core_cost || 0,
                 misc_has_charge: !!top.misc_has_charge,
                 misc_charges: Array.isArray(top.misc_charges) ? top.misc_charges : [],
+                unit: top.unit || "each",
+                unit_short: top.unit_short || "",
               },
             }
           : {
@@ -5982,45 +6064,72 @@
     applyStateFromStatus();
 
     // ── Prefill from the calendar / URL query params ──
-    // presets=id,id — apply service presets block by block;
-    // mechanic_id    — assign this mechanic (100%) to every prefilled block;
-    // note           — appointment note: labor description when the block
-    //                  has none (no preset), otherwise the issue description.
+    // presets=id,id     — apply service presets block by block;
+    // mechanic_ids=a,b  — the appointment's crew (fallback: mechanic_id, the
+    //                     first mechanic): every prefilled block without
+    //                     assignments gets the whole crew, shares split evenly
+    //                     and summing to 100 — base = floor(10000 / n) / 100,
+    //                     the first mechanic takes the remainder
+    //                     (33.34 / 33.33 / 33.33), one mechanic = 100;
+    // note              — appointment note: labor description of the first
+    //                     block when it has none and the note fits the field
+    //                     (<= 200 chars), otherwise that block's issue
+    //                     description (hidden field + dataset, so the
+    //                     "Describe Issue" modal shows it; max 4000 chars).
     if (!isCreated) {
       const urlParams = new URLSearchParams(window.location.search);
       const presetsParam = urlParams.get("presets");
-      const mechanicParam = String(urlParams.get("mechanic_id") || "").trim();
-      const noteParam = String(urlParams.get("note") || "").trim().slice(0, 200);
+      const crewParam = String(urlParams.get("mechanic_ids") || urlParams.get("mechanic_id") || "").trim();
+      const noteParam = String(urlParams.get("note") || "").trim().slice(0, 4000);
       const presetIds = presetsParam
         ? presetsParam.split(",").map(s => s.trim()).filter(Boolean)
         : [];
 
-      const prefillMechanic = Array.isArray(mechanicsData)
-        ? mechanicsData.find((m) => String(m?.id || "") === mechanicParam)
-        : null;
+      // crew members known to the shop (assignable mechanics), URL order, no duplicates
+      const prefillCrew = [];
+      crewParam.split(",").map(s => s.trim()).filter(Boolean).forEach((id) => {
+        if (prefillCrew.some((m) => String(m?.id || "") === id)) return;
+        const found = Array.isArray(mechanicsData)
+          ? mechanicsData.find((m) => String(m?.id || "") === id)
+          : null;
+        if (found) prefillCrew.push(found);
+      });
+
+      function crewShares(n) {
+        if (n <= 0) return [];
+        if (n === 1) return [100];
+        const base = Math.floor(10000 / n) / 100;
+        const shares = new Array(n).fill(base);
+        shares[0] = round2(100 - base * (n - 1));
+        return shares;
+      }
+      const crewShareList = crewShares(prefillCrew.length);
+      const crewAssignments = prefillCrew.map((m, i) => ({
+        user_id: String(m.id || ""),
+        name: String(m.name || ""),
+        role: String(m.role || ""),
+        percent: crewShareList[i],
+      }));
 
       function applyCalendarExtras() {
         const blocks = Array.from(blocksContainer.querySelectorAll(".wo-labor"));
         if (!blocks.length) return;
-        if (prefillMechanic) {
+        if (crewAssignments.length) {
           blocks.forEach((blockEl) => {
             if (getLaborAssignments(blockEl).length) return;
-            setLaborAssignments(blockEl, [{
-              user_id: String(prefillMechanic.id || ""),
-              name: String(prefillMechanic.name || ""),
-              role: String(prefillMechanic.role || ""),
-              percent: 100,
-            }]);
+            setLaborAssignments(blockEl, crewAssignments.map((a) => ({ ...a })));
           });
         }
         if (noteParam) {
           const first = blocks[0];
           const descInput = first.querySelector(".labor-description");
           const issueInput = first.querySelector(".labor-issue-description");
-          if (descInput && !String(descInput.value || "").trim()) {
+          const hasIssue = !!String(first.dataset.issueDescription || issueInput?.value || "").trim();
+          if (descInput && !String(descInput.value || "").trim() && noteParam.length <= 200) {
             descInput.value = noteParam;
-          } else if (issueInput && !String(issueInput.value || "").trim()) {
-            issueInput.value = noteParam;
+          } else if (!hasIssue) {
+            first.dataset.issueDescription = noteParam;
+            if (issueInput) issueInput.value = noteParam;
           }
         }
       }
@@ -6051,7 +6160,7 @@
             toast("Could not apply presets from the calendar.");
           }
         })();
-      } else if (prefillMechanic || noteParam) {
+      } else if (crewAssignments.length || noteParam) {
         if (editor) editor.disabled = false;
         applyCalendarExtras();
       }

@@ -44,6 +44,7 @@ from app.utils.duplicates import (
     find_duplicate_unit,
     find_duplicate_vendor,
 )
+from app.constants.part_units import DEFAULT_PART_UNIT, normalize_unit, unit_short
 from app.utils.entity_search import build_customer_search_terms, build_unit_search_terms
 from app.utils.mongo_tx import run_atomically
 from app.utils.parts_search import build_parts_search_terms
@@ -103,6 +104,10 @@ ENTITY_FIELDS = {
         {"key": "in_stock", "label": "In Stock"},
         {"key": "average_cost", "label": "Average Cost"},
         {"key": "selling_price", "label": "Selling Price"},
+        # Минимальный остаток (число → парт требует минимум; пусто → нет) и
+        # единица измерения (ключ, название или сокращение: gal / Gallon / gallons).
+        {"key": "min_stock", "label": "Min Stock"},
+        {"key": "unit_of_measure", "label": "Unit"},
     ],
     "work_orders": [
         {"key": "wo_number", "label": "WO Number"},
@@ -398,7 +403,9 @@ def _build_vendor_doc(mapped_row, shop, now, user_id):
     return doc, None
 
 
-def _build_part_doc(mapped_row, shop, now, user_id):
+def _build_part_doc(mapped_row, shop, now, user_id, warn=None):
+    """warn(reason) — необязательный колбэк для оговорок, с которыми строка
+    всё же импортируется (например, неизвестная единица измерения)."""
     part_number = _safe_str(mapped_row.get("part_number"))
     if not part_number:
         return None, "part number is empty"
@@ -407,6 +414,20 @@ def _build_part_doc(mapped_row, shop, now, user_id):
     reference = _safe_str(mapped_row.get("reference"))
     average_cost = _safe_float(mapped_row.get("average_cost"))
     selling_price = _safe_float(mapped_row.get("selling_price"))
+
+    # Минимальный остаток: число (>= 0) → парт требует минимум с этим
+    # значением; пусто / не число → минимум не задан.
+    min_stock = _safe_int(mapped_row.get("min_stock"))
+    min_stock_enabled = min_stock is not None and min_stock >= 0
+
+    # Единица измерения: ключ, название или сокращение в любом регистре;
+    # пусто → Each; неизвестная → Each с предупреждением.
+    unit_raw = _safe_str(mapped_row.get("unit_of_measure"))
+    unit = normalize_unit(unit_raw)
+    if unit is None:
+        if warn:
+            warn(f'unknown unit "{unit_raw}" — set to Each')
+        unit = DEFAULT_PART_UNIT
 
     doc = {
         "part_number": part_number,
@@ -420,6 +441,9 @@ def _build_part_doc(mapped_row, shop, now, user_id):
         "has_selling_price": selling_price is not None and selling_price > 0,
         "selling_price": selling_price,
         "do_not_track_inventory": False,
+        "min_stock_enabled": min_stock_enabled,
+        "min_stock": int(min_stock) if min_stock_enabled else 0,
+        "unit_of_measure": unit,
         "core_has_charge": False,
         "core_cost": None,
         "misc_has_charge": False,
@@ -688,12 +712,18 @@ def run_import():
     imported = 0
     skipped = 0
     errors = []
+    warnings = []
 
     def _err(i, reason):
         nonlocal skipped
         skipped += 1
         if len(errors) < MAX_ERRORS:
             errors.append(f"Row {i + 2}: {reason}")
+
+    def _warn(i, reason):
+        # Строка импортирована, но с оговоркой (например, неизвестная единица).
+        if len(warnings) < MAX_ERRORS:
+            warnings.append(f"Row {i + 2}: {reason}")
 
     # ── контекст для конкретной сущности ────────────────────────────
     customer_map = {}
@@ -812,7 +842,11 @@ def run_import():
                 imported += 1
 
             elif entity_type == "parts":
-                doc, reason = _build_part_doc(mapped_row, shop, now, user_id)
+                row_index = i
+                doc, reason = _build_part_doc(
+                    mapped_row, shop, now, user_id,
+                    warn=lambda reason, _i=row_index: _warn(_i, reason),
+                )
                 if doc is None:
                     _err(i, reason)
                     continue
@@ -857,6 +891,8 @@ def run_import():
                                  **({"customer_id": str(target_customer["_id"]), "customer": customer_display_name(target_customer)} if target_customer else {})})
     if errors:
         result["errors"] = errors
+    if warnings:
+        result["warnings"] = warnings
     return jsonify(result)
 
 
@@ -943,8 +979,11 @@ def _export_vendors(shop_db, shop_id):
 
 
 def _export_parts(shop_db, shop_id):
+    # Новые колонки — в конец, чтобы порядок существующих не менялся.
+    # Min Stock: число, если парт требует минимум, иначе пусто; Unit —
+    # сокращение (gal, qt, ea) — импорт понимает его через normalize_unit.
     headers = ["Part Number", "Description", "Reference", "In Stock",
-               "Average Cost", "Selling Price", "Active"]
+               "Average Cost", "Selling Price", "Active", "Min Stock", "Unit"]
     rows = []
     query = {"shop_id": shop_id, "merged_into": {"$exists": False}}
     for p in shop_db.parts.find(query).sort("part_number", 1):
@@ -956,6 +995,8 @@ def _export_parts(shop_db, shop_id):
             p.get("average_cost") if p.get("average_cost") is not None else "",
             p.get("selling_price") if p.get("selling_price") is not None else "",
             _yes_no(p.get("is_active")),
+            int(p.get("min_stock") or 0) if p.get("min_stock_enabled") else "",
+            unit_short(normalize_unit(p.get("unit_of_measure")) or DEFAULT_PART_UNIT),
         ])
     return headers, rows
 

@@ -470,31 +470,37 @@ def test_plan_is_superseded_by_actual_work_on_same_wo(client, cal_seed, mongo):
     assert sorted(p["superseded"] for p in plans) == [False, True]
 
 
-def test_plan_of_another_mechanic_is_not_superseded(client, cal_seed, mongo):
+def test_plan_of_another_mechanic_is_not_superseded(client, cal_seed, mongo, seed):
     """Факт одного механика заменяет только ЕГО план по этому WO: план второго
-    механика на то же время остаётся на сетке — свою часть он ещё не сделал."""
+    механика на то же время остаётся на сетке — свою часть он ещё не сделал.
+    Второй — настоящий механик магазина: чужой id в бригаду записи не
+    сохраняется (_build_mechanics)."""
     assert login(client).status_code == 302
     shop_db = mongo[SHOP_A_DB]
     base = _future_weekday(12, weekday=2, hour=15)
     day = base.strftime("%Y-%m-%d")
     wo = _insert_wo(shop_db, cal_seed, 90015, status="in_progress", work_order_date=base - timedelta(days=3))
     mech = cal_seed["mechanic"]
-    other_mech_id = str(ObjectId())
-    shop_db.wo_time_logs.insert_one({
-        "shop_id": cal_seed["shop"]["_id"], "work_order_id": wo["_id"], "wo_number": 90015,
-        "labor_id": "L90015", "user_id": mech["_id"], "user_name": "Cal Mechanic",
-        "started_at": base, "stopped_at": base + timedelta(hours=1), "seconds": 3600,
-        "created_at": base, "updated_at": base,
-    })
-    for mechanic_id, name in ((str(mech["_id"]), "Cal Mechanic"), (other_mech_id, "Other Mechanic")):
-        resp = _json(client, "post", "/calendar/api/events", {
-            "start_time": f"{day}T06:00:00", "end_time": f"{day}T20:00:00", "work_order_id": str(wo["_id"]),
-            "mechanic_id": mechanic_id, "mechanic_name": name,
+    other = _insert_mechanic(mongo, seed, cal_seed, "cal-mech-other@test.local", "Other", "Mechanic")
+    other_mech_id = str(other["_id"])
+    try:
+        shop_db.wo_time_logs.insert_one({
+            "shop_id": cal_seed["shop"]["_id"], "work_order_id": wo["_id"], "wo_number": 90015,
+            "labor_id": "L90015", "user_id": mech["_id"], "user_name": "Cal Mechanic",
+            "started_at": base, "stopped_at": base + timedelta(hours=1), "seconds": 3600,
+            "created_at": base, "updated_at": base,
         })
-        assert resp.status_code == 201, resp.get_data(as_text=True)
-    plans = [e for e in _events(client, base) if not e["is_virtual"] and e.get("work_order_id") == str(wo["_id"])]
-    by_mech = {p["mechanic_id"]: p["superseded"] for p in plans}
-    assert by_mech == {str(mech["_id"]): True, other_mech_id: False}, by_mech
+        for mechanic_id, name in ((str(mech["_id"]), "Cal Mechanic"), (other_mech_id, "Other Mechanic")):
+            resp = _json(client, "post", "/calendar/api/events", {
+                "start_time": f"{day}T06:00:00", "end_time": f"{day}T20:00:00", "work_order_id": str(wo["_id"]),
+                "mechanic_id": mechanic_id, "mechanic_name": name,
+            })
+            assert resp.status_code == 201, resp.get_data(as_text=True)
+        plans = [e for e in _events(client, base) if not e["is_virtual"] and e.get("work_order_id") == str(wo["_id"])]
+        by_mech = {p["mechanic_id"]: p["superseded"] for p in plans}
+        assert by_mech == {str(mech["_id"]): True, other_mech_id: False}, by_mech
+    finally:
+        mongo["roobico_test_master"].users.delete_one({"_id": other["_id"]})
 
 
 def test_appointment_conflicts_with_actual_timer_work(client, cal_seed, mongo):

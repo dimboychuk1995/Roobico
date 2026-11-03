@@ -13,7 +13,8 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 
-from app.blueprints.work_orders.services.common import f64, i32, round2
+from app.constants.part_units import DEFAULT_PART_UNIT
+from app.blueprints.work_orders.services.common import catalog_part_unit, f64, i32, round2
 from app.blueprints.work_orders.services.mobile_editor import suggest_part_price
 
 
@@ -200,6 +201,8 @@ def _autofill_part(shop_db, shop_id, customer_id, raw_part: dict, pinned_prices:
             "misc_charge": 0,
             "misc_charge_description": "",
             "one_time_part": False,
+            # Единица измерения — из каталога (gal/qt/…), как при выборе на вебе
+            "unit": catalog_part_unit(part_doc),
             # Временный ключ: misc-чарджи каталога, забирает
             # _attach_catalog_misc_items при сборке блока.
             "_catalog_misc_items": _catalog_misc_items(part_doc),
@@ -216,6 +219,7 @@ def _autofill_part(shop_db, shop_id, customer_id, raw_part: dict, pinned_prices:
         "misc_charge": 0,
         "misc_charge_description": "",
         "one_time_part": True,
+        "unit": DEFAULT_PART_UNIT,
     }
 
 
@@ -669,3 +673,90 @@ def reprice_wo_for_customer(shop_db, shop, wo: dict, customer_id) -> dict:
         totals, locked_tax_rate, _is_customer_taxable(shop_db, customer_id)
     )
     return {"labors": labors, "totals": totals}
+
+
+def assign_crew_from_appointment(shop_db, shop, work_order_id, mechanic_ids, previous_mechanic_ids=None) -> bool:
+    """
+    Бригаду привязанной записи календаря поменяли (перетащили между
+    дорожками / модалка) — назначения строк WO следуют за ней, пока работа
+    не началась: WO open/in_progress без единого тайм-лога (идущий таймер
+    — тоже работа). Назначения — вход в payroll, поэтому роут календаря
+    зовёт функцию только у пользователя с правом work_orders.edit.
+    Какие строки переписываются (previous_mechanic_ids — прежняя бригада записи):
+      * без назначений — получают новую бригаду целиком;
+      * назначенные на прежнюю бригаду (или её часть) — тоже целиком;
+      * бригада строки шире прежней бригады записи (строка [m1, m2], запись
+        [m1] перетащена к m3) — прежние участники заменяются новыми,
+        остальные остаются: [m3, m2];
+      * без пересечения с прежней бригадой (чужие ручные назначения) и
+        строки с затреканными часами (hours_source "tracked") не трогаем.
+    Доли — поровну (crew_assignments), неизвестные/неактивные механики
+    отбрасываются. Возвращает True, если WO обновлён (updated_at сдвинут).
+    """
+    from app.blueprints.work_orders.services.appointment_prefill import crew_assignments
+    from app.blueprints.work_orders.services.common import oid, utcnow
+
+    wo_id = oid(work_order_id)
+    ids = [str(m) for m in (mechanic_ids or []) if str(m or "").strip()]
+    if not wo_id or not ids:
+        return False
+    wo = shop_db.work_orders.find_one(
+        {"_id": wo_id, "shop_id": shop["_id"], "is_active": True},
+        {"labors": 1, "status": 1},
+    )
+    if not wo or (wo.get("status") or "open").strip().lower() not in ("open", "in_progress"):
+        return False
+    # Любой тайм-лог — идущий или завершённый — значит, работа началась.
+    if shop_db.wo_time_logs.find_one({"shop_id": shop["_id"], "work_order_id": wo_id}, {"_id": 1}):
+        return False
+
+    # Назначения для одного и того же состава считаем один раз: у
+    # crew_assignments запрос к списку механиков магазина.
+    assignments_cache: dict[tuple, list[dict]] = {}
+
+    def _assignments_for(ordered_ids):
+        key = tuple(ordered_ids)
+        if key not in assignments_cache:
+            assignments_cache[key] = crew_assignments(shop, [{"id": mid} for mid in key])
+        return assignments_cache[key]
+
+    if not _assignments_for(ids):
+        return False
+    previous = {str(m) for m in (previous_mechanic_ids or [])}
+    now = utcnow()
+    changed = False
+    for idx, block in enumerate(wo.get("labors") or []):
+        if not isinstance(block, dict):
+            continue
+        labor = block.get("labor") if isinstance(block.get("labor"), dict) else {}
+        if str(labor.get("hours_source") or "").strip() == "tracked":
+            continue
+        current: list[str] = []
+        for a in (labor.get("assigned_mechanics") or block.get("assigned_mechanics") or []):
+            uid = str(a.get("user_id") or a.get("id") or "") if isinstance(a, dict) else ""
+            if uid and uid not in current:
+                current.append(uid)
+        if current and not (set(current) & previous):
+            continue  # чужие ручные назначения — эта запись их не планировала
+        # Прежняя бригада записи уступает место новой, остальные участники
+        # строки остаются (доли пересчитываются поровну).
+        others = [uid for uid in current if uid not in previous and uid not in ids]
+        assignments = _assignments_for(ids + others)
+        if not assignments:
+            continue
+        assigned = [dict(a) for a in assignments]
+        labor_id = str(block.get("labor_id") or "").strip()
+        if labor_id:
+            res = shop_db.work_orders.update_one(
+                {"_id": wo_id, "shop_id": shop["_id"], "labors.labor_id": labor_id},
+                {"$set": {"labors.$[b].labor.assigned_mechanics": assigned, "updated_at": now}},
+                array_filters=[{"b.labor_id": labor_id}],
+            )
+        else:
+            # Легаси-строка без labor_id — по позиции.
+            res = shop_db.work_orders.update_one(
+                {"_id": wo_id, "shop_id": shop["_id"]},
+                {"$set": {f"labors.{idx}.labor.assigned_mechanics": assigned, "updated_at": now}},
+            )
+        changed = changed or res.modified_count > 0
+    return changed

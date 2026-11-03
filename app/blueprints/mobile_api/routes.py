@@ -380,6 +380,10 @@ def mobile_work_order_details(work_order_id):
             "parts": parts_out,
         })
 
+    # Записи календаря, привязанные к WO (план: когда, кто, пресеты, заметка);
+    # в механик-ветке выше они приходят внутри mechanic_wo_payload.
+    from app.blueprints.calendar.services.work_orders import linked_appointments_for_wo
+
     return jsonify({
         "ok": True,
         "id": str(wo["_id"]),
@@ -390,6 +394,7 @@ def mobile_work_order_details(work_order_id):
         "unit_id": str(wo.get("unit_id") or ""),
         "raw_labors": raw_labors,
         **ctx,
+        "appointments": linked_appointments_for_wo(shop_db, shop, wo["_id"]),
     }), 200
 
 
@@ -595,16 +600,52 @@ def mobile_work_order_create():
                 "work_order": existing,
             }), 409
 
+    # Старт работы из записи календаря: то, что менеджер внёс в запись
+    # (пресеты, бригада, заметка), становится содержимым нового WO — если
+    # запись про этот юнит (или без юнита); иначе её лишь привяжем ниже.
+    # Предзаполнение — best effort: ошибки логируются, WO создаётся всё равно.
+    appointment = None
+    server_built = False  # работы собраны сервером из пресетов записи
+    if calendar_event_id:
+        from app.blueprints.work_orders.services.appointment_prefill import (
+            appointment_prefill_applies,
+            appointment_preset_labors,
+            apply_appointment_defaults,
+            crew_assignments,
+            load_appointment,
+        )
+
+        appointment = load_appointment(shop_db, shop, calendar_event_id)
+        if not appointment_prefill_applies(appointment, unit_id):
+            appointment = None
+        if appointment and not labors_payload:
+            labors_payload = appointment_preset_labors(shop_db, shop, customer_id, appointment["presets"])
+            server_built = True
+
     if not isinstance(labors_payload, list) or (not labors_payload and not is_mechanic):
         return jsonify({"ok": False, "error": "labors_required",
                         "message": "At least one labor is required."}), 400
 
     # Механик-режим: клиентские цены/часы игнорируются, сервер автозаполняет
     # цены из каталога/прайсинг-правил (как на веб-странице механика).
-    if is_mechanic:
+    # Собранные из пресетов работы уже прошли через это — второй раз не гоняем.
+    if is_mechanic and not server_built:
         from app.blueprints.work_orders.services.mechanic_editor import build_mechanic_labors_payload
 
         labors_payload = build_mechanic_labors_payload(shop_db, shop, customer_id, labors_payload)
+
+    if appointment:
+        # Бригада записи — на строки без назначений (compute_labors_and_totals
+        # сохраняет assigned_mechanics как есть, поэтому они уже нормализованы);
+        # заметка — в описание проблемы, если его ещё никто не заполнил, а без
+        # работ вообще — сама строка работы.
+        set_note = server_built or not any(
+            str(l.get("issue_description") or "").strip() for l in labors_payload if isinstance(l, dict)
+        )
+        labors_payload = apply_appointment_defaults(
+            labors_payload, crew_assignments(shop, appointment["mechanics"]), appointment["note"], set_note,
+            shop_db=shop_db, shop=shop, customer_id=customer_id,
+        )
 
     labors, totals_raw = compute_labors_and_totals(shop_db, shop, labors_payload)
     totals = align_totals_with_labors(normalize_totals_payload(totals_raw), labors)
@@ -664,7 +705,8 @@ def mobile_work_order_create():
     audit_log.log_event("create", "work_order", res.inserted_id, label=audit_log.wo_label(doc),
                         summary=f"{audit_log.wo_label(doc)} created (mobile) for {audit_log.customer_label(customer)} ({audit_log.unit_label(unit)})",
                         details={"customer_id": str(customer_id), "customer": audit_log.customer_label(customer),
-                                 "unit_id": str(unit_id), "unit": audit_log.unit_label(unit), "jobs": audit_log.labor_summary(doc)})
+                                 "unit_id": str(unit_id), "unit": audit_log.unit_label(unit), "jobs": audit_log.labor_summary(doc),
+                                 "calendar_event_id": str(calendar_event_id or "")})
 
     core_sync = sync_work_order_cores(shop_db, shop, [], labors, user_id)
 
@@ -682,7 +724,8 @@ def mobile_work_order_create():
         "id": str(res.inserted_id),
         "wo_number": doc["wo_number"],
         "status": status,
-        "grand_total": totals.get("grand_total"),
+        # Механик-режим — без денег: тотал ему не отдаём (пресеты записи делают его реальным).
+        "grand_total": None if is_mechanic else totals.get("grand_total"),
         "inventory_warnings": inventory_result.get("errors") or [],
         "core_sync_errors": core_sync.get("errors") or [],
     }), 200
@@ -1368,6 +1411,13 @@ def mobile_vendors():
 @api_login_required
 @permission_required("parts.view")
 def mobile_parts():
+    from app.blueprints.parts.services.min_stock import (
+        STOCK_LEVELS,
+        min_stock_state,
+        stock_level_filter,
+    )
+    from app.constants.part_units import DEFAULT_PART_UNIT, normalize_unit, unit_label, unit_short
+
     shop_db, shop = get_shop_db()
     if shop_db is None:
         return jsonify({"ok": False, "error": "shop_db_missing"}), 200
@@ -1375,8 +1425,16 @@ def mobile_parts():
     q = (request.args.get("q") or "").strip()
     page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
 
-    # Как на вкладке Stock веб-версии: активные позиции с остатком.
-    query = {"shop_id": shop["_id"], "is_active": True, "in_stock": {"$gt": 0}}
+    active_parts = {"shop_id": shop["_id"], "is_active": True}
+    # Фильтр «ниже / близко к минимуму» (stock_level=below|near); неизвестное
+    # значение — без фильтра. С ним ограничение «есть остаток» снимаем: нулевой
+    # запас ниже минимума — первое, что нужно увидеть.
+    level_filter = stock_level_filter(request.args.get("stock_level"))
+    if level_filter:
+        query = {"$and": [active_parts, level_filter]}
+    else:
+        # Как на вкладке Stock веб-версии: активные позиции с остатком.
+        query = {**active_parts, "in_stock": {"$gt": 0}}
     search_filter = build_regex_search_filter(
         q,
         text_fields=["part_number", "description", "reference"],
@@ -1412,12 +1470,23 @@ def mobile_parts():
     show_costs = has_permission("parts.view_costs")
     items = []
     for p in rows:
+        # Единица измерения хранится ключом каталога; нет поля / мусор → each.
+        unit_key = normalize_unit(p.get("unit_of_measure")) or DEFAULT_PART_UNIT
+        # Минимум без учёта склада (do_not_track_inventory) смысла не имеет —
+        # отдаём эффективный флаг, чтобы приложение не показывало минимум.
+        min_stock_enabled = bool(p.get("min_stock_enabled")) and not p.get("do_not_track_inventory")
         item = {
             "id": str(p["_id"]),
             "part_number": p.get("part_number") or "",
             "description": p.get("description") or "",
             "reference": p.get("reference") or "",
             "in_stock": int(p.get("in_stock") or 0),
+            "unit": unit_key,
+            "unit_short": unit_short(unit_key),
+            "unit_label": unit_label(unit_key),
+            "min_stock_enabled": min_stock_enabled,
+            "min_stock": max(0, int(p.get("min_stock") or 0)) if min_stock_enabled else 0,
+            "stock_state": min_stock_state(p),
             "cross_refs": [
                 {
                     "id": str(m["_id"]),
@@ -1435,7 +1504,20 @@ def mobile_parts():
             item["selling_price"] = float(p.get("selling_price") or 0)
         items.append(item)
 
-    return jsonify({"ok": True, "items": items, "pagination": _pagination_payload(pagination)}), 200
+    # Счётчики для чипов фильтра — по всем активным партам магазина, без учёта
+    # поиска. Как и в фильтре, «near» включает «below» (всё, что подсвечено),
+    # т.е. число в чипе = сколько строк он покажет.
+    counts = {
+        level: shop_db.parts.count_documents({"$and": [active_parts, stock_level_filter(level)]})
+        for level in STOCK_LEVELS
+    }
+
+    return jsonify({
+        "ok": True,
+        "items": items,
+        "pagination": _pagination_payload(pagination),
+        "counts": counts,
+    }), 200
 
 
 # ── Инвентаризация (stocktakes) ──────────────────────────────────────

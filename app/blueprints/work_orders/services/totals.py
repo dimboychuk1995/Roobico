@@ -9,6 +9,7 @@ import json
 
 from bson import ObjectId
 
+from app.constants.part_units import unit_short
 from app.extensions import get_master_db
 from app.utils.sales_tax import get_shop_zip_code
 from app.blueprints.work_orders.services.common import (
@@ -17,6 +18,7 @@ from app.blueprints.work_orders.services.common import (
     f64,
     i32,
     oid,
+    part_unit_key,
     round2,
     utcnow,
 )
@@ -147,6 +149,9 @@ def normalize_parts_payload(raw_parts):
         misc_charge_description = str(
             p.get("misc_charge_description") if p.get("misc_charge_description") is not None else ""
         ).strip()
+        # Единица измерения строки (ключ каталога); неизвестная/пустая → each,
+        # сохранение из-за неё не падает. Старые WO без поля читаются как each.
+        unit = part_unit_key(p.get("unit") if p.get("unit") is not None else p.get("unit_of_measure"))
 
         qty_raw = i32(p.get("qty"))
         cost_raw = f64(p.get("cost"))
@@ -175,6 +180,7 @@ def normalize_parts_payload(raw_parts):
             "part_number": part_number,
             "description": description,
             "one_time_part": one_time_part,
+            "unit": unit,
             "qty": int(qty_raw if qty_raw is not None else 0),
             "cost": round2(cost_raw if cost_raw is not None else 0),
             "price": round2(price_raw if price_raw is not None else 0),
@@ -606,10 +612,14 @@ def normalize_saved_labors(raw, shop_db=None):
                     else core_base_by_number.get(part_number_str)
                 )
 
+            # Единица измерения — для подписи у количества на странице WO
+            unit_key = part_unit_key(p.get("unit"))
             parts_out.append(
                 {
                     "part_id": part_id_str,
                     "one_time_part": as_bool(p.get("one_time_part")),
+                    "unit": unit_key,
+                    "unit_short": unit_short(unit_key),
                     "part_number": part_number_str,
                     "description": str(p.get("description") or "").strip(),
                     "qty": str(p.get("qty") if p.get("qty") is not None else ""),

@@ -195,6 +195,8 @@ def ensure_shop_collections_indexes(shop_db):
     _safe_create_index(shop_db.parts, [("search_terms", ASCENDING)], name="idx_parts_search_terms")
     # Cross references: поиск партов одной группы взаимозаменяемости.
     _safe_create_index(shop_db.parts, [("shop_id", ASCENDING), ("interchange_group", ASCENDING)], name="idx_parts_shop_interchange_group")
+    # Минимальный остаток: фильтр и счётчики «ниже / близко к минимуму» (min_stock_enabled + $expr по остатку).
+    _safe_create_index(shop_db.parts, [("shop_id", ASCENDING), ("min_stock_enabled", ASCENDING)], name="idx_parts_shop_min_stock_enabled")
 
     # Parts orders
     _safe_create_index(shop_db.parts_orders, [("shop_id", ASCENDING), ("is_active", ASCENDING), ("created_at", DESCENDING)], name="idx_parts_orders_shop_active_created_desc")

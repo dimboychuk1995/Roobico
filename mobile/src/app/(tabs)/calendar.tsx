@@ -307,9 +307,24 @@ export default function CalendarScreen() {
   };
   const createWorkOrderFrom = (ev: CalendarEvent) => {
     setDetailEvent(null);
+    // Заметка записи — непустой title, отличный от имени клиента (так
+    // календарь заполняет title, когда ничего не написали): то же правило,
+    // что у сервера (appointment_note).
+    const title = (ev.title || "").trim();
+    const note = title && title !== (ev.customer_label || "").trim() ? title : "";
     router.push({
       pathname: "/work-order-form",
-      params: { customerId: ev.customer_id || "", unitId: ev.unit_id || "", calendarEventId: ev.id },
+      params: {
+        customerId: ev.customer_id || "",
+        // У механика нет customers.view — имя клиента форма берёт отсюда.
+        customerLabel: ev.customer_label || "",
+        unitId: ev.unit_id || "",
+        calendarEventId: ev.id,
+        // Пресеты записи офис применяет в форме сам; механику работы из
+        // записи собирает сервер при создании WO с calendar_event_id.
+        presetIds: (ev.presets || []).map((p) => String(p.id || "")).filter(Boolean).join(","),
+        note,
+      },
     });
   };
 

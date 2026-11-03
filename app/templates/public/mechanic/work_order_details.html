@@ -71,6 +71,12 @@
     </div>
   </div>
 
+  {# План из календаря: записи, привязанные к этому WO (время, бригада,
+     заметка) — заполняет JS из payload.appointments; без записей скрыт #}
+  <div class="card mech-card" id="mechScheduledCard" style="display:none">
+    <div class="card-body" id="mechScheduledBody"></div>
+  </div>
+
   {# Обязательный пробег: окно не закрывается, пока механик не подтвердит
      текущий одометр (или не вернётся к списку). #}
   <div class="modal fade" id="mechMileageModal" tabindex="-1" aria-hidden="true"

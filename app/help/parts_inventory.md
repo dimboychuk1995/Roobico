@@ -12,9 +12,12 @@ Categories, storage locations and pricing scales are configured on
   reference, stock, cost, and also vendor/category/location names.
 - Columns: Part #, Description, Reference, In stock, Avg cost, Vendor,
   Category, Location, Actions. The Part # cell shows a ⇆ hint with
-  interchangeable part numbers. Location shows a per-location breakdown when
-  stock is split ("Shelf A × 3, Shelf B × 1"); stock without a location shows
-  "Unassigned".
+  interchangeable part numbers. In stock shows the quantity in the part's
+  unit of measure ("12 gal", "3 qt"; pieces show just the number) and, for
+  parts with a minimum stock, a muted "min 5" line plus a **Below min** /
+  **Near min** badge — see "Minimum stock" below. Location shows a
+  per-location breakdown when stock is split ("Shelf A × 3, Shelf B × 1");
+  stock without a location shows "Unassigned".
 - Row actions: **Cross refs**, **History**, **Locations** (tracked parts
   only), **Edit** (needs "Edit parts"), **Deactivate** (needs "Delete
   parts"). "Add Part" needs "Create parts", "Order" needs "Create parts
@@ -24,13 +27,64 @@ Categories, storage locations and pricing scales are configured on
   under the table and the Core Cost / Credit columns in Cores are shown only
   with the permission **"View part costs (avg cost / cost columns)"**;
   without it the server also strips costs from part search, history and
-  cross references, and the part form has no Average cost field.
+  cross references, and the part form has no Average cost field. Minimum
+  stock badges and the Stock level filter do not need it.
 - Status filter next to the search box: **Active parts** (default),
   **Inactive parts**, **All parts**. Inactive parts carry a grey
   **Inactive** badge and have only the **History** button.
+- **Stock level** filter (the second dropdown): **All** (default), **Below
+  minimum**, **Below or near minimum**. It keeps only parts that require a
+  minimum stock and are under it (or under / close to it); the status
+  filter and the search still apply, and the choice survives paging.
+  **Reset** clears search, status and stock level together.
 - Footer: **"Total inventory cost"** (Σ stock × avg cost) and **"Total core
   cost"** — they count the parts shown by the current filter (inactive parts
   are not in the default totals).
+
+### Minimum stock (reorder points): "Below min" and "Near min"
+
+- A part can carry a **minimum stock**: tick **"This part requires minimum
+  stock"** in the part form and type the quantity (see "Part fields"). The
+  list then compares the total on hand (all locations together) with that
+  minimum **every time the page is opened** — nothing is stored and no
+  email or push is sent; the list, its filter and the mobile app are where
+  you see it.
+- **Below min** (red badge; the row is tinted red with a red bar on the
+  left): on hand is **less than** the minimum — time to order.
+- **Near min** (amber badge; amber-tinted row): on hand is **at the minimum
+  or up to 20 % above it** — rounded up, and always at least 1 unit above.
+  Example: minimum 5 → 4 or less is Below min, 5–6 is Near min, 7 and more
+  is fine. Minimum 10 → Near min is 10–12; minimum 25 → 25–30; minimum 1 →
+  1–2. A minimum of 0 is allowed: such a part is never "below" (unless its
+  stock went negative) and shows Near min at 0–1 on hand.
+- Every part with a minimum shows a muted **"min 5"** line under its
+  quantity (with the unit: "min 5 gal"), so the threshold is visible even
+  while stock is fine. Hover the badge or that line for the exact numbers:
+  "In stock 3 · minimum 5 (near = up to 6)".
+- **Summary line.** When the current selection (status filter + search)
+  contains such parts, an amber bar appears above the table: "**3 below
+  minimum** · **2 near minimum**". The second number counts only the parts
+  inside the near window, not the ones already below. Both numbers are
+  links: the first opens the **Below minimum** filter, the second **Below
+  or near minimum** — which lists both groups, so it shows 3 + 2 = 5 rows.
+  No bar means nothing is below or near its minimum.
+- **Filtering.** Stock level **Below minimum** shows only parts under their
+  minimum; **Below or near minimum** shows everything that is highlighted.
+  Parts with **0 on hand** are included: the web list shows zero-stock
+  parts anyway, and the mobile app's Stock list — which normally hides
+  parts with nothing on hand — shows them as soon as a Below min / Near min
+  chip is selected. An empty result says "No parts below minimum" / "No
+  parts below or near minimum".
+- Parts with **"Do not track inventory"** are never flagged (the minimum is
+  switched off for them), nor are parts without a minimum. Inactive parts
+  keep their minimum and unit; with the status filter on **Inactive parts**
+  / **All parts** they are marked the same way.
+- Badges, highlighting and the filter need only **"View parts"** — users
+  without "View part costs" see them too. Setting or changing the minimum
+  is part of the part form ("Create parts" / "Edit parts") and is recorded
+  in the Activity Journal as "Requires minimum stock" / "Minimum stock".
+- On the phone the Parts tab has the same badges plus **All / Below min /
+  Near min** chips — see Mechanic Mode & Mobile App → "Parts on the phone".
 
 ### Inactive parts (and how a part becomes active again)
 
@@ -53,7 +107,8 @@ Categories, storage locations and pricing scales are configured on
 - The part's edit data keeps **reactivated_at / reactivated_by** and the
   order number that brought it back (visible to admins in the database;
   not shown in the UI).
-- There is no low-stock/min-quantity feature — no reorder points exist.
+- Deactivating does not clear the part's minimum stock or unit of measure
+  — both are back as they were when the part is reactivated.
 
 ## Part fields
 
@@ -88,11 +143,42 @@ Categories, storage locations and pricing scales are configured on
   order #) and read-only in the part form. It is the **default price when
   you add the part to a new parts order** (average cost is used only while
   the part has never been ordered). "-" means no orders yet.
+- **Unit of measure** — how the part is counted: **Each** (default),
+  Gallon, Quart, Pint, Fluid ounce, Liter, Milliliter, Pound, Ounce,
+  Kilogram, Gram, Foot, Inch, Meter, Box, Case, Pack, Pair, Set, Roll, Can,
+  Bottle, Tube, Drum, Pail, Kit. It changes labels only: quantities stay
+  whole numbers (half a gallon cannot be entered — make such a part a
+  Quart), prices and the average cost are per unit (per gallon, per quart)
+  and the pricing scale works exactly as for pieces. Where it shows: the
+  Parts list ("12 gal", "min 5 gal"), the mobile Parts tab and part screen
+  ("Unit of measure" row), the part search on a work order ("Stock: 12
+  gal"), a small "gal" / "qt" under the Count box of the WO part line, and
+  the Qty column of the printed documents — the WO / estimate PDF, the
+  emailed work order, the authorization email and page and the customer
+  portal print "2 gal" / "3 qt" (pieces print the bare number, no "ea").
+  The unit is copied onto the WO line when the part is picked (non-catalog
+  "one-time" parts are Each), so changing it on the part later does not
+  rewrite old work orders. Import / Export column **Unit**: the export
+  writes the short form (gal, qt, ea); the import accepts the name, the
+  short form or a plural in any case ("Gallon", "gal", "gallons"), empty
+  means Each and an unknown value is imported as Each.
+- **"This part requires minimum stock"** → **Minimum stock** — a whole
+  number, 0 or more, required while the box is ticked ("Minimum stock is
+  required when the part requires minimum stock" / "Minimum stock must be
+  a whole number (0 or more)"). It is the reorder point described in
+  "Minimum stock" above: below it the part is red, within 20 % above it
+  (at least 1) amber. The controls disappear while **"Do not track
+  inventory"** is on — a part without stock tracking cannot have a
+  minimum, and turning tracking off switches an existing minimum off (set
+  it again after you turn tracking back on). Unticking the box clears the
+  number. Import / Export column **Min Stock**: a number means the part
+  requires that minimum, empty means no minimum; the export writes the
+  number only for parts that have one.
 - **"This part has selling price"** → fixed **Selling price** that overrides
   the pricing scale (unless the customer has "Override part selling price").
 - **"Do not track inventory for this part"** — part stays usable on WOs and
-  orders, but stock is never adjusted (turning this on zeroes stock and
-  disables core charge).
+  orders, but stock is never adjusted (turning this on zeroes stock,
+  disables core charge and switches the minimum stock off).
 - **"This part has Core charge"** → **Core cost** (refundable deposit per
   unit).
 - **"Add Misc charge for this part"** → a list of misc charges (description,

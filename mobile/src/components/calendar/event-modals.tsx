@@ -25,6 +25,7 @@ import { useToast } from "@/context/toast";
 import {
   ApiError,
   CalendarEvent,
+  CalendarEventPayload,
   CalendarStatus,
   CustomerRow,
   createCalendarEvent,
@@ -48,6 +49,25 @@ import {
   startOfDay,
   textOn,
 } from "./dates";
+
+// Запись привязана к начатой/сделанной работе — её статус задаёт WO (сервер
+// подменяет ручной In progress/Completed на фактический): руками можно
+// только отменить запись или вернуть ей статус, который задаёт WO — так
+// восстанавливается отменённая запись. Как на вебе: статусы настраиваются
+// по магазину, неизвестный ключ — без блокировки.
+const WO_STATE_TO_STATUS: Record<string, string> = {
+  in_progress: "in_progress",
+  mechanic_done: "completed",
+  completed: "completed",
+  paid: "completed",
+};
+
+/** Статус записи, который задаёт WO; null — работа не начата, блокировки нет. */
+function statusFromWorkOrder(ev: CalendarEvent, statuses: CalendarStatus[]): string | null {
+  if (!ev.work_order_id) return null;
+  const key = WO_STATE_TO_STATUS[ev.wo_state] || null;
+  return key && statuses.some((s) => s.key === key) ? key : null;
+}
 
 // ── деталка ──────────────────────────────────────────────────────────
 
@@ -94,6 +114,8 @@ export function EventDetailModal({
     ? woStates.find((s) => s.key === event.wo_state)?.label || event.wo_state
     : "";
   const worked = (event.worked || []).filter((w) => w.seconds > 0 || w.running);
+  const woStatus = statusFromWorkOrder(event, statuses);
+  const statusLocked = woStatus !== null;
 
   const setStatus = async (key: string) => {
     if (key === event.status || busy) return;
@@ -188,13 +210,16 @@ export function EventDetailModal({
               <View style={styles.chipsRow}>
                 {statuses.map((s) => {
                   const active = event.status === s.key;
+                  const locked = statusLocked && s.key !== "cancelled" && s.key !== woStatus;
                   return (
                     <Pressable
                       key={s.key}
                       onPress={() => setStatus(s.key)}
+                      disabled={locked}
                       style={[
                         styles.statusChip,
                         { backgroundColor: active ? s.color : "transparent", borderColor: s.color },
+                        locked && !active && { opacity: 0.35 },
                       ]}
                     >
                       <Text style={{ color: active ? textOn(s.color) : s.color, fontSize: 12, fontWeight: "700" }}>
@@ -204,6 +229,9 @@ export function EventDetailModal({
                   );
                 })}
               </View>
+              {statusLocked ? (
+                <Text style={{ color: theme.muted, fontSize: 12, marginTop: 6 }}>Status follows the work order.</Text>
+              ) : null}
             </>
           ) : null}
 
@@ -314,6 +342,12 @@ export function EventFormModal({
 
   const visible = !!state;
   const isEdit = state?.mode === "edit";
+  // Привязанная запись: клиент/юнит задаёт WO (сервер отвечает 409 на их
+  // смену), статус начатой работы — тоже.
+  const linkedWo = state?.mode === "edit" ? state.event.work_order_id || "" : "";
+  const linkedWoNumber = state?.mode === "edit" ? state.event.wo_number : null;
+  const woStatus = state?.mode === "edit" ? statusFromWorkOrder(state.event, statuses) : null;
+  const statusLocked = woStatus !== null;
 
   useEffect(() => {
     if (!state) return;
@@ -379,7 +413,7 @@ export function EventFormModal({
   };
 
   const submit = async () => {
-    if (!customer) {
+    if (!customer && !linkedWo) {
       toast.show("Select a customer.", "error");
       return;
     }
@@ -389,19 +423,24 @@ export function EventFormModal({
     }
     setBusy(true);
     try {
-      const payload = {
+      const payload: CalendarEventPayload = {
         title: title.trim(),
         start_time: toIso(startMin),
         end_time: toIso(endMin),
-        customer_id: customer.id,
-        customer_label: customer.label,
-        unit_id: unit?.id || "",
-        unit_label: unit?.label || "",
         mechanic_ids: selectedMechanics.map((m) => m.id),
         mechanics: selectedMechanics,
         mechanic_id: selectedMechanics[0]?.id || "",
         mechanic_name: selectedMechanics[0]?.name || "",
         status,
+        // Клиент/юнит привязанной записи задаёт WO — не шлём их вовсе.
+        ...(linkedWo || !customer
+          ? {}
+          : {
+              customer_id: customer.id,
+              customer_label: customer.label,
+              unit_id: unit?.id || "",
+              unit_label: unit?.label || "",
+            }),
       };
       if (state?.mode === "edit") {
         await updateCalendarEvent(state.event.id, payload);
@@ -465,15 +504,27 @@ export function EventFormModal({
             />
 
             <Pressable
-              style={[styles.picker, { backgroundColor: theme.surfaceSoft, borderColor: theme.border }]}
-              onPress={() => setCustomerModal(true)}
+              style={[
+                styles.picker,
+                { backgroundColor: theme.surfaceSoft, borderColor: theme.border },
+                !!linkedWo && { opacity: 0.6 },
+              ]}
+              onPress={() => !linkedWo && setCustomerModal(true)}
+              disabled={!!linkedWo}
             >
               <Ionicons name="person-outline" size={18} color={theme.muted} />
               <Text style={{ color: customer ? theme.text : theme.muted, flex: 1 }} numberOfLines={1}>
                 {customer?.label || "Select customer…"}
               </Text>
-              <Ionicons name="chevron-forward" size={16} color={theme.muted} />
+              <Ionicons name={linkedWo ? "lock-closed-outline" : "chevron-forward"} size={16} color={theme.muted} />
             </Pressable>
+            {linkedWo ? (
+              <Text style={{ color: theme.muted, fontSize: 12, marginTop: 6 }}>
+                {linkedWoNumber
+                  ? `Customer and unit come from WO #${linkedWoNumber}.`
+                  : "Customer and unit come from the linked work order."}
+              </Text>
+            ) : null}
 
             {units.length > 0 ? (
               <View style={styles.chipsRow}>
@@ -483,12 +534,14 @@ export function EventFormModal({
                     <Pressable
                       key={u.id}
                       onPress={() => setUnit(active ? null : u)}
+                      disabled={!!linkedWo}
                       style={[
                         styles.chip,
                         {
                           backgroundColor: active ? theme.primary : theme.surfaceSoft,
                           borderColor: active ? theme.primary : theme.border,
                         },
+                        !!linkedWo && !active && { opacity: 0.5 },
                       ]}
                     >
                       <Text style={{ color: active ? "#fff" : theme.text, fontSize: 12 }} numberOfLines={1}>
@@ -565,13 +618,16 @@ export function EventFormModal({
                 <View style={styles.chipsRow}>
                   {statuses.map((s) => {
                     const active = status === s.key;
+                    const locked = statusLocked && s.key !== "cancelled" && s.key !== woStatus;
                     return (
                       <Pressable
                         key={s.key}
                         onPress={() => setStatus(s.key)}
+                        disabled={locked}
                         style={[
                           styles.statusChip,
                           { backgroundColor: active ? s.color : "transparent", borderColor: s.color },
+                          locked && !active && { opacity: 0.35 },
                         ]}
                       >
                         <Text style={{ color: active ? textOn(s.color) : s.color, fontSize: 12, fontWeight: "700" }}>
@@ -581,6 +637,9 @@ export function EventFormModal({
                     );
                   })}
                 </View>
+                {statusLocked ? (
+                  <Text style={{ color: theme.muted, fontSize: 12, marginTop: 6 }}>Status follows the work order.</Text>
+                ) : null}
               </>
             ) : null}
           </ScrollView>

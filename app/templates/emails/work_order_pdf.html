@@ -265,7 +265,7 @@
         <td>
           {{ p.description or p.part_number }}{% if p.part_number and p.description and p.part_number != p.description %} - {{ p.part_number }}{% endif %}
         </td>
-        <td class="tr">{{ "%g" | format(p.qty) }}</td>
+        <td class="tr">{{ p.qty_label }}</td>
         <td class="tr">${{ "%.2f" | format(p.price) }}</td>
         <td class="tr">${{ "%.2f" | format(p.total) }}</td>
       </tr>

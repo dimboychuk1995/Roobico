@@ -333,8 +333,13 @@ and every skipped row is listed with the reason.
   chosen customer are skipped and reported, never silently re-assigned.
 - Vendors: Vendor Name (+contact, phone, email, website, address, notes).
 - Parts: Part Number, Description, Reference, In Stock, Average Cost,
-  Selling Price. Starting stock is recorded properly: the part gets a
-  location row and an "initial" stock movement, same as manual creation.
+  Selling Price, Min Stock, Unit. Starting stock is recorded properly: the
+  part gets a location row and an "initial" stock movement, same as manual
+  creation. A number in **Min Stock** switches "This part requires minimum
+  stock" on with that value (empty = off); **Unit** accepts the unit's key,
+  name or short form in any case (gallon / Gallon / gal / gallons) and an
+  unknown unit is imported as Each. The export writes the same two columns
+  (Min Stock empty when the part has no minimum, Unit as the short form).
 - Work Orders (historical records from a previous system): **Date** and
   **Customer Name** are required; the unit is matched by Unit Number or VIN
   within that customer; Status is open / in_progress / completed / paid

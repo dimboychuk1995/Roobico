@@ -182,6 +182,22 @@ export interface PartCrossRef {
   in_stock: number;
 }
 
+/** Фильтр списка запчастей по минимуму: below — ниже минимума, near — ниже или близко к нему. */
+export type PartStockLevel = "below" | "near";
+/** Состояние запаса относительно минимума; null — минимум не задан или запаса хватает. */
+export type PartStockState = PartStockLevel | null;
+
+/** Количество с единицей измерения: «12 gal», «3 qt»; для штук (each) — просто число. */
+export function stockQty(qty: number | null | undefined, unitShort?: string | null): string {
+  const n = Number(qty ?? 0);
+  return unitShort && unitShort !== "ea" ? `${n} ${unitShort}` : String(n);
+}
+
+/** Остаток в карточках: «×12» для штук (как раньше), «12 gal» для прочих единиц. */
+export function stockLabel(qty: number | null | undefined, unitShort?: string | null): string {
+  return unitShort && unitShort !== "ea" ? stockQty(qty, unitShort) : `×${Number(qty ?? 0)}`;
+}
+
 export interface PartRow {
   id: string;
   part_number: string;
@@ -191,6 +207,13 @@ export interface PartRow {
   average_cost: number;
   selling_price: number;
   cross_refs?: PartCrossRef[];
+  /** Единица измерения и минимальный остаток; у старых серверов полей нет (= each, минимум не задан). */
+  unit?: string;
+  unit_short?: string;
+  unit_label?: string;
+  min_stock_enabled?: boolean;
+  min_stock?: number;
+  stock_state?: PartStockState;
 }
 
 export interface ListResponse<T> {
@@ -336,8 +359,19 @@ export function fetchVendors(q: string, page: number) {
   return request<ListResponse<VendorRow>>(`/api/mobile/vendors?${listQuery(q, page)}`);
 }
 
-export function fetchParts(q: string, page: number) {
-  return request<ListResponse<PartRow>>(`/api/mobile/parts?${listQuery(q, page)}`);
+export interface PartsListResponse extends ListResponse<PartRow> {
+  /**
+   * Сколько активных партов магазина ниже минимума / ниже или близко к нему
+   * (near включает below — как фильтр stock_level). Без учёта поиска.
+   */
+  counts?: { below: number; near: number };
+}
+
+export function fetchParts(q: string, page: number, opts: { stockLevel?: PartStockLevel | "" } = {}) {
+  const params = new URLSearchParams(listQuery(q, page));
+  // С фильтром по минимуму сервер показывает и нулевые остатки.
+  if (opts.stockLevel) params.set("stock_level", opts.stockLevel);
+  return request<PartsListResponse>(`/api/mobile/parts?${params.toString()}`);
 }
 
 // ── Деталки ─────────────────────────────────────────────────────────
@@ -373,6 +407,22 @@ export interface WoLaborDetail {
   misc_items: { description: string; qty: number; price: number; total: number }[];
 }
 
+/**
+ * Запись календаря, привязанная к WO (деталка WO, поле `appointments`).
+ * Время — настенные часы магазина без зоны, как у CalendarEvent; note —
+ * заметка записи (title, если это не просто имя клиента).
+ */
+export interface WoAppointment {
+  id: string;
+  start_time: string;
+  end_time: string;
+  status: string;
+  title: string;
+  note: string;
+  mechanics: { id: string; name: string }[];
+  presets: { id: string; name: string }[];
+}
+
 export interface WorkOrderDetails {
   ok: boolean;
   id: string;
@@ -391,6 +441,8 @@ export interface WorkOrderDetails {
   unit_vin: string;
   unit_mileage: string;
   labors: WoLaborDetail[];
+  /** Привязанные записи календаря; у старых серверов поля нет. */
+  appointments?: WoAppointment[];
   t: {
     labor_total: number;
     parts_total: number;
@@ -468,6 +520,7 @@ export interface MechWorkOrderDetails {
   mileage_required?: boolean;
   date: string;
   labors: MechWoLabor[];
+  appointments?: WoAppointment[];
   my_running_timer: MechRunningTimer | null;
   server_now: string;
 }
@@ -683,6 +736,13 @@ export interface PartFull {
   core_has_charge: boolean;
   core_cost: number;
   cross_refs?: PartCrossRef[];
+  /** Единица измерения и минимальный остаток; у старых серверов полей нет (= each, минимум не задан). */
+  unit_of_measure?: string;
+  unit_short?: string;
+  unit_label?: string;
+  min_stock_enabled?: boolean;
+  min_stock?: number;
+  stock_state?: PartStockState;
 }
 
 export function fetchPartFull(id: string) {

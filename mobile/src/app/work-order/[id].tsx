@@ -17,12 +17,14 @@ import {
 } from "react-native";
 
 import { AttachmentsBlock } from "@/components/attachments-block";
+import { fmtDayShort, fmtTime, parseEventDate } from "@/components/calendar/dates";
 import { Badge, KV, RowCard } from "@/components/ui";
 import { WoAuthorizationModal } from "@/components/wo-authorization-modal";
 import { useHasPermission, useIsMechanic } from "@/context/auth";
 import { useToast } from "@/context/toast";
 import {
   ApiError,
+  WoAppointment,
   WoPayments,
   WorkOrderDetails,
   deleteWoPayment,
@@ -56,6 +58,30 @@ function statusBadgeFor(status: string) {
     : status === "in_progress"
       ? <Badge label="In Progress" tone="info" />
       : <Badge label="Open" tone="warning" />;
+}
+
+/** «Wed, Aug 5 · 14:00 – 16:00» — время записи настенное (магазина), как в календаре. */
+function appointmentWhen(a: WoAppointment): string {
+  const start = parseEventDate(a.start_time || "");
+  if (Number.isNaN(start.getTime())) return a.start_time || "";
+  const end = parseEventDate(a.end_time || "");
+  const range = Number.isNaN(end.getTime()) ? fmtTime(start) : `${fmtTime(start)} – ${fmtTime(end)}`;
+  return `${fmtDayShort(start)} · ${range}`;
+}
+
+// Статусы записей настраиваются по магазину — цвета только для дефолтных ключей.
+const APPOINTMENT_TONES: Record<string, "success" | "warning" | "muted" | "danger" | "info"> = {
+  scheduled: "info",
+  confirmed: "success",
+  in_progress: "warning",
+  completed: "success",
+  cancelled: "muted",
+};
+
+/** Ключ статуса записи → подпись («in_progress» → «In progress»). */
+function appointmentStatusLabel(key: string): string {
+  const s = String(key || "").replace(/_/g, " ").trim();
+  return s ? s[0].toUpperCase() + s.slice(1) : "";
 }
 
 function ManagerWoScreen() {
@@ -200,6 +226,8 @@ function ManagerWoScreen() {
 
   const t = wo.t;
   const balance = payments?.remaining_balance ?? t.remaining_balance;
+  // Записи календаря, привязанные к WO — старый сервер поля не отдаёт.
+  const appointments: WoAppointment[] = Array.isArray(wo.appointments) ? wo.appointments : [];
   const statusBadge = wo.status === "paid"
     ? <Badge label="Paid" tone="success" />
     : wo.status === "in_progress"
@@ -253,6 +281,28 @@ function ManagerWoScreen() {
         <KV label="Mileage" value={wo.unit_mileage} />
         <KV label="Date" value={wo.wo_date_label} />
       </RowCard>
+
+      {/* Записи календаря, привязанные к WO */}
+      {appointments.length ? (
+        <>
+          <Text style={[styles.sectionTitle, { color: theme.muted }]}>SCHEDULED</Text>
+          {appointments.map((a, idx) => (
+            <RowCard key={a.id || String(idx)}>
+              <View style={styles.headerRow}>
+                <Text style={[styles.laborTitle, { color: theme.text }]} numberOfLines={1}>
+                  {appointmentWhen(a)}
+                </Text>
+                {a.status ? (
+                  <Badge label={appointmentStatusLabel(a.status)} tone={APPOINTMENT_TONES[a.status] || "muted"} />
+                ) : null}
+              </View>
+              <KV label="Mechanics" value={(a.mechanics || []).map((m) => m.name).filter(Boolean).join(", ")} />
+              <KV label="Presets" value={(a.presets || []).map((p) => p.name).filter(Boolean).join(", ")} />
+              {a.note ? <Text style={[styles.issue, { color: theme.muted }]}>Note: {a.note}</Text> : null}
+            </RowCard>
+          ))}
+        </>
+      ) : null}
 
       {/* Лейборы */}
       <Text style={[styles.sectionTitle, { color: theme.muted }]}>LABORS</Text>

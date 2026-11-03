@@ -994,6 +994,23 @@ span.flatpickr-weekday {
   background-color: #e2e8f0 !important;
 }
 
+/* ── Склад: строки ниже / близко к минимальному остатку (Parts, min stock) ── */
+.table > tbody > tr.stock-row--below > td {
+  background-color: #fef2f2;
+}
+
+.table > tbody > tr.stock-row--below > td:first-child {
+  box-shadow: inset 3px 0 0 #dc3545;
+}
+
+.table > tbody > tr.stock-row--near > td {
+  background-color: #fffbeb;
+}
+
+.table > tbody > tr.stock-row--near > td:first-child {
+  box-shadow: inset 3px 0 0 #f59e0b;
+}
+
 /* ── AI assistant widget (открывается из сайдбара) ───────────────── */
 .assistant-panel {
   position: fixed;

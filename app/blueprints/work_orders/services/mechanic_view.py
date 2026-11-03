@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from bson import ObjectId
 
-from app.blueprints.work_orders.services.common import i32, oid
+from app.blueprints.work_orders.services.common import i32, oid, part_unit_payload
 from app.blueprints.work_orders.services.lookups import customer_label, unit_label
 from app.blueprints.work_orders.services.mechanic_done import done_user_ids
 from app.blueprints.work_orders.services.time_tracking import summarize_wo_time
@@ -82,6 +82,12 @@ def mechanic_wo_payload(shop_db, shop, wo: dict, user_id) -> dict:
 
     time_summary = summarize_wo_time(shop_db, shop["_id"], wo["_id"], user_id=user_id)
 
+    # Записи календаря, привязанные к WO (план: когда, кто, пресеты, заметка).
+    # Денег в них нет — отдаём механику как есть.
+    from app.blueprints.calendar.services.work_orders import linked_appointments_for_wo
+
+    appointments = linked_appointments_for_wo(shop_db, shop, wo["_id"])
+
     labors_out = []
     my_running_timer = None
     for block in wo.get("labors") or []:
@@ -100,6 +106,8 @@ def mechanic_wo_payload(shop_db, shop, wo: dict, user_id) -> dict:
                 "description": str(p.get("description") or "").strip(),
                 "qty": i32(p.get("qty")) or 0,
                 "one_time_part": bool(p.get("one_time_part")),
+                # Единица измерения — не деньги, механику показываем («2 gal»)
+                **part_unit_payload(p.get("unit")),
             })
 
         time_bucket = time_summary.get(labor_id) or {
@@ -163,6 +171,7 @@ def mechanic_wo_payload(shop_db, shop, wo: dict, user_id) -> dict:
         "wo_mileage": wo.get("mileage"),
         "date": format_preferred_date_label(wo.get("work_order_date"), wo.get("created_at")),
         "labors": labors_out,
+        "appointments": appointments,
         "my_running_timer": my_running_timer,
     }
 
@@ -266,6 +275,7 @@ def mechanic_unit_history(shop_db, shop, unit: dict, exclude_wo_id=None, limit: 
                     "part_number": str(p.get("part_number") or "").strip(),
                     "description": str(p.get("description") or "").strip(),
                     "qty": i32(p.get("qty")) or 0,
+                    **part_unit_payload(p.get("unit")),
                 })
 
             description = str(labor_src.get("description") or "").strip()

@@ -72,6 +72,41 @@ locations" (From / To / Qty). Totals don't change.
 **Negative stock?** Work orders deliberately save even without enough stock
 (you get a warning) — fix by receiving the pending order or adjusting.
 
+**Which parts need reordering? (low stock / reorder point / minimum).**
+Give the parts a minimum first: Parts → **Edit** → tick **"This part
+requires minimum stock"** → type the minimum → Save (per part — there is
+no bulk edit; for a brand-new catalog put the numbers in the **Min Stock**
+column of the import file). From then on the Parts list marks them by
+itself: red **Below min** = fewer on hand than the minimum, amber **Near
+min** = at the minimum or within 20 % above it, at least 1 unit (minimum
+5 → 5–6 is near, 4 is below; minimum 10 → 10–12 is near). To see only
+those, pick **Below minimum** or **Below or near minimum** in the **Stock
+level** dropdown next to the search box, or click the numbers in the
+amber "3 below minimum · 2 near minimum" bar above the table. Then order:
+Parts → **Order** → add the parts (the Last price is pre-filled) → Create
+order; the marks disappear by themselves once the order is **received**
+and the stock is above the near window. Nobody is emailed or pushed about
+low stock — check the list, or on the phone the Parts tab → **Below min**
+/ **Near min** chips (they also list parts with 0 on hand).
+
+**"Near min" although stock equals the minimum — why?** The near window
+is inclusive on purpose: a part sitting exactly at its minimum is one job
+away from being below it. Set the minimum one lower if the mark should
+appear only under that quantity.
+
+**Count oil in gallons, not pieces (unit of measure).** Parts → **Edit**
+(or Add Part) → **Unit of measure** → Gallon (Quart, Pint, Liter, Pound,
+Foot, Box, Case, Pack, Pair, Set, Roll, Can, Bottle, Tube, Drum, Pail, Kit
+and a few more are available) → Save. Stock and the minimum now read
+"12 gal" / "min 5 gal" in the Parts list and the app; on a work order the
+part search shows "Stock: 12 gal", the line gets a small "gal" under
+Count, and the PDF, the emailed work order, the authorization page and
+the customer portal print "2 gal" in the Qty column. Prices stay per unit
+(per gallon) and quantities stay whole numbers — to sell half gallons make
+the part a Quart. Work orders saved earlier keep the unit they were
+written with. In the import file the column is **Unit** ("gal", "Gallon"
+or "gallons" all work; empty = Each).
+
 **Enter a vendor invoice without typing.** Parts → Order → **AI Order
 Reader**: upload the invoice PDF/photo; review matched parts, create missing
 ones ("Create & Add"), then Create order.
@@ -199,13 +234,40 @@ red **Unassigned labor** badge next to the status have a labor line with
 no mechanic. Open the WO, pick the mechanic in that labor block (and the
 split percentage if several share it), Save.
 
-**Plan a job for a mechanic.** Calendar → click the slot (in By-mechanic
-view click inside the mechanic's column) → customer, unit, presets →
-Save. To turn the plan into a WO press **Create Work Order**: customer,
-unit, presets, mechanic and note are carried over and the appointment is
-linked to the new WO, so its status updates automatically. An existing WO
-can be scheduled too: drag its chip from the "Not scheduled" strip into a
-mechanic's lane, or open it → **Add to schedule** and pick the time.
+**Plan a job for a mechanic.** Calendar → click the slot inside the
+mechanic's lane (Week) or column (By mechanic) → customer, unit (the unit
+box searches by number, make/model and VIN), presets, more mechanics if
+it is a crew job, a note for the mechanic → Save. To turn the plan into a
+WO press **Create Work Order**: customer, unit, presets, the whole crew
+and the note are carried over and the appointment is linked to the new
+WO, so its status updates automatically. Or leave it to the mechanic: on
+the phone the appointment has **Start work**, which builds the WO from
+the presets (hours, parts, crew) and shows the note under the job. An
+existing WO can be scheduled too: drag its chip from the "Not scheduled"
+strip into a mechanic's lane, or open it → **Add to schedule** and pick
+the time.
+
+**Wrong customer or unit on a linked appointment.** While an appointment
+is linked to a work order its customer and unit are read-only in the
+dialog — fix them on the work order (Transfer for the customer, the unit
+field for the unit) and the appointment follows; or press **Unlink** in
+the appointment if the link itself was the mistake. The same goes for the
+status: a linked appointment shows In Progress / Completed from the WO —
+to "reopen" it, reopen the job (mark the WO unpaid / open): if nobody has
+tracked time on it, no payment was taken and Done was not pressed, the
+appointment goes back to Scheduled; otherwise the work is a fact and it
+stays as it is. Cancelled can always be set by hand.
+
+**Move a planned job to another mechanic.** Drag the appointment into the
+other mechanic's lane (Week) or column (By mechanic) — the mechanic
+inside the appointment changes, and if it is linked to a WO the WO's
+mechanic assignments change with it (until someone has tracked time on
+the job; needs the right to edit work orders). Or do it from the WO: pick the new mechanic in the labor block
+and Save — the future appointments of the mechanic you replaced move to
+the new one (one that would collide with the new mechanic's other job
+stays with the old one; move it by hand). Plans of the other crew members
+are left alone, so a job split as "Mike on Monday, Sam on Tuesday" stays
+split; starting a timer never moves anyone's plan either.
 
 **Check the schedule from the phone (mechanic: "what's my day?").** Open
 the **Calendar** tab in the app — every role with "View calendar" has it,

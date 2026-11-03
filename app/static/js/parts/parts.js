@@ -1113,7 +1113,7 @@
 			tr.innerHTML = `
 				<td class="fw-semibold">${escapeHtml(pn)}${inactiveBadge}</td>
 				<td class="text-muted">${escapeHtml(desc) || "-"}</td>
-				<td class="text-end text-muted">${inStock}</td>
+				<td class="text-end text-muted">${inStock}${item.unit_short && item.unit_short !== 'ea' ? ' ' + item.unit_short : ''}</td>
 				<td class="text-end">
 					<input class="form-control form-control-sm text-end qty-input" type="number" min="1" step="1" value="1" required>
 				</td>
@@ -1174,7 +1174,7 @@
 				tr.innerHTML = `
 					<td class="fw-semibold">${escapeHtml(item.part_number)}</td>
 					<td class="text-muted">${escapeHtml(item.description) || "-"}</td>
-					<td class="text-end text-muted">${inStock}</td>
+					<td class="text-end text-muted">${inStock}${item.unit_short && item.unit_short !== 'ea' ? ' ' + item.unit_short : ''}</td>
 					<td class="text-end">
 						<input class="form-control form-control-sm text-end qty-input" type="number" min="1" step="1" value="${item.quantity}" required ${isReceived ? 'disabled' : ''}>
 					</td>
@@ -1253,7 +1253,7 @@
 					el.innerHTML = `
 						<div class="d-flex justify-content-between">
 							<div class="fw-semibold">${escapeHtml(item.part_number)}${inactiveInfo}</div>
-							<div class="text-muted small">${priceDisplay}${coreInfo} <span class="ms-2 badge ${inStock > 0 ? 'bg-success' : 'bg-secondary'}">${inStock} in stock</span></div>
+							<div class="text-muted small">${priceDisplay}${coreInfo} <span class="ms-2 badge ${item.stock_state === 'below' ? 'bg-danger' : item.stock_state === 'near' ? 'bg-warning text-dark' : (inStock > 0 ? 'bg-success' : 'bg-secondary')}">${inStock}${item.unit_short && item.unit_short !== 'ea' ? ' ' + item.unit_short : ''} in stock${item.stock_state === 'below' ? ' · below min' : item.stock_state === 'near' ? ' · near min' : ''}</span></div>
 						</div>
 						<div class="text-muted small">${escapeHtml(item.description)}</div>
 					`;
@@ -3131,6 +3131,12 @@
 		const sellingPriceCheckbox = document.getElementById('sellingPriceToggle');
 		const sellingPriceInput = document.getElementById('sellingPriceInput');
 		const sellingPriceGroup = document.getElementById('sellingPriceGroup');
+		// Единица измерения и минимальный остаток (reorder point).
+		const unitSelect = document.getElementById('partUnitSelect');
+		const minStockCheckbox = document.getElementById('minStockToggle');
+		const minStockInput = document.getElementById('minStockInput');
+		const minStockGroup = document.getElementById('minStockGroup');
+		const minStockToggleGroup = document.getElementById('minStockToggleGroup');
 		const form = createPartModal.querySelector('form[action*="/parts/create"]');
 		function parsePartJsonAttr(raw) {
 			if (!raw) return null;
@@ -3217,6 +3223,11 @@
 			if (sellingPriceInput) sellingPriceInput.value = item.selling_price ?? 0;
 			syncSellingPriceVisibility();
 
+			if (unitSelect) unitSelect.value = item.unit_of_measure || item.unit || 'each';
+			if (minStockCheckbox) minStockCheckbox.checked = !!item.min_stock_enabled;
+			if (minStockInput) minStockInput.value = item.min_stock_enabled ? String(item.min_stock ?? 0) : '';
+			syncMinStockVisibility();
+
 			// Show attachments block when editing
 			var attGroup = document.getElementById('partAttachmentsGroup');
 			if (attGroup) {
@@ -3274,6 +3285,38 @@
 			}
 		}
 
+		// Минимальный остаток: без учёта склада (do not track) чекбокс скрыт и
+		// снят; поле «Minimum stock» видно только при включённом чекбоксе.
+		function syncMinStockVisibility() {
+			const untracked = !!(doNotTrackInventoryCheckbox && doNotTrackInventoryCheckbox.checked);
+			if (minStockToggleGroup) minStockToggleGroup.style.display = untracked ? 'none' : '';
+			if (minStockCheckbox) {
+				minStockCheckbox.disabled = untracked;
+				if (untracked) minStockCheckbox.checked = false;
+			}
+			const show = !untracked && !!(minStockCheckbox && minStockCheckbox.checked);
+			if (minStockGroup) minStockGroup.style.display = show ? '' : 'none';
+			if (minStockInput) {
+				minStockInput.disabled = !show;
+				minStockInput.required = show;
+				if (!show) minStockInput.value = '';
+			}
+		}
+
+		function minStockRequired() {
+			return !!(minStockCheckbox && minStockCheckbox.checked && !minStockCheckbox.disabled);
+		}
+
+		// Та же проверка, что на сервере: при включённом минимуме — целое >= 0.
+		function minStockValidationError() {
+			if (!minStockRequired()) return '';
+			const raw = String(minStockInput ? minStockInput.value : '').trim();
+			if (raw === '') return 'Minimum stock is required when the part requires minimum stock';
+			const n = Number(raw);
+			if (!Number.isInteger(n) || n < 0) return 'Minimum stock must be a whole number (0 or more)';
+			return '';
+		}
+
 		function syncInStockVisibility() {
 			const hide = !!(doNotTrackInventoryCheckbox && doNotTrackInventoryCheckbox.checked);
 			if (inStockGroup) inStockGroup.style.display = hide ? 'none' : '';
@@ -3294,11 +3337,14 @@
 			if (coreCostGroup) {
 				coreCostGroup.style.display = hide ? 'none' : ((coreCheckbox && coreCheckbox.checked) ? '' : 'none');
 			}
+
+			syncMinStockVisibility();
 		}
 
 		doNotTrackInventoryCheckbox?.addEventListener('change', syncInStockVisibility);
 		coreCheckbox?.addEventListener('change', syncInStockVisibility);
 		sellingPriceCheckbox?.addEventListener('change', syncSellingPriceVisibility);
+		minStockCheckbox?.addEventListener('change', syncMinStockVisibility);
 
 		createPartModal.addEventListener('show.bs.modal', function(e) {
 			const trigger = e.relatedTarget;
@@ -3326,6 +3372,16 @@
 		// Handle form submission (both create and edit)
 		if (form) {
 			form.addEventListener('submit', async function(e) {
+				// Минимальный остаток проверяем до отправки в обоих режимах
+				// (create — обычный POST формы, edit — AJAX).
+				const minStockError = minStockValidationError();
+				if (minStockError) {
+					e.preventDefault();
+					appAlert(minStockError, 'warning');
+					if (minStockInput) minStockInput.focus();
+					return false;
+				}
+
 				// If we're in edit mode, use AJAX instead of form submission
 				if (editingPartId && editingPartId.value) {
 					e.preventDefault();
@@ -3342,6 +3398,9 @@
 						in_stock: parseInt(inStockInput.value || '0'),
 						average_cost: parseFloat(averageCostInput.value || '0'),
 						do_not_track_inventory: !!(doNotTrackInventoryCheckbox && doNotTrackInventoryCheckbox.checked),
+						unit_of_measure: unitSelect ? (unitSelect.value || 'each') : 'each',
+						min_stock_enabled: minStockRequired(),
+						min_stock: minStockRequired() ? parseInt(minStockInput.value || '0', 10) : 0,
 						has_selling_price: !!(sellingPriceCheckbox && sellingPriceCheckbox.checked),
 						selling_price: parseFloat(sellingPriceInput?.value || '0'),
 						core_has_charge: coreCheckbox.checked,

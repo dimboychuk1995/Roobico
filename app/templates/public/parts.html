@@ -10,7 +10,7 @@
   <h1 class="page-header__title">Parts</h1>
   <ul class="nav page-header__tabs" role="tablist">
     <li class="nav-item" role="presentation">
-      <a class="nav-link {% if active_tab == 'parts' %}active{% endif %}" id="tab-parts" href="{{ url_for('parts.parts_page', tab='parts', q=q, status=part_status, date_preset=date_preset, date_from=date_from, date_to=date_to) }}" role="tab" aria-controls="content-parts" aria-selected="{{ 'true' if active_tab == 'parts' else 'false' }}">Parts</a>
+      <a class="nav-link {% if active_tab == 'parts' %}active{% endif %}" id="tab-parts" href="{{ url_for('parts.parts_page', tab='parts', q=q, status=part_status, stock_level=(stock_level if stock_level != 'all' else none), date_preset=date_preset, date_from=date_from, date_to=date_to) }}" role="tab" aria-controls="content-parts" aria-selected="{{ 'true' if active_tab == 'parts' else 'false' }}">Parts</a>
     </li>
     <li class="nav-item" role="presentation">
       <a class="nav-link {% if active_tab == 'orders' %}active{% endif %}" id="tab-orders" href="{{ url_for('parts.parts_page', tab='orders', q=q, date_preset=date_preset, date_from=date_from, date_to=date_to) }}" role="tab" aria-controls="content-orders" aria-selected="{{ 'true' if active_tab == 'orders' else 'false' }}">Parts Orders</a>
@@ -62,12 +62,34 @@
           <option value="all" {% if part_status == 'all' %}selected{% endif %}>All parts</option>
         </select>
       </div>
-      {% if q or part_status != 'active' %}
+      <div class="col-auto">
+        <select name="stock_level" class="form-select form-select-sm" aria-label="Stock level" onchange="this.form.submit()"
+                title="Parts that require a minimum stock: below the minimum, or below and close to it (within 20% above, at least 1)">
+          <option value="all" {% if stock_level == 'all' %}selected{% endif %}>All</option>
+          <option value="below" {% if stock_level == 'below' %}selected{% endif %}>Below minimum</option>
+          <option value="near" {% if stock_level == 'near' %}selected{% endif %}>Below or near minimum</option>
+        </select>
+      </div>
+      {% if q or part_status != 'active' or stock_level != 'all' %}
         <div class="col-auto">
           <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('parts.parts_page', tab='parts') }}">Reset</a>
         </div>
       {% endif %}
     </form>
+
+    {% if stock_counts and (stock_counts.below or stock_counts.near) %}
+      {# Сводка по минимальному остатку в текущей выборке; ссылки включают фильтр #}
+      <div class="alert alert-warning py-2 px-3 small d-flex flex-wrap align-items-center gap-2 mb-3" role="status" id="partsStockSummary">
+        <i class="bi bi-exclamation-triangle-fill" aria-hidden="true"></i>
+        {% if stock_counts.below %}
+          <a class="alert-link" href="{{ url_for('parts.parts_page', tab='parts', q=q, status=part_status, stock_level='below') }}">{{ stock_counts.below }} below minimum</a>
+        {% endif %}
+        {% if stock_counts.below and stock_counts.near %}<span aria-hidden="true">·</span>{% endif %}
+        {% if stock_counts.near %}
+          <a class="alert-link" href="{{ url_for('parts.parts_page', tab='parts', q=q, status=part_status, stock_level='near') }}">{{ stock_counts.near }} near minimum</a>
+        {% endif %}
+      </div>
+    {% endif %}
 
     {% if parts and parts|length > 0 %}
       <div class="table-responsive">
@@ -90,7 +112,7 @@
           </thead>
           <tbody>
             {% for p in parts %}
-              <tr>
+              <tr{% if p.stock_state %} class="stock-row--{{ p.stock_state }}"{% endif %}>
                 <td class="fw-semibold">
                   {{ p.part_number }}
                   {% if p.is_active is defined and p.is_active == false %}
@@ -109,7 +131,18 @@
                   {% if p.do_not_track_inventory %}
                     <span class="text-muted">Not tracked</span>
                   {% else %}
-                    {{ p.in_stock if p.in_stock is not none else 0 }}
+                    {% set stock_qty = p.in_stock if p.in_stock is not none else 0 %}
+                    {% set unit_suffix = p.unit_short if (p.unit and p.unit != 'each') else '' %}
+                    {% set stock_tip = "In stock " ~ stock_qty ~ " · minimum " ~ p.min_stock ~ " (near = up to " ~ p.near_limit ~ ")" %}
+                    <span class="text-nowrap">{{ stock_qty }}{% if unit_suffix %} <span class="text-muted small">{{ unit_suffix }}</span>{% endif %}</span>
+                    {% if p.min_stock_enabled %}
+                      <div class="small text-muted text-nowrap" title="{{ stock_tip }}">min {{ p.min_stock }}{% if unit_suffix %} {{ unit_suffix }}{% endif %}</div>
+                      {% if p.stock_state == 'below' %}
+                        <span class="badge text-bg-danger" title="{{ stock_tip }}">Below min</span>
+                      {% elif p.stock_state == 'near' %}
+                        <span class="badge text-bg-warning" title="{{ stock_tip }}">Near min</span>
+                      {% endif %}
+                    {% endif %}
                   {% endif %}
                 </td>
                 {% if can_view_part_costs %}
@@ -233,9 +266,9 @@
           </div>
           <div class="btn-group btn-group-sm" role="group" aria-label="Parts pagination">
             <a class="btn btn-outline-secondary {% if not pagination.has_prev %}disabled{% endif %}"
-               href="{{ url_for('parts.parts_page', tab='parts', q=q, status=part_status, parts_page=pagination.prev_page, parts_per_page=pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
+               href="{{ url_for('parts.parts_page', tab='parts', q=q, status=part_status, stock_level=(stock_level if stock_level != 'all' else none), parts_page=pagination.prev_page, parts_per_page=pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Prev</a>
             <a class="btn btn-outline-secondary {% if not pagination.has_next %}disabled{% endif %}"
-               href="{{ url_for('parts.parts_page', tab='parts', q=q, status=part_status, parts_page=pagination.next_page, parts_per_page=pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
+               href="{{ url_for('parts.parts_page', tab='parts', q=q, status=part_status, stock_level=(stock_level if stock_level != 'all' else none), parts_page=pagination.next_page, parts_per_page=pagination.per_page, sort_by=sort_by, sort_dir=sort_dir) }}">Next</a>
           </div>
         </div>
       {% endif %}
@@ -248,6 +281,10 @@
         </div>
       </div>
       {% endif %}
+    {% elif stock_level == 'below' %}
+      {{ empty_state("No parts below minimum", "Every part that requires a minimum stock is at or above it.") }}
+    {% elif stock_level == 'near' %}
+      {{ empty_state("No parts below or near minimum", "Every part that requires a minimum stock has a comfortable margin above it.") }}
     {% else %}
       {{ empty_state("No parts in stock", "Add a part or receive a parts order to build up inventory.") }}
     {% endif %}
@@ -1071,6 +1108,29 @@
               <input name="last_price" type="text" class="form-control" value="" placeholder="No orders yet" disabled
                      title="Price on the latest parts order with this part — set automatically, used as the default order price" />
               <div class="form-text">From the latest parts order. Read-only.</div>
+            </div>
+
+            <div class="col-md-4">
+              <label class="form-label" for="partUnitSelect">Unit of measure</label>
+              <select name="unit_of_measure" id="partUnitSelect" class="form-select">
+                {% for u in part_units %}
+                  <option value="{{ u.key }}">{{ u.label }}{% if u.short != u.key %} ({{ u.short }}){% endif %}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">How this part is counted: each, gallon, quart…</div>
+            </div>
+
+            <div class="col-12" id="minStockToggleGroup">
+              <div class="form-check">
+                <input class="form-check-input" type="checkbox" id="minStockToggle" name="min_stock_enabled" value="1">
+                <label class="form-check-label" for="minStockToggle">This part requires minimum stock</label>
+              </div>
+              <div class="form-text">Parts below the minimum are highlighted in the list and can be filtered. "Near" = within 20% above the minimum (at least 1).</div>
+            </div>
+
+            <div class="col-md-4" id="minStockGroup" style="display:none;">
+              <label class="form-label" for="minStockInput">Minimum stock <span class="text-danger">*</span></label>
+              <input name="min_stock" id="minStockInput" type="number" min="0" step="1" value="" class="form-control" inputmode="numeric" placeholder="e.g. 5" />
             </div>
 
             <div class="col-12">

@@ -20,7 +20,7 @@
   var STEP_MINUTES = 15;
   var PX_PER_MINUTE = SLOT_HEIGHT / 60;
   var UNASSIGNED_KEY = "unassigned";
-  var UNSCHEDULED_ROW_H = 66; // strip with not-yet-scheduled work orders (see calendar.css)
+  var UNSCHEDULED_ROW_H = 66; // first-render estimate of the "Not scheduled" strip; measured afterwards
   var LS_PREFIX = "roobico.calendar.";
 
   function lsGet(key, fallback) {
@@ -38,9 +38,18 @@
     var topbar = document.querySelector('.app-topbar');
     var toolbarH = toolbar ? toolbar.offsetHeight : 0;
     var topbarH = topbar ? topbar.offsetHeight : 0;
-    var headerRowH = viewMode === "week" ? 94 : 70; // week: day name + number + lane markers row
-    // account for .app-main-pad padding (~31px), toolbar mb-2 (~8px), borders (~2px)
-    var chrome = topbarH + toolbarH + headerRowH + UNSCHEDULED_ROW_H + 42;
+    // Real heights once the grid exists (lane markers row, chips strip that
+    // grows with its chips); estimates for the very first render.
+    var headerEl = container ? container.querySelector(".cal-header-row") : null;
+    var stripEl = container ? container.querySelector(".cal-unscheduled-row") : null;
+    var headerRowH = headerEl ? headerEl.offsetHeight : (viewMode === "week" ? 94 : 70);
+    var stripH = stripEl ? stripEl.offsetHeight : UNSCHEDULED_ROW_H;
+    // Everything above the grid is measured from the container itself (page
+    // padding, topbar, toolbar); below it: grid border, body padding, page bottom.
+    var rect = container ? container.getBoundingClientRect() : null;
+    var above = rect ? rect.top + window.scrollY : topbarH + toolbarH + 40;
+    // (+12: room under the columns for the closing "21:00" label, see .cal-body-scroll)
+    var chrome = above + headerRowH + stripH + 1 + 6 + 16 + 12;
     var available = window.innerHeight - chrome;
     var numSlots = HOURS_END - HOURS_START;
     var h = Math.floor(available / numSlots);
@@ -106,6 +115,8 @@
   var elMechanicDrop    = document.getElementById("apptMechanicDrop");
   var elMechanicTags    = document.getElementById("apptMechanicTags");
   var elStatusGrp       = document.getElementById("apptStatusGroup");
+  var elStatusHint      = document.getElementById("apptStatusHint");
+  var elLinkedFieldsHint = document.getElementById("apptLinkedFieldsHint");
   var elTitleInp        = document.getElementById("apptTitle");
   var elPresetSearch    = document.getElementById("apptPresetSearch");
   var elPresetDrop      = document.getElementById("apptPresetDrop");
@@ -118,6 +129,7 @@
   var selectedPresets   = []; // [{id, name}]
   var selectedMechanics = []; // [{id, name}] — one plan, one or several mechanics
   var unlinkRequested   = false;
+  var linkedEvent       = null;  // event shown in the "Linked to WO" panel (null once unlinked)
 
   // WO modal refs
   var woModalEl   = document.getElementById("woEventModal");
@@ -432,6 +444,7 @@
         cachedEvents = Array.isArray(data) ? data : [];
         renderEvents();
         updateMechanicHeaderCounts();
+        liveSignature = null; // fresh data on screen: the next poll re-baselines instead of reloading
       })
       .catch(function (e) {
         notify("Could not load calendar events: " + (e.message || e), "error");
@@ -702,17 +715,33 @@
     return row;
   }
 
+  var MAX_CHIPS_VISIBLE = 4; // beyond that a "+N more" chip; click shows them all
+
   function renderUnscheduled() {
     var columns = getColumns();
     var cells = container.querySelectorAll(".cal-unscheduled-cell");
     for (var ci = 0; ci < columns.length; ci++) {
-      var cell = cells[ci];
-      if (!cell) continue;
-      cell.innerHTML = "";
-      var chips = columnChips(columns[ci], cachedEvents);
-      for (var k = 0; k < chips.length; k++) {
-        cell.appendChild(buildChip(chips[k]));
-      }
+      if (cells[ci]) fillChipCell(cells[ci], columnChips(columns[ci], cachedEvents), false);
+    }
+  }
+
+  /* The strip keeps to a few chip rows (see calendar.css); the rest hides
+     behind "+N more" instead of a scrollbar that would squeeze the chips. */
+  function fillChipCell(cell, chips, showAll) {
+    cell.innerHTML = "";
+    cell.classList.toggle("cal-unscheduled-cell--all", showAll);
+    var limit = showAll || chips.length <= MAX_CHIPS_VISIBLE ? chips.length : MAX_CHIPS_VISIBLE - 1;
+    for (var k = 0; k < limit; k++) cell.appendChild(buildChip(chips[k]));
+    if (limit < chips.length) {
+      var more = document.createElement("div");
+      more.className = "cal-chip cal-chip--more";
+      more.textContent = "+" + (chips.length - limit) + " more";
+      more.title = "Show every work order waiting for a slot";
+      more.addEventListener("click", function (e) {
+        e.stopPropagation();
+        fillChipCell(cell, chips, true);
+      });
+      cell.appendChild(more);
     }
   }
 
@@ -758,8 +787,11 @@
 
     for (var h = HOURS_START; h <= HOURS_END; h++) {
       var label = document.createElement("div");
-      label.className = "cal-time-label";
-      label.style.height = SLOT_HEIGHT + "px";
+      var last = h === HOURS_END;
+      label.className = "cal-time-label" + (last ? " cal-time-label--last" : "");
+      // the closing label sits on the bottom line (its text is offset by
+      // top:-5px) - it must not add a 16th slot to the gutter
+      label.style.height = (last ? 0 : SLOT_HEIGHT) + "px";
       label.textContent = pad2(h) + ":00";
       gutter.appendChild(label);
     }
@@ -828,9 +860,140 @@
     container.appendChild(grid);
 
     applyLayout();
+    // Lane markers and min-widths from the shop's mechanic list right away:
+    // the header has its final shape before the events arrive (no jump, no
+    // lane-less flash after a week change).
+    if (viewMode === "week") {
+      var preLanes = dayLanes([]);
+      var preCounts = [];
+      for (var d = 0; d < columns.length; d++) {
+        updateLaneHeader(columns[d], preLanes);
+        preCounts[columns[d].dayIndex] = preLanes.length || 1;
+      }
+      applyLaneWidths(preCounts);
+      fitSlotHeight();
+    }
     updateNowLine();
     startNowLineTimer();
     loadEvents();
+    restartLivePolling();
+  }
+
+  /* ── live refresh ──
+     Other people (and mechanics from the app) move plans and run timers
+     while this page is open: every LIVE_POLL_MS the page asks the server for
+     a signature of the visible week and reloads the events when it changed.
+     Paused while the tab is hidden, a block is being dragged or a modal is
+     open (a reload would pull the form from under the user). Only a 401 /
+     403 / 404 (no access, or an older server without the endpoint) stops the
+     polling for this page; a 5xx or a network blip is simply retried on the
+     next tick -- every LIVE_SLOW_POLL_MS after LIVE_FAILS_BEFORE_SLOW failures
+     in a row, back to LIVE_POLL_MS after the first successful poll. */
+  var LIVE_POLL_MS = 15000;
+  var LIVE_SLOW_POLL_MS = 60000;
+  var LIVE_FAILS_BEFORE_SLOW = 3;
+  var LIVE_FIRST_POLL_MS = 1000; // the baseline poll waits a moment: rapid week clicks coalesce
+  var liveTimer = null;
+  var liveFirstTimer = null;
+  var liveSignature = null;   // baseline of the current week; null = not taken yet
+  var liveBusy = false;
+  var liveStopped = false;
+  var liveFailures = 0;       // failed polls in a row (5xx / network)
+  var livePollMs = LIVE_POLL_MS;
+
+  function pollLiveSignature() {
+    if (liveStopped || liveBusy || !weekStart) return;
+    if (document.visibilityState !== "visible") return;
+    if (drag || document.querySelector(".modal.show")) return;
+    liveBusy = true;
+    var ws = toISODate(weekStart);
+    var we = toISODate(addDays(weekStart, 7));
+    var url = "/calendar/api/live_signature?start=" + ws + "T00:00:00&end=" + we + "T00:00:00";
+    fetch(url, { headers: { "Accept": "application/json" } })
+      .then(function (r) {
+        if (r.status === 401 || r.status === 403 || r.status === 404) {
+          // no access, or an older server without the endpoint: give up for this page
+          liveStopped = true;
+          stopLivePolling();
+          return null;
+        }
+        if (!r.ok) throw new Error("live_signature HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (data) {
+        if (liveStopped) return;
+        liveNoteSuccess();
+        if (!data || typeof data.signature === "undefined") return;
+        // a drag or a dialog started while the request was in flight: leave the
+        // grid alone, the next tick compares again
+        if (drag || document.querySelector(".modal.show")) return;
+        var sig = String(data.signature || "");
+        if (liveSignature === null) { liveSignature = sig; return; }
+        if (sig !== liveSignature) {
+          liveSignature = sig;
+          loadEvents();
+        }
+      })
+      .catch(function () {
+        // a 5xx or a network blip in a background poll: keep the timer, the
+        // next tick tries again (slower after a few failures in a row)
+        liveNoteFailure();
+      })
+      .then(function () { liveBusy = false; });
+  }
+
+  function stopLivePolling() {
+    if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
+    if (liveFirstTimer) { clearTimeout(liveFirstTimer); liveFirstTimer = null; }
+  }
+
+  /* Back off while the server keeps failing, so an outage is not hammered
+     every 15 s; the first good poll restores the normal pace. */
+  function setLivePollInterval(ms) {
+    if (livePollMs === ms) return;
+    livePollMs = ms;
+    if (liveTimer) {
+      clearInterval(liveTimer);
+      liveTimer = setInterval(pollLiveSignature, livePollMs);
+    }
+  }
+
+  function liveNoteFailure() {
+    liveFailures += 1;
+    if (liveFailures >= LIVE_FAILS_BEFORE_SLOW) setLivePollInterval(LIVE_SLOW_POLL_MS);
+  }
+
+  function liveNoteSuccess() {
+    liveFailures = 0;
+    setLivePollInterval(LIVE_POLL_MS);
+  }
+
+  /* Every render (week / day / view change) re-arms the poll: the signature
+     describes the visible week, so its baseline is taken afresh. */
+  function restartLivePolling() {
+    stopLivePolling();
+    liveSignature = null;
+    if (liveStopped) return;
+    liveFirstTimer = setTimeout(pollLiveSignature, LIVE_FIRST_POLL_MS);
+    liveTimer = setInterval(pollLiveSignature, livePollMs);
+  }
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.visibilityState === "visible") pollLiveSignature();
+  });
+
+  /* The chips strip and the header are measured only after they are filled:
+     if the real chrome height differs from the first estimate, resize the
+     hour slots so the day still ends at the bottom of the window. Called
+     before the blocks are placed, so they use the final slot height. */
+  function fitSlotHeight() {
+    var h = calcSlotHeight();
+    if (h === SLOT_HEIGHT) return;
+    SLOT_HEIGHT = h;
+    PX_PER_MINUTE = SLOT_HEIGHT / 60;
+    var els = container.querySelectorAll(".cal-hour-slot, .cal-time-label:not(.cal-time-label--last)");
+    for (var i = 0; i < els.length; i++) els[i].style.height = SLOT_HEIGHT + "px";
+    updateNowLine();
   }
 
   /* ── render events on grid ── */
@@ -839,7 +1002,7 @@
     var columns = getColumns();
     var colEls = container.querySelectorAll(".cal-day-col");
     for (var c = 0; c < colEls.length; c++) {
-      var old = colEls[c].querySelectorAll(".cal-event");
+      var old = colEls[c].querySelectorAll(".cal-event, .cal-lane-sep");
       for (var x = 0; x < old.length; x++) old[x].remove();
     }
     renderUnscheduled();
@@ -849,26 +1012,30 @@
       statusColors[cachedStatuses[s].key] = cachedStatuses[s].color;
     }
 
-    var laneCounts = [];
+    // Pass 1 - lanes. Week view: every day - empty future days too - is
+    // split into one lane per mechanic of the shop (same order as "By
+    // mechanic") plus "Unassigned" when something has no mechanic, so a
+    // plan always sits in its mechanic's lane and a click in a lane books
+    // that mechanic. Markers in the header name the lanes (names appear on
+    // a widened day). Header rows and min-widths are final before the slot
+    // height is fitted and the blocks are placed, so nothing moves afterwards.
+    var colEvents = [], colLanes = [], laneCounts = [];
     for (var ci = 0; ci < columns.length; ci++) {
-      var col = columns[ci];
-      var colEl = colEls[ci];
+      colEvents[ci] = columnEvents(columns[ci], cachedEvents);
+      markConflicts(colEvents[ci]);
+      colLanes[ci] = viewMode === "week" ? dayLanes(colEvents[ci]) : null;
+      updateLaneHeader(columns[ci], colLanes[ci]);
+      if (viewMode === "week") laneCounts[columns[ci].dayIndex] = colLanes[ci] && colLanes[ci].length ? colLanes[ci].length : 1;
+    }
+    applyLaneWidths(laneCounts);
+    fitSlotHeight();
+
+    // Pass 2 - blocks.
+    for (var cj = 0; cj < columns.length; cj++) {
+      var colEl = colEls[cj];
       if (!colEl) continue;
-      var oldSeps = colEl.querySelectorAll(".cal-lane-sep");
-      for (var os = 0; os < oldSeps.length; os++) oldSeps[os].remove();
-
-      var colEvents = columnEvents(col, cachedEvents);
-      markConflicts(colEvents);
-
-      // Week view: every day - empty future days too - is split into one
-      // lane per mechanic of the shop (same order as "By mechanic") plus
-      // "Unassigned" when something has no mechanic, so a plan always sits
-      // in its mechanic's lane and a click in a lane books that mechanic.
-      // Markers in the header name the lanes (names appear on a widened day).
-      var lanes = viewMode === "week" ? dayLanes(colEvents) : null;
-      updateLaneHeader(col, lanes);
-      if (viewMode === "week") laneCounts[col.dayIndex] = lanes && lanes.length ? lanes.length : 1;
-
+      var events = colEvents[cj];
+      var lanes = colLanes[cj];
       if (lanes && lanes.length) {
         var laneCount = lanes.length;
         for (var li = 0; li < laneCount; li++) {
@@ -878,7 +1045,8 @@
             sep.style.left = (li / laneCount * 100) + "%";
             colEl.appendChild(sep);
           }
-          var laneEvents = colEvents.filter(function (ev) { return eventLaneKeys(ev).indexOf(lanes[li].key) !== -1; });
+          var laneKey = lanes[li].key;
+          var laneEvents = events.filter(function (ev) { return eventLaneKeys(ev).indexOf(laneKey) !== -1; });
           var laneLayout = layoutItems(laneEvents);
           for (var la = 0; la < laneLayout.length; la++) {
             var item = laneLayout[la];
@@ -888,7 +1056,7 @@
           }
         }
       } else {
-        var layout = layoutItems(colEvents);
+        var layout = layoutItems(events);
         for (var a = 0; a < layout.length; a++) {
           renderSingleEvent(layout[a].ev, colEl, statusColors,
             layout[a].colIndex / layout[a].totalCols * 100,
@@ -896,7 +1064,6 @@
         }
       }
     }
-    applyLaneWidths(laneCounts);
   }
 
   /* Narrower lanes are unreadable: a day keeps lanes x LANE_MIN_PX and the
@@ -1262,6 +1429,17 @@
       if (cols[i] === blockEl.parentNode) { origColIdx = i; break; }
     }
 
+    // Whose lane / column the block was picked up from: a crew plan dragged
+    // into another mechanic's lane swaps exactly this member (see onDragEnd).
+    var fromLaneKey = null;
+    var origCol = getColumns()[origColIdx];
+    if (origCol && viewMode === "mechanics") {
+      fromLaneKey = origCol.unassigned ? UNASSIGNED_KEY : String(origCol.mechanicId);
+    } else if (origCol) {
+      var fromLane = laneAtX(origCol, mouseEvt.clientX, cols[origColIdx].getBoundingClientRect());
+      fromLaneKey = fromLane ? fromLane.key : null;
+    }
+
     drag = {
       evt: evt,
       el: blockEl,
@@ -1271,6 +1449,7 @@
       origTop: parseFloat(blockEl.style.top),
       origColIdx: origColIdx,
       currentColIdx: origColIdx,
+      fromLaneKey: fromLaneKey,
       cols: cols,
       inGrid: true,
       moved: false
@@ -1404,6 +1583,7 @@
     var endISO = toISODate(newDate) + "T" + pad2(endH) + ":" + pad2(endM) + ":00";
 
     var evt = drag.evt;
+    var fromLaneKey = drag.fromLaneKey;
     var dropLane = null;
     if (viewMode === "week" && targetCol && drag.cols[drag.currentColIdx]) {
       // the lane under the cursor says who the plan is for
@@ -1418,9 +1598,31 @@
     } else if (dropLane) {
       target = dropLane;
     }
-    // A plan with a crew of several mechanics keeps its crew: the lane it
-    // lands in only decides the day and time.
-    if (!isVirtual(evt) && eventMechanicIds(evt).length > 1) target = null;
+    // A crew plan (several mechanics) dragged out of one member's lane into
+    // another mechanic's lane: that member is swapped, the rest of the crew
+    // stays. Dropped on a lane of someone already in the crew, or on
+    // "Unassigned": the member is simply removed (at least one stays).
+    // Dropped back into the lane it was picked up from: a plain time change,
+    // the crew (or the single mechanic) stays as is.
+    if (target && fromLaneKey && target.key === fromLaneKey) target = null;
+    var crewIds = isVirtual(evt) ? [] : eventMechanicIds(evt);
+    if (target && crewIds.length > 1) {
+      var next = crewIds.slice();
+      var at = fromLaneKey ? next.indexOf(fromLaneKey) : -1;
+      if (target.key === UNASSIGNED_KEY || next.indexOf(target.key) !== -1) {
+        if (at !== -1 && next.length > 1) next.splice(at, 1);
+      } else if (at !== -1) {
+        next[at] = target.key;
+      } else {
+        next.push(target.key);
+      }
+      payload.mechanic_ids = next;
+      payload.mechanics = next.map(function (id) {
+        var m = mechanicById(id);
+        return { id: id, name: m ? m.name : "" };
+      });
+      target = null;
+    }
     if (target) {
       // Dropped into a mechanic column / lane - that mechanic gets the plan.
       if (target.key === UNASSIGNED_KEY) {
@@ -1547,10 +1749,15 @@
   }
 
   /* ── searchable dropdown helper ── */
-  function bindSearchable(searchInput, dropDiv, hiddenInput, items, valueFn, labelFn, onSelect) {
+  /* extraFn (optional): secondary text that is searched too but never becomes
+     the field value — e.g. a unit's VIN. Shown muted next to the label. */
+  function bindSearchable(searchInput, dropDiv, hiddenInput, items, valueFn, labelFn, onSelect, extraFn) {
     var list = items.map(function (item) {
-      return { value: valueFn(item), label: labelFn(item) };
+      return { value: valueFn(item), label: labelFn(item), extra: extraFn ? String(extraFn(item) || "") : "" };
     });
+    function matches(entry, q) {
+      return entry.label.toLowerCase().indexOf(q) !== -1 || entry.extra.toLowerCase().indexOf(q) !== -1;
+    }
 
     // Remove old listeners by cloning the search input
     var newInput = searchInput.cloneNode(true);
@@ -1571,6 +1778,12 @@
           a.className = "list-group-item list-group-item-action py-1 px-2";
           a.style.fontSize = "0.9em";
           a.textContent = entry.label;
+          if (entry.extra) {
+            var extra = document.createElement("small");
+            extra.className = "text-muted ms-2";
+            extra.textContent = entry.extra;
+            a.appendChild(extra);
+          }
           a.addEventListener("mousedown", function (e) {
             e.preventDefault();
             hiddenInput.value = entry.value;
@@ -1591,15 +1804,12 @@
         renderList(list);
         return;
       }
-      var filtered = list.filter(function (entry) {
-        return entry.label.toLowerCase().indexOf(q) !== -1;
-      });
-      renderList(filtered);
+      renderList(list.filter(function (entry) { return matches(entry, q); }));
     });
 
     newInput.addEventListener("focus", function () {
       var q = this.value.toLowerCase();
-      var filtered = q ? list.filter(function (e) { return e.label.toLowerCase().indexOf(q) !== -1; }) : list;
+      var filtered = q ? list.filter(function (entry) { return matches(entry, q); }) : list;
       renderList(filtered);
     });
 
@@ -1654,6 +1864,63 @@
     return active ? active.getAttribute("data-status") : "scheduled";
   }
 
+  /* A plan linked to a work order follows the work: once the job is running
+     or done, the appointment status is derived from the WO state (the server
+     overrides a manual In progress / Completed anyway) and only Cancelled
+     stays a manual choice. Statuses are per shop: an unknown key = no lock. */
+  var WO_STATE_TO_STATUS = { in_progress: "in_progress", mechanic_done: "completed", completed: "completed", paid: "completed" };
+
+  function statusKnown(key) {
+    for (var i = 0; i < cachedStatuses.length; i++) {
+      if (cachedStatuses[i].key === key) return true;
+    }
+    return false;
+  }
+
+  function statusForWoState(woState) {
+    var key = WO_STATE_TO_STATUS[woState] || null;
+    return key && statusKnown(key) ? key : null;
+  }
+
+  function lockedStatusKey() {
+    return linkedEvent && !unlinkRequested ? statusForWoState(linkedEvent.wo_state) : null;
+  }
+
+  function applyStatusLock() {
+    var derived = lockedStatusKey();
+    var btns = elStatusGrp.querySelectorAll(".cal-status-btn");
+    for (var i = 0; i < btns.length; i++) {
+      var key = btns[i].getAttribute("data-status");
+      btns[i].disabled = !!derived && key !== "cancelled" && key !== derived;
+    }
+    if (elStatusHint) elStatusHint.classList.toggle("d-none", !derived);
+  }
+
+  /* Customer and unit of a linked plan belong to the work order (the server
+     answers 409 to a change): the pickers are read-only until Unlink. */
+  function applyLinkedLocks() {
+    var locked = !!(linkedEvent && !unlinkRequested && elWorkOrderId.value);
+    elCustomerSearch.disabled = locked;
+    if (locked) elUnitSearch.disabled = true;
+    if (elLinkedFieldsHint) {
+      elLinkedFieldsHint.classList.toggle("d-none", !locked);
+      elLinkedFieldsHint.textContent = locked
+        ? "Customer and unit come from " + (linkedEvent.wo_number ? "WO #" + linkedEvent.wo_number : "the work order")
+        : "";
+    }
+    applyStatusLock();
+  }
+
+  /* Unit picker: searches the label (number, year, make, model) and the VIN. */
+  function bindUnitSearchable(units) {
+    bindSearchable(elUnitSearch, elUnitDrop, elUnit, units,
+      function (u) { return u.id; },
+      function (u) { return u.label; },
+      function () { updateCreateWOBtn(); },
+      function (u) { return u.vin ? "VIN " + u.vin : ""; }
+    );
+  }
+
   function loadUnitsForCustomer(customerId) {
     clearSearchable(elUnitSearch, elUnit, elUnitDrop);
     if (!customerId) {
@@ -1662,11 +1929,7 @@
     }
     elUnitSearch.disabled = false;
     loadUnits(customerId).then(function (units) {
-      bindSearchable(elUnitSearch, elUnitDrop, elUnit, units,
-        function (u) { return u.id; },
-        function (u) { return u.label; },
-        function () { updateCreateWOBtn(); }
-      );
+      bindUnitSearchable(units);
     }).catch(function () { notify("Could not load units.", "error"); });
   }
 
@@ -1678,8 +1941,9 @@
   }
 
   function renderLinkedPanel(ev) {
-    if (!elLinkedWO) return;
     var linked = !!(ev && ev.work_order_id && !unlinkRequested);
+    linkedEvent = linked ? ev : null;
+    if (!elLinkedWO) return;
     elLinkedWO.classList.toggle("d-none", !linked);
     if (!linked) return;
     var info = woStateInfo(ev.wo_state);
@@ -1743,15 +2007,12 @@
       elCustomerSearch.value = existingEvent.customer_label || "";
       if (existingEvent.customer_id) {
         loadUnits(existingEvent.customer_id).then(function (units) {
-          bindSearchable(elUnitSearch, elUnitDrop, elUnit, units,
-            function (u) { return u.id; },
-            function (u) { return u.label; },
-            function () { updateCreateWOBtn(); }
-          );
+          bindUnitSearchable(units);
           elUnitSearch.disabled = false;
           elUnit.value = existingEvent.unit_id || "";
           elUnitSearch.value = existingEvent.unit_label || "";
           updateCreateWOBtn();
+          applyLinkedLocks(); // a linked plan keeps its unit read-only
         }).catch(function () { notify("Could not load units.", "error"); });
       } else {
         elUnitSearch.disabled = true;
@@ -1775,7 +2036,12 @@
       elTitleInp.value = existingEvent.title || "";
       selectedPresets = (existingEvent.presets || []).slice();
       renderPresetTags();
-      buildStatusButtons(existingEvent.status || "scheduled");
+      // a plan whose work order is running / done shows the derived status
+      // (a Cancelled plan stays cancelled)
+      var initialStatus = existingEvent.status || "scheduled";
+      var derivedStatus = lockedStatusKey();
+      if (derivedStatus && initialStatus !== "cancelled") initialStatus = derivedStatus;
+      buildStatusButtons(initialStatus);
     } else {
       clearSearchable(elCustomerSearch, elCustomer, elCustomerDrop);
       clearSearchable(elUnitSearch, elUnit, elUnitDrop);
@@ -1799,6 +2065,7 @@
       renderMechanicTags();
     }
 
+    applyLinkedLocks();
     updateCreateWOBtn();
     getModal().show();
   }
@@ -1831,14 +2098,11 @@
       elUnit.value = ev.unit_id || "";
       elUnitSearch.value = ev.unit_label || "";
       loadUnits(ev.customer_id).then(function (units) {
-        bindSearchable(elUnitSearch, elUnitDrop, elUnit, units,
-          function (u) { return u.id; },
-          function (u) { return u.label; },
-          function () { updateCreateWOBtn(); }
-        );
+        bindUnitSearchable(units);
         elUnit.value = ev.unit_id || "";
         elUnitSearch.value = ev.unit_label || "";
         updateCreateWOBtn();
+        applyLinkedLocks();
       }).catch(function () { notify("Could not load units.", "error"); });
     }
     var hours = Number(ev.labor_hours) > 0 ? Math.min(Number(ev.labor_hours), 8) : 1;
@@ -1847,6 +2111,10 @@
     elStart.value = minutesToValue(range[0]);
     elEnd.value = minutesToValue(range[1]);
     if (Array.isArray(ev.labor_summary) && ev.labor_summary.length) elTitleInp.value = ev.labor_summary.join(", ");
+    // the status follows the work: a running / finished job is preselected
+    // as In progress / Completed rather than Scheduled
+    buildStatusButtons(statusForWoState(ev.wo_state) || "scheduled");
+    applyLinkedLocks();
     updateCreateWOBtn();
   }
 
@@ -1854,6 +2122,9 @@
     elUnlinkWOBtn.addEventListener("click", function () {
       unlinkRequested = true;
       renderLinkedPanel(null);
+      // customer, unit and status are editable again
+      applyLinkedLocks();
+      elUnitSearch.disabled = !elCustomer.value;
       updateCreateWOBtn();
       notify("The link will be removed when you save.", "info");
     });
@@ -2127,7 +2398,7 @@
 
   /* ── create work order ──
      Saves the appointment first (so the WO links back to it), then opens the
-     WO page prefilled with customer, unit, presets, mechanic and note. */
+     WO page prefilled with customer, unit, presets, the crew and the note. */
   elCreateWOBtn.addEventListener("click", function () {
     var customerId = elCustomer.value;
     var unitId = elUnit.value;
@@ -2145,8 +2416,15 @@
           var ids = selectedPresets.map(function (p) { return p.id; }).join(",");
           url += "&presets=" + encodeURIComponent(ids);
         }
-        if (selectedMechanics.length) url += "&mechanic_id=" + encodeURIComponent(selectedMechanics[0].id);
+        if (selectedMechanics.length) {
+          // mechanic_id = the first one (older readers); mechanic_ids = the whole crew
+          url += "&mechanic_id=" + encodeURIComponent(selectedMechanics[0].id);
+          url += "&mechanic_ids=" + encodeURIComponent(selectedMechanics.map(function (m) { return m.id; }).join(","));
+        }
+        // the title doubles as the note; an untouched title is just the
+        // customer label the server filled in - not a note for the mechanic
         var note = elTitleInp.value.trim();
+        if (note && note === (elCustomerSearch.value || "").trim()) note = "";
         if (note) url += "&note=" + encodeURIComponent(note);
         if (eventId) url += "&calendar_event_id=" + encodeURIComponent(eventId);
         window.open(url, "_blank");

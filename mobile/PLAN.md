@@ -81,6 +81,38 @@ Done механика, линковка). Week всегда целиком на 
 `onTouchesMove` по осям): вертикально — высота часа 36–160px с якорем
 под пальцами, горизонтально — множитель ширины дня ×1–4 (3 Day / Week);
 хранится в `roobico.calendar.zoom`, «Reset zoom» в меню видов.
+2026-11-03 (вечер): запись календаря и WO синхронизированы полностью.
+«Start work» механика: сервер сам собирает WO из записи
+(`work_orders/services/appointment_prefill.py`: по одной работе на пресет
+с часами/ценами из `build_mechanic_labors_payload`, вся бригада в
+`assigned_mechanics` с ровным сплитом, заметка записи →
+`issue_description` первой работы); офисная форма подставляет пресеты и
+заметку сама (`presetIds`/`note` в параметрах `work-order-form`),
+`issueOpen` раскрыт для работ с заметкой. Деталка WO получает
+`appointments` → карточка «Scheduled». В привязанной записи клиент/юнит
+не редактируются (сервер отвечает 409), статусы In progress/Completed
+следуют за WO. Сервер: `sync_linked_appointments_status` на всех путях
+смены состояния WO (статус/подтверждение/платежи/трансфер/тайм-логи),
+откат на `scheduled` при возврате WO в open,
+`refresh_linked_appointments_identity`, `follow_wo_mechanics`
+(перестановка механика в WO двигает будущие записи), обратная связь
+drag → `assigned_mechanics`; веб опрашивает
+`/calendar/api/live_signature` каждые 15 с.
+Мобилка: форма WO из записи работает и у механика без customers.view (имя клиента — параметр `customerLabel`, юниты — `/work_orders/api/units`); пресеты офиса строит `buildLaborFromPreset`, деталка WO рисует карточку Scheduled по `appointments`.
+2026-11-03 (парты): минимальный остаток и единица измерения. `GET
+/api/mobile/parts` отдаёт `unit` / `unit_short` / `unit_label`,
+`min_stock_enabled` / `min_stock`, `stock_state` (below / near / null) и
+`counts: {below, near}` (near включает below — как и фильтр); параметр
+`stock_level=below|near` снимает ограничение `in_stock > 0`. В приложении:
+чипы All / Below min / Near min под поиском на вкладке Stock (число в чипе
+= сколько строк он покажет; выбор хранится в `roobico.parts.stockLevel`,
+смена чипа перемонтирует список), бейджи Below min / Near min и остаток с
+единицей («12 gal», «×12» для штук — `stockQty` / `stockLabel` в
+`api.ts`), в деталке парта строки Unit of measure / Minimum stock
+(`GET /parts/api/<id>` отдаёт `unit_of_measure`, `unit_label`,
+`stock_state`). Формы парта в мобилке нет (сервер при отсутствии ключей в
+payload обновления сохраняет прежние значения); единица строки WO
+(`unit` / `unit_short` в payload) на экранах WO пока не показывается.
 
 Осталось: AVIR (годовая инспекция), chart в отчётах,
 labor-scope авторизация, выбор кандидатов при AI-скане (сейчас топ-1).

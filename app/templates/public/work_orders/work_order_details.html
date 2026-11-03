@@ -34,6 +34,20 @@
       </div>
     </div>
 
+    {% if linked_appointments %}
+    {# План из календаря: записи, привязанные к этому WO (дата, время, статус,
+       бригада, пресеты, заметка). Строки рендерит JS из JSON — времена записей
+       хранятся настенными часами магазина, как на странице календаря. #}
+    <div id="woScheduledBlock" class="mb-3 mb-lg-4 p-3 rounded-3 border bg-light-subtle">
+      <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">
+        <div class="fw-semibold text-uppercase small text-muted"><i class="bi bi-calendar-check me-1"></i>Scheduled</div>
+        <a href="{{ url_for('calendar.calendar_page') }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">Open calendar</a>
+      </div>
+      <div id="woScheduledList" class="small"></div>
+    </div>
+    <script type="application/json" id="linkedAppointmentsData">{{ linked_appointments|tojson }}</script>
+    {% endif %}
+
     <div class="wo-section mb-4">
       <div class="wo-section-title">Customer & Unit</div>
 
@@ -384,7 +398,13 @@
                           </div>
                         </td>
                         <td class="p-1 align-middle"><div class="p-1"><input class="form-control form-control-sm part-description" name="labors[0][parts][0][description]" maxlength="200" autocomplete="off" style="width: 96%;"></div></td>
-                        <td class="p-1 align-middle"><div class="p-1"><input class="form-control form-control-sm part-qty" name="labors[0][parts][0][qty]" inputmode="numeric" style="width: 86%;"></div></td>
+                        <td class="p-1 align-middle">
+                          <div class="p-1">
+                            <input class="form-control form-control-sm part-qty" name="labors[0][parts][0][qty]" inputmode="numeric" style="width: 86%;">
+                            <input type="hidden" class="part-unit" name="labors[0][parts][0][unit]" value="">
+                            <div class="small text-muted mt-1 part-unit-label" hidden></div>
+                          </div>
+                        </td>
                         <td class="p-1 align-middle">
                           <div class="p-1">
                             <input class="form-control form-control-sm part-cost" name="labors[0][parts][0][cost]" inputmode="decimal" readonly tabindex="-1" style="width: 88%;">

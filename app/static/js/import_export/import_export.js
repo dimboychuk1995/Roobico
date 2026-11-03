@@ -271,6 +271,23 @@
         });
         els.resultContent.appendChild(list);
       }
+
+      // Imported anyway, but with a substitution (e.g. an unknown unit of measure -> Each).
+      if (Array.isArray(data.warnings) && data.warnings.length) {
+        var wTitle = document.createElement("div");
+        wTitle.className = "text-muted small mb-1 mt-2";
+        wTitle.textContent = "Imported with notes:";
+        els.resultContent.appendChild(wTitle);
+
+        var wList = document.createElement("ul");
+        wList.className = "small mb-0";
+        data.warnings.forEach(function (msg) {
+          var li = document.createElement("li");
+          li.textContent = msg;
+          wList.appendChild(li);
+        });
+        els.resultContent.appendChild(wList);
+      }
     }
 
     show(els.step2, false);

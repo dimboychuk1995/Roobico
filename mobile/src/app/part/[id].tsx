@@ -18,8 +18,37 @@ import {
   fetchPartFull,
   fetchPartHistory,
   money,
+  stockLabel,
+  stockQty,
 } from "@/lib/api";
 import { useTheme } from "@/lib/theme";
+
+/** Название единицы измерения; если сервер отдал только ключ — делаем из него («fl_oz» → «Fl oz»). */
+function unitLabelOf(part: PartFull): string {
+  if (part.unit_label) return part.unit_label;
+  const key = (part.unit_of_measure || "each").replace(/_/g, " ");
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+/** Строка «Minimum stock»: минимум с единицей и бейдж состояния; «—», если минимум не требуется. */
+function MinStockRow({ part }: { part: PartFull }) {
+  const theme = useTheme();
+  // Без учёта склада минимум не действует (сервер и сам снимает флаг).
+  const enabled = !!part.min_stock_enabled && !part.do_not_track_inventory;
+  const state = enabled ? part.stock_state ?? null : null;
+  return (
+    <View style={styles.kvRow}>
+      <Text style={[styles.kvLabel, { color: theme.muted }]}>Minimum stock</Text>
+      <View style={styles.kvRight}>
+        {state === "below" ? <Badge label="Below min" tone="danger" /> : null}
+        {state === "near" ? <Badge label="Near min" tone="warning" /> : null}
+        <Text style={[styles.kvValue, { color: theme.text }]}>
+          {enabled ? stockQty(part.min_stock, part.unit_short) : "—"}
+        </Text>
+      </View>
+    </View>
+  );
+}
 
 export default function PartDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -74,6 +103,11 @@ export default function PartDetailsScreen() {
     );
   }
 
+  // Остаток относительно минимума: ниже — красным, близко — жёлтым.
+  const stockState = part.min_stock_enabled && !part.do_not_track_inventory ? part.stock_state : null;
+  const stockColor =
+    stockState === "below" ? theme.danger : stockState === "near" ? theme.warning : theme.primary;
+
   return (
     <ScrollView
       style={{ backgroundColor: theme.bg }}
@@ -96,10 +130,14 @@ export default function PartDetailsScreen() {
           <Text style={[styles.title, { color: theme.text }]} numberOfLines={2}>
             {part.part_number}
           </Text>
-          <Text style={[styles.stock, { color: theme.primary }]}>×{part.in_stock}</Text>
+          <Text style={[styles.stock, { color: stockColor }]}>
+            {stockLabel(part.in_stock, part.unit_short)}
+          </Text>
         </View>
         <KV label="Description" value={part.description} />
         <KV label="Reference" value={part.reference} />
+        <KV label="Unit of measure" value={unitLabelOf(part)} />
+        <MinStockRow part={part} />
         <KV label="Average cost" value={money(part.average_cost)} />
         {part.has_selling_price ? <KV label="Selling price" value={money(part.selling_price)} /> : null}
         {part.core_has_charge ? <KV label="Core charge" value={money(part.core_cost)} /> : null}
@@ -182,5 +220,10 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
   title: { fontSize: 17, fontWeight: "800", flexShrink: 1 },
   stock: { fontSize: 17, fontWeight: "800" },
+  // Как строка KV из components/ui, но справа — значение вместе с бейджем.
+  kvRow: { flexDirection: "row", justifyContent: "space-between", gap: 12 },
+  kvRight: { flexDirection: "row", alignItems: "center", gap: 8, flexShrink: 1 },
+  kvLabel: { fontSize: 13 },
+  kvValue: { fontSize: 13, fontWeight: "500", flexShrink: 1 },
   sectionTitle: { fontSize: 11, fontWeight: "700", letterSpacing: 1, marginTop: 14, marginBottom: 2 },
 });
