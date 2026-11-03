@@ -3858,6 +3858,11 @@ def api_mechanic_work_order_update(work_order_id):
 
     notify_after_mechanic_save(shop, wo, set_fields, wo_id, wo.get("wo_number"), user_id)
 
+    # Записи календаря, привязанные к WO, следуют за работой (In Progress / Completed).
+    from app.blueprints.calendar.services.work_orders import sync_linked_appointments_status
+
+    sync_linked_appointments_status(shop_db, shop, wo_id)
+
     return jsonify({
         "ok": True,
         "id": str(wo_id),

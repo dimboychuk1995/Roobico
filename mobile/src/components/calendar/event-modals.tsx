@@ -35,7 +35,7 @@ import {
 import { useTheme } from "@/lib/theme";
 
 import {
-  addDays,
+  Mechanic,
   eventEnd,
   eventStart,
   eventTitle,
@@ -57,6 +57,7 @@ export function EventDetailModal({
   canEdit,
   canDelete,
   canCreateWorkOrder,
+  isMechanic,
   onClose,
   onChanged,
   onEdit,
@@ -70,6 +71,8 @@ export function EventDetailModal({
   canEdit: boolean;
   canDelete: boolean;
   canCreateWorkOrder: boolean;
+  /** Механик: вместо «Create work order» — «Start work» (WO с привязкой, статус записи пойдёт за работой). */
+  isMechanic: boolean;
   onClose: () => void;
   onChanged: () => void;
   onEdit: (ev: CalendarEvent) => void;
@@ -213,11 +216,22 @@ export function EventDetailModal({
               </Pressable>
             ) : !isWo && canCreateWorkOrder ? (
               <Pressable
-                style={[styles.actionBtn, { borderColor: theme.primary }]}
+                style={[
+                  styles.actionBtn,
+                  isMechanic
+                    ? { backgroundColor: theme.primary, borderColor: theme.primary }
+                    : { borderColor: theme.primary },
+                ]}
                 onPress={() => onCreateWorkOrder(event)}
               >
-                <Ionicons name="add-circle-outline" size={16} color={theme.primary} />
-                <Text style={{ color: theme.primary, fontWeight: "700" }}>Create work order</Text>
+                <Ionicons
+                  name={isMechanic ? "play-circle-outline" : "add-circle-outline"}
+                  size={16}
+                  color={isMechanic ? "#fff" : theme.primary}
+                />
+                <Text style={{ color: isMechanic ? "#fff" : theme.primary, fontWeight: "700" }}>
+                  {isMechanic ? "Start work" : "Create work order"}
+                </Text>
               </Pressable>
             ) : null}
             {!isWo && canEdit ? (
@@ -260,8 +274,8 @@ export type EventFormState =
       date: Date;
       startMin: number;
       endMin: number;
-      /** Тап в дорожке механика — он уже выбран в форме. */
-      mechanic?: { id: string; name: string } | null;
+      /** Тап в дорожке механика — он уже выбран; в форме можно добавить ещё. */
+      mechanics?: Mechanic[];
     }
   | { mode: "edit"; event: CalendarEvent };
 
@@ -283,8 +297,9 @@ export function EventFormModal({
   const [customer, setCustomer] = useState<{ id: string; label: string } | null>(null);
   const [unit, setUnit] = useState<{ id: string; label: string } | null>(null);
   const [units, setUnits] = useState<{ id: string; label: string }[]>([]);
-  const [mechanics, setMechanics] = useState<{ id: string; name: string }[]>([]);
-  const [mechanic, setMechanic] = useState<{ id: string; name: string } | null>(null);
+  const [mechanicOptions, setMechanicOptions] = useState<Mechanic[]>([]);
+  // Бригада: одна запись — один или несколько механиков.
+  const [selectedMechanics, setSelectedMechanics] = useState<Mechanic[]>([]);
   const [date, setDate] = useState(() => startOfDay(new Date()));
   const [startMin, setStartMin] = useState(9 * 60);
   const [endMin, setEndMin] = useState(10 * 60);
@@ -300,12 +315,12 @@ export function EventFormModal({
     if (!state) return;
     setOpenField(null);
     setUnits([]);
-    fetchCalendarMechanics().then(setMechanics).catch(() => setMechanics([]));
+    fetchCalendarMechanics().then(setMechanicOptions).catch(() => setMechanicOptions([]));
     if (state.mode === "create") {
       setTitle("");
       setCustomer(null);
       setUnit(null);
-      setMechanic(state.mechanic || null);
+      setSelectedMechanics(state.mechanics || []);
       setDate(startOfDay(state.date));
       setStartMin(state.startMin);
       setEndMin(state.endMin);
@@ -318,7 +333,12 @@ export function EventFormModal({
     setTitle(ev.title && ev.title !== ev.customer_label ? ev.title : "");
     setCustomer(ev.customer_id ? { id: ev.customer_id, label: ev.customer_label || "—" } : null);
     setUnit(ev.unit_id ? { id: ev.unit_id, label: ev.unit_label || "—" } : null);
-    setMechanic(ev.mechanic_id ? { id: ev.mechanic_id, name: ev.mechanic_name || "Mechanic" } : null);
+    const crew = ev.mechanics?.length
+      ? ev.mechanics
+      : ev.mechanic_id
+        ? [{ id: ev.mechanic_id, name: ev.mechanic_name || "Mechanic" }]
+        : [];
+    setSelectedMechanics(crew.map((m) => ({ id: String(m.id), name: m.name })));
     setDate(startOfDay(s));
     setStartMin(s.getHours() * 60 + s.getMinutes());
     setEndMin(Math.max(s.getHours() * 60 + s.getMinutes() + 15, e.getHours() * 60 + e.getMinutes()));
@@ -373,8 +393,10 @@ export function EventFormModal({
         customer_label: customer.label,
         unit_id: unit?.id || "",
         unit_label: unit?.label || "",
-        mechanic_id: mechanic?.id || "",
-        mechanic_name: mechanic?.name || "",
+        mechanic_ids: selectedMechanics.map((m) => m.id),
+        mechanics: selectedMechanics,
+        mechanic_id: selectedMechanics[0]?.id || "",
+        mechanic_name: selectedMechanics[0]?.name || "",
         status,
       };
       if (state?.mode === "edit") {
@@ -464,18 +486,10 @@ export function EventFormModal({
               </View>
             ) : null}
 
-            {/* Дата */}
+            {/* Дата — день, по которому тапнули (или день записи): только показываем */}
             <View style={[styles.dateRow, { borderColor: theme.border, backgroundColor: theme.surfaceSoft }]}>
-              <Pressable onPress={() => setDate((d) => addDays(d, -1))} hitSlop={10} style={{ padding: 6 }}>
-                <Ionicons name="chevron-back" size={20} color={theme.text} />
-              </Pressable>
-              <View style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                <Ionicons name="calendar-outline" size={16} color={theme.muted} />
-                <Text style={{ color: theme.text, fontWeight: "600", fontSize: 15 }}>{fmtDayShort(date)}</Text>
-              </View>
-              <Pressable onPress={() => setDate((d) => addDays(d, 1))} hitSlop={10} style={{ padding: 6 }}>
-                <Ionicons name="chevron-forward" size={20} color={theme.text} />
-              </Pressable>
+              <Ionicons name="calendar-outline" size={16} color={theme.muted} />
+              <Text style={{ color: theme.text, fontWeight: "600", fontSize: 15 }}>{fmtDayShort(date)}</Text>
             </View>
 
             {/* Время */}
@@ -501,16 +515,20 @@ export function EventFormModal({
               />
             ) : null}
 
-            {mechanics.length > 0 ? (
+            {mechanicOptions.length > 0 ? (
               <>
-                <Text style={[styles.label, { color: theme.muted }]}>MECHANIC</Text>
+                <Text style={[styles.label, { color: theme.muted }]}>MECHANICS</Text>
                 <View style={styles.chipsRow}>
-                  {mechanics.map((m) => {
-                    const active = mechanic?.id === m.id;
+                  {mechanicOptions.map((m) => {
+                    const active = selectedMechanics.some((s) => s.id === m.id);
                     return (
                       <Pressable
                         key={m.id}
-                        onPress={() => setMechanic(active ? null : m)}
+                        onPress={() =>
+                          setSelectedMechanics((cur) =>
+                            active ? cur.filter((s) => s.id !== m.id) : cur.concat([{ id: m.id, name: m.name }])
+                          )
+                        }
                         style={[
                           styles.chip,
                           {
@@ -717,10 +735,13 @@ const styles = StyleSheet.create({
   dateRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
     borderWidth: 1,
     borderRadius: 10,
     marginTop: 10,
-    paddingHorizontal: 4,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
   },
   timeRow: { flexDirection: "row", gap: 10 },
   timeBtn: {

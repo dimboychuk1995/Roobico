@@ -212,10 +212,20 @@ grid (Mon–Sun, 06:00–21:00, 15-minute steps). It shows two kinds of blocks:
 
 - **Appointments** — what you planned by hand. Click an empty slot to
   create one, click a block to edit, drag & drop to move. Fields: Customer,
-  Unit, Service Presets, Date, Start/End, Assign to Mechanic, Status,
-  Title/Note. Appointment statuses (Scheduled, Confirmed, In Progress,
-  Completed, Cancelled) and their colors are editable per shop via the
-  gear → "Appointment Statuses".
+  Unit, Service Presets, Start/End, Assign to Mechanics, Status,
+  Title/Note. The **date is the day you clicked** — the dialog only shows
+  it; to move a plan to another day drag the block. **Several mechanics**
+  can be assigned to one appointment (pick them one by one, each becomes
+  a tag): the block then appears in every one of their lanes, the slot is
+  checked for each of them, and dragging such a block only changes the
+  time — the crew stays. Appointment statuses (Scheduled, Confirmed, In
+  Progress, Completed, Cancelled) and their colors are editable per shop
+  via the gear → "Appointment Statuses". **A linked appointment follows
+  the work**: as soon as a mechanic starts a timer on the linked WO (or
+  starts it from the phone) the appointment turns In Progress; when the
+  mechanic presses Done, or the WO is completed / paid, it turns
+  Completed — no manual status changes needed (Cancelled is never
+  touched).
 - **Work orders** — every active WO appears on the calendar automatically,
   even if nobody ever scheduled it, so you can see who did what, when, and
   what is still waiting. A WO block has a left edge in the mechanic's colour

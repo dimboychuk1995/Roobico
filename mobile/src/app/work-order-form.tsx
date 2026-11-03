@@ -55,7 +55,6 @@ import {
   parseHandwrittenWo,
   polishIssueText,
   resolveVin,
-  updateCalendarEvent,
   fetchUnitActiveWorkOrder,
   UnitActiveWorkOrder,
   searchParts,
@@ -759,6 +758,9 @@ export default function WorkOrderFormScreen() {
           status,
           labors: validLabors,
           ...mechanicFields,
+          // Запись календаря привязывается к WO на сервере (как на вебе) —
+          // в т.ч. когда по юниту WO уже идёт и сервер отвечает 409.
+          calendar_event_id: calendarEventId || undefined,
         });
       }
       (res.inventory_warnings || []).forEach((w) => toast.show(w, "info"));
@@ -766,17 +768,6 @@ export default function WorkOrderFormScreen() {
         isEdit ? "Work order saved." : `Work order #${res.wo_number} created.`,
         "success"
       );
-      if (!isEdit && calendarEventId && res.id) {
-        // Запись календаря становится «расписанной» для этого WO (как на вебе).
-        try {
-          await updateCalendarEvent(calendarEventId, { work_order_id: res.id });
-        } catch (linkErr) {
-          toast.show(
-            linkErr instanceof ApiError ? linkErr.message : "Work order created, but the appointment was not linked.",
-            "error"
-          );
-        }
-      }
       if (!isEdit && isMechanic && res.id) {
         // Механик после создания сразу попадает в рабочий edit-вид WO —
         // с таймерами, фото и отправкой на утверждение.

@@ -8,7 +8,10 @@ from app.utils import audit_log
 from app.blueprints.calendar import calendar_bp
 from app.blueprints.calendar.services.work_orders import (
     WO_STATES,
+    appointment_status_for_wo,
     conflict_message,
+    get_statuses,
+    sync_linked_appointments_status,
     customer_label as _customer_label,
     enrich_linked_appointments,
     find_mechanic_conflict,
@@ -76,30 +79,74 @@ def _get_assignable_mechanics(shop):
     return out
 
 
-APPOINTMENT_STATUSES = [
-    {"key": "scheduled", "label": "Scheduled", "color": "#1a73e8"},
-    {"key": "confirmed", "label": "Confirmed", "color": "#0d904f"},
-    {"key": "in_progress", "label": "In Progress", "color": "#e8710a"},
-    {"key": "completed", "label": "Completed", "color": "#5f6368"},
-    {"key": "cancelled", "label": "Cancelled", "color": "#d93025"},
-]
+_get_statuses = get_statuses
 
 
-def _get_statuses(db):
-    """Return statuses from DB settings, or default list."""
-    if db is None:
-        return list(APPOINTMENT_STATUSES)
-    doc = db.calendar_settings.find_one({"key": "statuses"})
-    if doc and doc.get("statuses"):
-        return doc["statuses"]
-    return list(APPOINTMENT_STATUSES)
+# ── механики записи ──────────────────────────────────────────
+# На одну работу можно поставить бригаду: документ хранит mechanics[{id,name}]
+# и mechanic_ids[] (для запросов), а legacy mechanic_id/mechanic_name = первый
+# механик — для старых клиентов и кода, который знает только одного.
+
+def _event_mechanics(doc: dict) -> list[dict]:
+    """Механики записи: новый список mechanics, иначе legacy mechanic_id/name."""
+    raw = doc.get("mechanics")
+    if isinstance(raw, list) and raw:
+        return [
+            {"id": m["id"], "name": str(m.get("name") or "").strip() or "Mechanic"}
+            for m in raw
+            if isinstance(m, dict) and m.get("id")
+        ]
+    if doc.get("mechanic_id"):
+        return [{"id": doc["mechanic_id"], "name": str(doc.get("mechanic_name") or "").strip() or "Mechanic"}]
+    return []
+
+
+def _mechanic_fields(mechanics: list[dict]) -> dict:
+    """Поля документа для списка механиков (+ legacy первый)."""
+    return {
+        "mechanics": [{"id": m["id"], "name": m["name"]} for m in mechanics],
+        "mechanic_ids": [m["id"] for m in mechanics],
+        "mechanic_id": mechanics[0]["id"] if mechanics else None,
+        "mechanic_name": mechanics[0]["name"] if mechanics else "",
+    }
+
+
+def _build_mechanics(items, shop) -> list[dict]:
+    """[{id: ObjectId, name}] из сырых пар id/имя: имя берём из списка
+    механиков магазина (клиентское — запасной вариант), дубли убираем."""
+    known = {m["id"]: m["name"] for m in _get_assignable_mechanics(shop)} if shop else {}
+    out: list[dict] = []
+    seen: set[str] = set()
+    for item in items or []:
+        raw_id = item.get("id") if isinstance(item, dict) else item
+        mid = _oid(str(raw_id or "").strip())
+        if not mid or str(mid) in seen:
+            continue
+        seen.add(str(mid))
+        client_name = str((item.get("name") if isinstance(item, dict) else "") or "").strip()
+        out.append({"id": mid, "name": known.get(str(mid)) or client_name or "Mechanic"})
+    return out
+
+
+def _parse_mechanics(data: dict, shop) -> list[dict] | None:
+    """Механики из запроса: mechanics[{id,name}] / mechanic_ids[] (новые
+    клиенты) или mechanic_id/mechanic_name (legacy). None — поле не передано."""
+    if isinstance(data.get("mechanics"), list):
+        return _build_mechanics(data["mechanics"], shop)
+    if isinstance(data.get("mechanic_ids"), list):
+        return _build_mechanics(data["mechanic_ids"], shop)
+    if "mechanic_id" in data:
+        raw = str(data.get("mechanic_id") or "").strip()
+        if not raw:
+            return []
+        return _build_mechanics([{"id": raw, "name": data.get("mechanic_name") or ""}], shop)
+    return None
 
 
 def _serialize_event(r: dict) -> dict:
     """Запись calendar_events → payload API (без данных WO — их добавляет
     enrich_linked_appointments)."""
-    mechanic_id = str(r["mechanic_id"]) if r.get("mechanic_id") else ""
-    mechanic_name = r.get("mechanic_name") or ""
+    mechanics = [{"id": str(m["id"]), "name": m["name"]} for m in _event_mechanics(r)]
     return {
         "id": str(r["_id"]),
         "kind": "appointment",
@@ -113,10 +160,10 @@ def _serialize_event(r: dict) -> dict:
         "customer_label": r.get("customer_label") or "",
         "unit_id": str(r["unit_id"]) if r.get("unit_id") else "",
         "unit_label": r.get("unit_label") or "",
-        "mechanic_id": mechanic_id,
-        "mechanic_name": mechanic_name,
-        "mechanics": [{"id": mechanic_id, "name": mechanic_name}] if mechanic_id else [],
-        "mechanic_ids": [mechanic_id] if mechanic_id else [],
+        "mechanic_id": mechanics[0]["id"] if mechanics else "",
+        "mechanic_name": ", ".join(m["name"] for m in mechanics),
+        "mechanics": mechanics,
+        "mechanic_ids": [m["id"] for m in mechanics],
         "presets": r.get("presets") or [],
         "work_order_id": str(r["work_order_id"]) if r.get("work_order_id") else "",
         "wo_number": r.get("wo_number"),
@@ -375,8 +422,7 @@ def api_create_event():
     customer_label_val = (data.get("customer_label") or "").strip()
     unit_id_raw = (data.get("unit_id") or "").strip()
     unit_label_val = (data.get("unit_label") or "").strip() or ""
-    mechanic_id_raw = (data.get("mechanic_id") or "").strip()
-    mechanic_name_val = (data.get("mechanic_name") or "").strip()
+    mechanics = _parse_mechanics(data, shop) or []
     status = (data.get("status") or "scheduled").strip()
     title = (data.get("title") or "").strip()
     presets = _parse_presets(data.get("presets") or [])
@@ -398,10 +444,9 @@ def api_create_event():
         if not unit_id_raw and wo_snapshot.get("unit_id"):
             unit_id_raw = str(wo_snapshot["unit_id"])
             unit_label_val = wo_snapshot.get("unit_label") or unit_label_val
-        # keep_unassigned — бросили в колонку «Unassigned»: механика с WO не брать.
-        if not mechanic_id_raw and wo_snapshot.get("mechanic") and not data.get("keep_unassigned"):
-            mechanic_id_raw = wo_snapshot["mechanic"]["id"]
-            mechanic_name_val = wo_snapshot["mechanic"]["name"]
+        # keep_unassigned — бросили в колонку «Unassigned»: механиков с WO не брать.
+        if not mechanics and wo_snapshot.get("mechanics") and not data.get("keep_unassigned"):
+            mechanics = _build_mechanics(wo_snapshot["mechanics"], shop)
         if not title:
             title = wo_snapshot.get("title") or ""
 
@@ -411,12 +456,17 @@ def api_create_event():
     valid_statuses = {s["key"] for s in _get_statuses(db)}
     if status not in valid_statuses:
         status = "scheduled"
+    # Привязка к WO, по которому уже идёт / закончена работа, без явного
+    # статуса — запись сразу отражает факт, а не «Scheduled» поверх работы.
+    if work_order_id and status != "cancelled" and not (data.get("status") or "").strip():
+        status = appointment_status_for_wo(db, shop, work_order_id) or status
 
-    # Один механик — одна работа в один момент времени.
-    if mechanic_id_raw and status != "cancelled":
-        conflict = find_mechanic_conflict(db, shop, mechanic_id_raw, start_time, end_time, exclude_wo_id=work_order_id)
-        if conflict:
-            return jsonify({"error": conflict_message(conflict, mechanic_name_val), "conflict_id": str(conflict.get("_id") or "")}), 409
+    # Один механик — одна работа в один момент времени (проверяем каждого в бригаде).
+    if status != "cancelled":
+        for m in mechanics:
+            conflict = find_mechanic_conflict(db, shop, m["id"], start_time, end_time, exclude_wo_id=work_order_id)
+            if conflict:
+                return jsonify({"error": conflict_message(conflict, m["name"]), "conflict_id": str(conflict.get("_id") or "")}), 409
 
     user_id = _oid(session.get(SESSION_USER_ID))
     now = _utcnow()
@@ -430,8 +480,7 @@ def api_create_event():
         "customer_label": customer_label_val,
         "unit_id": _oid(unit_id_raw),
         "unit_label": unit_label_val,
-        "mechanic_id": _oid(mechanic_id_raw),
-        "mechanic_name": mechanic_name_val,
+        **_mechanic_fields(mechanics),
         "presets": presets,
         "work_order_id": work_order_id,
         "wo_number": wo_number,
@@ -448,7 +497,8 @@ def api_create_event():
     audit_log.log_event("create", "calendar_event", doc["_id"], label=doc.get("title") or customer_label_val,
                         summary=f"Appointment created: {doc.get('title') or customer_label_val} on {start_time:%m/%d/%Y %H:%M}"
                         + (f" (linked to WO #{wo_number})" if wo_number else ""),
-                        details={"start": start_time.isoformat(), "end": end_time.isoformat(), "mechanic": mechanic_name_val,
+                        details={"start": start_time.isoformat(), "end": end_time.isoformat(),
+                                 "mechanic": ", ".join(m["name"] for m in mechanics),
                                  "unit": unit_label_val, "work_order_id": str(work_order_id or "")})
 
     payload = _serialize_event(doc)
@@ -472,13 +522,17 @@ def api_update_event(event_id):
     data = request.get_json(force=True, silent=True) or {}
     updates = {"updated_at": _utcnow(), "updated_by": _oid(session.get(SESSION_USER_ID))}
 
-    for field in ("title", "status", "customer_label", "unit_label", "mechanic_name"):
+    for field in ("title", "status", "customer_label", "unit_label"):
         if field in data:
             updates[field] = (data[field] or "").strip()
 
-    for field in ("customer_id", "unit_id", "mechanic_id"):
+    for field in ("customer_id", "unit_id"):
         if field in data:
             updates[field] = _oid(data[field])
+
+    mechanics = _parse_mechanics(data, shop)
+    if mechanics is not None:
+        updates.update(_mechanic_fields(mechanics))
 
     if "presets" in data:
         updates["presets"] = _parse_presets(data["presets"] or [])
@@ -512,30 +566,37 @@ def api_update_event(event_id):
             if not (updates.get("unit_id") or existing.get("unit_id")) and snapshot.get("unit_id"):
                 updates["unit_id"] = snapshot["unit_id"]
                 updates["unit_label"] = snapshot.get("unit_label") or ""
+            # Привязали к WO без явного статуса — статус записи по факту работы.
+            if "status" not in updates and existing.get("status") != "cancelled":
+                synced = appointment_status_for_wo(db, shop, snapshot["work_order_id"])
+                if synced:
+                    updates["status"] = synced
 
     valid_statuses = {s["key"] for s in _get_statuses(db)}
     if "status" in updates and updates["status"] not in valid_statuses:
         updates["status"] = existing.get("status", "scheduled")
 
     # Один механик — одна работа в один момент времени. Проверяем только
-    # когда меняется сама бронь (время, механик, WO) или запись возвращается
+    # когда меняется сама бронь (время, бригада, WO) или запись возвращается
     # из cancelled: правка заголовка/статуса старой записи с конфликтом
     # (помечена «!» на сетке) должна проходить.
-    new_mechanic = updates.get("mechanic_id", existing.get("mechanic_id"))
+    new_mechanics = updates["mechanics"] if "mechanics" in updates else _event_mechanics(existing)
+    new_ids = [str(m["id"]) for m in new_mechanics]
+    old_ids = [str(m["id"]) for m in _event_mechanics(existing)]
     new_status = updates.get("status", existing.get("status"))
     new_wo = updates.get("work_order_id", existing.get("work_order_id"))
     booking_changed = (
-        new_mechanic != existing.get("mechanic_id")
+        new_ids != old_ids
         or new_start != existing.get("start_time")
         or new_end != existing.get("end_time")
         or new_wo != existing.get("work_order_id")
         or (existing.get("status") == "cancelled" and new_status != "cancelled")
     )
-    if booking_changed and new_mechanic and new_status != "cancelled" and new_start and new_end:
-        conflict = find_mechanic_conflict(db, shop, new_mechanic, new_start, new_end, exclude_id=eid, exclude_wo_id=new_wo)
-        if conflict:
-            who = updates.get("mechanic_name") or existing.get("mechanic_name") or ""
-            return jsonify({"error": conflict_message(conflict, who), "conflict_id": str(conflict.get("_id") or "")}), 409
+    if booking_changed and new_mechanics and new_status != "cancelled" and new_start and new_end:
+        for m in new_mechanics:
+            conflict = find_mechanic_conflict(db, shop, m["id"], new_start, new_end, exclude_id=eid, exclude_wo_id=new_wo)
+            if conflict:
+                return jsonify({"error": conflict_message(conflict, m["name"]), "conflict_id": str(conflict.get("_id") or "")}), 409
 
     db.calendar_events.update_one({"_id": eid}, {"$set": updates})
 
@@ -582,6 +643,9 @@ def link_event_to_work_order(shop_db, shop: dict, event_id, work_order_id, wo_nu
         {"_id": eid, "shop_id": shop["_id"]},
         {"$set": {"work_order_id": wo_id, "wo_number": wo_number, "updated_at": _utcnow()}},
     )
+    if res.matched_count:
+        # Запись теперь следует за работой: механик уже начал — она In Progress.
+        sync_linked_appointments_status(shop_db, shop, wo_id)
     return res.modified_count > 0
 
 

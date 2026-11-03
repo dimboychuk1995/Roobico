@@ -66,7 +66,8 @@ export default function CalendarScreen() {
   const canCreate = useHasPermission("calendar.create");
   const canEdit = useHasPermission("calendar.edit");
   const canDelete = useHasPermission("calendar.delete");
-  const canCreateWo = useHasPermission("work_orders.create") && !isMechanic;
+  // Механику тоже: из записи он стартует работу («Start work» — WO с привязкой).
+  const canCreateWo = useHasPermission("work_orders.create");
   const userId = session?.user.id || "";
   // Диплинк / стенд скриншотов: /calendar?date=YYYY-MM-DD&view=week.
   const params = useLocalSearchParams<{ date?: string; view?: string }>();
@@ -260,8 +261,8 @@ export default function CalendarScreen() {
   };
   const openCreate = (day: Date, startMin: number, lane: Lane | null = null) => {
     if (!canCreate) return;
-    const mechanic = lane && lane.key !== UNASSIGNED_KEY ? { id: lane.key, name: lane.name } : null;
-    setFormState({ mode: "create", date: day, startMin, endMin: Math.min(24 * 60, startMin + 60), mechanic });
+    const mechanics = lane && lane.key !== UNASSIGNED_KEY ? [{ id: lane.key, name: lane.name }] : [];
+    setFormState({ mode: "create", date: day, startMin, endMin: Math.min(24 * 60, startMin + 60), mechanics });
   };
   const openWorkOrder = (id: string) => {
     setDetailEvent(null);
@@ -493,6 +494,7 @@ export default function CalendarScreen() {
         canEdit={canEdit}
         canDelete={canDelete}
         canCreateWorkOrder={canCreateWo}
+        isMechanic={isMechanic}
         onClose={() => setDetailEvent(null)}
         onChanged={() => {
           setDetailEvent(null);

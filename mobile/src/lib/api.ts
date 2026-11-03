@@ -980,6 +980,8 @@ export function createWorkOrder(payload: {
   labors: WoFormLabor[];
   mechanic_state?: "in_progress" | "done";
   unit_mileage?: string | number;
+  /** WO из записи календаря: сервер привяжет запись к WO (и к уже идущему WO юнита). */
+  calendar_event_id?: string;
 }) {
   return request<WoSaveResult>("/api/mobile/work_orders", {
     method: "POST",
@@ -1389,6 +1391,9 @@ export interface CalendarEventPayload {
   customer_label?: string;
   unit_id?: string;
   unit_label?: string;
+  /** Бригада: все механики записи; mechanic_id/_name — первый (legacy). */
+  mechanic_ids?: string[];
+  mechanics?: { id: string; name: string }[];
   mechanic_id?: string;
   mechanic_name?: string;
   status?: string;

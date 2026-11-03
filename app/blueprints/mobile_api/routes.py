@@ -550,6 +550,9 @@ def mobile_work_order_create():
     data = request.get_json(silent=True) or {}
     customer_id = oid(data.get("customer_id"))
     unit_id = oid(data.get("unit_id"))
+    # WO создаётся из записи календаря («Create work order» / «Start work» у
+    # механика) — запись привяжем к WO, её статус пойдёт за работой.
+    calendar_event_id = oid(data.get("calendar_event_id"))
     if not customer_id or not unit_id:
         return jsonify({"ok": False, "error": "customer_unit_required",
                         "message": "Customer and unit are required."}), 400
@@ -579,6 +582,12 @@ def mobile_work_order_create():
 
         existing = find_active_unit_work_order(shop_db, shop, unit_id)
         if existing:
+            if calendar_event_id:
+                # Механик стартует работу из записи, а по юниту WO уже идёт:
+                # запись привязываем к нему — приложение откроет этот WO.
+                from app.blueprints.calendar.routes import link_event_to_work_order
+
+                link_event_to_work_order(shop_db, shop, calendar_event_id, existing.get("id"), existing.get("wo_number"))
             return jsonify({
                 "ok": False,
                 "error": "unit_has_active_work_order",
@@ -662,6 +671,11 @@ def mobile_work_order_create():
     from app.blueprints.work_orders.services.push_events import notify_after_mechanic_save
 
     notify_after_mechanic_save(shop, None, doc, res.inserted_id, doc["wo_number"], user_id)
+
+    if calendar_event_id:
+        from app.blueprints.calendar.routes import link_event_to_work_order
+
+        link_event_to_work_order(shop_db, shop, calendar_event_id, res.inserted_id, doc["wo_number"])
 
     return jsonify({
         "ok": True,
@@ -817,6 +831,11 @@ def mobile_work_order_edit(work_order_id):
     from app.blueprints.work_orders.services.push_events import notify_after_mechanic_save
 
     notify_after_mechanic_save(shop, wo, set_fields, wo_id, wo.get("wo_number"), user_id)
+
+    # Записи календаря, привязанные к WO, следуют за работой (In Progress / Completed).
+    from app.blueprints.calendar.services.work_orders import sync_linked_appointments_status
+
+    sync_linked_appointments_status(shop_db, shop, wo_id)
 
     return jsonify({
         "ok": True,

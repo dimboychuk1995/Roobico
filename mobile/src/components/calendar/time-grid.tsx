@@ -393,8 +393,12 @@ export function TimeGrid({
                         const narrow = blockW < 64;
                         const showTime = p.height >= 36 && blockW >= 90;
                         const showMech = !lanes && p.height >= 54 && blockW >= 150 && !!p.ev.mechanic_name;
-                        const mech = eventMechanics(p.ev)[0];
-                        const badge = !!mech && blockW >= 80 && p.height >= 30;
+                        // Бейджи: без дорожек — первый механик; в дорожках — остальные
+                        // участники бригады (своя дорожка и так подписана) — видно, что работа общая.
+                        const crew = eventMechanics(p.ev);
+                        const laneKey = lanes ? lanes[p.laneIdx]?.key : null;
+                        const badgeMechs = (lanes ? crew.filter((m) => String(m.id) !== laneKey) : crew.slice(0, 1)).slice(0, 2);
+                        const badge = badgeMechs.length > 0 && blockW >= 80 && p.height >= 30;
                         const titleLines = showTime || narrow ? 1 : Math.max(1, Math.floor(p.height / (titleSize + 4)));
                         const start = eventStart(p.ev);
                         const end = new Date(p.ev.end_time);
@@ -418,7 +422,7 @@ export function TimeGrid({
                             <Text
                               style={[
                                 styles.eventTitle,
-                                { color: fg, fontSize: titleSize, paddingRight: badge ? 20 : 0 },
+                                { color: fg, fontSize: titleSize, paddingRight: badge ? 4 + badgeMechs.length * 20 : 0 },
                                 cancelled && { textDecorationLine: "line-through" },
                               ]}
                               numberOfLines={titleLines}
@@ -439,8 +443,15 @@ export function TimeGrid({
                               </Text>
                             ) : null}
                             {badge ? (
-                              <View style={[styles.badge, styles.eventBadge, { backgroundColor: mechanicColor(mech.id, mechanics) }]}>
-                                <Text style={styles.badgeText}>{mechanicInitials(mech.name)}</Text>
+                              <View style={styles.eventBadges}>
+                                {badgeMechs.map((m) => (
+                                  <View
+                                    key={m.id}
+                                    style={[styles.badge, styles.eventBadge, { backgroundColor: mechanicColor(m.id, mechanics) }]}
+                                  >
+                                    <Text style={styles.badgeText}>{mechanicInitials(m.name)}</Text>
+                                  </View>
+                                ))}
                               </View>
                             ) : null}
                           </Pressable>
@@ -496,7 +507,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   badgeText: { color: "#fff", fontSize: 8.5, fontWeight: "800", letterSpacing: 0.3 },
-  eventBadge: { position: "absolute", top: 2, right: 2, borderWidth: 1, borderColor: "rgba(255,255,255,0.7)" },
+  eventBadges: { position: "absolute", top: 2, right: 2, flexDirection: "row", gap: 2 },
+  eventBadge: { borderWidth: 1, borderColor: "rgba(255,255,255,0.7)" },
   unschedGutter: { alignItems: "center", justifyContent: "center", gap: 1 },
   unschedCol: { paddingHorizontal: 2, paddingVertical: 4, gap: 2, justifyContent: "flex-start" },
   chip: {

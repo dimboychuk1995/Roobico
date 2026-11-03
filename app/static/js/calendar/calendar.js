@@ -98,11 +98,13 @@
   var elUnitSearch      = document.getElementById("apptUnitSearch");
   var elUnitDrop        = document.getElementById("apptUnitDrop");
   var elDate            = document.getElementById("apptDate");
+  var elDateLabel       = document.getElementById("apptDateLabel");
   var elStart           = document.getElementById("apptStart");
   var elEnd             = document.getElementById("apptEnd");
   var elMechanic        = document.getElementById("apptMechanic");
   var elMechanicSearch  = document.getElementById("apptMechanicSearch");
   var elMechanicDrop    = document.getElementById("apptMechanicDrop");
+  var elMechanicTags    = document.getElementById("apptMechanicTags");
   var elStatusGrp       = document.getElementById("apptStatusGroup");
   var elTitleInp        = document.getElementById("apptTitle");
   var elPresetSearch    = document.getElementById("apptPresetSearch");
@@ -114,6 +116,7 @@
   var elDelBtn          = document.getElementById("apptDeleteBtn");
   var elCreateWOBtn     = document.getElementById("apptCreateWOBtn");
   var selectedPresets   = []; // [{id, name}]
+  var selectedMechanics = []; // [{id, name}] — one plan, one or several mechanics
   var unlinkRequested   = false;
 
   // WO modal refs
@@ -1415,6 +1418,9 @@
     } else if (dropLane) {
       target = dropLane;
     }
+    // A plan with a crew of several mechanics keeps its crew: the lane it
+    // lands in only decides the day and time.
+    if (!isVirtual(evt) && eventMechanicIds(evt).length > 1) target = null;
     if (target) {
       // Dropped into a mechanic column / lane - that mechanic gets the plan.
       if (target.key === UNASSIGNED_KEY) {
@@ -1713,10 +1719,15 @@
       }
     });
 
+    // picking a mechanic adds a tag; the search box is ready for the next one
     bindSearchable(elMechanicSearch, elMechanicDrop, elMechanic, cachedMechanics,
       function (m) { return m.id; },
       function (m) { return m.name + (m.role ? " (" + m.role.replace(/_/g, " ") + ")" : ""); },
-      null
+      function (val) {
+        var m = mechanicById(val);
+        if (m) addMechanic(String(m.id), m.name);
+        clearSearchable(elMechanicSearch, elMechanic, elMechanicDrop);
+      }
     );
 
     // presets searchable
@@ -1748,15 +1759,18 @@
 
       var stDt = new Date(existingEvent.start_time);
       var enDt = new Date(existingEvent.end_time);
-      elDate.value = toISODate(stDt);
+      setModalDate(toISODate(stDt));
       // the selects only know 15-minute steps inside the grid hours
       var snapped = snapRange(stDt.getHours() * 60 + stDt.getMinutes(), enDt.getHours() * 60 + enDt.getMinutes());
       elStart.value = minutesToValue(snapped[0]);
       elEnd.value = minutesToValue(snapped[1]);
 
-      elMechanic.value = existingEvent.mechanic_id || "";
-      var mech = existingEvent.mechanic_id ? mechanicById(existingEvent.mechanic_id) : null;
-      elMechanicSearch.value = mech ? mech.name : (existingEvent.mechanic_name || "");
+      clearSearchable(elMechanicSearch, elMechanic, elMechanicDrop);
+      selectedMechanics = eventMechanicList(existingEvent).map(function (m) {
+        var known = mechanicById(m.id);
+        return { id: String(m.id), name: known ? known.name : (m.name || "Mechanic") };
+      });
+      renderMechanicTags();
 
       elTitleInp.value = existingEvent.title || "";
       selectedPresets = (existingEvent.presets || []).slice();
@@ -1771,7 +1785,7 @@
       elUnitSearch.disabled = true;
 
       var dayDate = addDays(weekStart, dayIndex);
-      elDate.value = toISODate(dayDate);
+      setModalDate(toISODate(dayDate));
       elStart.value = pad2(hour) + ":00";
       var endHour = Math.min(hour + 1, HOURS_END);
       elEnd.value = pad2(endHour) + ":00";
@@ -1781,10 +1795,8 @@
       buildStatusButtons("scheduled");
 
       var preMech = presetMechanicId ? mechanicById(presetMechanicId) : null;
-      if (preMech) {
-        elMechanic.value = preMech.id;
-        elMechanicSearch.value = preMech.name;
-      }
+      selectedMechanics = preMech ? [{ id: String(preMech.id), name: preMech.name }] : [];
+      renderMechanicTags();
     }
 
     updateCreateWOBtn();
@@ -1809,7 +1821,7 @@
   function openModalForWorkOrder(ev, dayDate, startMin, mechanicId) {
     var dayIdx = dayIndexOf(dayDate);
     openModal(null, dayIdx < 0 ? 0 : dayIdx, HOURS_START, mechanicId || null);
-    elDate.value = toISODate(dayDate);
+    setModalDate(toISODate(dayDate));
     elWorkOrderId.value = ev.work_order_id || "";
     renderLinkedPanel(ev);
     elCustomer.value = ev.customer_id || "";
@@ -2001,6 +2013,46 @@
     }
   }
 
+  /* ── mechanics: tags, one or several per plan ── */
+  function renderMechanicTags() {
+    if (!elMechanicTags) return;
+    elMechanicTags.innerHTML = "";
+    for (var i = 0; i < selectedMechanics.length; i++) {
+      (function (idx) {
+        var m = selectedMechanics[idx];
+        var tag = document.createElement("span");
+        tag.className = "badge d-inline-flex align-items-center gap-1";
+        tag.style.fontSize = "0.85em";
+        tag.style.backgroundColor = mechanicColor(m.id);
+        tag.innerHTML = escapeHtml(m.name) + ' <button type="button" class="btn-close btn-close-white" style="font-size:0.6em;" aria-label="Remove"></button>';
+        tag.querySelector(".btn-close").addEventListener("click", function () {
+          selectedMechanics.splice(idx, 1);
+          renderMechanicTags();
+        });
+        elMechanicTags.appendChild(tag);
+      })(i);
+    }
+  }
+
+  function addMechanic(id, name) {
+    for (var i = 0; i < selectedMechanics.length; i++) {
+      if (selectedMechanics[i].id === id) return;
+    }
+    selectedMechanics.push({ id: id, name: name });
+    renderMechanicTags();
+  }
+
+  /* The day comes from the slot that was clicked (or the block being edited);
+     the modal only shows it — moving a plan to another day is drag & drop. */
+  function setModalDate(iso) {
+    elDate.value = iso || "";
+    if (!elDateLabel) return;
+    var d = iso ? parseISODate(iso) : null;
+    elDateLabel.textContent = d
+      ? DAY_NAMES_LONG[(d.getDay() + 6) % 7] + ", " + MONTH_NAMES[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear()
+      : "—";
+  }
+
   elPresetAddBtn.addEventListener("click", function () {
     var val = elPresetPendingId.value;
     if (!val) return;
@@ -2029,7 +2081,7 @@
       notify("End time must be after start time.", "warning");
       return null;
     }
-    var mech = elMechanic.value ? mechanicById(elMechanic.value) : null;
+    var firstMech = selectedMechanics[0] || null;
     var payload = {
       start_time: toLocalISO(dateVal, startVal),
       end_time: toLocalISO(dateVal, endVal),
@@ -2037,8 +2089,11 @@
       customer_label: elCustomer.value ? elCustomerSearch.value : "New Customer",
       unit_id: elUnit.value || "",
       unit_label: elUnit.value ? elUnitSearch.value : (elUnitSearch.disabled ? "" : "New Unit"),
-      mechanic_id: elMechanic.value || "",
-      mechanic_name: mech ? mech.name : (elMechanic.value ? elMechanicSearch.value : ""),
+      // the whole crew; mechanic_id/_name = first one for older readers
+      mechanic_ids: selectedMechanics.map(function (m) { return m.id; }),
+      mechanics: selectedMechanics.map(function (m) { return { id: m.id, name: m.name }; }),
+      mechanic_id: firstMech ? firstMech.id : "",
+      mechanic_name: firstMech ? firstMech.name : "",
       presets: selectedPresets.slice(),
       status: getSelectedStatus(),
       title: elTitleInp.value.trim(),
@@ -2090,7 +2145,7 @@
           var ids = selectedPresets.map(function (p) { return p.id; }).join(",");
           url += "&presets=" + encodeURIComponent(ids);
         }
-        if (elMechanic.value) url += "&mechanic_id=" + encodeURIComponent(elMechanic.value);
+        if (selectedMechanics.length) url += "&mechanic_id=" + encodeURIComponent(selectedMechanics[0].id);
         var note = elTitleInp.value.trim();
         if (note) url += "&note=" + encodeURIComponent(note);
         if (eventId) url += "&calendar_event_id=" + encodeURIComponent(eventId);

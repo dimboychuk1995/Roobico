@@ -129,7 +129,9 @@
         <div class="row mb-3">
           <div class="col-4">
             <label class="form-label">Date</label>
-            <input type="date" class="form-control" id="apptDate" value="">
+            {# день задан кликом по сетке — здесь только показываем (перенос — drag & drop) #}
+            <input type="hidden" id="apptDate" value="">
+            <div class="form-control-plaintext fw-semibold" id="apptDateLabel">—</div>
           </div>
           <div class="col-4">
             <label class="form-label">Start</label>
@@ -142,10 +144,11 @@
         </div>
 
         <div class="mb-3 position-relative">
-          <label class="form-label">Assign to Mechanic</label>
+          <label class="form-label">Assign to Mechanics</label>
           <input type="hidden" id="apptMechanic" value="">
-          <input type="text" class="form-control" id="apptMechanicSearch" placeholder="Search mechanic..." autocomplete="off">
+          <input type="text" class="form-control" id="apptMechanicSearch" placeholder="Search mechanic to add..." autocomplete="off">
           <div id="apptMechanicDrop" class="list-group position-absolute shadow-sm dd-scroll w-100" style="display:none;"></div>
+          <div id="apptMechanicTags" class="d-flex flex-wrap gap-1 mt-2"></div>
         </div>
 
         <div class="mb-3">

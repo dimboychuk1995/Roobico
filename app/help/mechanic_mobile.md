@@ -240,17 +240,29 @@ works like Google Calendar on a phone:
   timers).
 - **Create an appointment** (needs "Create appointments") — tap an empty
   slot (30-minute steps) or the **+** button. Fields: optional title,
-  customer (search), unit chips, date (arrows), start/end (tap the time,
-  pick an hour from the strip and :00 / :15 / :30 / :45), mechanic. The
-  server refuses a slot where that mechanic already has a job (same rule
-  as the web) and the app shows the reason.
+  customer (search), unit chips, start/end (tap the time, pick an hour
+  from the strip and :00 / :15 / :30 / :45), **mechanics** — tap one or
+  several chips; the plan then shows in every one of their lanes and the
+  slot is checked for each of them. The date is the day you tapped (the
+  form only shows it). The server refuses a slot where a chosen mechanic
+  already has a job (same rule as the web) and the app shows the reason.
 - **Edit / status / delete** — in the event details: status chips switch
   the appointment status in one tap ("Edit appointments"), **Edit** opens
   the full form, **Delete** removes it ("Delete appointments"). **Create
   work order** (office roles with "Create work orders") opens the new-WO
-  form with the customer and unit pre-filled and links the appointment to
-  the WO once it is saved — the appointment then shows as scheduled on
-  the web, no duplicate "Not scheduled" chip.
+  form with the customer and unit pre-filled; the server links the
+  appointment to the WO once it is saved — the appointment then shows as
+  scheduled on the web, no duplicate "Not scheduled" chip.
+- **Mechanic: Start work from the calendar** — a mechanic who taps an
+  appointment sees **Start work** (or **Open work order** if it is
+  already linked). Start work opens the new-WO flow with the customer and
+  unit pre-filled (mileage prompt as usual); if that unit already has a
+  work order in progress, the app opens that WO instead and the
+  appointment is linked to it. **The appointment's colour then follows
+  the work**: it turns In Progress the moment the WO is in work (a timer
+  is started or the mechanic saves), and Completed when the mechanic
+  presses Done (or the office completes / pays the WO). This is automatic
+  on the web calendar too; a Cancelled appointment is never touched.
 - Pull down in Day/3 Day/Week/Schedule to refresh; the calendar also
   reloads every time you return to the tab.
 

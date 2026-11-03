@@ -768,3 +768,174 @@ def test_mechanic_mode_masks_paid_on_linked_appointments(client, cal_seed, mongo
     assert len(mine) == 1 and mine[0]["wo_state"] == "completed" and mine[0]["wo_status"] == "completed"
     assert "paid" not in str(mine[0]).lower()
     assert login(client).status_code == 302
+
+
+# ── бригада: несколько механиков на одну запись ──────────────────────
+
+def _insert_mechanic(mongo, seed, cal_seed, email, first, last):
+    master = mongo["roobico_test_master"]
+    doc = {
+        "_id": ObjectId(), "email": email, "password_hash": generate_password_hash(MECHANIC_PASSWORD),
+        "first_name": first, "last_name": last, "is_active": True,
+        "tenant_id": seed["tenant_a"]["_id"], "shop_ids": [str(cal_seed["shop"]["_id"])],
+        "role": "mechanic", "created_at": _now(),
+    }
+    master.users.insert_one(doc)
+    return doc
+
+
+def test_appointment_crew_of_two_mechanics(client, cal_seed, mongo, seed):
+    """Одна запись — два механика: оба в mechanic_ids/mechanics (имена с
+    сервера), legacy mechanic_id — первый; слот держится за каждым; PUT со
+    списком меняет состав; старый клиент с одиночным mechanic_id оставляет одного."""
+    assert login(client).status_code == 302
+    master = mongo["roobico_test_master"]
+    second = _insert_mechanic(mongo, seed, cal_seed, "cal-mech-2@test.local", "Second", "Wrench")
+    try:
+        target = _future_weekday(14, weekday=1)
+        day = target.strftime("%Y-%m-%d")
+        m1, m2 = str(cal_seed["mechanic"]["_id"]), str(second["_id"])
+        base = {"customer_id": str(cal_seed["customer"]["_id"]), "customer_label": "Calendar Fleet LLC"}
+        resp = _json(client, "post", "/calendar/api/events", {
+            **base, "mechanic_ids": [m1, m2], "title": "Crew job",
+            "start_time": f"{day}T09:00:00", "end_time": f"{day}T11:00:00",
+        })
+        assert resp.status_code == 201, resp.get_data(as_text=True)
+        created = resp.get_json()
+        assert created["mechanic_ids"] == [m1, m2]
+        assert [m["name"] for m in created["mechanics"]] == ["Cal Mechanic", "Second Wrench"]
+        assert created["mechanic_id"] == m1
+        assert created["mechanic_name"] == "Cal Mechanic, Second Wrench"
+        event_id = created["id"]
+
+        # Второй механик занят этим же слотом — запись только на него не проходит.
+        resp = _json(client, "post", "/calendar/api/events", {
+            **base, "mechanic_id": m2, "mechanic_name": "Second Wrench", "title": "Overlap",
+            "start_time": f"{day}T10:00:00", "end_time": f"{day}T12:00:00",
+        })
+        assert resp.status_code == 409, resp.get_data(as_text=True)
+        assert "Second Wrench" in resp.get_json()["error"]
+
+        # В выдаче календаря — оба механика (фронт кладёт блок в обе дорожки).
+        listed = [e for e in _events(client, target, include_wo=False) if e["id"] == event_id]
+        assert listed and listed[0]["mechanic_ids"] == [m1, m2]
+
+        # PUT со списком: оставить только второго.
+        resp = _json(client, "put", f"/calendar/api/events/{event_id}", {"mechanic_ids": [m2]})
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        assert resp.get_json()["mechanic_ids"] == [m2]
+        assert resp.get_json()["mechanic_name"] == "Second Wrench"
+
+        # Старый клиент: одиночный mechanic_id — один механик, имя с сервера.
+        resp = _json(client, "put", f"/calendar/api/events/{event_id}", {"mechanic_id": m1, "mechanic_name": "ignored"})
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        body = resp.get_json()
+        assert body["mechanic_ids"] == [m1]
+        assert body["mechanics"][0]["name"] == "Cal Mechanic"
+    finally:
+        master.users.delete_one({"_id": second["_id"]})
+
+
+# ── статус записи следует за работой ─────────────────────────────────
+
+def test_linked_appointment_follows_mechanic_work(client, cal_seed, mongo):
+    """Запись, привязанная к WO: старт таймера механика → in_progress,
+    Done → completed; отменённую запись синк не трогает."""
+    from app.blueprints.calendar.services.work_orders import sync_linked_appointments_status
+
+    shop_db = mongo[SHOP_A_DB]
+    assert login(client).status_code == 302
+    target = _future_weekday(15, weekday=1)
+    day = target.strftime("%Y-%m-%d")
+    wo = _insert_wo(shop_db, cal_seed, 90031, status="open", work_order_date=target)
+    mech_id = str(cal_seed["mechanic"]["_id"])
+    ids = {}
+    for title, status in (("Plan", None), ("Cancelled plan", "cancelled")):
+        body = {
+            "work_order_id": str(wo["_id"]), "mechanic_id": mech_id, "mechanic_name": "Cal Mechanic",
+            "title": title, "start_time": f"{day}T08:00:00", "end_time": f"{day}T09:00:00",
+        }
+        if status:
+            body["status"] = status
+        resp = _json(client, "post", "/calendar/api/events", body)
+        assert resp.status_code == 201, resp.get_data(as_text=True)
+        ids[title] = ObjectId(resp.get_json()["id"])
+    assert shop_db.calendar_events.find_one({"_id": ids["Plan"]})["status"] == "scheduled"
+
+    # Механик стартует таймер — WO in_progress, запись тоже.
+    assert login(client, email=MECHANIC_EMAIL, password=MECHANIC_PASSWORD).status_code == 302
+    resp = _json(client, "post", "/work_orders/api/mechanic/timers/start",
+                 {"work_order_id": str(wo["_id"]), "labor_id": "L90031"})
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert shop_db.calendar_events.find_one({"_id": ids["Plan"]})["status"] == "in_progress"
+    assert shop_db.calendar_events.find_one({"_id": ids["Cancelled plan"]})["status"] == "cancelled"
+
+    # Механик отметил Done (WO-уровень) — запись Completed.
+    shop_db.work_orders.update_one({"_id": wo["_id"]}, {"$set": {"mechanic_done": True}})
+    assert sync_linked_appointments_status(shop_db, cal_seed["shop"], wo["_id"]) == 1
+    assert shop_db.calendar_events.find_one({"_id": ids["Plan"]})["status"] == "completed"
+    assert shop_db.calendar_events.find_one({"_id": ids["Cancelled plan"]})["status"] == "cancelled"
+
+    # Привязка записи к уже идущему WO сразу даёт статус по факту.
+    shop_db.work_orders.update_one({"_id": wo["_id"]}, {"$set": {"mechanic_done": False}})
+    assert login(client).status_code == 302
+    resp = _json(client, "post", "/calendar/api/events", {
+        "mechanic_id": mech_id, "mechanic_name": "Cal Mechanic", "title": "Late plan",
+        "start_time": f"{day}T15:00:00", "end_time": f"{day}T16:00:00",
+    })
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    late_id = resp.get_json()["id"]
+    resp = _json(client, "put", f"/calendar/api/events/{late_id}", {"work_order_id": str(wo["_id"])})
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert resp.get_json()["status"] == "in_progress"
+
+
+def test_mobile_start_work_from_appointment_links_and_syncs(client, cal_seed, mongo):
+    """Механик стартует работу из записи (POST /api/mobile/work_orders с
+    calendar_event_id): WO создаётся in_progress, запись привязана и стала
+    in_progress. По юниту WO уже идёт — 409, но вторая запись привязана к нему."""
+    shop_db = mongo[SHOP_A_DB]
+    unit = {
+        "_id": ObjectId(), "shop_id": cal_seed["shop"]["_id"], "customer_id": cal_seed["customer"]["_id"],
+        "unit_number": "CAL-2", "year": 2021, "make": "Kenworth", "model": "T680",
+        "is_active": True, "created_at": _now(),
+    }
+    shop_db.units.insert_one(unit)
+    try:
+        assert login(client).status_code == 302
+        target = _future_weekday(16, weekday=1)
+        day = target.strftime("%Y-%m-%d")
+        base = {
+            "customer_id": str(cal_seed["customer"]["_id"]), "customer_label": "Calendar Fleet LLC",
+            "unit_id": str(unit["_id"]), "unit_label": "CAL-2",
+            "mechanic_id": str(cal_seed["mechanic"]["_id"]), "mechanic_name": "Cal Mechanic",
+        }
+        events = []
+        for title, hour in (("Brake job", 13), ("Follow-up", 15)):
+            resp = _json(client, "post", "/calendar/api/events", {
+                **base, "title": title, "start_time": f"{day}T{hour:02d}:00:00", "end_time": f"{day}T{hour + 1:02d}:00:00",
+            })
+            assert resp.status_code == 201, resp.get_data(as_text=True)
+            events.append(ObjectId(resp.get_json()["id"]))
+
+        assert login(client, email=MECHANIC_EMAIL, password=MECHANIC_PASSWORD).status_code == 302
+        wo_payload = {
+            "customer_id": str(cal_seed["customer"]["_id"]), "unit_id": str(unit["_id"]),
+            "status": "in_progress", "labors": [], "mechanic_state": "in_progress", "unit_mileage": 120000,
+        }
+        resp = _json(client, "post", "/api/mobile/work_orders", {**wo_payload, "calendar_event_id": str(events[0])})
+        assert resp.status_code == 200, resp.get_data(as_text=True)
+        wo_id = resp.get_json()["id"]
+        ev = shop_db.calendar_events.find_one({"_id": events[0]})
+        assert str(ev["work_order_id"]) == wo_id
+        assert ev["status"] == "in_progress"
+
+        resp = _json(client, "post", "/api/mobile/work_orders", {**wo_payload, "calendar_event_id": str(events[1])})
+        assert resp.status_code == 409, resp.get_data(as_text=True)
+        assert resp.get_json()["work_order"]["id"] == wo_id
+        ev2 = shop_db.calendar_events.find_one({"_id": events[1]})
+        assert str(ev2["work_order_id"]) == wo_id
+        assert ev2["status"] == "in_progress"
+    finally:
+        shop_db.work_orders.delete_many({"unit_id": unit["_id"]})
+        shop_db.units.delete_one({"_id": unit["_id"]})

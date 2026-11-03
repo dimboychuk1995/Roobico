@@ -144,6 +144,11 @@ def start_timer(shop_db, shop, user_id, user_name, work_order_id, labor_id):
 
         notify_wo_event(shop, wo_id, wo.get("wo_number"), user_id, "taken")
 
+    # Запись календаря, привязанная к WO, становится In Progress вместе с ним.
+    from app.blueprints.calendar.services.work_orders import sync_linked_appointments_status
+
+    sync_linked_appointments_status(shop_db, shop, wo_id)
+
     return doc, stopped_prev_logs, None
 
 
