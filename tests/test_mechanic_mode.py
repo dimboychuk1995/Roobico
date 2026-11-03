@@ -2273,3 +2273,89 @@ def test_manager_in_progress_save_clears_all_done_marks(app, client, mech_seed, 
     assert shop_db.work_orders.find_one({"_id": ObjectId(wo_id)})["mechanic_done"] is True
 
     _deactivate_wos(mongo, wo_id)
+
+
+# ── закреплённая цена пресета в механик-режиме ──────────────────────
+
+
+def test_mechanic_preset_uses_pinned_part_price(client, mech_seed, mongo):
+    """Пресет с ручной (закреплённой) ценой парта: механик шлёт только
+    part_id/qty, но сервер ставит закреплённую цену — как при применении
+    того же пресета менеджером на вебе. Кастомер с «override part selling
+    price» по-прежнему получает цену по своей шкале; та же запчасть без
+    пресета идёт по selling price каталога."""
+    from app.blueprints.work_orders.services.mobile_editor import suggest_part_price
+
+    shop_db = mongo[SHOP_A_DB]
+    shop_id = mech_seed["customer"]["shop_id"]
+    part = mech_seed["part"]  # selling_price 99.5
+
+    preset_id = shop_db.wo_presets.insert_one({
+        "shop_id": shop_id, "name": "Pinned price preset", "labor_hours": 1,
+        "labor_rate_code": "standard", "is_active": True,
+        "parts": [{
+            "part_id": str(part["_id"]), "part_number": part["part_number"],
+            "description": part["description"], "qty": 1,
+            "cost": 40.0, "price": 101.0, "price_overridden": True,
+        }],
+    }).inserted_id
+    # Override кастомера действует только при наличии прайс-матрицы (как и
+    # на вебе): markup 50% -> cost 40 даёт 60.
+    rules_id = shop_db.parts_pricing_rules.insert_one({
+        "shop_id": shop_id, "mode": "markup",
+        "rules": [{"from": 0, "to": None, "value_percent": 50}],
+        "is_default": True, "is_active": True, "created_at": _now(),
+    }).inserted_id
+    wo_ids = []
+    try:
+        login_mechanic(client)
+
+        def _create(description, part_ref):
+            resp = _post_json(client, "/work_orders/api/mechanic/work_orders", {
+                "customer_id": str(mech_seed["customer"]["_id"]),
+                "unit_id": str(mech_seed["unit"]["_id"]),
+                "unit_mileage": 100000,
+                "allow_duplicate_unit_wo": True,
+                "labors": [
+                    {"description": description, "preset_id": str(preset_id),
+                     "parts": [{**part_ref, "qty": 1}]},
+                    {"description": "Plain job",
+                     "parts": [{"part_id": str(part["_id"]), "qty": 1}]},
+                ],
+            })
+            assert resp.status_code == 200, resp.get_data(as_text=True)
+            data = resp.get_json()
+            assert data["ok"] is True
+            wo_ids.append(data["id"])
+            return shop_db.work_orders.find_one({"_id": ObjectId(data["id"])})
+
+        wo = _create("Pinned job", {"part_id": str(part["_id"]), "part_number": part["part_number"]})
+        preset_block, plain_block = wo["labors"]
+        assert preset_block["parts"][0]["price"] == 101.0
+        assert preset_block["parts"][0]["cost"] == 40.0
+        assert plain_block["parts"][0]["price"] == 99.5
+
+        # Парт из пресета прислан только номером (устаревший part_id) —
+        # закреплённая цена всё равно находится.
+        wo_pn = _create("Pinned job by number", {"part_number": part["part_number"]})
+        assert wo_pn["labors"][0]["parts"][0]["price"] == 101.0
+
+        # Кастомер со своей шкалой: закреплённая цена не применяется.
+        shop_db.customers.update_one(
+            {"_id": mech_seed["customer"]["_id"]},
+            {"$set": {"override_part_selling_price": True}},
+        )
+        expected = suggest_part_price(shop_db, shop_id, mech_seed["customer"]["_id"], part)
+        assert expected == 60.0
+        wo2 = _create("Pinned job, override customer", {"part_id": str(part["_id"])})
+        assert wo2["labors"][0]["parts"][0]["price"] == expected
+        assert wo2["labors"][1]["parts"][0]["price"] == expected
+    finally:
+        shop_db.customers.update_one(
+            {"_id": mech_seed["customer"]["_id"]},
+            {"$unset": {"override_part_selling_price": ""}},
+        )
+        shop_db.wo_presets.delete_one({"_id": preset_id})
+        shop_db.parts_pricing_rules.delete_one({"_id": rules_id})
+        if wo_ids:
+            _deactivate_wos(mongo, *wo_ids)

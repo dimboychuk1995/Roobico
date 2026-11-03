@@ -19,17 +19,25 @@ from app.blueprints.work_orders.services.pdf_contexts import _parse_misc_items
 from app.blueprints.work_orders.services.totals import normalize_parts_payload
 
 
-def suggest_part_price(shop_db, shop_id, customer_id, part_doc) -> float:
+def suggest_part_price(shop_db, shop_id, customer_id, part_doc, pinned_price=None) -> float:
     """
     Цена продажи для строки WO — та же логика, что в веб-JS автозаполнении:
     если у запчасти задан selling price и клиент его не переопределяет —
     берём его; иначе считаем от cost по прайсинг-матрице (margin/markup).
+
+    pinned_price — цена, закреплённая вручную в сервис-темплейте
+    (price_overridden): как и на вебе, она сильнее selling price и
+    матрицы, но кастомер с «override part selling price» всё равно
+    получает цену по своей шкале.
     """
     from app.blueprints.work_orders.services.lookups import get_pricing_rules_json
 
     cost = float(part_doc.get("average_cost") or 0)
     pricing = get_pricing_rules_json(shop_db, shop_id, customer_id=customer_id)
     override = bool((pricing or {}).get("override_part_selling_price"))
+
+    if not override and pinned_price is not None:
+        return round2(float(pinned_price))
 
     if not override and part_doc.get("has_selling_price") and float(part_doc.get("selling_price") or 0) > 0:
         return round2(float(part_doc.get("selling_price") or 0))

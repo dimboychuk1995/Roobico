@@ -199,6 +199,11 @@ the pricing matrix. Two things still beat a pinned price:
   customers always get prices computed from their own scale;
 - editing the price directly on the WO line after applying the template.
 
+This works the same way when a **mechanic** adds the template from the
+mobile app or the mechanic page: mechanics never see prices, so the server
+prices the lines itself and uses the pinned template price for them (unless
+the customer has "override part selling price").
+
 To un-pin a price, clear the price field in the template editor and click
 away — the automatic price comes back and the row follows the catalog again.
 Costs always stay live regardless of pinning.

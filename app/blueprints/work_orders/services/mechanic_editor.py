@@ -159,8 +159,14 @@ def _default_rate_code(shop_db, shop_id, customer_id=None) -> str:
     return str(rates[0].get("code") or "")
 
 
-def _autofill_part(shop_db, shop_id, customer_id, raw_part: dict) -> dict:
-    """Новая строка запчасти от механика: qty от клиента, деньги — с сервера."""
+def _autofill_part(shop_db, shop_id, customer_id, raw_part: dict, pinned_prices: dict | None = None) -> dict:
+    """
+    Новая строка запчасти от механика: qty от клиента, деньги — с сервера.
+
+    pinned_prices — закреплённые цены пресета (см. _preset_pinned_prices):
+    строка, пришедшая из сервис-темплейта с ручной ценой, получает её,
+    как при применении того же пресета менеджером на вебе.
+    """
     qty = i32(raw_part.get("qty")) or 0
     part_doc = _resolve_part_doc(
         shop_db, shop_id, raw_part.get("part_id"), raw_part.get("part_number")
@@ -171,6 +177,13 @@ def _autofill_part(shop_db, shop_id, customer_id, raw_part: dict) -> dict:
             if part_doc.get("core_has_charge")
             else 0.0
         )
+        pinned_price = None
+        if pinned_prices:
+            pinned_price = pinned_prices.get(f"id:{part_doc['_id']}")
+            if pinned_price is None:
+                pn_key = str(part_doc.get("part_number") or "").strip().lower()
+                if pn_key:
+                    pinned_price = pinned_prices.get(f"pn:{pn_key}")
         return {
             "part_id": str(part_doc["_id"]),
             "part_number": str(part_doc.get("part_number") or "").strip(),
@@ -180,7 +193,9 @@ def _autofill_part(shop_db, shop_id, customer_id, raw_part: dict) -> dict:
             ),
             "qty": qty,
             "cost": round2(part_doc.get("average_cost") or 0),
-            "price": suggest_part_price(shop_db, shop_id, customer_id, part_doc),
+            "price": suggest_part_price(
+                shop_db, shop_id, customer_id, part_doc, pinned_price=pinned_price
+            ),
             "core_charge": core_charge,
             "misc_charge": 0,
             "misc_charge_description": "",
@@ -242,7 +257,7 @@ def _preset_defaults(shop_db, shop_id, preset_id_raw) -> dict:
         return {}
     doc = shop_db.wo_presets.find_one(
         {"_id": pid, "shop_id": shop_id, "is_active": True},
-        {"labor_hours": 1, "labor_rate_code": 1},
+        {"labor_hours": 1, "labor_rate_code": 1, "parts": 1},
     )
     if not doc:
         return {}
@@ -258,6 +273,35 @@ def _preset_defaults(shop_db, shop_id, preset_id_raw) -> dict:
     rate_code = str(doc.get("labor_rate_code") or "").strip()
     if rate_code:
         out["rate_code"] = rate_code
+    pinned = _preset_pinned_prices(doc)
+    if pinned:
+        out["pinned_prices"] = pinned
+    return out
+
+
+def _preset_pinned_prices(preset_doc: dict) -> dict:
+    """
+    Закреплённые вручную цены партов пресета (price_overridden) →
+    {"id:<part_id>": price, "pn:<part_number lower>": price}. Механик
+    шлёт из пресета только парт и qty, поэтому ручную цену темплейта
+    сервер должен подхватить сам — иначе строка уходит по selling price /
+    матрице, а на вебе тот же пресет даёт закреплённую цену.
+    Первое закреплённое вхождение парта побеждает.
+    """
+    out: dict = {}
+    for p in preset_doc.get("parts") or []:
+        if not isinstance(p, dict) or not p.get("price_overridden"):
+            continue
+        try:
+            price = float(p.get("price"))
+        except (TypeError, ValueError):
+            continue
+        part_id = str(p.get("part_id") or "").strip()
+        if part_id:
+            out.setdefault(f"id:{part_id}", price)
+        pn = str(p.get("part_number") or "").strip().lower()
+        if pn:
+            out.setdefault(f"pn:{pn}", price)
     return out
 
 
@@ -268,8 +312,14 @@ def build_mechanic_labors_payload(shop_db, shop, customer_id, payload_labors) ->
     for raw in payload_labors or []:
         if not isinstance(raw, dict):
             continue
+        # Работа из пресета: часы, ставка и закреплённые цены партов — из
+        # пресета (клиентские значения механика игнорируются, как и
+        # остальные денежные поля). Без пресета ставка — дефолтная ставка
+        # магазина, чтобы затреканные часы биллинговались, а не давали $0.
+        preset = _preset_defaults(shop_db, shop["_id"], raw.get("preset_id"))
+        pinned_prices = preset.get("pinned_prices")
         parts = [
-            _autofill_part(shop_db, shop["_id"], customer_id, p)
+            _autofill_part(shop_db, shop["_id"], customer_id, p, pinned_prices)
             for p in (raw.get("parts") or [])
             if isinstance(p, dict) and (
                 str(p.get("part_id") or "").strip()
@@ -278,11 +328,6 @@ def build_mechanic_labors_payload(shop_db, shop, customer_id, payload_labors) ->
             )
         ]
         _attach_catalog_misc_items(parts)
-        # Работа из пресета: часы и ставка — из пресета (клиентские значения
-        # механика игнорируются, как и остальные денежные поля). Без пресета
-        # ставка — дефолтная ставка магазина, чтобы затреканные часы
-        # биллинговались, а не давали $0.
-        preset = _preset_defaults(shop_db, shop["_id"], raw.get("preset_id"))
         out.append({
             "labor_id": str(raw.get("labor_id") or ""),
             "description": str(raw.get("description") or "").strip(),
