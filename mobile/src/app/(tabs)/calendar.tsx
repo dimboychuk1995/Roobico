@@ -16,7 +16,10 @@ import {
   CalendarView,
   DAY_LETTERS,
   DateRange,
+  Lane,
   MONTHS,
+  Mechanic,
+  UNASSIGNED_KEY,
   VIEWS,
   addDays,
   dayKey,
@@ -43,6 +46,7 @@ import {
   CalendarEvent,
   CalendarStatus,
   fetchCalendarEvents,
+  fetchCalendarMechanics,
   fetchCalendarStatuses,
   fetchCalendarWoStates,
 } from "@/lib/api";
@@ -50,6 +54,7 @@ import { useTheme } from "@/lib/theme";
 
 const VIEW_KEY = "roobico.calendar.view";
 const MINE_KEY = "roobico.calendar.mine";
+const LANES_KEY = "roobico.calendar.lanes";
 
 export default function CalendarScreen() {
   const theme = useTheme();
@@ -70,6 +75,9 @@ export default function CalendarScreen() {
   const [prefsReady, setPrefsReady] = useState(false);
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const [mine, setMine] = useState(false);
+  // Дорожки механиков внутри дня (как «By mechanic» на вебе) — по умолчанию включены.
+  const [lanesOn, setLanesOn] = useState(true);
+  const [mechanics, setMechanics] = useState<Mechanic[]>([]);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerMonth, setPickerMonth] = useState(() => startOfDay(new Date()));
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
@@ -91,11 +99,16 @@ export default function CalendarScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const [v, m] = await Promise.all([AsyncStorage.getItem(VIEW_KEY), AsyncStorage.getItem(MINE_KEY)]);
+        const [v, m, l] = await Promise.all([
+          AsyncStorage.getItem(VIEW_KEY),
+          AsyncStorage.getItem(MINE_KEY),
+          AsyncStorage.getItem(LANES_KEY),
+        ]);
         const paramView = VIEWS.some((x) => x.key === params.view) ? (params.view as CalendarView) : null;
         if (paramView) setView(paramView);
         else if (v && VIEWS.some((x) => x.key === v)) setView(v as CalendarView);
         if (m === "1") setMine(true);
+        if (l === "0") setLanesOn(false);
         const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(params.date || "");
         if (dm) setSelectedDay(new Date(Number(dm[1]), Number(dm[2]) - 1, Number(dm[3])));
       } finally {
@@ -103,6 +116,12 @@ export default function CalendarScreen() {
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  // Механики магазина — дорожки и цвета бейджей (список редкий, грузим раз).
+  useEffect(() => {
+    fetchCalendarMechanics()
+      .then((list) => setMechanics(list.map((m) => ({ id: String(m.id), name: m.name }))))
+      .catch(() => setMechanics([]));
   }, []);
   const changeView = (v: CalendarView) => {
     setView(v);
@@ -113,6 +132,12 @@ export default function CalendarScreen() {
     setMine((m) => {
       AsyncStorage.setItem(MINE_KEY, m ? "0" : "1").catch(() => {});
       return !m;
+    });
+  };
+  const toggleLanes = () => {
+    setLanesOn((on) => {
+      AsyncStorage.setItem(LANES_KEY, on ? "0" : "1").catch(() => {});
+      return !on;
     });
   };
 
@@ -233,9 +258,10 @@ export default function CalendarScreen() {
     setSelectedDay(startOfDay(day));
     changeView("day");
   };
-  const openCreate = (day: Date, startMin: number) => {
+  const openCreate = (day: Date, startMin: number, lane: Lane | null = null) => {
     if (!canCreate) return;
-    setFormState({ mode: "create", date: day, startMin, endMin: Math.min(24 * 60, startMin + 60) });
+    const mechanic = lane && lane.key !== UNASSIGNED_KEY ? { id: lane.key, name: lane.name } : null;
+    setFormState({ mode: "create", date: day, startMin, endMin: Math.min(24 * 60, startMin + 60), mechanic });
   };
   const openWorkOrder = (id: string) => {
     setDetailEvent(null);
@@ -373,6 +399,8 @@ export default function CalendarScreen() {
             showDayHeader={view !== "day"}
             canCreate={canCreate}
             refreshing={refreshing}
+            mechanics={mechanics}
+            lanesOn={lanesOn && !mine}
             onRefresh={onRefresh}
             onPressEvent={setDetailEvent}
             onPressSlot={openCreate}
@@ -433,6 +461,16 @@ export default function CalendarScreen() {
                 </Pressable>
               );
             })}
+            <View style={[styles.menuDivider, { backgroundColor: theme.border }]} />
+            <Pressable onPress={toggleLanes} style={styles.menuItem}>
+              <Ionicons name="people-outline" size={20} color={lanesOn ? theme.primary : theme.muted} />
+              <Text style={{ color: theme.text, fontSize: 15, fontWeight: "500", flex: 1 }}>Mechanic lanes</Text>
+              <Ionicons
+                name={lanesOn ? "checkmark-circle" : "ellipse-outline"}
+                size={20}
+                color={lanesOn ? theme.primary : theme.muted}
+              />
+            </Pressable>
           </View>
         </Pressable>
       </Modal>
@@ -532,4 +570,5 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
   },
   menuItem: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingVertical: 12 },
+  menuDivider: { height: StyleSheet.hairlineWidth, marginVertical: 6 },
 });

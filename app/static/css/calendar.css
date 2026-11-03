@@ -4,6 +4,7 @@
   display: flex;
   flex-direction: column;
   flex: 1;
+  overflow-x: auto; /* week lanes keep a minimum width — the grid scrolls sideways instead */
 }
 
 .cal-toolbar {
@@ -696,7 +697,9 @@
   border-top: 1px solid #e8eaed;
 }
 
-.cal-header-cell.cal-expanded .cal-lane-names.has-lanes {
+/* lanes exist on every day; the normal week shows badges only, a widened
+   day adds the names */
+.cal-lane-names.has-lanes {
   display: flex;
 }
 
@@ -706,8 +709,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
-  padding: 0 4px;
+  gap: 4px;
+  padding: 0 2px;
   font-family: "Manrope", "Segoe UI", sans-serif;
   font-size: .7rem;
   font-weight: 600;
@@ -716,15 +719,42 @@
   overflow: hidden;
   text-overflow: ellipsis;
   border-left: 1px solid #e0e0e0;
+  cursor: pointer;
 }
 
 .cal-lane-name:first-child {
   border-left: 0;
 }
 
+.cal-lane-name:hover .cal-mech-badge {
+  box-shadow: 0 0 0 2px rgba(60, 64, 67, .25);
+}
+
+.cal-lane-label {
+  display: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cal-header-cell.cal-expanded .cal-lane-label {
+  display: inline;
+}
+
+/* full-width day: the other days are narrow strips — no room for markers */
+.cal-grid--full .cal-header-cell.cal-collapsed .cal-lane-names {
+  display: none;
+}
+
 .cal-lane-name--unassigned {
   color: #80868b;
   font-style: italic;
+  cursor: default;
+}
+
+.cal-mech-badge--unassigned {
+  background: #e0e3e7;
+  color: #5f6368;
+  text-shadow: none;
 }
 
 /* facts (timer sessions) and read-only blocks open details on click, never move */

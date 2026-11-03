@@ -248,17 +248,20 @@ appointments — and **Open Work Order**.
 
 **Views and filters** (toolbar, right side):
 
-- **Week** — classic 7-day grid. Inside every day column each mechanic
-  who has blocks that day gets their own narrow lane (same order as the
-  "By mechanic" view), so one mechanic's blocks never mix with another's.
-  Click a day header to expand that day: the wide column splits into **one
-  lane per mechanic of the shop** (three mechanics = three lanes), each
-  with the mechanic's marker and name in the header above its lane; an
-  "Unassigned" lane appears only when something has no mechanic. Dropping
-  a chip or a plan into a lane assigns it to that mechanic. Click the
-  header a second time to make the day even wider (the other six days
-  shrink to narrow strips), and a third time to go back to the normal
-  week.
+- **Week** — 7-day grid where **every day is split into one lane per
+  mechanic of the shop** (three mechanics = three lanes, same order as the
+  "By mechanic" view) — empty future days too, so the week reads like a
+  staffing board. The marker row under each date names the lanes (initials
+  in the mechanic's colour; hover for the name); an "Unassigned" lane
+  (grey "–" marker) appears only when something has no mechanic. **Click
+  an empty slot inside a lane and the new appointment is already assigned
+  to that mechanic**; dropping a chip or a plan into a lane assigns it
+  too. Clicking a marker filters the calendar to that mechanic (click
+  again to show everyone). Lanes never get narrower than readable: with
+  many mechanics the grid grows and scrolls sideways. Click a day header
+  to widen that day (the markers gain names), a second time to give it
+  almost the whole grid (the other six days shrink to narrow strips), a
+  third time to go back to the normal week.
 - **Who is who**: every mechanic has a colour. The row of markers on top
   (colour, initials, name) is the key; each block carries the same colour
   on its left edge and the mechanic's initials in its corner, so you can

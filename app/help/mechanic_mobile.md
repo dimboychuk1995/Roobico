@@ -217,6 +217,18 @@ works like Google Calendar on a phone:
   the day header (and as an outlined chip in Month/Schedule) with "Not
   scheduled" — the phone never invents a time either. Mechanics see "Paid"
   as "Completed" and never see money here.
+- **Mechanic lanes** — in Day, 3 Day and Week every day is split into one
+  column per mechanic of the shop (same colours and initials as the web
+  calendar), empty future days included; an "Unassigned" lane (grey "–")
+  appears only when something has no mechanic. The marker row under the
+  dates names the lanes. **Tap an empty slot inside a lane and the new
+  appointment is already assigned to that mechanic.** When the lanes do
+  not fit the screen (Week on a phone) the grid scrolls sideways — swipe
+  the grid left/right, the time column stays; use the ‹ › arrows next to
+  the dates to move to the previous/next days. Each block also carries
+  the mechanic's initials badge. The lanes can be switched off in the
+  view menu (top-left icon → "Mechanic lanes"); "Only mine" hides them
+  automatically.
 - **Only mine** — the person icon in the header filters the calendar to
   events assigned to you (appointments where you are the mechanic and WO
   blocks of your own timers). Handy for a mechanic's "what's my day"; the

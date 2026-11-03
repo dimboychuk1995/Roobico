@@ -255,7 +255,14 @@ function InfoLine({ icon, text, sub }: { icon: string; text: string; sub?: strin
 // ── форма ────────────────────────────────────────────────────────────
 
 export type EventFormState =
-  | { mode: "create"; date: Date; startMin: number; endMin: number }
+  | {
+      mode: "create";
+      date: Date;
+      startMin: number;
+      endMin: number;
+      /** Тап в дорожке механика — он уже выбран в форме. */
+      mechanic?: { id: string; name: string } | null;
+    }
   | { mode: "edit"; event: CalendarEvent };
 
 export function EventFormModal({
@@ -298,7 +305,7 @@ export function EventFormModal({
       setTitle("");
       setCustomer(null);
       setUnit(null);
-      setMechanic(null);
+      setMechanic(state.mechanic || null);
       setDate(startOfDay(state.date));
       setStartMin(state.startMin);
       setEndMin(state.endMin);

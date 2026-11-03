@@ -313,3 +313,73 @@ export function textOn(hex: string): string {
   const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
   return lum > 0.72 ? "#1a2e22" : "#fff";
 }
+
+// ── механики: цвета, инициалы, дорожки ──────────────────────────────
+
+/** Палитра механиков — та же, что на веб-календаре (цвет = позиция в списке). */
+export const MECHANIC_COLORS = [
+  "#d81b60", "#f4511e", "#8d6e63", "#00acc1", "#c0ca33", "#6d4c41",
+  "#ad1457", "#ff8f00", "#607d8b", "#9e9d24", "#e91e63", "#546e7a",
+];
+export const UNASSIGNED_KEY = "unassigned";
+
+export interface Mechanic {
+  id: string;
+  name: string;
+}
+
+/** Дорожка внутри дня: механик магазина или «Unassigned». */
+export interface Lane {
+  key: string;
+  name: string;
+  color: string;
+}
+
+export function mechanicColor(id: string, mechanics: Mechanic[]): string {
+  let idx = mechanics.findIndex((m) => String(m.id) === String(id));
+  if (idx < 0) {
+    // Нет в списке (деактивирован) — стабильный цвет по хэшу id.
+    let h = 0;
+    const s = String(id || "");
+    for (let c = 0; c < s.length; c++) h = (h * 31 + s.charCodeAt(c)) & 0xffff;
+    idx = h;
+  }
+  return MECHANIC_COLORS[idx % MECHANIC_COLORS.length];
+}
+
+export function mechanicInitials(name: string): string {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return "?";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/** Механики события: mechanics[] с сервера либо одиночный mechanic_id. */
+export function eventMechanics(ev: CalendarEvent): Mechanic[] {
+  if (Array.isArray(ev.mechanics) && ev.mechanics.length) return ev.mechanics;
+  if (ev.mechanic_id) return [{ id: ev.mechanic_id, name: ev.mechanic_name || "" }];
+  return [];
+}
+
+/**
+ * Ключи дорожек события: его механики из списка магазина; без механика
+ * (или с деактивированным) — «Unassigned». Как на вебе.
+ */
+export function eventLaneKeys(ev: CalendarEvent, mechanics: Mechanic[]): string[] {
+  const known = new Set(mechanics.map((m) => String(m.id)));
+  const keys: string[] = [];
+  for (const m of eventMechanics(ev)) {
+    const id = String(m.id);
+    if (known.has(id) && !keys.includes(id)) keys.push(id);
+  }
+  return keys.length ? keys : [UNASSIGNED_KEY];
+}
+
+/** Все механики магазина + «Unassigned», если среди событий есть блок без механика. */
+export function buildLanes(mechanics: Mechanic[], events: CalendarEvent[], unassignedColor: string): Lane[] {
+  const lanes: Lane[] = mechanics.map((m) => ({ key: String(m.id), name: m.name, color: mechanicColor(m.id, mechanics) }));
+  if (events.some((e) => eventLaneKeys(e, mechanics).includes(UNASSIGNED_KEY))) {
+    lanes.push({ key: UNASSIGNED_KEY, name: "Unassigned", color: unassignedColor });
+  }
+  return lanes;
+}

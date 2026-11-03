@@ -1367,6 +1367,8 @@ html[data-theme="dark"] .cal-lane-sep { border-left-color: #3a3a3a; }
 html[data-theme="dark"] .cal-lane-names { border-top-color: var(--border); }
 html[data-theme="dark"] .cal-lane-name { color: #e8eaed; border-left-color: var(--border); }
 html[data-theme="dark"] .cal-lane-name--unassigned { color: #9aa0a6; }
+html[data-theme="dark"] .cal-mech-badge--unassigned { background: #3a3a3a; color: #9aa0a6; }
+html[data-theme="dark"] .cal-lane-name:hover .cal-mech-badge { box-shadow: 0 0 0 2px rgba(255, 255, 255, .25); }
 
 /* ── Education Center (/education) ─────────────────────────────────
    Основа education.css строится на --surface/--border/--text/--muted,

@@ -38,7 +38,7 @@
     var topbar = document.querySelector('.app-topbar');
     var toolbarH = toolbar ? toolbar.offsetHeight : 0;
     var topbarH = topbar ? topbar.offsetHeight : 0;
-    var headerRowH = 70; // approximate header row height
+    var headerRowH = viewMode === "week" ? 94 : 70; // week: day name + number + lane markers row
     // account for .app-main-pad padding (~31px), toolbar mb-2 (~8px), borders (~2px)
     var chrome = topbarH + toolbarH + headerRowH + UNSCHEDULED_ROW_H + 42;
     var available = window.innerHeight - chrome;
@@ -664,7 +664,7 @@
         laneNames.className = "cal-lane-names";
         cell.appendChild(laneNames);
 
-        cell.title = "Click to expand this day, click again for full width, once more to collapse";
+        cell.title = "Click to widen this day, click again for full width, once more to collapse";
         (function (idx) {
           cell.addEventListener("click", function () { toggleExpandDay(idx); });
         })(col.dayIndex);
@@ -776,13 +776,17 @@
       slot.style.height = SLOT_HEIGHT + "px";
       slot.setAttribute("data-hour", h);
 
-      (function (hour, column) {
+      (function (hour, column, slotEl) {
         slot.addEventListener("click", function (e) {
           if (dragJustEnded || !canCreate) return;
           if (e.target.closest(".cal-event")) return;
-          openModal(null, column.dayIndex, hour, column.unassigned ? null : column.mechanicId || null);
+          var mechId = column.unassigned ? null : column.mechanicId || null;
+          // week view: the lane under the cursor says who the plan is for
+          var lane = laneAtX(column, e.clientX, slotEl.getBoundingClientRect());
+          if (lane) mechId = lane.key === UNASSIGNED_KEY ? null : lane.key;
+          openModal(null, column.dayIndex, hour, mechId);
         });
-      })(h, col);
+      })(h, col, slot);
 
       colEl.appendChild(slot);
     }
@@ -842,6 +846,7 @@
       statusColors[cachedStatuses[s].key] = cachedStatuses[s].color;
     }
 
+    var laneCounts = [];
     for (var ci = 0; ci < columns.length; ci++) {
       var col = columns[ci];
       var colEl = colEls[ci];
@@ -852,19 +857,19 @@
       var colEvents = columnEvents(col, cachedEvents);
       markConflicts(colEvents);
 
-      // Week view: every day is laid out in mechanic lanes, so one mechanic
-      // always has one place in the column. Collapsed day - only mechanics
-      // who have blocks that day, no markers; expanded day - every mechanic
-      // of the shop (same order as "By mechanic"), markers in the header.
-      var expanded = viewMode === "week" && col.dayIndex === expandedDayIndex;
-      var lanes = null;
-      if (viewMode === "week") lanes = expanded ? dayLanes(colEvents) : usedLanes(colEvents);
-      updateLaneHeader(col, expanded ? lanes : null);
+      // Week view: every day - empty future days too - is split into one
+      // lane per mechanic of the shop (same order as "By mechanic") plus
+      // "Unassigned" when something has no mechanic, so a plan always sits
+      // in its mechanic's lane and a click in a lane books that mechanic.
+      // Markers in the header name the lanes (names appear on a widened day).
+      var lanes = viewMode === "week" ? dayLanes(colEvents) : null;
+      updateLaneHeader(col, lanes);
+      if (viewMode === "week") laneCounts[col.dayIndex] = lanes && lanes.length ? lanes.length : 1;
 
       if (lanes && lanes.length) {
         var laneCount = lanes.length;
         for (var li = 0; li < laneCount; li++) {
-          if (li > 0 && expanded) {
+          if (li > 0) {
             var sep = document.createElement("div");
             sep.className = "cal-lane-sep";
             sep.style.left = (li / laneCount * 100) + "%";
@@ -888,6 +893,40 @@
         }
       }
     }
+    applyLaneWidths(laneCounts);
+  }
+
+  /* Narrower lanes are unreadable: a day keeps lanes x LANE_MIN_PX and the
+     whole grid grows past the viewport instead (#calWeekContainer scrolls
+     sideways). Header cell, chip cell and body column of a day share one
+     min-width so the three rows stay aligned. */
+  var LANE_MIN_PX = 56;
+  function applyLaneWidths(laneCounts) {
+    var grid = container.querySelector(".cal-grid");
+    if (!grid) return;
+    if (viewMode !== "week") { grid.style.minWidth = ""; return; }
+    var headerCells = container.querySelectorAll(".cal-header-cell");
+    var bodyCols    = container.querySelectorAll(".cal-day-col");
+    var chipCells   = container.querySelectorAll(".cal-unscheduled-cell");
+    var total = 56; // time gutter
+    for (var i = 0; i < 7; i++) {
+      // full-width day: the other six are narrow strips by design
+      var strip = expandedDayIndex >= 0 && expandLevel >= 2 && i !== expandedDayIndex;
+      var w = strip ? 40 : Math.max(1, laneCounts[i] || 1) * LANE_MIN_PX;
+      total += w;
+      var els = [headerCells[i], bodyCols[i], chipCells[i]];
+      for (var k = 0; k < els.length; k++) if (els[k]) els[k].style.minWidth = w + "px";
+    }
+    grid.style.minWidth = total + "px";
+  }
+
+  /* Lane of a week-view day column under viewport x (slot click / drop). */
+  function laneAtX(col, clientX, rect) {
+    if (viewMode !== "week" || typeof clientX !== "number" || !rect || !(rect.width > 0)) return null;
+    var lanes = dayLanes(columnEvents(col, cachedEvents));
+    if (!lanes.length) return null;
+    var idx = Math.floor((clientX - rect.left) / rect.width * lanes.length);
+    return lanes[Math.max(0, Math.min(idx, lanes.length - 1))];
   }
 
   /* Which lane(s) an event belongs to: its mechanics that exist in the shop's
@@ -901,7 +940,7 @@
     return keys.length ? keys : [UNASSIGNED_KEY];
   }
 
-  /* Lanes of an expanded day: every mechanic of the shop (respecting the
+  /* Lanes of a week-view day: every mechanic of the shop (respecting the
      mechanic filter) + "Unassigned" only when something has no mechanic. */
   function dayLanes(colEvents) {
     var lanes = [];
@@ -920,25 +959,10 @@
     return lanes;
   }
 
-  /* Lanes of a collapsed day: only mechanics who have blocks that day (in
-     the shop's order) + "Unassigned" when something has no mechanic. */
-  function usedLanes(colEvents) {
-    var used = {};
-    for (var k = 0; k < colEvents.length; k++) {
-      var keys = eventLaneKeys(colEvents[k]);
-      for (var j = 0; j < keys.length; j++) used[keys[j]] = true;
-    }
-    var lanes = [];
-    for (var i = 0; i < cachedMechanics.length; i++) {
-      var id = String(cachedMechanics[i].id);
-      if (used[id]) lanes.push({ key: id, name: cachedMechanics[i].name });
-    }
-    if (used[UNASSIGNED_KEY]) lanes.push({ key: UNASSIGNED_KEY, name: "Unassigned" });
-    return lanes;
-  }
-
-  /* Markers on top of the expanded day: whose lane is which. They live in
-     the header cell, which has the same width as the column below. */
+  /* Markers on top of a day: whose lane is which. They live in the header
+     cell, which has the same width as the column below. Normal week shows
+     the initials badge only; a widened day adds the name. Clicking a
+     marker filters the calendar to that mechanic, like the legend. */
   function updateLaneHeader(col, lanes) {
     if (viewMode !== "week") return;
     var cell = container.querySelector('.cal-header-cell[data-day-index="' + col.dayIndex + '"]');
@@ -950,17 +974,26 @@
     holder.classList.toggle("has-lanes", show);
     if (!show) return;
     for (var i = 0; i < lanes.length; i++) {
+      var unassigned = lanes[i].key === UNASSIGNED_KEY;
       var name = document.createElement("span");
-      name.className = "cal-lane-name" + (lanes[i].key === UNASSIGNED_KEY ? " cal-lane-name--unassigned" : "");
-      if (lanes[i].key !== UNASSIGNED_KEY) {
-        var badge = document.createElement("span");
-        badge.className = "cal-mech-badge";
-        badge.style.backgroundColor = mechanicColor(lanes[i].key);
-        badge.textContent = mechanicInitials(lanes[i].name);
-        name.appendChild(badge);
-      }
-      name.appendChild(document.createTextNode(lanes[i].name));
-      name.title = lanes[i].name;
+      name.className = "cal-lane-name" + (unassigned ? " cal-lane-name--unassigned" : "");
+      var badge = document.createElement("span");
+      badge.className = "cal-mech-badge" + (unassigned ? " cal-mech-badge--unassigned" : "");
+      if (!unassigned) badge.style.backgroundColor = mechanicColor(lanes[i].key);
+      badge.textContent = unassigned ? "–" : mechanicInitials(lanes[i].name);
+      name.appendChild(badge);
+      var label = document.createElement("span");
+      label.className = "cal-lane-label";
+      label.textContent = lanes[i].name;
+      name.appendChild(label);
+      name.title = lanes[i].name + (unassigned ? "" : " — click to show only this mechanic");
+      (function (key) {
+        name.addEventListener("click", function (e) {
+          e.stopPropagation(); // the header cell itself widens the day
+          if (key === UNASSIGNED_KEY) return;
+          setMechanicFilter(mechanicFilter === key ? "" : key);
+        });
+      })(lanes[i].key);
       holder.appendChild(name);
     }
   }
@@ -1369,14 +1402,9 @@
 
     var evt = drag.evt;
     var dropLane = null;
-    if (viewMode === "week" && targetCol && targetCol.dayIndex === expandedDayIndex && e && typeof e.clientX === "number") {
-      // expanded day: the lane under the cursor says who the plan is for
-      var lanes = dayLanes(columnEvents(targetCol, cachedEvents));
-      var colRect = drag.cols[drag.currentColIdx].getBoundingClientRect();
-      if (lanes.length && colRect.width > 0) {
-        var laneIdx = Math.floor((e.clientX - colRect.left) / colRect.width * lanes.length);
-        dropLane = lanes[Math.max(0, Math.min(laneIdx, lanes.length - 1))];
-      }
+    if (viewMode === "week" && targetCol && drag.cols[drag.currentColIdx]) {
+      // the lane under the cursor says who the plan is for
+      dropLane = laneAtX(targetCol, e ? e.clientX : null, drag.cols[drag.currentColIdx].getBoundingClientRect());
     }
     drag = null;
 
@@ -1474,6 +1502,9 @@
     var chipCells   = container.querySelectorAll(".cal-unscheduled-cell");
 
     var isExpanded = expandedDayIndex >= 0 && expandedDayIndex < 7;
+    // full-width day: the other days are strips too narrow for lane markers
+    var grid = container.querySelector(".cal-grid");
+    if (grid) grid.classList.toggle("cal-grid--full", isExpanded && expandLevel >= 2);
 
     for (var i = 0; i < 7; i++) {
       var els = [headerCells[i], bodyCols[i], chipCells[i]];
@@ -1492,9 +1523,9 @@
     }
   }
 
-  /* Click on a day header: 1st - wide day with mechanic lanes, 2nd - the
-     day takes almost the whole grid (other days become narrow strips),
-     3rd - back to the normal week. */
+  /* Click on a day header: 1st - wide day (lane markers get names), 2nd -
+     the day takes almost the whole grid (other days become narrow strips),
+     3rd - back to the normal week. Lanes themselves are always there. */
   function toggleExpandDay(idx) {
     if (expandedDayIndex !== idx) {
       expandedDayIndex = idx;
