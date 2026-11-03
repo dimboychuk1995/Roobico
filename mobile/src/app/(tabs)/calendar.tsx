@@ -8,8 +8,9 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import * as ScreenOrientation from "expo-screen-orientation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Modal, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import {
@@ -232,6 +233,18 @@ export default function CalendarScreen() {
     }, [prefsReady])
   );
 
+  // Вращать экран можно только в календаре: в landscape неделя и дорожки
+  // механиков шире. Остальное приложение — портрет (лок в корневом layout).
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS === "web") return undefined;
+      ScreenOrientation.unlockAsync().catch(() => {});
+      return () => {
+        ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+      };
+    }, [])
+  );
+
   const onRefresh = async () => {
     setRefreshing(true);
     try {
@@ -282,7 +295,8 @@ export default function CalendarScreen() {
   const initialLoading = loading && !loadedRanges.length;
 
   return (
-    <View style={{ flex: 1, backgroundColor: theme.bg }}>
+    // В landscape вырез/скругления по бокам — отступы по insets.
+    <View style={{ flex: 1, backgroundColor: theme.bg, paddingLeft: insets.left, paddingRight: insets.right }}>
       {/* Шапка в стиле Google Calendar */}
       <View
         style={[

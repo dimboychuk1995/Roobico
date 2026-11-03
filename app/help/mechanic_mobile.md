@@ -201,10 +201,13 @@ works like Google Calendar on a phone:
 - **Views** — tap the icon at the top-left to switch: **Schedule** (a
   running list of days with events, empty days skipped, "Show earlier /
   Show more" extend the list), **Day** (hourly timeline with a week strip
-  above it), **3 Day**, **Week** (seven narrow columns) and **Month** (a
-  full-screen grid with coloured event chips; tap a day to open it in Day
-  view). The app remembers the last view. Swipe left/right in any grid to
-  move to the next/previous day, 3 days, week or month.
+  above it), **3 Day**, **Week** (the whole week always fits the screen)
+  and **Month** (a full-screen grid with coloured event chips; tap a day
+  to open it in Day view). The app remembers the last view. Swipe
+  left/right in any grid to move to the next/previous day, 3 days, week
+  or month. **The calendar is the only screen of the app that rotates**:
+  turn the phone sideways for a wider Week / 3 Day grid (the rest of the
+  app stays portrait).
 - **Jump to a date** — tap the month name in the header to drop down a
   month picker (dots mark days with events); the square "today" icon
   returns to today.
@@ -222,13 +225,15 @@ works like Google Calendar on a phone:
   calendar), empty future days included; an "Unassigned" lane (grey "–")
   appears only when something has no mechanic. The marker row under the
   dates names the lanes. **Tap an empty slot inside a lane and the new
-  appointment is already assigned to that mechanic.** When the lanes do
-  not fit the screen (Week on a phone) the grid scrolls sideways — swipe
-  the grid left/right, the time column stays; use the ‹ › arrows next to
-  the dates to move to the previous/next days. Each block also carries
-  the mechanic's initials badge. The lanes can be switched off in the
-  view menu (top-left icon → "Mechanic lanes"); "Only mine" hides them
-  automatically.
+  appointment is already assigned to that mechanic.** In Week the whole
+  week always stays on the screen, so lanes appear there only when they
+  have room — turn the phone sideways or use an iPad; in a portrait phone
+  week each day is one column and the blocks carry the mechanic's
+  initials badge instead. In Day / 3 Day the lanes keep a readable width
+  and the grid scrolls sideways if a shop has many mechanics (the time
+  column stays; ‹ › next to the dates move between days). The lanes can
+  be switched off in the view menu (top-left icon → "Mechanic lanes");
+  "Only mine" hides them automatically.
 - **Only mine** — the person icon in the header filters the calendar to
   events assigned to you (appointments where you are the mechanic and WO
   blocks of your own timers). Handy for a mechanic's "what's my day"; the

@@ -3,7 +3,7 @@
     "name": "Roobico",
     "slug": "roobico-mobile",
     "version": "1.0.2",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/images/icon.png",
     "scheme": "roobico",
     "userInterfaceStyle": "automatic",

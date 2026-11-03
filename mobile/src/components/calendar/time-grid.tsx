@@ -55,6 +55,8 @@ const HEADER_H = 52;
 const LANE_ROW_H = 26;
 const CHIP_H = 22;
 const NAV_W = 28;
+/** Неделя целиком на экране: дорожки уже этого не рисуем (нет места даже под бейдж). */
+const LANE_FIT_MIN = 28;
 
 interface Props {
   days: Date[];
@@ -119,16 +121,24 @@ export function TimeGrid({
 
   // Дорожки: все механики магазина + Unassigned, если на видимых днях
   // есть блок без механика.
-  const lanes = useMemo<Lane[] | null>(() => {
+  const allLanes = useMemo<Lane[] | null>(() => {
     if (!lanesOn || !mechanics.length) return null;
     return buildLanes(mechanics, perDay.flatMap((d) => d.timed), theme.muted);
   }, [lanesOn, mechanics, perDay, theme.muted]);
-  const laneCount = lanes ? lanes.length : 1;
 
-  // Геометрия в пикселях.
+  // Геометрия в пикселях. Неделя — всегда целиком на экране (как в Google):
+  // дорожки рисуем, только если влезают — в landscape / на iPad влезают,
+  // в портрете телефона блоки несут бейдж механика. Day / 3 Day держат
+  // читаемую ширину дорожки и при нужде скроллятся вбок.
+  // Справа от дней — колонка под стрелку «›» (в Day view её нет).
+  const navW = showDayHeader ? NAV_W : 0;
+  const gridW = Math.max(0, availW - GUTTER_W - navW);
+  const fitWeek = dayCount === 7;
   const laneMin = dayCount === 1 ? 110 : 72;
-  const gridW = Math.max(0, availW - GUTTER_W);
-  const dayW = gridW ? Math.max(gridW / dayCount, laneCount * laneMin) : 0;
+  const lanes =
+    fitWeek && allLanes && gridW > 0 && gridW / dayCount / allLanes.length < LANE_FIT_MIN ? null : allLanes;
+  const laneCount = lanes ? lanes.length : 1;
+  const dayW = !gridW ? 0 : fitWeek ? gridW / dayCount : Math.max(gridW / dayCount, laneCount * laneMin);
   const laneW = dayW / laneCount;
   const totalW = dayW * dayCount;
   const scrollable = totalW > gridW + 1;
@@ -310,14 +320,12 @@ export function TimeGrid({
             </View>
           </ScrollView>
 
-          {showDayHeader ? (
-            <Pressable
-              style={[styles.navRight, { height: HEADER_H, backgroundColor: theme.surface }]}
-              onPress={() => onSwipe(1)}
-              hitSlop={6}
-            >
-              <Ionicons name="chevron-forward" size={20} color={theme.muted} />
-            </Pressable>
+          {navW ? (
+            <View style={{ width: navW }}>
+              <Pressable style={[styles.navBtn, { height: HEADER_H }]} onPress={() => onSwipe(1)} hitSlop={6}>
+                <Ionicons name="chevron-forward" size={20} color={theme.muted} />
+              </Pressable>
+            </View>
           ) : null}
         </View>
       ) : null}
@@ -470,6 +478,7 @@ export function TimeGrid({
               </View>
             </ScrollView>
           ) : null}
+          {navW ? <View style={{ width: navW }} /> : null}
         </View>
       </ScrollView>
     </View>
@@ -479,15 +488,6 @@ export function TimeGrid({
 const styles = StyleSheet.create({
   topRow: { flexDirection: "row", borderBottomWidth: 1 },
   navBtn: { alignItems: "center", justifyContent: "center" },
-  navRight: {
-    position: "absolute",
-    right: 0,
-    top: 0,
-    width: NAV_W,
-    alignItems: "center",
-    justifyContent: "center",
-    opacity: 0.92,
-  },
   headerDay: { alignItems: "center", justifyContent: "center", gap: 2 },
   headerNum: {
     minWidth: 32,

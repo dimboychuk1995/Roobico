@@ -18,6 +18,8 @@ import {
   View,
 } from "react-native";
 
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+
 import { SearchPickerModal } from "@/components/search-picker";
 import { useToast } from "@/context/toast";
 import {
@@ -292,6 +294,8 @@ export function EventFormModal({
 }) {
   const theme = useTheme();
   const toast = useToast();
+  // Календарь вращается: в landscape лист не должен уходить под вырез.
+  const insets = useSafeAreaInsets();
 
   const [title, setTitle] = useState("");
   const [customer, setCustomer] = useState<{ id: string; label: string } | null>(null);
@@ -420,7 +424,17 @@ export function EventFormModal({
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <KeyboardAvoidingView style={styles.sheetBackdrop} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <Pressable style={{ flex: 1 }} onPress={onClose} />
-        <View style={[styles.sheet, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+        <View
+          style={[
+            styles.sheet,
+            {
+              backgroundColor: theme.surface,
+              borderColor: theme.border,
+              paddingLeft: 16 + insets.left,
+              paddingRight: 16 + insets.right,
+            },
+          ]}
+        >
           <View style={styles.sheetHeader}>
             <Pressable onPress={onClose} hitSlop={10} disabled={busy}>
               <Ionicons name="close" size={24} color={theme.text} />

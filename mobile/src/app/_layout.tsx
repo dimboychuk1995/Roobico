@@ -1,6 +1,7 @@
 import { DarkTheme, DefaultTheme, ThemeProvider } from "@react-navigation/native";
 import * as Notifications from "expo-notifications";
 import { Stack, router } from "expo-router";
+import * as ScreenOrientation from "expo-screen-orientation";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect, useRef } from "react";
 import { Platform, useColorScheme } from "react-native";
@@ -58,6 +59,14 @@ function RootNavigator() {
   useEffect(() => {
     if (ready) SplashScreen.hideAsync();
   }, [ready]);
+
+  // Приложение — портрет (app.json: orientation=default, чтобы iOS вообще
+  // разрешал поворот). Единственное исключение — календарь: он снимает лок
+  // на фокусе вкладки и возвращает портрет при уходе (см. (tabs)/calendar.tsx).
+  useEffect(() => {
+    if (Platform.OS === "web") return;
+    ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+  }, []);
 
   if (!ready) return null;
 
