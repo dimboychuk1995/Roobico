@@ -112,6 +112,12 @@ Categories, storage locations and pricing scales are configured on
 
 ## Part fields
 
+The same form opens when you create a part from an order — **Create & Add**
+on an unmatched line of the AI Order Reader or of an order created from
+email, on the Parts page and inside a work order alike: every field below is
+available there too, prefilled with the line's part number, description and
+price and with the order's vendor.
+
 - **Part number** (the only required field), **Reference** (alternative/OEM
   number), **Description**. Part numbers are unique within the shop
   (case-insensitive): creating or renaming a part to an existing number is
@@ -183,6 +189,10 @@ Categories, storage locations and pricing scales are configured on
   unit).
 - **"Add Misc charge for this part"** → a list of misc charges (description,
   price, taxable) automatically added when the part is put on a work order.
+  The description is required: a row with a price but no description is
+  refused ("Misc charge description is required."), a row where nothing
+  was entered is simply ignored. The same rule applies when creating the
+  part from a parts order (Create & Add) and when editing it.
 - **Vendor** — follows the purchases: every time a parts order with this
   part is created, saved, confirmed (email order) or the latest one is
   deleted, the part's vendor becomes the vendor of its **latest** parts

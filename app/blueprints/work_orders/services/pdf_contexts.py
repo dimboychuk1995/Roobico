@@ -1,6 +1,37 @@
 """
 Контексты для PDF work order и годовой инспекции (AVIR): собирают данные
 для рендера HTML-шаблонов, из которых генерируется PDF.
+
+Контракт денег в клиентском контексте `_build_wo_pdf_context` (PDF/инвойс,
+письма, клиентский портал, страница/письмо авторизации, мобильная деталка
+WO): каждую надбавку — shop supply, коры, misc, налог — клиент видит ОДИН
+раз, отдельной строкой перед Total, а не внутри Labor/Parts. Поэтому, в
+отличие от `totals` в БД (где `labor_total` = работа + supply, а
+`parts_total` = запчасти + коры + misc, см. totals.align_totals_with_labors):
+
+- `labors[i].labor_base` == `labors[i].labor_total` — работа блока БЕЗ
+  shop supply; `labors[i].shop_supply` — доля supply этого блока;
+  `labors[i].labor_total_with_supply` — работа + доля supply (для PDF, где
+  строка Shop Supplies скрыта дизайном и supply складывается в Labor);
+- `labors[i].block_total` — работа + запчасти блока (с корами и misc этого
+  блока, без supply); `labors[i].block_total_with_supply` — то же плюс
+  доля supply;
+- `t.labor_total` — работа по всему WO без supply;
+  `t.labor_total_with_supply` — как в БД (`totals.labor_total`, с supply) —
+  для PDF, где строка Shop Supplies скрыта дизайном и supply складывается
+  обратно в Labor; `t.shop_supply_total` — supply одной строкой;
+- `t.parts_total` — ТОЛЬКО запчасти (без коров и misc): `t.core_total` и
+  `t.misc_total` печатаются своими строками; `t.parts_total_with_extras` —
+  как в БД (`totals.parts_total` = запчасти + коры + misc) — для PDF, где
+  строки Core Charges / Misc скрыты дизайном и складываются обратно в Parts.
+
+Legacy-документы (февраль–март 2026) хранят `labor_total` без ключа `labor`:
+там `labor_total` — это и есть работа БЕЗ supply (та же конвенция, что в
+totals.normalize_totals_payload / align_totals_with_labors), supply к ней
+прибавляется, а не вычитается из неё.
+
+Экран редактора WO (work_order_details) — внутренний вид, там «Labor total»
+по-прежнему включает shop supply, а «Parts total» — коры и misc.
 """
 from __future__ import annotations
 
@@ -158,13 +189,27 @@ def _build_wo_pdf_context(shop_db, shop, wo):
         issue_description = str(labor_src.get("issue_description") or block.get("issue_description") or "").strip()
 
         block_totals = totals_labors[i] if i < len(totals_labors) and isinstance(totals_labors[i], dict) else {}
-        labor_base = round2(block_totals.get("labor") or 0)
         shop_supply = round2(block_totals.get("shop_supply_total") or 0)
-        labor_total_val = round2(block_totals.get("labor_total") or block_totals.get("labor") or 0)
+        if block_totals.get("labor") is not None:
+            labor_base = round2(block_totals.get("labor") or 0)
+        else:
+            # Legacy-блоки без ключа "labor": сохранённый labor_total — это
+            # работа БЕЗ supply (как в totals.normalize_totals_payload);
+            # supply к ней прибавляется, а не вычитается.
+            labor_base = round2(block_totals.get("labor_total") or 0)
+        labor_base = max(0.0, labor_base)
+        # Клиентский контекст: labor_total — работа БЕЗ shop supply (в БД
+        # totals.labors[i].labor_total = работа + доля supply). Shop supply
+        # печатается один раз отдельной строкой перед Total;
+        # labor_total_with_supply — для PDF, где эта строка скрыта дизайном
+        # и supply складывается обратно в строку Labor.
+        labor_total_val = labor_base
+        labor_total_with_supply = round2(labor_base + shop_supply)
         parts_subtotal = round2(block_totals.get("parts_total") or 0)
         core_t = round2(block_totals.get("core_total") or 0)
         misc_t = round2(block_totals.get("misc_total") or 0)
-        block_total = round2(block_totals.get("labor_full_total") or (labor_total_val + parts_subtotal))
+        block_total = round2(labor_base + parts_subtotal)
+        block_total_with_supply = round2(block_total + shop_supply)
 
         normalized_parts = normalize_parts_payload(block.get("parts") or [])
 
@@ -230,22 +275,56 @@ def _build_wo_pdf_context(shop_db, shop, wo):
             "shop_supply": shop_supply,
             "labor_total": labor_total_val,
             "labor_total_fmt": f"${labor_total_val:.2f}",
+            "labor_total_with_supply": labor_total_with_supply,
             "parts_subtotal": parts_subtotal,
             "core_total": core_t,
             "misc_total": misc_t,
             "block_total": block_total,
+            "block_total_with_supply": block_total_with_supply,
             "parts": parts_detail,
             "misc_items": misc_items_built,
         })
 
     paid_total = _sum_active_work_order_payments(shop_db, wo.get("_id"))
     pay_summary = _build_work_order_payment_summary(wo, paid_total)
+    shop_supply_total = round2(totals_doc.get("shop_supply_total") or 0)
+    if totals_doc.get("labor") is not None:
+        labor_total_base = round2(totals_doc.get("labor") or 0)
+    else:
+        # Legacy totals без ключа "labor": labor_total — работа БЕЗ supply
+        # (как в totals.normalize_totals_payload), supply прибавляется.
+        labor_total_base = round2(totals_doc.get("labor_total") or 0)
+    labor_total_base = max(0.0, labor_total_base)
+    # Как в БД: totals.labor_total = работа + shop supply — для PDF, где
+    # строка Shop Supplies скрыта дизайном и supply складывается в Labor.
+    labor_total_with_supply = round2(labor_total_base + shop_supply_total)
+
+    core_total = round2(totals_doc.get("core_total") or 0)
+    misc_total = round2(totals_doc.get("misc_total") or 0)
+    # В БД totals.parts_total = запчасти + коры + misc. Клиенту Parts —
+    # только запчасти: коры и misc печатаются своими строками, иначе они
+    # оказались бы в документе дважды (как и shop supply внутри Labor).
+    if totals_doc.get("parts") is not None:
+        parts_only = round2(totals_doc.get("parts") or 0)
+    else:
+        parts_only = round2(round2(totals_doc.get("parts_total") or 0) - core_total - misc_total)
+    parts_only = max(0.0, parts_only)
+    if totals_doc.get("parts_total") is not None:
+        parts_total_with_extras = round2(totals_doc.get("parts_total") or 0)
+    else:
+        parts_total_with_extras = round2(parts_only + core_total + misc_total)
     t = {
-        "labor_total": round2(totals_doc.get("labor_total") or totals_doc.get("labor") or 0),
-        "parts_total": round2(totals_doc.get("parts_total") or totals_doc.get("parts") or 0),
-        "core_total": round2(totals_doc.get("core_total") or 0),
-        "shop_supply_total": round2(totals_doc.get("shop_supply_total") or 0),
-        "misc_total": round2(totals_doc.get("misc_total") or 0),
+        # Клиенту: Labor — только работа; shop supply — отдельной строкой.
+        "labor_total": labor_total_base,
+        "labor_total_with_supply": labor_total_with_supply,
+        # Клиенту: Parts — только запчасти; коры и misc — своими строками.
+        # parts_total_with_extras — как в БД, для PDF, где строки Core
+        # Charges / Misc скрыты дизайном и складываются обратно в Parts.
+        "parts_total": parts_only,
+        "parts_total_with_extras": parts_total_with_extras,
+        "core_total": core_total,
+        "shop_supply_total": shop_supply_total,
+        "misc_total": misc_total,
         "sales_tax_total": round2(totals_doc.get("sales_tax_total") or 0),
         "grand_total": pay_summary["grand_total"],
         "paid_total": pay_summary["paid_amount"],

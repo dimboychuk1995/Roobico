@@ -189,7 +189,10 @@ checks each request itself and answers 403 if the key is missing.
 - **Customers**: list/search, customer and unit pages, forms.
 - **Parts**: Stock (with cross references ⇆, minimum-stock badges and the
   All / Below min / Near min chips — see "Parts on the phone" below),
-  Orders (parts orders incl. AI invoice scan), Counts (stocktakes).
+  Orders (parts orders incl. AI invoice scan; **Receive** here asks only
+  for the vendor bill and receives every line as ordered — a partial
+  receipt with the real quantities is done on the web), Counts
+  (stocktakes).
 - **More**: global Search, Vendors, Reports (all standard reports with
   period chips), Settings — **Active shop** switching and account info.
 

@@ -89,7 +89,11 @@
           {% if single_labor.parts_subtotal %}
           <tr><td style="color:#888;padding:3px 0;">Parts</td><td>${{ "%.2f"|format(single_labor.parts_subtotal) }}</td></tr>
           {% endif %}
-          <tr><td style="color:#888;padding:3px 0;">Block total</td><td><strong>${{ "%.2f"|format(single_labor.block_total) }}</strong></td></tr>
+          {# Shop supply — отдельной строкой; Block total — полная сумма работы (с supply). #}
+          {% if single_labor.shop_supply > 0 %}
+          <tr><td style="color:#888;padding:3px 0;">Shop supply</td><td>${{ "%.2f"|format(single_labor.shop_supply) }}</td></tr>
+          {% endif %}
+          <tr><td style="color:#888;padding:3px 0;">Block total</td><td><strong>${{ "%.2f"|format(single_labor.block_total_with_supply) }}</strong></td></tr>
         </table>
         {% else %}
         <!-- Whole work order summary -->
@@ -137,6 +141,19 @@
         </table>
         {% endfor %}
         <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
+          {# Суммы блоков выше — без shop supply; supply и налог (уровень WO) — по одной строке перед Grand total. #}
+          {% if t.shop_supply_total > 0 %}
+          <tr>
+            <td style="padding:10px 0 0;color:#888;">Shop supply</td>
+            <td style="text-align:right;padding:10px 0 0;color:#888;">${{ "%.2f"|format(t.shop_supply_total) }}</td>
+          </tr>
+          {% endif %}
+          {% if t.sales_tax_total > 0 %}
+          <tr>
+            <td style="padding:10px 0 0;color:#888;">Sales tax</td>
+            <td style="text-align:right;padding:10px 0 0;color:#888;">${{ "%.2f"|format(t.sales_tax_total) }}</td>
+          </tr>
+          {% endif %}
           <tr>
             <td style="padding:10px 0 0;font-weight:700;">Grand total</td>
             <td style="text-align:right;padding:10px 0 0;font-weight:700;font-size:16px;">

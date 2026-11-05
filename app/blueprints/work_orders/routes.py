@@ -382,12 +382,18 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
 
         linked_appointments = linked_appointments_for_wo(shop_db, shop, existing_wo_id)
 
+    # Полная модалка парта (components/part_modal.html внутри модалки
+    # заказа): селект единиц и видимость себестоимости — как на Parts.
+    from app.constants.part_units import part_unit_options
+
     ctx = {
         "sales_tax_context": sales_tax_context,
         "active_page": "work_orders",
         "vendors": po_vendors,
         "categories": po_categories,
         "locations": po_locations,
+        "part_units": part_unit_options(),
+        "can_view_part_costs": has_permission("parts.view_costs"),
         "customers": customers,
         "units": units,
         "selected_customer_id": str(customer_id) if customer_id else "",

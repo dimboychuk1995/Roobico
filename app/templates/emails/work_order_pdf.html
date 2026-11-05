@@ -224,8 +224,20 @@
   </table>
 
   <!-- ITEMS -->
+  {# Shop supply печатается один раз — строкой "Shop Supplies" в тоталах.
+     Если дизайн PDF её скрывает, supply складывается обратно в Labor и в
+     Subtotal блоков, чтобы колонка по-прежнему сходилась с Total. #}
+  {% set supply_line = t.shop_supply_total > 0 and pdf_cfg.get('show_shop_supply', true) %}
+  {# Коры и misc — своими строками Core Charges / Misc в тоталах (t.parts_total —
+     только запчасти). Если дизайн PDF их скрывает, сумма складывается обратно
+     в строку Parts — колонка по-прежнему сходится с Total. #}
+  {% set core_line = t.core_total > 0 and pdf_cfg.get('show_core_charges', true) %}
+  {% set misc_line = t.misc_total > 0 and pdf_cfg.get('show_misc_charges', true) %}
   {% for labor in labors %}
   {%- set h = (labor.hours | float(0)) if labor.hours else 0.0 -%}
+  {# Строка Labor в позициях — работа без supply; при скрытой строке Shop
+     Supplies — работа + доля supply, как Subtotal блока и Labor в тоталах. #}
+  {%- set labor_amt = labor.labor_base if supply_line else labor.labor_total_with_supply -%}
 
   <table class="items-tbl">
     <thead>
@@ -254,8 +266,8 @@
           {% endif %}
         </td>
         <td class="tr">{{ "%g" | format(h if h > 0 else 1) }}</td>
-        <td class="tr">${{ "%.2f" | format((labor.labor_base / h) if h > 0 else labor.labor_base) }}</td>
-        <td class="tr">${{ "%.2f" | format(labor.labor_base) }}</td>
+        <td class="tr">${{ "%.2f" | format((labor_amt / h) if h > 0 else labor_amt) }}</td>
+        <td class="tr">${{ "%.2f" | format(labor_amt) }}</td>
       </tr>
 
       {% if labor.parts and pdf_cfg.get('show_parts_detail', true) %}
@@ -300,7 +312,7 @@
 
       <tr class="subtotal-row">
         <td colspan="4" style="text-align: right;">Subtotal</td>
-        <td class="tr">${{ "%.2f" | format(labor.block_total) }}</td>
+        <td class="tr">${{ "%.2f" | format(labor.block_total if supply_line else labor.block_total_with_supply) }}</td>
       </tr>
     </tbody>
   </table>
@@ -329,13 +341,14 @@
         <table class="tot-tbl" cellpadding="0" cellspacing="0">
           <tr>
             <td class="tot-lbl">Labor</td>
-            <td class="tot-val">${{ "%.2f" | format(t.labor_total) }}</td>
+            <td class="tot-val">${{ "%.2f" | format(t.labor_total if supply_line else t.labor_total_with_supply) }}</td>
           </tr>
           <tr>
             <td class="tot-lbl">Parts</td>
-            <td class="tot-val">${{ "%.2f" | format(t.parts_total) }}</td>
+            {# Только запчасти; скрытые дизайном коры / misc складываются сюда. #}
+            <td class="tot-val">${{ "%.2f" | format(t.parts_total + (0 if core_line else t.core_total) + (0 if misc_line else t.misc_total)) }}</td>
           </tr>
-          {% if t.core_total > 0 and pdf_cfg.get('show_core_charges', true) %}
+          {% if core_line %}
           <tr>
             <td class="tot-lbl">Core Charges</td>
             <td class="tot-val">${{ "%.2f" | format(t.core_total) }}</td>
@@ -347,7 +360,7 @@
             <td class="tot-val">${{ "%.2f" | format(t.shop_supply_total) }}</td>
           </tr>
           {% endif %}
-          {% if t.misc_total > 0 and pdf_cfg.get('show_misc_charges', true) %}
+          {% if misc_line %}
           <tr>
             <td class="tot-lbl">Misc</td>
             <td class="tot-val">${{ "%.2f" | format(t.misc_total) }}</td>

@@ -1687,12 +1687,18 @@ def parts_create():
             elif field == "taxable":
                 item["taxable"] = (val or "").strip()
 
+        # Одно правило с JSON-роутами (_parse_misc_charges_json): описание
+        # обязательно; строка, где ничего не введено, игнорируется; цена без
+        # описания — ошибка, как у остальных полей формы.
         for idx in sorted(misc_map.keys()):
             item = misc_map[idx]
             desc = (item.get("description") or "").strip()
             price_raw = (item.get("price") or "").strip()
             if not (desc or price_raw):
                 continue
+            if not desc:
+                flash(MISC_DESC_REQUIRED, "error")
+                return redirect(url_for("parts.parts_page"))
 
             price = _parse_float(price_raw, default=0.0)
             if price < 0:
@@ -1790,6 +1796,38 @@ def parts_create():
     return redirect(url_for("parts.parts_page"))
 
 
+MISC_DESC_REQUIRED = "Misc charge description is required."
+
+
+def _parse_misc_charges_json(raw):
+    """Misc charges из JSON-payload'а (список {description, price, taxable})
+    — одно правило с формой parts_create: описание обязательно; строка, где
+    не введено ни описание, ни цена, игнорируется; цена без описания и
+    отрицательная цена — ошибка. Возвращает (список, ошибка | None)."""
+    if not isinstance(raw, list):
+        return [], "Invalid misc charges"
+    charges = []
+    for ch in raw:
+        if not isinstance(ch, dict):
+            continue
+        desc = str(ch.get("description") or "").strip()
+        price_value = ch.get("price")
+        price_raw = "" if price_value is None else str(price_value).strip()
+        if not desc and not price_raw:
+            continue
+        if not desc:
+            return [], MISC_DESC_REQUIRED
+        price = _parse_float(price_raw, default=0.0)
+        if price < 0:
+            return [], "Misc charge price cannot be negative."
+        charges.append({
+            "description": desc,
+            "price": float(price),
+            "taxable": bool(ch.get("taxable", True)),
+        })
+    return charges, None
+
+
 @parts_bp.post("/api/create")
 @login_required
 @permission_required("parts.create")
@@ -1824,29 +1862,76 @@ def parts_api_create():
     vendor_id_raw = str(data.get("vendor_id") or "").strip()
     category_id_raw = str(data.get("category_id") or "").strip()
     location_id_raw = str(data.get("location_id") or "").strip()
-    average_cost = _parse_float(data.get("average_cost"), default=0.0)
+
+    # Та же форма «Create new part», что и POST /parts/create (parts_create):
+    # из модалки парт-ордера (Create & Add) она уходит сюда JSON'ом, поэтому
+    # проверки и документ должны совпадать с формой один в один. Поля,
+    # которых в payload нет (старые клиенты), получают прежние дефолты.
     in_stock = _parse_int(data.get("in_stock"), default=0)
-    do_not_track = bool(data.get("do_not_track_inventory"))
-    has_selling_price = bool(data.get("has_selling_price"))
-    selling_price = _parse_float(data.get("selling_price"), default=0.0) if has_selling_price else None
-    core_has_charge = bool(data.get("core_has_charge"))
-    core_cost = _parse_float(data.get("core_cost"), default=0.0) if core_has_charge else None
+
+    average_cost = _parse_float(data.get("average_cost"), default=0.0)
+    if average_cost < 0:
+        return jsonify({"ok": False, "error": "Average cost cannot be negative."}), 400
+
+    has_selling_price = _flag(data.get("has_selling_price"))
+    selling_price = _parse_float(data.get("selling_price"), default=0.0)
+    if has_selling_price and selling_price < 0:
+        return jsonify({"ok": False, "error": "Selling price cannot be negative."}), 400
+
+    core_has_charge = _flag(data.get("core_has_charge"))
+    core_cost = _parse_float(data.get("core_cost"), default=0.0)
+    if core_has_charge and core_cost < 0:
+        return jsonify({"ok": False, "error": "Core cost cannot be negative."}), 400
+
+    misc_has_charge = _flag(data.get("misc_has_charge"))
+    do_not_track = _flag(data.get("do_not_track_inventory"))
+
+    if not do_not_track and in_stock < 0:
+        return jsonify({"ok": False, "error": "In stock cannot be negative."}), 400
 
     stock_settings, err = _parse_part_stock_settings(data.get, do_not_track)
     if err:
         return jsonify({"ok": False, "error": err}), 400
 
-    vendor_oid = None
-    if vendor_id_raw and vendors_coll is not None:
-        vendor_oid, _ = _validate_ref(vendors_coll, vendor_id_raw, "Vendor")
+    # Без учёта склада у парта не бывает core charge (как в форме).
+    if do_not_track:
+        core_has_charge = False
+        core_cost = 0.0
 
-    category_oid = None
-    if category_id_raw and cats_coll is not None:
-        category_oid, _ = _validate_ref(cats_coll, category_id_raw, "Category")
+    # Misc charges — те же правила, что у формы и parts_api_update
+    # (_parse_misc_charges_json): описание обязательно, пустые строки
+    # игнорируются, цена без описания / отрицательная цена — 400.
+    misc_charges = []
+    if misc_has_charge:
+        misc_charges, err = _parse_misc_charges_json(data.get("misc_charges", []) or [])
+        if err:
+            return jsonify({"ok": False, "error": err}), 400
 
-    location_oid = None
-    if location_id_raw and locs_coll is not None:
-        location_oid, _ = _validate_ref(locs_coll, location_id_raw, "Location")
+    # Ссылки проверяем строго, как форма: неверный / чужой / неактивный
+    # id — 400 с причиной, а не молчаливый None.
+    vendor_oid, err = (
+        _validate_ref(vendors_coll, vendor_id_raw, "Vendor")
+        if vendors_coll is not None
+        else (None, None)
+    )
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+
+    category_oid, err = (
+        _validate_ref(cats_coll, category_id_raw, "Category")
+        if cats_coll is not None
+        else (None, None)
+    )
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
+
+    location_oid, err = (
+        _validate_ref(locs_coll, location_id_raw, "Location")
+        if locs_coll is not None
+        else (None, None)
+    )
+    if err:
+        return jsonify({"ok": False, "error": err}), 400
 
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
@@ -1859,15 +1944,15 @@ def parts_api_create():
         "vendor_id": vendor_oid,
         "category_id": category_oid,
         "location_id": location_oid,
-        "do_not_track_inventory": do_not_track,
+        "do_not_track_inventory": bool(do_not_track),
         **stock_settings,
         "average_cost": float(average_cost),
-        "has_selling_price": has_selling_price,
-        "selling_price": float(selling_price) if selling_price is not None else None,
-        "core_has_charge": core_has_charge,
-        "core_cost": float(core_cost) if core_cost is not None else None,
-        "misc_has_charge": False,
-        "misc_charges": [],
+        "has_selling_price": bool(has_selling_price),
+        "selling_price": float(selling_price) if has_selling_price else None,
+        "core_has_charge": bool(core_has_charge),
+        "core_cost": float(core_cost) if core_has_charge else None,
+        "misc_has_charge": bool(misc_has_charge),
+        "misc_charges": misc_charges if misc_has_charge else [],
         "is_active": True,
         "created_at": now,
         "updated_at": now,
@@ -2400,11 +2485,20 @@ def parts_api_orders_get(order_id: str):
             quantity = item.get("quantity") if item.get("quantity") is not None else item.get("qty")
             price = item.get("price") if item.get("price") is not None else item.get("cost")
             
+            # Частичная приёмка: quantity = сколько приняли, ordered_quantity —
+            # сколько заказывали (ключ есть только у изменённых строк).
+            ordered_quantity = item.get("ordered_quantity")
+            try:
+                ordered_quantity = int(ordered_quantity) if ordered_quantity is not None else None
+            except (TypeError, ValueError):
+                ordered_quantity = None
+
             items.append({
                 "part_id": str(part_id) if part_id else "",
                 "part_number": item.get("part_number") or "",
                 "description": item.get("description") or "",
                 "quantity": quantity or 0,
+                "ordered_quantity": ordered_quantity,
                 "price": float(price or 0),
                 "core_charge": float(_parse_float(item.get("core_charge"), default=0.0)),
                 "core_has_charge": bool(part_data.get("core_has_charge", False)),
@@ -2950,13 +3044,84 @@ def parts_api_core_set_quantity(core_id: str):
     return jsonify({"ok": True, "quantity": int(core_doc.get("quantity") or 0)})
 
 
+def _parse_received_quantity(value):
+    """Фактически принятое количество из item_quantities: целое ≥ 0
+    (int, целый float или строка вида "10"); булево / дробное /
+    мусор → None."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, float):
+        return int(value) if value.is_integer() and value >= 0 else None
+    if isinstance(value, str):
+        try:
+            parsed = int(value.strip())
+        except ValueError:
+            return None
+        return parsed if parsed >= 0 else None
+    return None
+
+
+def _apply_received_quantities(items: list, item_quantities: dict):
+    """Строки заказа после приёмки с фактическими количествами.
+
+    item_quantities — {part_id_str: принято}. Строка, у которой принято
+    отличается от заказанного, получает quantity = принято и
+    ordered_quantity = заказанное (пишется один раз — при повторной приёмке
+    после unreceive исходное заказанное количество сохраняется). Принято 0 —
+    строка выкидывается из заказа. Ключи, которых нет среди строк,
+    игнорируются; исходные dict'ы не мутируются.
+
+    Возвращает (строки, изменения [{part_id, part_number, ordered, received}],
+    part_id выкинутых строк).
+    """
+    adjusted = []
+    changes = []
+    dropped = []
+    for it in items:
+        if not isinstance(it, dict) or not it.get("part_id"):
+            adjusted.append(it)
+            continue
+        key = str(it.get("part_id"))
+        if key not in item_quantities:
+            adjusted.append(it)
+            continue
+        received = int(item_quantities[key])
+        ordered = _parse_int(it.get("quantity"), default=0)
+        if received == ordered:
+            adjusted.append(it)
+            continue
+        changes.append({
+            "part_id": key,
+            "part_number": str(it.get("part_number") or ""),
+            "ordered": ordered,
+            "received": received,
+        })
+        if received <= 0:
+            dropped.append(it.get("part_id"))
+            continue
+        item = dict(it)
+        if "ordered_quantity" not in item:
+            item["ordered_quantity"] = ordered
+        item["quantity"] = received
+        adjusted.append(item)
+    return adjusted, changes, dropped
+
+
 @parts_bp.post("/api/orders/<order_id>/receive")
 @login_required
 @permission_required("parts_orders.receive")
 def parts_api_orders_receive(order_id: str):
     """
-    AJAX receive order (full receive).
-    Returns JSON { ok: true, updated_parts: N }
+    AJAX receive order. JSON body (all optional): vendor_bill,
+    item_locations {part_id: location_id | ""}, item_quantities
+    {part_id: received qty}. Without item_quantities every line is received
+    as ordered (mobile app); with them the order lines are updated to what
+    actually arrived (0 drops the line) so the order total matches the
+    vendor bill.
+    Returns JSON { ok: true, updated_parts: N, updated_not_tracked: N,
+                   quantity_changes: [{part_id, part_number, ordered, received}] }
     """
     parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
     if parts_coll is None or orders_coll is None or shop is None:
@@ -3008,6 +3173,39 @@ def parts_api_orders_receive(order_id: str):
         non_inventory_amounts = []
     if len(items) == 0 and len(non_inventory_amounts) == 0:
         return jsonify({"ok": False, "error": "Order has no items or non inventory amounts."}), 400
+
+    # Фактически принятые количества {part_id_str: int} (веб-диалог приёмки).
+    # Без них (мобильное приложение шлёт только vendor_bill) принимается
+    # столько, сколько заказано. Заказ приводится к тому, что приехало:
+    # quantity = принято, ordered_quantity = заказывали; 0 выкидывает строку.
+    raw_item_quantities = payload.get("item_quantities")
+    if not isinstance(raw_item_quantities, dict):
+        raw_item_quantities = {}
+    item_quantities = {}
+    for key, value in raw_item_quantities.items():
+        parsed_qty = _parse_received_quantity(value)
+        if parsed_qty is None:
+            return jsonify({"ok": False, "error": "Received quantity must be a whole number (0 or more)."}), 400
+        item_quantities[str(key)] = parsed_qty
+
+    items, quantity_changes, dropped_part_ids = _apply_received_quantities(items, item_quantities)
+    if item_quantities and not non_inventory_amounts and not any(
+        isinstance(it, dict) and _parse_int(it.get("quantity"), default=0) > 0 for it in items
+    ):
+        return jsonify({"ok": False, "error": "Nothing to receive: every line is 0."}), 400
+
+    payments_coll = orders_coll.database.parts_order_payments
+    if quantity_changes:
+        # Итог заказа уменьшился — уже записанные платежи не должны его превышать.
+        paid_amount = _sum_active_order_payments(payments_coll, oid)
+        received_total = _parts_order_amounts(
+            {"items": items, "non_inventory_amounts": non_inventory_amounts}
+        ).get("total_amount") or 0.0
+        if float(paid_amount) - float(received_total) > 0.01:
+            return jsonify({
+                "ok": False,
+                "error": "Paid amount is greater than the received order total. Reduce the payment first.",
+            }), 400
 
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
@@ -3094,26 +3292,51 @@ def parts_api_orders_receive(order_id: str):
 
         updated += 1
 
-    audit_log.log_event("receive", "parts_order", oid, label=audit_log.parts_order_label(order),
-                        summary=f"{audit_log.parts_order_label(order)} received ({updated} part(s) stocked)",
-                        details={"vendor_bill": vendor_bill, "updated_parts": updated})
-    orders_coll.update_one(
-        {"_id": oid},
-        {"$set": {
-            "status": "received",
-            "vendor_bill": vendor_bill,
-            "received_at": now,
-            "received_by": user_oid,
-            "received_item_locations": received_locations,
-            "updated_at": now,
-            "updated_by": user_oid,
-        }},
-    )
+    label = audit_log.parts_order_label(order)
+    summary = f"{label} received ({updated} part(s) stocked)"
+    details = {"vendor_bill": vendor_bill, "updated_parts": updated}
+    audit_changes = []
+    if quantity_changes:
+        summary += f"; quantities updated on {len(quantity_changes)} line(s)"
+        # Строки — так журнал хранит их целиком (список dict'ов audit_log сплющивает до лейблов).
+        details["quantity_changes"] = [
+            f"{c['part_number'] or c['part_id']}: ordered {c['ordered']}, received {c['received']}"
+            for c in quantity_changes
+        ]
+        for change in quantity_changes:
+            pn = change["part_number"] or change["part_id"]
+            audit_changes.append(audit_log.change(
+                f"items.{pn}.quantity", change["ordered"], change["received"], f"{pn} qty",
+            ))
+    audit_log.log_event("receive", "parts_order", oid, label=label, summary=summary,
+                        changes=audit_changes, details=details)
+
+    order_set = {
+        "status": "received",
+        "vendor_bill": vendor_bill,
+        "received_at": now,
+        "received_by": user_oid,
+        "received_item_locations": received_locations,
+        "updated_at": now,
+        "updated_by": user_oid,
+    }
+    if quantity_changes:
+        # Строки заказа = что реально приехало; итог заказа = счёт вендора.
+        order_set["items"] = items
+    orders_coll.update_one({"_id": oid}, {"$set": order_set})
+
+    if quantity_changes:
+        updated_order = orders_coll.find_one({"_id": oid}) or {}
+        _sync_parts_order_payment_state(orders_coll, payments_coll, updated_order, user_oid, now)
+        if dropped_part_ids:
+            # Выкинутые строки: этот заказ больше не «последний» для их партов.
+            refresh_last_price(orders_coll.database, shop["_id"], dropped_part_ids, now=now)
 
     return jsonify({
         "ok": True,
         "updated_parts": updated,
         "updated_not_tracked": updated_not_tracked,
+        "quantity_changes": quantity_changes,
     })
 
 
@@ -3121,8 +3344,10 @@ def parts_api_orders_receive(order_id: str):
 @login_required
 @permission_required("parts_orders.receive")
 def parts_api_orders_receive_context(order_id: str):
-    """Данные для диалога приёмки: позиции с дефолтными локациями партов
-    + дерево локаций магазина."""
+    """Данные для диалога приёмки: все строки заказа (учитываемые,
+    неучитываемые и неактивные парты) с заказанным количеством, остатком и
+    дефолтной локацией + дерево локаций магазина + есть ли у заказа
+    non-inventory суммы (тогда приёмка с нулями по всем строкам разрешена)."""
     parts_coll, vendors_coll, cats_coll, locs_coll, orders_coll, shop, master = _parts_collections()
     if parts_coll is None or orders_coll is None or shop is None:
         return jsonify({"ok": False, "error": "Shop database not configured."}), 400
@@ -3144,27 +3369,33 @@ def parts_api_orders_receive_context(order_id: str):
             for p in parts_coll.find(
                 {"_id": {"$in": part_ids}},
                 {"part_number": 1, "description": 1, "location_id": 1,
-                 "do_not_track_inventory": 1, "is_active": 1},
+                 "do_not_track_inventory": 1, "is_active": 1, "in_stock": 1},
             )
         }
 
+    # Все строки — у каждой в диалоге есть поле «принято»; локация и остаток
+    # только у учитываемых партов, неактивные помечаются бэджем.
     items_out = []
     for it in items:
         pid = it.get("part_id")
         part = parts_map.get(pid)
-        if not part or part.get("is_active") is False:
+        if not part:
             continue
         qty = _parse_int(it.get("quantity"), default=0)
         if qty <= 0:
             continue
-        if bool(part.get("do_not_track_inventory")):
-            continue
+        tracked = not bool(part.get("do_not_track_inventory"))
         items_out.append({
             "part_id": str(pid),
             "part_number": str(part.get("part_number") or ""),
             "description": str(part.get("description") or ""),
             "quantity": qty,
-            "default_location_id": str(part.get("location_id")) if part.get("location_id") else "",
+            "tracked": tracked,
+            "is_active": part.get("is_active") is not False,
+            "default_location_id": (
+                str(part.get("location_id")) if tracked and part.get("location_id") else ""
+            ),
+            "in_stock": _parse_int(part.get("in_stock"), default=0) if tracked else 0,
         })
 
     shop_db = parts_coll.database
@@ -3173,11 +3404,17 @@ def parts_api_orders_receive_context(order_id: str):
         for item in flatten_location_tree(load_shop_locations(shop_db, shop["_id"]))
     ]
 
+    # Как в parts_api_orders_receive: заказ с non-inventory суммами принимается
+    # и при нулях по всем строкам — клиентская проверка диалога это учитывает.
+    non_inventory_amounts = order.get("non_inventory_amounts") or []
+    has_non_inventory_amounts = isinstance(non_inventory_amounts, list) and len(non_inventory_amounts) > 0
+
     return jsonify({
         "ok": True,
         "items": items_out,
         "locations": tree,
         "vendor_bill": str(order.get("vendor_bill") or ""),
+        "has_non_inventory_amounts": has_non_inventory_amounts,
     })
 
 
@@ -3408,13 +3645,21 @@ def _rollback_received_order_inventory(parts_coll, items, user_oid, shop_id, ref
     """Rollback stock quantities for received order items and take the batch
     back out of the weighted average cost (services/costing.py).
     item_locations — {part_id_str: location_id_str | ""}, сохранённые при приёмке:
-    откат снимает остаток из тех же локаций, куда принимали."""
+    откат снимает остаток из тех же локаций, куда принимали.
+
+    Откат делается всегда — даже если принятые парты уже ушли на work
+    orders: остаток (и строка локации) уходит в минус, запрета нет. Парты
+    ищутся тем же фильтром, что при приёмке (find_orderable_part): парт,
+    деактивированный после приёмки, тоже откатывается (иначе повторная
+    приёмка посчитала бы остаток дважды) и остаётся неактивным — активирует
+    его следующая приёмка; слитые дубли (merged_into) не трогаются.
+    Возвращает (updated, negative_stock): negative_stock — [{part_id (str),
+    part_number, stock_after}] партов, у которых остаток стал < 0."""
     if not isinstance(items, list):
         return 0, []
     if not isinstance(item_locations, dict):
         item_locations = {}
 
-    errors = []
     updates = []
 
     for it in items:
@@ -3429,10 +3674,7 @@ def _rollback_received_order_inventory(parts_coll, items, user_oid, shop_id, ref
         if not pid or qty <= 0:
             continue
 
-        part = parts_coll.find_one(
-            {"_id": pid, "is_active": True},
-            {"in_stock": 1, "do_not_track_inventory": 1, "average_cost": 1},
-        )
+        part = find_orderable_part(parts_coll, pid)
         if not part:
             continue
 
@@ -3440,26 +3682,20 @@ def _rollback_received_order_inventory(parts_coll, items, user_oid, shop_id, ref
             continue
 
         current_qty = int(part.get("in_stock") or 0)
-        if current_qty < qty:
-            label = part_number or str(pid)
-            errors.append(f"Cannot rollback '{label}': need {qty}, have {current_qty} in stock")
-            continue
-
         updates.append({
             "part_id": pid,
             "qty": qty,
+            "part_number": str(part.get("part_number") or "").strip() or part_number,
             # Средняя без этой партии: обратная формула к приёмке.
             "avg_after": reverse_weighted_average_cost(
                 current_qty, part.get("average_cost"), qty, price,
             ),
         })
 
-    if errors:
-        return 0, errors
-
     shop_db = parts_coll.database
     now = utcnow()
     updated = 0
+    negative_stock = []
     for upd in updates:
         stock_kwargs = {}
         key = str(upd["part_id"])
@@ -3476,8 +3712,24 @@ def _rollback_received_order_inventory(parts_coll, items, user_oid, shop_id, ref
                 {"_id": upd["part_id"]},
                 {"$set": {"average_cost": float(upd["avg_after"]), "updated_at": now, "updated_by": user_oid}},
             )
+            stock_after = result.get("stock_after")
+            if stock_after is not None and int(stock_after) < 0:
+                negative_stock.append({
+                    "part_id": str(upd["part_id"]),
+                    "part_number": upd["part_number"],
+                    "stock_after": int(stock_after),
+                })
 
-    return updated, []
+    return updated, negative_stock
+
+
+def _negative_stock_audit_lines(negative_stock) -> list:
+    """Строки для журнала (как quantity_changes при приёмке): список dict'ов
+    audit_log сплющивает до лейблов, и stock_after терялся бы."""
+    return [
+        f"{row.get('part_number') or row.get('part_id')}: {row.get('stock_after')}"
+        for row in (negative_stock or [])
+    ]
 
 
 @parts_bp.post("/api/orders/<order_id>/unreceive")
@@ -3512,7 +3764,7 @@ def parts_api_orders_unreceive(order_id: str):
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
 
-    updated, rollback_errors = _rollback_received_order_inventory(
+    updated, negative_stock = _rollback_received_order_inventory(
         parts_coll,
         order.get("items") or [],
         user_oid,
@@ -3520,8 +3772,6 @@ def parts_api_orders_unreceive(order_id: str):
         ref={"kind": "parts_order", "id": order["_id"], "label": str(order.get("order_number") or "")},
         item_locations=order.get("received_item_locations"),
     )
-    if rollback_errors:
-        return jsonify({"ok": False, "error": rollback_errors[0], "details": rollback_errors}), 400
 
     orders_coll.update_one(
         {"_id": oid},
@@ -3539,9 +3789,13 @@ def parts_api_orders_unreceive(order_id: str):
         },
     )
 
+    summary = f"{audit_log.parts_order_label(order)} un-received (stock rolled back)"
+    if negative_stock:
+        summary += f"; {len(negative_stock)} part(s) now below zero"
     audit_log.log_event("update", "parts_order", oid, label=audit_log.parts_order_label(order),
-                        summary=f"{audit_log.parts_order_label(order)} un-received (stock rolled back)")
-    return jsonify({"ok": True, "updated_parts": updated})
+                        summary=summary,
+                        details={"negative_stock": _negative_stock_audit_lines(negative_stock)} if negative_stock else None)
+    return jsonify({"ok": True, "updated_parts": updated, "negative_stock": negative_stock})
 
 
 def _load_email_order(order_id: str):
@@ -3620,6 +3874,7 @@ def parts_api_orders_delete(order_id: str):
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
     updated = 0
+    negative_stock = []
 
     if order.get("is_return"):
         # Удаление возврата: вернуть списанное на склад в те же локации.
@@ -3646,7 +3901,7 @@ def parts_api_orders_delete(order_id: str):
         ):
             return jsonify({"ok": False, "error": "Order has active returns. Delete the returns first."}), 400
 
-        updated, rollback_errors = _rollback_received_order_inventory(
+        updated, negative_stock = _rollback_received_order_inventory(
             parts_coll,
             order.get("items") or [],
             user_oid,
@@ -3654,8 +3909,6 @@ def parts_api_orders_delete(order_id: str):
             ref={"kind": "parts_order", "id": order["_id"], "label": str(order.get("order_number") or "")},
             item_locations=order.get("received_item_locations"),
         )
-        if rollback_errors:
-            return jsonify({"ok": False, "error": rollback_errors[0], "details": rollback_errors}), 400
 
     orders_coll.update_one(
         {"_id": oid},
@@ -3686,8 +3939,9 @@ def parts_api_orders_delete(order_id: str):
     if not order.get("is_return"):
         refresh_last_price(orders_coll.database, shop["_id"], order_part_ids(order), now=now)
 
-    audit_log.log_event("delete", "parts_order", oid, label=audit_log.parts_order_label(order))
-    return jsonify({"ok": True, "updated_parts": updated})
+    audit_log.log_event("delete", "parts_order", oid, label=audit_log.parts_order_label(order),
+                        details={"negative_stock": _negative_stock_audit_lines(negative_stock)} if negative_stock else None)
+    return jsonify({"ok": True, "updated_parts": updated, "negative_stock": negative_stock})
 
 
 @parts_bp.get("/api/<part_id>")
@@ -4115,18 +4369,12 @@ def parts_api_update(part_id: str):
         return jsonify({"ok": False, "error": err}), 400
 
     misc_has_charge = data.get("misc_has_charge", False)
-    misc_charges_raw = data.get("misc_charges", []) or []
-    if misc_has_charge and not isinstance(misc_charges_raw, list):
-        return jsonify({"ok": False, "error": "Invalid misc charges"}), 400
-    misc_charges = [
-        {
-            "description": str(ch.get("description") or "").strip(),
-            "price": float(ch.get("price") or 0),
-            "taxable": bool(ch.get("taxable", True)),
-        }
-        for ch in misc_charges_raw
-        if isinstance(ch, dict) and str(ch.get("description") or "").strip()
-    ]
+    misc_charges = []
+    if misc_has_charge:
+        # Те же правила, что у формы и parts_api_create.
+        misc_charges, err = _parse_misc_charges_json(data.get("misc_charges", []) or [])
+        if err:
+            return jsonify({"ok": False, "error": err}), 400
 
     # Validate references
     vendor_oid, err = (

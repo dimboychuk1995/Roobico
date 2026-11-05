@@ -175,7 +175,10 @@ still works).
 ## Work Order Settings
 
 - **Shop Supply Amount** — "Shop supply percentage" (default 5) applied to
-  labor on WOs.
+  labor on WOs. On the work-order page the amount is part of the Labor
+  total; on invoices/PDFs, emails, the customer portal and authorization
+  pages the customer sees it once, as a separate **Shop Supplies** line
+  before the Total, while the Labor line is labor only.
 - **Core Charge Rules** — "Charge core by default" toggle for WO part lines.
 - **Labor Rates** — name + hourly rate (defaults seeded: Standard $100,
   After Hours $150). Rates picked on WO labor lines and as customers'
@@ -215,6 +218,18 @@ logo (logo itself is uploaded on the Shops page), toggles for customer
 email/phone, unit number/VIN/mileage, labor hours/rate code, parts detail,
 core/misc charges, shop supply, paid & balance; thank-you message and
 terms/notes footer.
+
+On the PDF the **Labor** total line is labor only, **Parts** is parts only,
+and Core Charges, **Shop Supplies** and Misc are their own lines right
+before the Total (the per-job Subtotal is labor + parts without shop
+supply). If you untick "Show shop supply", that line disappears and its
+amount is folded back into the Labor line, the Labor item rows and the
+per-job Subtotals; unticking "Show core charges" / "Show misc charges" folds
+those amounts into the Parts line the same way — so the PDF still adds up
+to the same Total, the customer just does not see the charge itemized. The
+work-order email, the customer portal and the authorization pages always
+list shop supply, cores and misc as their own lines regardless of these
+toggles.
 
 ## Parts & Pricing
 

@@ -94,13 +94,15 @@
       }).then(function (result) { return result.isConfirmed; });
     };
 
+    // Возвращает promise Swal.fire: `await appAlert(msg, 'warning')` ждёт «OK»
+    // (нужно там, где страница перезагружается сразу после сообщения).
     window.appAlert = function (message, type) {
-      if (typeof Swal === 'undefined') { window.alert(message); return; }
+      if (typeof Swal === 'undefined') { window.alert(message); return Promise.resolve(); }
       type = type || 'info';
       var noAnim = { popup: '', backdrop: '' };
       var btnColors = { success: '#1a7a42', error: '#c43b3b', warning: '#c48a1a', info: '#1a7a42' };
       if (type === 'success' || type === 'info') {
-        Swal.fire({
+        return Swal.fire({
           toast: true,
           position: 'bottom-end',
           icon: type,
@@ -112,15 +114,14 @@
           showClass: noAnim,
           hideClass: noAnim,
         });
-      } else {
-        Swal.fire({
-          icon: type,
-          title: message,
-          confirmButtonColor: btnColors[type] || '#1a7a42',
-          showClass: noAnim,
-          hideClass: noAnim,
-        });
       }
+      return Swal.fire({
+        icon: type,
+        title: message,
+        confirmButtonColor: btnColors[type] || '#1a7a42',
+        showClass: noAnim,
+        hideClass: noAnim,
+      });
     };
 
     // Flash-сообщения из layout'а (см. app_base.html) → тосты.

@@ -255,8 +255,12 @@ your screen.
   hand get an "edited" badge; a running session must be stopped before it
   can be edited. Paid work orders are locked — unpay first.
 - **Shop supply** is a percentage of labor (default 5%, configurable), shown
-  as an editable "Shop supply: $" field with a reset (↺) button. It is part
-  of the Labor total.
+  as an editable "Shop supply: $" field with a reset (↺) button. On the
+  work-order page it is part of the **Labor total** (labor + shop supply).
+  The customer never sees it hidden inside labor: on the invoice/PDF, in
+  emails, in the customer portal and on authorization pages the **Labor**
+  line is labor only and **Shop Supplies** is listed once as its own line
+  right before the Total (details in "Tax and totals" below).
 - Block menu (⋮): **"Add Preset"**, **"Describe Issue"** (AI polishes/
   translates the issue text into professional English for the customer),
   **"Send for Authorization"** (this labor only).
@@ -335,7 +339,30 @@ A price you edit by hand is never overwritten.
   taxed**. Rate comes from the shop ZIP (or the custom rate in Settings →
   Parts Settings); the rate is locked into the WO at save time.
 - Grand total = Labor total (labor + shop supply) + Parts total (parts +
-  cores + misc) + sales tax.
+  cores + misc) + sales tax — this is how the work-order page groups the
+  amounts.
+- **What the customer sees.** The work-order page is the internal view:
+  there "Labor total" includes shop supply and "Parts total" includes cores
+  and misc charges. On everything sent to the customer — the invoice/PDF,
+  the work-order email, the customer portal page and the authorization
+  page/email — every amount is listed exactly once: the **Labor** line is
+  labor only, the **Parts** line is parts only, and **Core Charges**, **Shop
+  Supplies**, **Misc** and **Sales Tax** are each their own line (shown only
+  when non-zero), so Labor + Parts + Core Charges + Shop Supplies + Misc +
+  Sales Tax = Total. The per-job **Subtotal** on the PDF, and the job
+  amounts in the portal and on authorization pages, are labor + parts
+  (including that job's cores and misc) without shop supply, so job
+  subtotals + Shop Supplies + Sales Tax on taxable work orders add up to the
+  Total. The mobile app's work-order screen shows the same split (Labor,
+  Parts, Shop supply, Misc, Cores, Tax).
+- **Hidden Shop Supplies line.** If Settings → PDF Design has "Show shop
+  supply" unticked, the PDF prints no Shop Supplies line; its amount is
+  folded back into the Labor line, into the Labor item rows and into the
+  per-job Subtotals, so the PDF still adds up to the same Total — the
+  customer just does not see shop supply itemized. "Show core charges" and
+  "Show misc charges" work the same way: a hidden Core Charges / Misc line
+  is folded into the Parts line. The email, portal and authorization pages
+  always show each of these as its own line.
 - **"Work Order Cost"** button — internal profit view: enter mechanics'
   hourly cost rates (stored only in your browser) and see per-job cost,
   revenue and profit.
@@ -354,6 +381,14 @@ email with the PDF and a link to a public page with **"✓ Approve"** /
 **"✕ Decline"** buttons and an optional comment. The result shows as a green
 "✓ Authorized" / red "✕ Declined" badge on the WO and labor (comment in the
 tooltip), and in the customer portal history.
+
+Amounts on the authorization page and email follow the customer-facing rule
+(see "Tax and totals"): for one labor the customer sees **Labor total**
+(labor only), **Parts**, **Shop supply** (that job's share, as its own line)
+and **Block total** — the full amount of that job including shop supply,
+which is what they approve. For a whole work order each job card shows labor
++ parts without shop supply, and **Shop supply** (plus **Sales tax** on
+taxable work orders) is listed once right above the **Grand total**.
 
 ## Payments
 

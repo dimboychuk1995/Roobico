@@ -23,8 +23,8 @@
 <table>
   <thead><tr><th>Line</th><th>Made of</th></tr></thead>
   <tbody>
-    <tr><td><strong>Labor total</strong></td><td>Σ labor lines (hours × rate, or the manual Labor Total) + shop supply.</td></tr>
-    <tr><td><strong>Parts total</strong></td><td>Σ parts (price + charged cores) × qty + misc charges.</td></tr>
+    <tr><td><strong>Labor total</strong></td><td>Σ labor lines (hours × rate, or the manual Labor Total) + shop supply — on the work-order page. On the invoice/PDF, in emails, the customer portal and authorizations the <strong>Labor</strong> line is labor only; shop supply is its own line (see below).</td></tr>
+    <tr><td><strong>Parts total</strong></td><td>Σ parts (price + charged cores) × qty + misc charges — on the work-order page. Customer documents list <strong>Parts</strong> (parts only), <strong>Core Charges</strong> and <strong>Misc</strong> as separate lines.</td></tr>
     <tr><td><strong>Sales tax</strong></td><td>(parts + taxable misc) × the locked rate, when Taxable is on.</td></tr>
     <tr><td><strong>Grand total</strong></td><td>Labor total + Parts total + Sales tax.</td></tr>
     <tr><td><strong>Balance</strong></td><td>Grand total − payments recorded.</td></tr>
@@ -34,7 +34,17 @@
 <h2>Shop supply</h2>
 <p>
   A percentage of labor (default 5%, configurable in Settings → Work Order Settings). It shows as an editable <em>Shop supply: $</em>
-  field with a ↺ reset, and is part of the Labor total. Set it to 0 for a specific job if needed.
+  field with a ↺ reset, and on the work-order page it is part of the Labor total. Set it to 0 for a specific job if needed.
+</p>
+<p>
+  <strong>What the customer sees.</strong> On the invoice/PDF, in the work-order email, in the customer portal and on authorization
+  pages every amount is listed exactly once: the <strong>Labor</strong> line is labor only, the <strong>Parts</strong> line is parts
+  only, and Core Charges, <strong>Shop Supplies</strong>, Misc and Sales Tax are each their own line before the Total — so
+  Labor + Parts + Core Charges + Shop Supplies + Misc + Sales Tax = Total. Per-job subtotals on those documents are labor + parts
+  (with that job's cores and misc) without shop supply, so job subtotals + Shop Supplies + Sales Tax on taxable work orders add up
+  to the Total. If Settings → PDF Design hides the Shop Supplies line, the amount is folded back into Labor (including the Labor
+  item rows) and the job subtotals on the PDF; hidden Core Charges / Misc lines fold into Parts the same way — so the PDF still
+  adds up to the same Total.
 </p>
 
 <h2>Misc charges</h2>

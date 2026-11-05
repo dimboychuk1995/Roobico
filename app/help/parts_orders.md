@@ -66,8 +66,15 @@ review panel:
   a **Total** column = Qty × Price, "Add" / "Add All Matched"). An inactive
   part is matched too (badge **Inactive**) and becomes active when the order
   is created;
-- **New parts (not in database)** — lines with a **Create & Add** button that
-  creates the part first.
+- **New parts (not in database)** — lines with a **Create & Add** button.
+  It opens the same full **Create new part** form as **Add Part** on the
+  Parts page — every field is there: reference, unit of measure, minimum
+  stock, selling price, "do not track inventory", core charge, misc
+  charges, vendor / category / location. The form is prefilled with the
+  line's part number, description and price (as the average cost) and with
+  the order's vendor; after **Create** the part is added to the order with
+  the line's quantity and price. **Create & Add All** walks through the new
+  lines one by one in the same form (Cancel skips a line and moves on).
 
 **Price = unit price, never the line amount.** The reader extracts two
 numbers per line — the net unit price and the printed line amount (Ext /
@@ -153,8 +160,13 @@ the Status column (or **Edit**). The order dialog opens with a yellow
   warning if the vendor was created automatically;
 - **Lines not found in the parts catalog** — the same table as in the AI
   Order Reader: edit part number / description / qty / price and press
-  **Create & Add** to create the part and put it on the order. Lines you do
-  not add (freight, tax, mistakes) are dropped on confirm.
+  **Create & Add**. It opens the same full **Create new part** form as
+  **Add Part** on the Parts page (reference, unit of measure, minimum
+  stock, selling price, do-not-track, core charge, misc charges, vendor /
+  category / location), prefilled with the line's part number, description
+  and price and with the order's vendor; after **Create** the part is put
+  on the order with the line's quantity and price. Lines you do not add
+  (freight, tax, mistakes) are dropped on confirm.
 
 Check quantities and prices in the main items table, then press
 **Confirm order**. Changes are saved and the flag is removed — from now on it
@@ -189,21 +201,49 @@ Use it while you are getting used to the feature, then switch to automatic.
 **Receive Order** (or click the yellow "ordered" status in the list):
 
 - enter **"Vendor Bill"** — the vendor's invoice number (optional);
+- check the **Received** column. Every line of the order is listed — also
+  parts that are not tracked and parts that are currently inactive (an
+  **Inactive** badge; receiving makes them active again) — with the
+  ordered quantity pre-filled. If the vendor shipped fewer (or more) than
+  ordered, type what actually arrived (**partial receipt**): the order's
+  quantities are updated to match what was received, the original number
+  stays visible on the line as "ordered N", and **0 removes the line**
+  from the order. The order total therefore always equals the vendor bill,
+  and stock gets exactly what came. If a payment already recorded on the
+  order is larger than the new total, receiving is blocked ("Paid amount
+  is greater than the received order total") — delete or correct that
+  payment on the **Parts Orders Payments** tab first. The mobile app has
+  only the Vendor Bill field: it receives every line as ordered, partial
+  receipts are web-only.
 - if the shop uses locations, choose **where to put** each received part
-  ("Put received parts into:"); default is the part's location, otherwise
-  "Unassigned". A location chosen here becomes the part's default if it had
-  none.
+  (the **Location** column); default is the part's location, otherwise
+  "Unassigned". A location chosen here becomes the part's default if it
+  had none. Untracked parts have no location (shown as "—").
+- Changed something in the order dialog first (quantities, prices, added
+  or removed lines)? Those edits are **saved automatically** when you
+  press **Receive Order**, and the receiving dialog opens with the saved
+  quantities. If the save is refused (for example a payment exceeds the
+  new total), the error shows in the dialog and nothing is received.
 - Stock increases by the received quantities; the part's **average cost** is
   recalculated as a weighted average of old stock and the received price.
 - Parts marked "do not track inventory" get no stock movement — only their
   average cost is set to the received price.
 
 **Unreceive Order** rolls the received quantities back out of the same
-locations (average cost is NOT reverted). Not possible while the order has
-active returns.
+locations and takes that batch back out of the average cost. It **always
+works** — even when the parts were already used on work orders: stock
+then goes **below zero** (a warning lists those parts, e.g. "BRK-100
+(−3)"), and it corrects itself when the order is received again or the
+stock is adjusted. Not possible while the order has active returns. A
+partially received order keeps its received quantities after Unreceive
+(the "ordered N" note is remembered for the next receiving); edit the
+order if the numbers should change.
 
-Received orders are frozen: they cannot be edited; delete requires rolling
-back first.
+Received orders cannot be edited — Unreceive first. **Deleting** a
+received order rolls its stock back the same way as Unreceive (stock can
+go below zero, with the same warning) and deactivates its payments; it
+never refuses because of missing stock. Like Unreceive, it is blocked
+only while the order has active returns — delete the returns first.
 
 ## Paying vendors
 

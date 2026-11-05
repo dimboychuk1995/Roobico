@@ -1264,6 +1264,12 @@ html[data-theme="dark"] .swal2-close:hover {
   color: var(--text) !important;
 }
 
+/* Строка ошибки под формой в диалоге (Receive Order, Return и т.п.) */
+html[data-theme="dark"] .swal2-validation-message {
+  background: rgba(239, 68, 68, 0.14) !important;
+  color: var(--text) !important;
+}
+
 html[data-theme="dark"] .swal2-container.swal2-backdrop-show {
   background: rgba(0, 0, 0, 0.65) !important;
 }

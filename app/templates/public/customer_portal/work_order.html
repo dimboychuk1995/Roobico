@@ -120,6 +120,7 @@
           {% if ctx.t.shop_supply_total %}<tr><td>Shop Supply</td><td class="text-end">${{ "%.2f"|format(ctx.t.shop_supply_total) }}</td></tr>{% endif %}
           {% if ctx.t.misc_total %}<tr><td>Misc</td><td class="text-end">${{ "%.2f"|format(ctx.t.misc_total) }}</td></tr>{% endif %}
           {% if ctx.t.core_total %}<tr><td>Cores</td><td class="text-end">${{ "%.2f"|format(ctx.t.core_total) }}</td></tr>{% endif %}
+          {% if ctx.t.sales_tax_total > 0 %}<tr><td>Sales Tax</td><td class="text-end">${{ "%.2f"|format(ctx.t.sales_tax_total) }}</td></tr>{% endif %}
           <tr class="fw-bold fs-5"><td>Grand Total</td><td class="text-end">${{ "%.2f"|format(ctx.t.grand_total) }}</td></tr>
           {% if payment_summary %}
             <tr><td>Paid</td><td class="text-end">${{ "%.2f"|format(payment_summary.paid_amount) }}</td></tr>

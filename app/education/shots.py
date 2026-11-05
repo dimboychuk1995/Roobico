@@ -107,7 +107,7 @@ SHOTS: dict[str, str] = {
     "parts-order-modal-filled": "An order being filled in: vendor picked, two part lines with quantities — the price defaults to the Last price you paid for the part.",
     "parts-order-created": "Right after Create order: the dialog shows the order number and offers Receive and Pay without leaving it.",
     "parts-orders-tab-with-order": "The Parts Orders tab with a fresh order: status Ordered, Unpaid, actions Open / Receive / Pay / Delete.",
-    "parts-order-receive": "Receive an order: confirm the vendor bill number and the storage location for each line — stock and average cost update at that moment.",
+    "parts-order-receive": "Receive an order: the vendor bill number, then every line with Ordered and Received (prefilled with the ordered quantity — type what actually arrived, 0 removes the line), plus a Location column when the shop uses storage locations — stock and average cost update at that moment.",
     "parts-order-pay-modal": "Record parts order payment: order total, already paid, remaining balance, amount, method, date, notes and receipt attachments.",
     "parts-orders-payments-tab": "Parts Orders Payments tab: every vendor payment with search and date filter, plus the Vendor credits section (parts returns and core returns).",
     "parts-cores-tab": "Cores tab: cores the shop keeps per part (customer did not pay the deposit), editable Quantity with Save and the Return button.",

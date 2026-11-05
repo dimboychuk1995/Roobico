@@ -36,6 +36,11 @@
 		partsInitAbort = new AbortController();
 		const initSignal = partsInitAbort.signal;
 		const onDocument = (type, handler) => document.addEventListener(type, handler, { signal: initSignal });
+		// Полная модалка парта (#createPartModal) в режиме заказа: Create & Add
+		// у несматченных строк AI Order Reader / заказа из почты открывает ту
+		// же форму, что Add Part. API выставляет блок «Edit Part Modal Logic»
+		// ниже (он на уровне функции, код заказа — внутри try composer'а).
+		let partModalApi = null;
 
 		const toggle = document.getElementById("coreChargeToggle");
 		const group = document.getElementById("coreCostGroup");
@@ -150,6 +155,9 @@
 		let orderItems = [];
 		let currentOrderStatus = null;
 		let currentVendorBill = "";
+		// Снимок формы заказа на момент загрузки в модалку: Receive Order
+		// сначала сохраняет несохранённые правки количеств/цен (см. orderModalIsDirty).
+		let loadedOrderSnapshot = "";
 		// Список заказов на странице рендерится сервером: после мутаций,
 		// сделанных из модалки (создание, платёж), помечаем список устаревшим
 		// и перезагружаем страницу при закрытии модалки.
@@ -788,10 +796,15 @@
 					part_number: item.part_number,
 					description: item.description,
 					quantity: item.quantity ?? item.qty ?? 0,
+					ordered_quantity: (typeof item.ordered_quantity === "number") ? item.ordered_quantity : null,
 					price: item.price ?? item.cost ?? 0,
 					in_stock: item.in_stock ?? 0,
 					core_has_charge: item.core_has_charge || false,
-					core_cost: item.core_cost || 0
+					core_cost: item.core_cost || 0,
+					// Сохранённый core charge строки: без него тумблер «+ Core»
+					// рисовался выключенным и любое сохранение (в т.ч. автосейв
+					// перед приёмкой) выкидывало core charge из заказа.
+					core_charge: Number(item.core_charge || 0)
 				}));
 			}
 
@@ -808,6 +821,7 @@
 			createdOrderId.value = orderId;
 			orderCreatedBox.classList.add("d-none");
 			createOrderBtn.textContent = "Save";
+			loadedOrderSnapshot = isReceived ? "" : currentOrderFormSnapshot();
 			renderOrderTimeline(orderId, order);
 
 			// Show attachments block when editing order
@@ -1154,6 +1168,11 @@
 					? (coreCharge > 0)
 					: false;
 				const inStock = parseInt(item.in_stock || 0, 10);
+				// Частичная приёмка: строка приведена к принятому, заказанное — подписью.
+				const orderedQty = (typeof item.ordered_quantity === "number") ? item.ordered_quantity : null;
+				const orderedNote = (isReceived && orderedQty !== null && orderedQty !== Number(item.quantity))
+					? `<div class="small text-muted">ordered ${orderedQty}</div>`
+					: "";
 
 				const corePriceCell = (coreHasCharge && coreCost > 0)
 					? `<div class="form-check form-switch mt-1 d-inline-flex align-items-center" style="margin: 0;">
@@ -1177,6 +1196,7 @@
 					<td class="text-end text-muted">${inStock}${item.unit_short && item.unit_short !== 'ea' ? ' ' + item.unit_short : ''}</td>
 					<td class="text-end">
 						<input class="form-control form-control-sm text-end qty-input" type="number" min="1" step="1" value="${item.quantity}" required ${isReceived ? 'disabled' : ''}>
+						${orderedNote}
 					</td>
 					<td class="text-end">
 						<input class="form-control form-control-sm text-end price-input" type="number" min="0" step="0.01" value="${item.price}" required ${isReceived ? 'disabled' : ''}>
@@ -1388,6 +1408,39 @@
 			};
 		}
 
+		// Снимок «сырого» состояния формы заказа: вендор, дата, строки партов
+		// (id / qty / price / тумблер core) и non-inventory строки. Именно DOM,
+		// а не collectOrderPayload(): тот возвращает ошибку (например, вендор
+		// деактивирован), и правки молча считались бы отсутствующими — а
+		// saveOrderChanges() эту ошибку покажет и приёмку остановит.
+		function currentOrderFormSnapshot() {
+			const items = Array.from(itemsBody.querySelectorAll("tr[data-part-id]")).map((tr) => {
+				const coreToggle = tr.querySelector(".item-core-toggle");
+				return [
+					String(tr.getAttribute("data-part-id") || ""),
+					String(tr.querySelector(".qty-input")?.value ?? ""),
+					String(tr.querySelector(".price-input")?.value ?? ""),
+					coreToggle ? (coreToggle.checked ? "1" : "0") : "",
+				];
+			});
+			const nonInventory = Array.from(nonInventoryBody.querySelectorAll("tr")).map((tr) => [
+				String(tr.querySelector(".non-inv-type")?.value ?? ""),
+				String(tr.querySelector(".non-inv-desc")?.value ?? ""),
+				String(tr.querySelector(".non-inv-amount")?.value ?? ""),
+			]);
+			return JSON.stringify({
+				vendor_id: String(vendorSelect.value || ""),
+				order_date: String(orderDateInput?.value || ""),
+				items,
+				non_inventory: nonInventory,
+			});
+		}
+
+		// Есть ли в модалке правки, не сохранённые с момента загрузки заказа.
+		function orderModalIsDirty() {
+			return currentOrderFormSnapshot() !== loadedOrderSnapshot;
+		}
+
 		async function createOrderAjax() {
 			clearError();
 
@@ -1470,6 +1523,10 @@
 					el.disabled = true;
 				});
 
+				// Только что созданный заказ = сохранённое состояние формы: Receive
+				// из этого же диалога не должен считать её «с правками».
+				loadedOrderSnapshot = currentOrderFormSnapshot();
+
 				notifyWoPartsOrders();
 
 			} catch (e) {
@@ -1478,27 +1535,48 @@
 			}
 		}
 
-		// Диалог приёмки: vendor bill + локация для каждой позиции.
+		// Диалог приёмки: vendor bill, фактически принятое количество по каждой
+		// строке (принято ≠ заказано — бэкенд приводит заказ к принятому, 0
+		// выкидывает строку) и, если в магазине есть локации, куда положить парт.
 		// Дефолт селекта — дефолтная локация парта; если у парта её нет,
 		// выбранная здесь локация станет дефолтной (логика на бэкенде).
 		async function askReceiveDetails(orderId, defaultValue) {
 			if (typeof Swal === 'undefined') {
 				const value = window.prompt("Vendor Bill (invoice number). Leave blank if none.", String(defaultValue || "").trim());
 				if (value === null) return null;
-				return { vendorBill: String(value || "").trim(), itemLocations: {} };
+				return { vendorBill: String(value || "").trim(), itemLocations: {}, itemQuantities: {} };
 			}
 
-			let ctx = { items: [], locations: [], vendor_bill: "" };
+			// Без контекста диалог не открываем: иначе заказ принялся бы «как
+			// заказано», хотя пользователь строк не видел. null = отмена.
+			let ctx = null;
 			try {
 				const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/receive-context`, {
 					headers: { "Accept": "application/json" }
 				});
-				const data = await res.json();
-				if (res.ok && data && data.ok) ctx = data;
-			} catch (err) { /* нет контекста — покажем диалог без локаций */ }
+				let data = null;
+				try {
+					data = await res.json();
+				} catch (parseErr) {
+					data = null;
+				}
+				if (!res.ok || !data || !data.ok) {
+					appAlert((data && data.error) || `Failed to load order lines (HTTP ${res.status}).`, "error");
+					return null;
+				}
+				ctx = data;
+			} catch (err) {
+				appAlert("Network error while loading order lines.", "error");
+				return null;
+			}
 
 			const items = Array.isArray(ctx.items) ? ctx.items : [];
 			const locations = Array.isArray(ctx.locations) ? ctx.locations : [];
+			const hasLocations = locations.length > 0;
+			// Заказ с non-inventory суммами бэкенд принимает и при нулях по всем
+			// строкам (счёт только за shop supply) — клиентская проверка «хотя бы
+			// одна строка принята» только когда таких сумм нет.
+			const hasNonInventoryAmounts = !!ctx.has_non_inventory_amounts;
 
 			const locationOptions = function (selectedId) {
 				const opts = ['<option value=""' + (!selectedId ? ' selected' : '') + '>Unassigned</option>'];
@@ -1510,22 +1588,43 @@
 			};
 
 			let html =
-				'<div class="text-start">' +
+				'<div class="text-start" data-flex-table="off">' +
 				'<label class="form-label small mb-1">Vendor Bill (leave blank if none)</label>' +
 				'<input type="text" id="swalVendorBill" class="form-control form-control-sm" placeholder="e.g. INV-12345" value="' +
 				escapeHtml(String(defaultValue || "").trim()) + '">';
 
-			if (items.length && locations.length) {
-				html += '<div class="small text-muted mt-3 mb-1">Put received parts into:</div>' +
-					'<div style="max-height: 260px; overflow-y: auto;">' +
-					'<table class="table table-sm align-middle mb-0"><tbody>';
+			if (items.length) {
+				// \u041f\u043e\u0434\u0441\u043a\u0430\u0437\u043a\u0430 \u043f\u0440\u043e \u0447\u0430\u0441\u0442\u0438\u0447\u043d\u0443\u044e \u043f\u0440\u0438\u0451\u043c\u043a\u0443 \u2014 \u0442\u043e\u043b\u044c\u043a\u043e \u043a\u043e\u0433\u0434\u0430 \u0435\u0441\u0442\u044c \u0441\u0442\u0440\u043e\u043a\u0438
+				// (\u0437\u0430\u043a\u0430\u0437 \u043b\u0438\u0448\u044c \u0441 non-inventory \u0441\u0443\u043c\u043c\u0430\u043c\u0438 \u043f\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0435\u0442 \u043e\u0434\u0438\u043d Vendor Bill).
+				html += '<div class="form-text">Received fewer or more than ordered? Enter the actual quantity \u2014 the order is updated to match. 0 removes the line.</div>';
+				html += '<div class="mt-3" style="max-height: 300px; overflow-y: auto;">' +
+					'<table class="table table-sm align-middle mb-0"><thead><tr>' +
+					'<th class="small">Part</th>' +
+					'<th class="small text-end">Ordered</th>' +
+					'<th class="small text-end" style="width: 96px;">Received</th>' +
+					(hasLocations ? '<th class="small" style="width: 40%;">Location</th>' : '') +
+					'</tr></thead><tbody>';
 				items.forEach(function (it) {
+					const ordered = Number(it.quantity || 0);
+					const description = String(it.description || "").trim();
+					const inactiveBadge = (it.is_active === false)
+						? ' <span class="badge text-bg-secondary">Inactive</span>'
+						: '';
 					html += '<tr>' +
-						'<td class="small"><strong>' + escapeHtml(it.part_number) + '</strong>' +
-						' <span class="text-muted">× ' + Number(it.quantity || 0) + '</span></td>' +
-						'<td style="width: 55%;"><select class="form-select form-select-sm swal-recv-loc" data-part-id="' +
-						escapeHtml(it.part_id) + '">' + locationOptions(it.default_location_id) + '</select></td>' +
-						'</tr>';
+						'<td class="small"><strong>' + escapeHtml(it.part_number) + '</strong>' + inactiveBadge +
+						(description ? '<div class="text-muted small">' + escapeHtml(description) + '</div>' : '') +
+						'</td>' +
+						'<td class="small text-end">' + ordered + '</td>' +
+						'<td><input type="number" min="0" step="1" class="form-control form-control-sm text-end swal-recv-qty" data-part-id="' +
+						escapeHtml(it.part_id) + '" value="' + ordered + '"></td>';
+					if (hasLocations) {
+						html += '<td>' + ((it.tracked === false)
+							? '<span class="text-muted">\u2014</span>'
+							: '<select class="form-select form-select-sm swal-recv-loc" data-part-id="' +
+								escapeHtml(it.part_id) + '">' + locationOptions(it.default_location_id) + '</select>') +
+							'</td>';
+					}
+					html += '</tr>';
 				});
 				html += '</tbody></table></div>';
 			}
@@ -1538,6 +1637,7 @@
 			const result = await Swal.fire({
 				title: 'Receive Order',
 				html: html,
+				width: (items.length && hasLocations) ? '42em' : undefined,
 				showCancelButton: true,
 				confirmButtonText: 'Receive Order',
 				cancelButtonText: 'Cancel',
@@ -1552,21 +1652,41 @@
 					document.querySelectorAll(".swal-recv-loc").forEach(function (sel) {
 						itemLocations[sel.dataset.partId] = sel.value || "";
 					});
-					return { vendorBill: vendorBill, itemLocations: itemLocations };
+					const itemQuantities = {};
+					let invalid = false;
+					let anyReceived = false;
+					const qtyInputs = document.querySelectorAll(".swal-recv-qty");
+					qtyInputs.forEach(function (inp) {
+						const raw = String(inp.value || "").trim();
+						const qty = raw === "" ? NaN : Number(raw);
+						if (!Number.isInteger(qty) || qty < 0) { invalid = true; return; }
+						itemQuantities[inp.dataset.partId] = qty;
+						if (qty > 0) anyReceived = true;
+					});
+					if (invalid) {
+						Swal.showValidationMessage('Received quantity must be a whole number (0 or more).');
+						return false;
+					}
+					if (qtyInputs.length && !anyReceived && !hasNonInventoryAmounts) {
+						Swal.showValidationMessage('Enter at least one received quantity.');
+						return false;
+					}
+					return { vendorBill: vendorBill, itemLocations: itemLocations, itemQuantities: itemQuantities };
 				},
 			});
 			if (openModal) openModal.style.display = '';
 			if (!result.isConfirmed) return null;
-			return result.value || { vendorBill: "", itemLocations: {} };
+			return result.value || { vendorBill: "", itemLocations: {}, itemQuantities: {} };
 		}
 
-		async function receiveOrderWithVendorBill(orderId, vendorBill, itemLocations) {
+		async function receiveOrderWithVendorBill(orderId, vendorBill, itemLocations, itemQuantities) {
 			const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/receive`, {
 				method: "POST",
 				headers: { "Content-Type": "application/json", "Accept": "application/json" },
 				body: JSON.stringify({
 					vendor_bill: String(vendorBill || "").trim(),
 					item_locations: itemLocations || {},
+					item_quantities: itemQuantities || {},
 				}),
 			});
 			const data = await res.json();
@@ -1574,6 +1694,30 @@
 				throw new Error((data && (data.error || data.message)) || "Receive failed.");
 			}
 			return data;
+		}
+
+		function receiveSuccessMessage(data) {
+			const changes = Array.isArray(data && data.quantity_changes) ? data.quantity_changes : [];
+			if (changes.length) {
+				return `Order received \u2014 quantities updated to what was received (${changes.length} line(s)).`;
+			}
+			return `Order received! ${data.updated_parts} parts updated.`;
+		}
+
+		// После unreceive / удаления принятого заказа: парты, ушедшие в минус
+		// (их уже списали на work orders). Итог операции (lead) входит в то же
+		// предупреждение — отдельный success-тост сменялся бы им сразу. Ждём
+		// «OK»: страница перезагружается сразу после. Возвращает true, если
+		// предупреждение показано (иначе вызывающий показывает обычный success).
+		async function warnNegativeStock(list, lead) {
+			if (!Array.isArray(list) || list.length === 0) return false;
+			const names = list.map(function (row) {
+				const after = String(row.stock_after).replace("-", "\u2212");
+				return `${row.part_number || row.part_id || "?"} (${after})`;
+			});
+			const message = (lead ? String(lead).trim() + " " : "") + "Stock is now negative: " + names.join(", ");
+			await appAlert(message, "warning");
+			return true;
 		}
 
 		async function receiveOrderAjax() {
@@ -1587,7 +1731,7 @@
 			receiveBtn.disabled = true;
 
 			try {
-				await receiveOrderWithVendorBill(oid, details.vendorBill, details.itemLocations);
+				await receiveOrderWithVendorBill(oid, details.vendorBill, details.itemLocations, details.itemQuantities);
 				currentVendorBill = details.vendorBill;
 
 				const modalEl = document.getElementById("orderModal");
@@ -1611,13 +1755,29 @@
 			receiveOrderModalBtn.addEventListener("click", async function () {
 				const orderId = createdOrderId.value;
 				if (!orderId) return;
+				// Правки количеств/цен в таблице заказа сначала сохраняются —
+				// диалог приёмки открывается с сохранёнными количествами.
+				if (orderModalIsDirty()) {
+					clearError();
+					let saved = false;
+					try {
+						saved = await saveOrderChanges(orderId);
+					} catch (err) {
+						showError("Network error while saving order.");
+					}
+					if (!saved) return;
+					orderListNeedsRefresh = true;
+					// На странице WO блок заказов обновляется событием (вне WO — no-op).
+					notifyWoPartsOrders();
+					loadedOrderSnapshot = currentOrderFormSnapshot();
+				}
 				const details = await askReceiveDetails(orderId, currentVendorBill);
 				if (details === null) return;
 
 				try {
-					const data = await receiveOrderWithVendorBill(orderId, details.vendorBill, details.itemLocations);
+					const data = await receiveOrderWithVendorBill(orderId, details.vendorBill, details.itemLocations, details.itemQuantities);
 					currentVendorBill = details.vendorBill;
-					appAlert(`Order received! ${data.updated_parts} parts updated.`, 'success');
+					appAlert(receiveSuccessMessage(data), 'success');
 					const modalEl = document.getElementById("orderModal");
 					const modal = window.bootstrap?.Modal?.getInstance(modalEl);
 					if (modal) modal.hide();
@@ -1634,7 +1794,7 @@
 				const orderId = createdOrderId.value;
 				if (!orderId) return;
 
-				if (await appConfirm("Unreceive this order? Items will be removed from inventory.")) {
+				if (await appConfirm("Unreceive this order? Received quantities are taken back out of stock (stock can go below zero if parts were already used).")) {
 					try {
 						const res = await fetch(`/parts/api/orders/${encodeURIComponent(orderId)}/unreceive`, {
 							method: "POST"
@@ -1642,7 +1802,11 @@
 						const data = await res.json();
 
 						if (data.ok) {
-							appAlert(`Order unreceived! ${data.updated_parts} parts removed from inventory.`, 'success');
+							const warned = await warnNegativeStock(
+								data.negative_stock,
+								`Order unreceived (${data.updated_parts} parts removed).`
+							);
+							if (!warned) appAlert(`Order unreceived! ${data.updated_parts} parts removed from inventory.`, 'success');
 							const modalEl = document.getElementById("orderModal");
 							const modal = window.bootstrap?.Modal?.getInstance(modalEl);
 							if (modal) modal.hide();
@@ -1693,6 +1857,7 @@
 			if (payOrderModalBtn) payOrderModalBtn.style.display = "none";
 			renderEmailOrderReview(null, "");
 			currentVendorBill = "";
+			loadedOrderSnapshot = "";
 			if (receiveBtn) receiveBtn.disabled = false;
 			if (orderDatesBlock) orderDatesBlock.classList.add("d-none");
 			if (orderMetaCreated) orderMetaCreated.textContent = "-";
@@ -2007,7 +2172,7 @@
 			const tr = btn.closest("tr[data-scan-matched]");
 			if (!tr) return;
 
-			const partId = tr.dataset.scanPartId;
+			const partId = tr.getAttribute("data-scan-part-id");
 			const partNumber = tr.querySelector("td strong")?.textContent || "";
 			const desc = tr.querySelector("td.text-muted")?.textContent || "";
 			const qty = parseInt(tr.querySelector(".scan-match-qty")?.value || "1", 10);
@@ -2054,52 +2219,26 @@
 			btn.disabled = true;
 		});
 
-		// ── Create Part from scan (modal) ────────────────────────────────
-		const scanPartModalEl = document.getElementById("scanPartModal");
-		const scanPartModal = scanPartModalEl ? new bootstrap.Modal(scanPartModalEl) : null;
-		const scanPartNumber = document.getElementById("scanPartNumber");
-		const scanPartReference = document.getElementById("scanPartReference");
-		const scanPartDescription = document.getElementById("scanPartDescription");
-		const scanPartAverageCost = document.getElementById("scanPartAverageCost");
-		const scanPartVendor = document.getElementById("scanPartVendor");
-		const scanPartInStock = document.getElementById("scanPartInStock");
-		const scanPartCategory = document.getElementById("scanPartCategory");
-		const scanPartLocation = document.getElementById("scanPartLocation");
-		const scanPartSellingPriceToggle = document.getElementById("scanPartSellingPriceToggle");
-		const scanPartSellingPriceGroup = document.getElementById("scanPartSellingPriceGroup");
-		const scanPartSellingPrice = document.getElementById("scanPartSellingPrice");
-		const scanPartDoNotTrack = document.getElementById("scanPartDoNotTrack");
-		const scanPartCoreChargeToggle = document.getElementById("scanPartCoreChargeToggle");
-		const scanPartCoreCostGroup = document.getElementById("scanPartCoreCostGroup");
-		const scanPartCoreCost = document.getElementById("scanPartCoreCost");
-		const scanPartSubmitBtn = document.getElementById("scanPartSubmitBtn");
-		const scanPartAlert = document.getElementById("scanPartAlert");
-
-		// Toggles for conditional fields
-		scanPartSellingPriceToggle?.addEventListener("change", function () {
-			scanPartSellingPriceGroup?.classList.toggle("d-none", !this.checked);
-		});
-		scanPartCoreChargeToggle?.addEventListener("change", function () {
-			scanPartCoreCostGroup?.classList.toggle("d-none", !this.checked);
-		});
-
-		// Track which table row triggered the modal
-		let scanPartSourceRow = null;
-		let scanPartSourceQty = 1;
-
-		// z-index stacking for scanPartModal over orderModal
-		scanPartModalEl?.addEventListener("shown.bs.modal", function () {
-			const backdrops = document.querySelectorAll(".modal-backdrop.show");
-			if (backdrops.length > 0) {
-				backdrops[backdrops.length - 1].style.zIndex = "1075";
+		// ── Create & Add: новый парт из несматченной строки (AI Order Reader /
+		// заказ из почты) через полную модалку парта #createPartModal — ту же,
+		// что Add Part на странице Parts (режим заказа: partModalApi.openForOrder,
+		// блок «Edit Part Modal Logic» ниже). Парт создаётся через
+		// /parts/api/create, затем строка помечается Created и уходит в заказ.
+		function markUnmatchedRowCreated(tr) {
+			const createBtn = tr.querySelector(".create-scanned-part-btn");
+			if (createBtn) {
+				createBtn.innerHTML = `<i class="bi bi-check-lg me-1"></i>Created`;
+				createBtn.classList.remove("btn-outline-primary");
+				createBtn.classList.add("btn-success");
+				createBtn.disabled = true;
 			}
-			scanPartModalEl.style.zIndex = "1080";
-		});
+			tr.querySelectorAll("input").forEach(inp => inp.disabled = true);
+		}
 
-		// ── Create & Add single unmatched part from scan ─────────────────
 		onDocument("click", function (e) {
 			const btn = e.target.closest(".create-scanned-part-btn");
-			if (!btn || !scanPartModal) return;
+			if (!btn) return;
+			if (!partModalApi) return;
 
 			const tr = btn.closest("tr[data-scan-unmatched]");
 			if (!tr) return;
@@ -2109,152 +2248,76 @@
 			const qty = parseInt(tr.querySelector(".scan-new-qty")?.value || "1", 10);
 			const price = parseFloat(tr.querySelector(".scan-new-price")?.value || "0");
 
-			// Pre-fill modal
-			scanPartSourceRow = tr;
-			scanPartSourceQty = qty;
-			if (scanPartNumber) scanPartNumber.value = pn;
-			if (scanPartReference) scanPartReference.value = "";
-			if (scanPartDescription) scanPartDescription.value = desc;
-			if (scanPartAverageCost) scanPartAverageCost.value = Number(price).toFixed(2);
-			if (scanPartVendor) scanPartVendor.value = vendorSelect.value || "";
-			if (scanPartInStock) scanPartInStock.value = "0";
-			if (scanPartCategory) scanPartCategory.value = "";
-			if (scanPartLocation) scanPartLocation.value = "";
-			if (scanPartSellingPriceToggle) { scanPartSellingPriceToggle.checked = false; }
-			scanPartSellingPriceGroup?.classList.add("d-none");
-			if (scanPartSellingPrice) scanPartSellingPrice.value = "0";
-			if (scanPartDoNotTrack) scanPartDoNotTrack.checked = false;
-			if (scanPartCoreChargeToggle) { scanPartCoreChargeToggle.checked = false; }
-			scanPartCoreCostGroup?.classList.add("d-none");
-			if (scanPartCoreCost) scanPartCoreCost.value = "0";
-			if (scanPartAlert) scanPartAlert.classList.add("d-none");
-			if (scanPartSubmitBtn) {
-				scanPartSubmitBtn.disabled = false;
-				scanPartSubmitBtn.textContent = "Create Part";
-			}
-
-			scanPartModal.show();
-		});
-
-		// Submit part creation from modal
-		scanPartSubmitBtn?.addEventListener("click", function () {
-			const pn = (scanPartNumber?.value || "").trim();
-			if (!pn) {
-				if (scanPartAlert) {
-					scanPartAlert.textContent = "Part number is required.";
-					scanPartAlert.classList.remove("d-none");
-				}
-				return;
-			}
-
-			const desc = (scanPartDescription?.value || "").trim();
-			const price = parseFloat(scanPartAverageCost?.value || "0");
-			const hasSelling = scanPartSellingPriceToggle?.checked || false;
-			const coreCharge = scanPartCoreChargeToggle?.checked || false;
-
-			const payload = {
+			partModalApi.openForOrder({
 				part_number: pn,
-				reference: (scanPartReference?.value || "").trim(),
 				description: desc,
 				average_cost: price,
-				vendor_id: scanPartVendor?.value || "",
-				in_stock: parseInt(scanPartInStock?.value || "0", 10),
-				category_id: scanPartCategory?.value || "",
-				location_id: scanPartLocation?.value || "",
-				has_selling_price: hasSelling,
-				selling_price: hasSelling ? parseFloat(scanPartSellingPrice?.value || "0") : 0,
-				do_not_track_inventory: scanPartDoNotTrack?.checked || false,
-				core_has_charge: coreCharge,
-				core_cost: coreCharge ? parseFloat(scanPartCoreCost?.value || "0") : 0,
-			};
+				vendor_id: vendorSelect.value || "",
+				onCreated(partId, formData, extra) {
+					markUnmatchedRowCreated(tr);
 
-			scanPartSubmitBtn.disabled = true;
-			scanPartSubmitBtn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Creating...`;
-
-			fetch("/parts/api/create", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(payload),
-			})
-			.then(r => r.json())
-			.then(result => {
-				if (result.ok && result.part_id) {
-					scanPartModal.hide();
-
-					// Mark source row as created
-					const tr = scanPartSourceRow;
-					if (tr) {
-						const btn = tr.querySelector(".create-scanned-part-btn");
-						if (btn) {
-							btn.innerHTML = `<i class="bi bi-check-lg me-1"></i>Created`;
-							btn.classList.remove("btn-outline-primary");
-							btn.classList.add("btn-success");
-							btn.disabled = true;
-						}
-						tr.querySelectorAll("input").forEach(inp => inp.disabled = true);
-					}
-
-					// Add to order items
+					// В заказ — с тем, что реально сохранили в форме.
 					addOrIncrementItem({
-						id: result.part_id,
-						part_number: pn,
-						description: desc,
-						average_cost: price,
-						core_has_charge: coreCharge,
-						core_cost: coreCharge ? parseFloat(scanPartCoreCost?.value || "0") : 0,
+						id: partId,
+						part_number: formData.part_number,
+						description: formData.description,
+						average_cost: formData.average_cost,
+						in_stock: formData.do_not_track_inventory ? 0 : formData.in_stock,
+						core_has_charge: formData.core_has_charge,
+						core_cost: formData.core_cost,
+						unit_short: (extra && extra.unit_short) || "",
 					});
-					const row = itemsBody.querySelector(`tr[data-part-id="${result.part_id}"]`);
+					const row = itemsBody.querySelector(`tr[data-part-id="${partId}"]`);
 					if (row) {
 						const qtyInput = row.querySelector(".qty-input");
-						if (qtyInput && scanPartSourceQty > 1) qtyInput.value = String(scanPartSourceQty);
+						if (qtyInput && qty > 1) qtyInput.value = String(qty);
 						const priceInput = row.querySelector(".price-input");
 						if (priceInput) priceInput.value = Number(price).toFixed(2);
 					}
 					calculateOrderTotal();
-					scanPartSourceRow = null;
-				} else {
-					scanPartSubmitBtn.disabled = false;
-					scanPartSubmitBtn.textContent = "Create Part";
-					if (scanPartAlert) {
-						scanPartAlert.textContent = result.error || "Failed to create part.";
-						scanPartAlert.classList.remove("d-none");
-					}
-				}
-			})
-			.catch(() => {
-				scanPartSubmitBtn.disabled = false;
-				scanPartSubmitBtn.textContent = "Create Part";
-				if (scanPartAlert) {
-					scanPartAlert.textContent = "Network error creating part.";
-					scanPartAlert.classList.remove("d-none");
-				}
+				},
 			});
 		});
 
-		// ── Create & Add all unmatched parts (queue through modal) ──────
-		let scanPartQueue = [];
-		let scanPartQueueBtn = null;
+		// ── Create & Add All: строки по очереди через ту же модалку ──────
+		// Следующая строка открывается через ~200 мс после закрытия модалки
+		// (парт создан или нажали Cancel — очередь идёт дальше, как раньше).
+		let orderPartQueue = [];
+		let orderPartQueueBtn = null;
 
-		function openNextQueuedPart() {
-			if (scanPartQueue.length === 0) {
-				if (scanPartQueueBtn) {
-					scanPartQueueBtn.innerHTML = `<i class="bi bi-check-lg me-1"></i>All Created`;
-					scanPartQueueBtn.classList.remove("btn-outline-primary");
-					scanPartQueueBtn.classList.add("btn-success");
-					scanPartQueueBtn = null;
-				}
+		function finishOrderPartQueue() {
+			const btn = orderPartQueueBtn;
+			orderPartQueueBtn = null;
+			if (!btn) return;
+			const stillPending = Array.from(document.querySelectorAll("tr[data-scan-unmatched] .create-scanned-part-btn"))
+				.some(b => !b.disabled);
+			if (stillPending) {
+				// Часть строк отменили — кнопку возвращаем, можно повторить.
+				btn.disabled = false;
+				btn.innerHTML = `<i class="bi bi-plus-lg me-1"></i>Create & Add All`;
 				return;
 			}
-			const nextBtn = scanPartQueue.shift();
+			btn.innerHTML = `<i class="bi bi-check-lg me-1"></i>All Created`;
+			btn.classList.remove("btn-outline-primary");
+			btn.classList.add("btn-success");
+		}
+
+		function openNextQueuedPart() {
+			if (orderPartQueue.length === 0) {
+				finishOrderPartQueue();
+				return;
+			}
+			const nextBtn = orderPartQueue.shift();
 			nextBtn.click();
 		}
 
-		// After modal hides, open next queued part
-		scanPartModalEl?.addEventListener("hidden.bs.modal", function () {
-			if (scanPartQueue.length > 0) {
+		// Продолжение очереди — по закрытию полной модалки парта. Элемент
+		// берём по id: const createPartModal объявлена ниже (TDZ на init).
+		document.getElementById("createPartModal")?.addEventListener("hidden.bs.modal", function () {
+			if (orderPartQueueBtn) {
 				setTimeout(openNextQueuedPart, 200);
 			}
-		});
+		}, { signal: initSignal });
 
 		onDocument("click", function (e) {
 			const btn = e.target.closest("#createAllUnmatchedBtn");
@@ -2271,8 +2334,8 @@
 
 			btn.disabled = true;
 			btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>Creating ${pending.length}...`;
-			scanPartQueueBtn = btn;
-			scanPartQueue = pending.slice(1);
+			orderPartQueueBtn = btn;
+			orderPartQueue = pending.slice(1);
 			pending[0].click();
 		});
 
@@ -2933,8 +2996,8 @@
 				if (details === null) return;
 
 				try {
-					const data = await receiveOrderWithVendorBill(orderId, details.vendorBill, details.itemLocations);
-					appAlert(`Order received! ${data.updated_parts} parts updated.`, 'success');
+					const data = await receiveOrderWithVendorBill(orderId, details.vendorBill, details.itemLocations, details.itemQuantities);
+					appAlert(receiveSuccessMessage(data), 'success');
 					finishOrderMutation();
 				} catch (err) {
 					appAlert(err.message || "Network error while receiving order", 'error');
@@ -2971,7 +3034,7 @@
 				}
 
 				let html =
-					'<div class="text-start">' +
+					'<div class="text-start" data-flex-table="off">' +
 					'<div class="small text-muted mb-2">Order #' + escapeHtml(String(ctx.order_number || "")) +
 					' — enter quantities to return:</div>' +
 					'<div style="max-height: 260px; overflow-y: auto;">' +
@@ -3069,7 +3132,8 @@
 						const data = await res.json();
 
 						if (data.ok) {
-							appAlert("Order deleted successfully", 'success');
+							const warned = await warnNegativeStock(data.negative_stock, "Order deleted.");
+							if (!warned) appAlert("Order deleted successfully", 'success');
 							finishOrderMutation();
 						} else {
 							appAlert("Error: " + (data.error || "Failed to delete order"), 'error');
@@ -3138,6 +3202,29 @@
 		const minStockGroup = document.getElementById('minStockGroup');
 		const minStockToggleGroup = document.getElementById('minStockToggleGroup');
 		const form = createPartModal.querySelector('form[action*="/parts/create"]');
+		// Ошибки модалки (валидация, ответ сервера, сеть) — внутри неё
+		// (#partModalAlert), а не SweetAlert: в режиме заказа модалка лежит
+		// поверх #orderModal (z-index 1080), Swal (1060) оказывался под ней, и
+		// клик по «OK» попадал в модалку — Bootstrap её закрывал, форма
+		// сбрасывалась, а очередь Create & Add All шла дальше.
+		const partModalAlert = document.getElementById('partModalAlert');
+		function showPartModalError(message) {
+			if (!partModalAlert) {
+				appAlert(message, 'error');
+				return;
+			}
+			partModalAlert.textContent = message || 'Error';
+			partModalAlert.classList.remove('d-none');
+			partModalAlert.scrollIntoView({ block: 'nearest' });
+		}
+		function clearPartModalError() {
+			if (!partModalAlert) return;
+			partModalAlert.textContent = '';
+			partModalAlert.classList.add('d-none');
+		}
+		// Режим заказа: модалку открыли из парт-ордера (Create & Add) — вместо
+		// POST формы парт создаётся через /parts/api/create и уходит в заказ.
+		let orderMode = null;
 		function parsePartJsonAttr(raw) {
 			if (!raw) return null;
 			const decodeHtml = function (s) {
@@ -3317,6 +3404,27 @@
 			return '';
 		}
 
+		const MISC_DESC_REQUIRED = 'Misc charge description is required.';
+
+		// Первая строка misc charge с ценой, но без описания — её поле описания
+		// (null — всё в порядке). Строки, где ничего не введено, игнорируются.
+		function miscRowMissingDescription() {
+			if (!(miscCheckbox && miscCheckbox.checked) || !miscBodyParts) return null;
+			for (const tr of miscBodyParts.querySelectorAll('tr')) {
+				const descInput = tr.querySelector('.misc-desc');
+				const desc = String(descInput ? descInput.value : '').trim();
+				const priceRaw = String(tr.querySelector('.misc-price')?.value || '').trim();
+				if (!desc && priceRaw !== '') return descInput || tr;
+			}
+			return null;
+		}
+
+		// Та же проверка, что на сервере (parts_create / parts_api_create /
+		// parts_api_update): у misc charge с ценой обязательно описание.
+		function miscChargeValidationError() {
+			return miscRowMissingDescription() ? MISC_DESC_REQUIRED : '';
+		}
+
 		function syncInStockVisibility() {
 			const hide = !!(doNotTrackInventoryCheckbox && doNotTrackInventoryCheckbox.checked);
 			if (inStockGroup) inStockGroup.style.display = hide ? 'none' : '';
@@ -3365,20 +3473,180 @@
 			}
 			loadPartIntoEditModal(partId).catch(err => {
 				console.error('Error loading part:', err);
-				appAlert('Error loading part data', 'error');
+				showPartModalError('Error loading part data');
 			});
 		});
 
-		// Handle form submission (both create and edit)
+		// JSON-payload формы для AJAX-режимов: edit → /parts/api/<id>/update,
+		// режим заказа → /parts/api/create. Ключи совпадают с полями формы.
+		function collectPartFormData() {
+			const formData = {
+				part_number: partNumberInput.value.trim(),
+				description: descriptionInput.value.trim(),
+				reference: referenceInput.value.trim(),
+				vendor_id: vendorSelectParts.value,
+				category_id: categorySelect.value,
+				location_id: locationSelect.value,
+				in_stock: parseInt(inStockInput.value || '0'),
+				average_cost: parseFloat(averageCostInput.value || '0'),
+				do_not_track_inventory: !!(doNotTrackInventoryCheckbox && doNotTrackInventoryCheckbox.checked),
+				unit_of_measure: unitSelect ? (unitSelect.value || 'each') : 'each',
+				min_stock_enabled: minStockRequired(),
+				min_stock: minStockRequired() ? parseInt(minStockInput.value || '0', 10) : 0,
+				has_selling_price: !!(sellingPriceCheckbox && sellingPriceCheckbox.checked),
+				selling_price: parseFloat(sellingPriceInput?.value || '0'),
+				core_has_charge: coreCheckbox.checked,
+				core_cost: parseFloat(coreCostInput.value || '0'),
+				misc_has_charge: miscCheckbox.checked,
+				misc_charges: []
+			};
+
+			// Misc charges — ровно как их отправила бы форма: строка уходит, если
+			// в ней есть описание ИЛИ цена (описание у строки с ценой проверяет
+			// сервер, см. miscChargeValidationError); строки, где ничего не
+			// введено, пропускаются.
+			if (miscBodyParts) {
+				const rows = miscBodyParts.querySelectorAll('tr');
+				rows.forEach(tr => {
+					const desc = String(tr.querySelector('.misc-desc')?.value || '').trim();
+					const priceRaw = String(tr.querySelector('.misc-price')?.value || '').trim();
+					const taxableEl = tr.querySelector('.misc-taxable');
+					if (!desc && priceRaw === '') return;
+					formData.misc_charges.push({
+						description: desc,
+						price: priceRaw === '' ? 0 : parseFloat(priceRaw),
+						taxable: !!(taxableEl && taxableEl.checked),
+					});
+				});
+			}
+			return formData;
+		}
+
+		// Короткое обозначение выбранной единицы из текста опции селекта
+		// («Gallon (gal)» → gal; без скобок short == key, например box).
+		function selectedUnitShort() {
+			if (!unitSelect) return '';
+			const opt = unitSelect.options[unitSelect.selectedIndex];
+			if (!opt) return '';
+			const m = String(opt.textContent || '').match(/\(([^()]+)\)\s*$/);
+			return m ? m[1].trim() : String(opt.value || '').trim();
+		}
+
+		// Чистое состояние «Create new part» — то же, что при закрытии модалки.
+		function resetToCreateState() {
+			clearPartModalError();
+			editingPartId.value = '';
+			modalTitle.textContent = 'Create new part';
+			inStockInput.disabled = false;
+			const createLockedHint = document.getElementById('inStockLockedHint');
+			if (createLockedHint) createLockedHint.classList.add('d-none');
+			document.getElementById('editPartCrossRefsBtn')?.classList.add('d-none');
+			if (form) form.reset();
+			clearMiscRows();
+			syncInStockVisibility();
+			syncSellingPriceVisibility();
+			if (coreCostGroup) coreCostGroup.style.display = 'none';
+			if (document.getElementById('miscChargesGroup')) {
+				document.getElementById('miscChargesGroup').style.display = 'none';
+			}
+			const attGroup = document.getElementById('partAttachmentsGroup');
+			if (attGroup) attGroup.style.display = 'none';
+		}
+
+		// Режим заказа: та же модалка открывается из парт-ордера (Create & Add
+		// у несматченных строк AI Order Reader / заказа из почты) с
+		// предзаполнением номера, описания, цены и вендора заказа. Парт
+		// создаётся через /parts/api/create, затем вызывается
+		// opts.onCreated(partId, formData, { unit_short }).
+		function openForOrder(opts) {
+			if (!form) return;
+			resetToCreateState();
+			partNumberInput.value = (opts && opts.part_number) || '';
+			descriptionInput.value = (opts && opts.description) || '';
+			averageCostInput.value = Number((opts && opts.average_cost) || 0).toFixed(2);
+			vendorSelectParts.value = (opts && opts.vendor_id) || '';
+			orderMode = opts || {};
+			const ModalClass = (window.bootstrap && window.bootstrap.Modal) ? window.bootstrap.Modal : null;
+			if (ModalClass) {
+				// Уже открыта (двойной клик по Create & Add): форма перезаполнена
+				// выше, экземпляр не трогаем — dispose во время анимации показа
+				// уронил бы её колбэк.
+				if (createPartModal.classList.contains('show')) return;
+				// Поверх модалки заказа клик по фону форму не закрывает (иначе
+				// случайный клик сбрасывал её, а Create & Add All шёл дальше).
+				// Bootstrap читает backdrop только при создании экземпляра, поэтому
+				// текущий (обычный, со страницы Parts) сносим и создаём статичный;
+				// обработчик hidden ниже возвращает всё как было. Escape — как и
+				// раньше (keyboard по умолчанию).
+				ModalClass.getInstance(createPartModal)?.dispose();
+				new ModalClass(createPartModal, { backdrop: 'static' }).show();
+			}
+		}
+		partModalApi = { openForOrder };
+
+		// Handle form submission: create = обычный POST формы, edit и режим
+		// заказа = AJAX.
 		if (form) {
 			form.addEventListener('submit', async function(e) {
-				// Минимальный остаток проверяем до отправки в обоих режимах
-				// (create — обычный POST формы, edit — AJAX).
+				clearPartModalError();
+				// Минимальный остаток и misc charges проверяем до отправки во всех
+				// режимах (create — обычный POST формы, edit / заказ — AJAX).
 				const minStockError = minStockValidationError();
 				if (minStockError) {
 					e.preventDefault();
-					appAlert(minStockError, 'warning');
+					showPartModalError(minStockError);
 					if (minStockInput) minStockInput.focus();
+					return false;
+				}
+				const miscError = miscChargeValidationError();
+				if (miscError) {
+					e.preventDefault();
+					showPartModalError(miscError);
+					const missing = miscRowMissingDescription();
+					if (missing && typeof missing.focus === 'function') missing.focus();
+					return false;
+				}
+
+				// Режим заказа: создаём парт через JSON API и отдаём его в заказ.
+				if (orderMode) {
+					e.preventDefault();
+					const mode = orderMode;
+					const formData = collectPartFormData();
+					const submitBtn = form.querySelector('button[type="submit"]');
+					const submitHtml = submitBtn ? submitBtn.innerHTML : '';
+					const setBusy = (busy) => {
+						if (!submitBtn) return;
+						submitBtn.disabled = busy;
+						submitBtn.innerHTML = busy
+							? '<span class="spinner-border spinner-border-sm me-1"></span>Creating...'
+							: submitHtml;
+					};
+					setBusy(true);
+					try {
+						const res = await fetch('/parts/api/create', {
+							method: 'POST',
+							headers: { 'Content-Type': 'application/json' },
+							body: JSON.stringify(formData)
+						});
+						const result = await res.json();
+						if (result.ok && result.part_id) {
+							const unitShort = selectedUnitShort();
+							setBusy(false);
+							const ModalClass = (window.bootstrap && window.bootstrap.Modal) ? window.bootstrap.Modal : null;
+							if (ModalClass) ModalClass.getOrCreateInstance(createPartModal).hide();
+							if (typeof mode.onCreated === 'function') {
+								mode.onCreated(result.part_id, formData, { unit_short: unitShort });
+							}
+						} else {
+							// Модалка остаётся открытой, строка заказа не трогается.
+							showPartModalError(result.error || 'Failed to create part.');
+							setBusy(false);
+						}
+					} catch (err) {
+						console.error('Error creating part:', err);
+						showPartModalError('Network error creating part.');
+						setBusy(false);
+					}
 					return false;
 				}
 
@@ -3386,41 +3654,8 @@
 				if (editingPartId && editingPartId.value) {
 					e.preventDefault();
 
-					// Gather form data
 					const partId = editingPartId.value;
-					const formData = {
-						part_number: partNumberInput.value.trim(),
-						description: descriptionInput.value.trim(),
-						reference: referenceInput.value.trim(),
-						vendor_id: vendorSelectParts.value,
-						category_id: categorySelect.value,
-						location_id: locationSelect.value,
-						in_stock: parseInt(inStockInput.value || '0'),
-						average_cost: parseFloat(averageCostInput.value || '0'),
-						do_not_track_inventory: !!(doNotTrackInventoryCheckbox && doNotTrackInventoryCheckbox.checked),
-						unit_of_measure: unitSelect ? (unitSelect.value || 'each') : 'each',
-						min_stock_enabled: minStockRequired(),
-						min_stock: minStockRequired() ? parseInt(minStockInput.value || '0', 10) : 0,
-						has_selling_price: !!(sellingPriceCheckbox && sellingPriceCheckbox.checked),
-						selling_price: parseFloat(sellingPriceInput?.value || '0'),
-						core_has_charge: coreCheckbox.checked,
-						core_cost: parseFloat(coreCostInput.value || '0'),
-						misc_has_charge: miscCheckbox.checked,
-						misc_charges: []
-					};
-
-					// Gather misc charges
-					if (miscBodyParts) {
-						const rows = miscBodyParts.querySelectorAll('tr');
-						rows.forEach(tr => {
-							const desc = tr.querySelector('.misc-desc').value.trim();
-							const price = parseFloat(tr.querySelector('.misc-price').value || '0');
-							const taxableEl = tr.querySelector('.misc-taxable');
-							if (desc && price >= 0) {
-								formData.misc_charges.push({ description: desc, price: price, taxable: !!(taxableEl && taxableEl.checked) });
-							}
-						});
-					}
+					const formData = collectPartFormData();
 
 					// Send AJAX request
 					try {
@@ -3437,11 +3672,11 @@
 							if (modal) modal.hide();
 							location.reload();
 						} else {
-							appAlert('Update failed: ' + (result.error || 'Unknown error'), 'error');
+							showPartModalError('Update failed: ' + (result.error || 'Unknown error'));
 						}
 					} catch (err) {
 						console.error('Error updating part:', err);
-						appAlert('Network error while updating part', 'error');
+						showPartModalError('Network error while updating part');
 					}
 
 					return false;
@@ -3452,19 +3687,37 @@
 
 		// Reset form when modal is hidden
 		createPartModal.addEventListener('hidden.bs.modal', function() {
-			editingPartId.value = '';
-			modalTitle.textContent = 'Create new part';
-			inStockInput.disabled = false;
-			const createLockedHint = document.getElementById('inStockLockedHint');
-			if (createLockedHint) createLockedHint.classList.add('d-none');
-			document.getElementById('editPartCrossRefsBtn')?.classList.add('d-none');
-			form.reset();
-			syncInStockVisibility();
-			syncSellingPriceVisibility();
-			if (coreCostGroup) coreCostGroup.style.display = 'none';
-			if (document.getElementById('miscChargesGroup')) {
-				document.getElementById('miscChargesGroup').style.display = 'none';
+			resetToCreateState();
+			clearPartModalError();
+			// Режим заказа: снимаем z-index поверх #orderModal и возвращаем
+			// body.modal-open, пока модалка заказа ещё открыта. Очередь
+			// Create & Add All продолжает свой обработчик hidden (выше).
+			createPartModal.style.zIndex = '';
+			if (orderMode) {
+				// Экземпляр со static backdrop (см. openForOrder) сносим: следующий
+				// Add Part на странице Parts (data-bs-toggle / getOrCreateInstance)
+				// создаст обычный. Слушатели shown/hidden висят на элементе, а не
+				// на экземпляре — dispose их не трогает.
+				const ModalClass = (window.bootstrap && window.bootstrap.Modal) ? window.bootstrap.Modal : null;
+				const inst = ModalClass ? ModalClass.getInstance(createPartModal) : null;
+				if (inst) inst.dispose();
 			}
+			orderMode = null;
+			const orderModalEl = document.getElementById('orderModal');
+			if (orderModalEl && orderModalEl.classList.contains('show')) {
+				document.body.classList.add('modal-open');
+			}
+		});
+
+		// Режим заказа: модалка парта поверх модалки заказа (тот же приём,
+		// что у модалок платежа и вендора: backdrop 1075 / modal 1080).
+		createPartModal.addEventListener('shown.bs.modal', function () {
+			if (!orderMode) return;
+			const backdrops = document.querySelectorAll('.modal-backdrop.show');
+			if (backdrops.length > 0) {
+				backdrops[backdrops.length - 1].style.zIndex = '1075';
+			}
+			createPartModal.style.zIndex = '1080';
 		});
 
 		syncInStockVisibility();

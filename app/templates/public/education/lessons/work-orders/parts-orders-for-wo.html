@@ -22,7 +22,7 @@
 <p>Orders can be created on the create screen too: they attach to the page and link to the work order the moment you press Create Work Order.</p>
 {% endcall %}
 {% call step(3, "Receive and pay right here") %}
-<p>Each linked order shows its status (ordered / received), payment status (unpaid / partial / paid), total and balance. {{ ui("Receive") }} asks for the vendor bill and stock locations, then updates stock; {{ ui("Pay") }} records a payment with attachments; the order number or {{ ui("Open") }} opens the full dialog.</p>
+<p>Each linked order shows its status (ordered / received), payment status (unpaid / partial / paid), total and balance. {{ ui("Receive") }} opens the same receiving dialog as on the Parts page — vendor bill, then every line with Ordered / Received / Location (Received is prefilled with the ordered quantity: type what actually arrived, 0 removes the line) — and updates stock; {{ ui("Pay") }} records a payment with attachments; the order number or {{ ui("Open") }} opens the full dialog.</p>
 {% endcall %}
 
 <h2>Badges in both lists</h2>

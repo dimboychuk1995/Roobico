@@ -70,7 +70,9 @@ category), count, Complete & apply. To see why it drifted: part → History
 locations" (From / To / Qty). Totals don't change.
 
 **Negative stock?** Work orders deliberately save even without enough stock
-(you get a warning) — fix by receiving the pending order or adjusting.
+(you get a warning), and **Unreceive** / deleting a received order whose
+parts were already used also leaves a minus (the warning lists the parts)
+— fix by receiving the pending order or adjusting.
 
 **Which parts need reordering? (low stock / reorder point / minimum).**
 Give the parts a minimum first: Parts → **Edit** → tick **"This part
@@ -109,7 +111,10 @@ or "gallons" all work; empty = Each).
 
 **Enter a vendor invoice without typing.** Parts → Order → **AI Order
 Reader**: upload the invoice PDF/photo; review matched parts, create missing
-ones ("Create & Add"), then Create order.
+ones ("Create & Add" — it opens the same full "Create new part" form as Add
+Part, prefilled with the line's number, description, price and the order's
+vendor; set the unit, minimum stock, selling price, core / misc charges if
+needed → Create, and the line lands on the order), then Create order.
 
 **AI put the whole line amount into the price.** This is now corrected
 automatically: the reader extracts the unit price and the printed line
@@ -117,6 +122,28 @@ amount separately and, when they disagree, uses line amount ÷ qty (hover
 the price to see the tooltip when that happened). If a price still looks
 wrong, fix it in the review table before "Add" — the **Total** column shows
 Qty × Price so a mismatch with the invoice is obvious.
+
+**The vendor shipped fewer (or more) parts than I ordered.** Receive the
+order as usual: Parts → Orders → open the order → **Receive Order** (or
+click the yellow "ordered" status in the list). In the dialog every line
+shows the ordered quantity and a **Received** field pre-filled with it —
+type what actually arrived for each line (ordered 15, got 10 → type 10;
+nothing came → 0, the line is removed), set the Vendor Bill and locations
+as usual → Receive Order. The order is updated to the received quantities
+(the original stays on the line as "ordered 15"), so the order total
+equals the vendor bill and stock gets only what came; the toast says how
+many lines were changed. Got more than ordered? Type the bigger number —
+the order grows to match. Edited quantities or prices in the order dialog
+before pressing Receive Order? They are saved automatically first. If a
+payment already recorded is bigger than the new total, receiving stops —
+delete or correct that payment on the Parts Orders Payments tab, then
+receive again. The missing parts arrive later? Create a new order for the
+remainder (a back-order); an order is received once. Received by mistake
+or want to redo it? **Unreceive** — it always works, even when the parts
+were already used on work orders (stock goes below zero, with a warning),
+then receive again with the right numbers. On the phone the Receive
+dialog has only the Vendor Bill field — partial receipts are done on the
+web.
 
 **Average cost looks wrong / did not change after receiving.** Average cost
 is the weighted average of what is in stock, so a small batch barely moves
@@ -152,7 +179,8 @@ Settings → Mail → Forwarding; instructions for every provider are in that
 window) or add the address as an extra notification email in the vendors'
 portals. Forwarding everything is fine — non-orders are ignored. Each
 confirmation/invoice becomes a parts order with the red **Not confirmed**
-badge; open it (Confirm button), add unmatched lines with "Create & Add",
+badge; open it (Confirm button), add unmatched lines with "Create & Add"
+(the full part form, prefilled from the line and the order's vendor),
 check prices, press **Confirm order**. Not an order? **Reject**. Gmail asks
 for a confirmation code first — it is the subject of the email in
 **Inbox history** in the same window.
@@ -390,6 +418,30 @@ live status board for that job — no manual refreshing.
 
 **Send the invoice.** WO → "Email Work Order" (PDF attached; you can add a
 new contact on the fly). Look of the PDF: Settings → PDF Design.
+
+**Invoice shows a smaller Labor (or Parts) than the work-order page.** Not
+a bug — the two views group the same money differently. The work-order page
+is the internal view: its "Labor total" includes shop supply and its "Parts
+total" includes core and misc charges. Every customer document (invoice/PDF,
+work-order email, customer portal, authorization page/email) lists each
+amount once: Labor = labor only, Parts = parts only, and Core Charges, Shop
+Supplies, Misc and Sales Tax are their own lines — so the Total is exactly
+the same, only the grouping differs. Quick check: Labor + Parts + Core
+Charges + Shop Supplies + Misc + Sales Tax on the invoice = the Grand total
+on the WO page. One exception by design: an authorization for a single job
+shows "Block total" = that job's labor + parts + its share of shop supply,
+because that is the amount the customer approves.
+
+**Hide shop supply from the invoice.** Settings → PDF Design → untick "Show
+shop supply" → Save PDF Design. The Shop Supplies line disappears from the
+PDF and its amount folds into the Labor line, the Labor item rows and the
+per-job Subtotals, so the invoice still adds up to the same Total ("Show
+core charges" / "Show misc charges" fold into the Parts line the same way).
+This changes only the PDF: the work-order email, the customer portal and
+authorization pages always list shop supply as its own line. To stop
+charging shop supply instead of hiding it, set "Shop supply: $" to 0 on the
+work order (↺ restores the default) or change the shop supply percentage in
+Settings → Work Order Settings.
 
 **Get approval before doing the work.** WO → "Send for Authorization"
 (whole WO or a single job). The customer approves/declines by email link;

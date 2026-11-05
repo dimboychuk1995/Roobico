@@ -216,7 +216,7 @@ MODULES: tuple[Module, ...] = (
             ("ai-order-reader", "AI Order Reader",
              "Upload a vendor invoice and let AI pick the vendor and fill the lines; review before creating.", 5),
             ("receive", "Receiving an order",
-             "Vendor bill, stock locations, average cost recalculation, Unreceive.", 5),
+             "Vendor bill, Received quantities per line (partial receipts), stock locations, average cost recalculation, Unreceive and Delete.", 5),
             ("pay-orders", "Paying vendors",
              "Record payments on orders, partial payments, the Parts Orders Payments tab and vendor credits.", 4),
             ("returns", "Returns to vendor",

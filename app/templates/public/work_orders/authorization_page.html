@@ -70,7 +70,9 @@
             {% if ctx.single_labor.hours %}<tr><td class="label">Hours</td><td class="value">{{ ctx.single_labor.hours }}</td></tr>{% endif %}
             <tr><td class="label">Labor total</td><td class="value">${{ "%.2f"|format(ctx.single_labor.labor_total) }}</td></tr>
             {% if ctx.single_labor.parts_subtotal %}<tr><td class="label">Parts</td><td class="value">${{ "%.2f"|format(ctx.single_labor.parts_subtotal) }}</td></tr>{% endif %}
-            <tr><td class="label">Block total</td><td class="value"><strong>${{ "%.2f"|format(ctx.single_labor.block_total) }}</strong></td></tr>
+            {# Shop supply — отдельной строкой; Block total — полная сумма работы, которую одобряет клиент (с supply). #}
+            {% if ctx.single_labor.shop_supply > 0 %}<tr><td class="label">Shop supply</td><td class="value">${{ "%.2f"|format(ctx.single_labor.shop_supply) }}</td></tr>{% endif %}
+            <tr><td class="label">Block total</td><td class="value"><strong>${{ "%.2f"|format(ctx.single_labor.block_total_with_supply) }}</strong></td></tr>
           </table>
 
           {% if ctx.single_labor.parts and ctx.single_labor.parts|length > 0 %}
@@ -144,6 +146,9 @@
             </div>
           </div>
           {% endfor %}
+          {# Суммы блоков выше — без shop supply; supply и налог (уровень WO) — по одной строке перед Grand total. #}
+          {% if ctx.t.shop_supply_total > 0 %}<div class="text-end text-muted">Shop supply: ${{ "%.2f"|format(ctx.t.shop_supply_total) }}</div>{% endif %}
+          {% if ctx.t.sales_tax_total > 0 %}<div class="text-end text-muted">Sales tax: ${{ "%.2f"|format(ctx.t.sales_tax_total) }}</div>{% endif %}
           <div class="text-end fs-5 fw-bold">Grand total: ${{ "%.2f"|format(ctx.t.grand_total) }}</div>
         {% endif %}
 

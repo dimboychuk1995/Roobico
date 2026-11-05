@@ -622,7 +622,7 @@ S("parts-order-created", "Right after Create order: the dialog shows the order n
   "/parts/?tab=orders", prep=seq(modal("orderModal", "button[data-bs-target='#orderModal']"), create_order), element="#orderModal .modal-dialog", optional=True)
 S("parts-orders-tab-with-order", "The Parts Orders tab with a fresh order: status Ordered, Unpaid, actions Open / Receive / Pay / Delete.",
   "/parts/?tab=orders&date_preset=all_time")
-S("parts-order-receive", "Receive an order: confirm the vendor bill number and the storage location for each line — stock and average cost update at that moment.",
+S("parts-order-receive", "Receive an order: the vendor bill number, then every line with Ordered and Received (prefilled with the ordered quantity — type what actually arrived, 0 removes the line), plus a Location column when the shop uses storage locations — stock and average cost update at that moment.",
   "/parts/?tab=orders", prep=seq(modal("orderModal", "button[data-bs-target='#orderModal']"), create_order, jsclick("#receiveOrderModalBtn"), wait(1800)),
   element=".swal2-popup || .modal.show:not(#orderModal) .modal-dialog || #orderModal .modal-dialog", optional=True)
 S("parts-order-pay-modal", "Record parts order payment: order total, already paid, remaining balance, amount, method, date, notes and receipt attachments.",
