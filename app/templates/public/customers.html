@@ -121,6 +121,20 @@
             </div>
 
             <div class="col-12 col-md-6">
+              <label class="form-label" for="customerCreateLaborRate">Default Labor Rate</label>
+              <select id="customerCreateLaborRate" name="default_labor_rate" class="form-select">
+                {% if not labor_rates %}<option value="" disabled selected>No active labor rates</option>{% endif %}
+                {% for r in (labor_rates or []) %}
+                  <option value="{{ r.id }}"
+                    {% if r.id == default_labor_rate_id %}selected{% endif %}>
+                    {{ r.name }} (${{ "%.2f"|format(r.hourly_rate or 0) }}/hr)
+                  </option>
+                {% endfor %}
+              </select>
+              <div class="form-text">{% if labor_rates %}Preselected on every new labor line of this customer's work orders.{% else %}Add a labor rate in <a href="{{ url_for('settings.work_orders_index') }}">Settings → Work Order Settings</a> first.{% endif %}</div>
+            </div>
+
+            <div class="col-12 col-md-6">
               <label class="form-label d-block">Taxable</label>
               <div class="form-check form-switch">
                 <input class="form-check-input" type="checkbox" role="switch" id="customerTaxable" name="taxable" value="1" checked>

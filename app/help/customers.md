@@ -18,6 +18,10 @@ Save button "Edit customers", "Portal Link" "Manage customer portal links".
 
 ## Customer record
 
+- The **Add Customer** dialog has: Company Name, **Default Labor Rate**
+  (the shop default, usually "Standard", is preselected), Taxable, Pricing
+  Scale, Override part selling price, Address and the Contacts block. All
+  of them can be changed later on the Details tab.
 - One record type for both companies and private clients. Rule: **"You must
   enter either Company Name or at least one contact with a name."**
 - **Contacts** — any number; each has First/Last Name, Phone, Email; exactly
@@ -31,8 +35,11 @@ Save button "Edit customers", "Portal Link" "Manage customer portal links".
 
 ## Per-customer settings (summary card + Details tab)
 
-- **Default Labor Rate** — pre-selected labor rate on this customer's WOs.
-  Never empty: falls back to the shop default ("standard").
+- **Default Labor Rate** — pre-selected labor rate on this customer's WOs
+  (on every new labor line). Chosen already in the Add Customer dialog at
+  creation (the shop default, usually "Standard", is preselected there) and
+  changeable later on the Details tab. Never empty: falls back to the shop
+  default ("standard").
 - **Pricing Scale** — which margin/markup scale prices parts on this
   customer's WOs ("Choose which pricing scale is applied to parts in work
   orders for this customer."). This is how one customer gets special parts
@@ -100,6 +107,8 @@ Header buttons: **"Back"**, **"Portal Link"**, **"Create Work Order"**.
 ## Deactivating
 
 Customers and units are deactivated (soft), never deleted — history stays.
+The single exception is the system customer "NEW Customer": its stray units
+that carry no history at all are deleted by the nightly cleanup (see below).
 There is no customer merge feature.
 
 - **Finding an inactive one**: Customers list → status filter **Inactive
@@ -119,5 +128,20 @@ in the system yet, the unit is created under it automatically so work can
 start immediately. This customer **cannot be deactivated** — instead, move
 its work orders to the real company with the **Transfer** button on the WO
 page (the unit follows the work order automatically, and labor rates, part
-prices and the tax flag are recalculated for the real company), and its
-stray units can be edited/deactivated like any others once they are re-homed.
+prices and the tax flag are recalculated for the real company).
+
+Nobody has to tidy "NEW Customer" up by hand: **every night** the system
+deletes the stray units under it — units that have **no work order (or
+estimate), no calendar appointment, no annual inspection and no attached
+file**. Anything scanned or edited in the last 6 hours is left alone, so a
+VIN a mechanic has just scanned is never touched. A unit that has a work
+order stays until the office transfers that WO. After the Transfer the
+original unit left behind under "NEW Customer" (deactivated when the
+Transfer created a copy for the real company, or simply no longer linked
+when the company already had that VIN) is deleted the next night — unless
+it still has attached files, an annual inspection or an appointment of its
+own, which Transfer does not move; move or delete those first. Deleted
+units are listed in Reports → Activity Journal (source "System", user
+"Nightly cleanup") with their VIN, unit # and id. Only the system customer
+is cleaned this way — an ordinary customer that merely happens to be named
+"New Customer" and its units are never touched.

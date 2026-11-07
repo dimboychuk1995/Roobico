@@ -64,6 +64,9 @@ Roobico — мультитенантный SaaS для автосервисов 
 - Ящик локации для парт-ордеров (email → AI → заказы «not confirmed»):
   установка Cloudflare Email Worker + cron `app.scripts.process_inbound_emails`
   — `deploy/email_orders_inbox.md`.
+- Ночная очистка системного клиента «NEW Customer» (юниты без WO, записей
+  календаря, инспекций и вложений удаляются; cron root'а 08:30 UTC,
+  `app.scripts.cleanup_system_customer`) — `deploy/system_customer_cleanup.md`.
 - Включение транзакций Mongo на сервере: `deploy/enable_replica_set.md`.
   Gunicorn-конфиг: `deploy/gunicorn.conf.py` (systemd-юнит должен запускать с `-c`).
 - Мобильное приложение (TestFlight): из `mobile/` —

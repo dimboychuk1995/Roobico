@@ -4,7 +4,7 @@
 <ul>
   <li>One record type for companies and private clients.</li>
   <li>Contacts and the main contact.</li>
-  <li>Address, the Taxable switch and the pricing settings you can set at creation.</li>
+  <li>Address, the Taxable switch, the Default Labor Rate and the pricing settings you can set at creation.</li>
 </ul>
 {% endcall %}
 
@@ -21,17 +21,18 @@
 <p>Add any number of contacts, each with First / Last Name, Phone and Email. Exactly one is the <strong>Main contact</strong> — it is shown in tables and preselected as the email recipient for invoices, receipts and approval requests. You can edit contacts later from the Details tab or straight from any email dialog.</p>
 {% endcall %}
 
-{% call step(4, "Address, Taxable, pricing") %}
+{% call step(4, "Address, Taxable, labor rate, pricing") %}
 <ul>
   <li><strong>Address</strong> is required; start typing and pick a suggestion.</li>
+  <li><strong>Default Labor Rate</strong> — the labor rate preselected on every new labor line of this customer's work orders. The shop default (“Standard”) is preselected; pick another one for a fleet with its own hourly rate. Details in {{ lesson_link("customers/customer-pricing") }}; it can be changed later on the Details tab.</li>
   <li><strong>Taxable</strong> — switch it off for tax-exempt customers. It presets the Taxable toggle on their work orders (you can still override per work order). Labor is never taxed for anyone.</li>
   <li><strong>Pricing Scale</strong> and <strong>Override part selling price</strong> — special parts pricing for this customer; explained in {{ lesson_link("customers/customer-pricing") }}. Leave the defaults if the customer pays list prices.</li>
 </ul>
 {{ shot("customer-add-modal-filled", "A company filled in with its address and main contact.", "md") }}
 {% endcall %}
 
-{% call step(5, "Save") %}
-<p>The new customer opens on its page. Next: add units (the vehicles) — see {{ lesson_link("customers/add-unit") }}.</p>
+{% call step(5, "Create") %}
+<p>Click {{ ui("Create") }}. You are returned to the Customers list with a success message; click the new customer's row to open its page. Next: add units (the vehicles) on the <strong>Units</strong> tab — see {{ lesson_link("customers/add-unit") }}.</p>
 {% endcall %}
 
 {% call warn("Duplicates are blocked") %}

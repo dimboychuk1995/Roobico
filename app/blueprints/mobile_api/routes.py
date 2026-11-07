@@ -1124,7 +1124,7 @@ def mobile_unit_details(unit_id):
 @permission_required("customers.create")
 def mobile_customer_create():
     from app.blueprints.customers.routes import (
-        _resolve_default_labor_rate_id,
+        _validate_customer_labor_rate_id,
         _validate_customer_pricing_rule_id,
     )
     from app.utils.contacts import (
@@ -1158,8 +1158,13 @@ def mobile_customer_create():
         msg = duplicate_message("Customer", customer_display_name(existing), existing)
         return jsonify({"ok": False, "error": msg, "message": msg}), 409
 
-    default_rate_id = _resolve_default_labor_rate_id(shop_db, shop["_id"])
-    if not default_rate_id:
+    # Необязательный default_labor_rate: пусто → дефолтная ставка магазина
+    # (как раньше), задан → только активная ставка этого магазина.
+    default_rate_raw = str(data.get("default_labor_rate") or "").strip()
+    default_rate_id, rate_err = _validate_customer_labor_rate_id(shop_db, shop["_id"], default_rate_raw)
+    if rate_err:
+        if default_rate_raw:
+            return jsonify({"ok": False, "error": "invalid_labor_rate", "message": rate_err}), 400
         return jsonify({"ok": False, "error": "no_labor_rates",
                         "message": "No labor rates configured for this shop."}), 400
 

@@ -9,7 +9,7 @@
 {% endcall %}
 
 <p>
-  All three settings live on the customer's <strong>Details</strong> tab (and the Pricing Scale / Override can be set at creation).
+  All three settings live on the customer's <strong>Details</strong> tab and can also be set right in the Add Customer dialog when the customer is created.
   They become the defaults for that customer's work orders; a single work order can still override any of them.
 </p>
 {{ shot("customer-page-details-tab", "Details tab with Default Labor Rate, Pricing Scale and the Override switch.") }}
@@ -18,7 +18,8 @@
 <p>
   The labor rate preselected on every new labor line of this customer's work orders. It is never empty — if nothing is chosen, the
   shop default (“Standard”) is used. To give a fleet a lower hourly rate: create the rate in Settings → Work Order Settings →
-  Labor Rates, then pick it here. On any single job you can still choose a different rate in the labor block.
+  Labor Rates, then pick it here. The Add Customer dialog offers the same select with the shop default preselected, so a fleet
+  can get its own rate from day one. On any single job you can still choose a different rate in the labor block.
 </p>
 
 <h2>Pricing Scale</h2>

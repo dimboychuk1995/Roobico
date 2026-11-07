@@ -58,7 +58,18 @@ What a mechanic sees and can do:
     the WO page — the unit follows automatically and the office's prices
     (labor rates, part prices, tax) are re-applied for the real company;
     you can keep working on the WO while this happens. "NEW Customer" is
-    created per shop on first scan and **cannot be deactivated**.
+    created per shop on first scan and **cannot be deactivated**. Nobody has
+    to tidy it up either: units left under "NEW Customer" **without a work
+    order** (and without an appointment, annual inspection or attached
+    file) are **deleted automatically every night**, after a 6-hour grace
+    period so a VIN you scanned a moment ago is never touched. A unit that
+    has a work order stays until the office transfers that WO. After the
+    Transfer the original unit left behind under "NEW Customer" (deactivated
+    when the Transfer created a copy for the real company, or simply no
+    longer linked when the company already had that VIN) is deleted the
+    next night — unless it still has attached files, an annual inspection
+    or an appointment of its own, which Transfer does not move; move or
+    delete those first.
   The same scanner is available on the **New unit** form (barcode icon next
   to the VIN field) — it fills the VIN and decodes Year/Make/Model/Type.
   If the vehicle has no scannable barcode, type the VIN manually on the

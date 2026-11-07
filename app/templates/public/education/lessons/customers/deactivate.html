@@ -2,7 +2,7 @@
 
 {% call summary_box() %}
 <ul>
-  <li>Customers and units are deactivated, never deleted.</li>
+  <li>Customers and units are deactivated, never deleted — the one exception is NEW Customer's stray units with no history, which the nightly cleanup deletes.</li>
   <li>Finding inactive records and bringing them back.</li>
   <li>The special “NEW Customer” that cannot be deactivated.</li>
 </ul>
@@ -11,7 +11,8 @@
 <h2>Deactivating</h2>
 <p>
   Customer page → {{ ui("Deactivate Customer") }} (needs {{ perm("customers.deactivate", "Deactivate customers") }}).
-  Unit page → Details → {{ ui("Deactivate Unit") }}. Nothing is deleted: history, work orders, units and balances stay.
+  Unit page → Details → {{ ui("Deactivate Unit") }}. Nothing is deleted: history, work orders, units and balances stay (the single exception
+  is the system customer NEW Customer — its stray units that carry no history at all are deleted by the nightly cleanup, see below).
   Inactive customers and units are hidden from work order pickers, the mobile app and the customer portal until activated.
 </p>
 {{ shot("customer-page", "Deactivate Customer sits in the header area of the customer page.") }}
@@ -36,8 +37,13 @@
 <p>
   If mechanics scan VINs in the mobile app, the shop gets a technical customer named <strong>NEW Customer</strong>. Unknown VINs
   are filed under it so work can start immediately. This customer <strong>cannot be deactivated</strong>. Instead, move its work orders
-  to the real company with the {{ ui("Transfer") }} button on the work order page — the unit follows automatically — and edit or
-  deactivate its stray units like any others once they are re-homed. See {{ lesson_link("work-orders/transfer") }}.
+  to the real company with the {{ ui("Transfer") }} button on the work order page — the unit follows automatically. See {{ lesson_link("work-orders/transfer") }}.
+  Stray units — scanned but never given a work order, or left behind after a Transfer — need no manual clean-up: every night the system
+  deletes units under NEW Customer that have no work order, appointment, inspection or attached file (anything scanned in the last six
+  hours is left alone). A unit with a work order stays until that work order is transferred. After the Transfer the original unit left
+  behind under NEW Customer (deactivated when the Transfer created a copy for the real company, or simply no longer linked when the
+  company already had that VIN) is deleted the next night — unless it still has attached files, an annual inspection or an appointment
+  of its own, which Transfer does not move; move or delete those first.
 </p>
 
 {% call note("No merge") %}
