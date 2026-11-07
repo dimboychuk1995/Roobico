@@ -113,6 +113,25 @@ drag → `assigned_mechanics`; веб опрашивает
 `stock_state`). Формы парта в мобилке нет (сервер при отсутствии ключей в
 payload обновления сохраняет прежние значения); единица строки WO
 (`unit` / `unit_short` в payload) на экранах WO пока не показывается.
+2026-11-07 (календарь переписан с нуля, веб + сервер): календарь — только
+записи (`calendar_events`). `GET /calendar/api/events` больше не отдаёт
+виртуальные блоки WO (полей `unscheduled` / `superseded` / `worked` /
+`running` / `source` нет; `include_work_orders=1` принимается и
+игнорируется), занятость механика не проверяется (409 `conflict_message`
+не бывает — пересечения разрешены), `follow_wo_mechanics` и обратная
+связь drag → `assigned_mechanics` удалены (календарь в WO не пишет,
+переназначение в WO записи не двигает), статусы записей не откатываются
+на `scheduled` при возврате WO в open, `/calendar/api/live_signature`
+удалён (веб перезапрашивает события каждые 30 с). Пути и поля, которые
+читает приложение (`id`, `title`, `start_time`, `end_time`, `status`,
+`customer_*`, `unit_*`, `mechanics`, `mechanic_ids`, `mechanic_id`,
+`mechanic_name`, `presets`, `note`, `work_order_id`, `wo_number`,
+`wo_state`, `labor_summary`), не изменились; смена клиента/юнита у
+привязанной записи отвечает 400 с текстом (раньше 409). Новое:
+`GET/PUT /calendar/api/settings` (статусы + рабочие часы сетки
+`start_hour` / `end_hour`), `GET /calendar/api/work_orders/<id>/snapshot`
+(предзаполнение записи из WO). В мобилке ветки `event.unscheduled` /
+`superseded` и strip «Not scheduled» стали мёртвым кодом — можно убрать.
 
 Осталось: AVIR (годовая инспекция), chart в отчётах,
 labor-scope авторизация, выбор кандидатов при AI-скане (сейчас топ-1).

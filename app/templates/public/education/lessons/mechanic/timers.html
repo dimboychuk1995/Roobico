@@ -3,7 +3,7 @@
 {% call summary_box() %}
 <ul>
   <li>Start / stop a timer per job; one running timer per person.</li>
-  <li>What tracked time drives: status, hours, calendar, reports, payroll.</li>
+  <li>What tracked time drives: status, hours, reports, payroll — and the status of a linked appointment on the calendar.</li>
   <li>Fixing a forgotten timer.</li>
 </ul>
 {% endcall %}
@@ -25,7 +25,7 @@
 <ul>
   <li><strong>Work order</strong> — the office sees a red <em>● working</em> marker live and the summed tracked time per job; hours of mechanic-created jobs auto-fill from it ({{ lesson_link("work-orders/labor-blocks") }}).</li>
   <li><strong>Work Orders list</strong> — the green <em>● names</em> line and the In Work group.</li>
-  <li><strong>Calendar</strong> — one block per mechanic per session, exactly when the timer ran ({{ lesson_link("calendar/wo-on-calendar") }}).</li>
+  <li><strong>Calendar</strong> — the first timer on a work order turns its linked appointment In Progress; the calendar itself shows appointments only, never timer sessions ({{ lesson_link("calendar/wo-on-calendar") }}).</li>
   <li><strong>Reports</strong> — Mechanic Hours (Tracked vs Billed), the dashboard hours chart, and payroll where hourly pay is based on tracked work.</li>
   <li><strong>Push</strong> — the first timer on a work order sends “WO #… in work” to office phones.</li>
 </ul>

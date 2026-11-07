@@ -2,50 +2,49 @@
 
 {% call summary_box() %}
 <ul>
-  <li>The two kinds of blocks: appointments and work orders.</li>
-  <li>Colors, the legend and mechanic markers.</li>
-  <li>Toolbar: navigation, Week / By mechanic, the mechanic filter and the Work orders switch.</li>
+  <li>What the calendar shows: appointments only, in two views.</li>
+  <li>What a block tells you: time, title, customer, unit, mechanics, status colour.</li>
+  <li>Toolbar: navigation, the date box, Week / By mechanic, the mechanic filter and settings.</li>
 </ul>
 {% endcall %}
 
 <p>
-  Sidebar → {{ ui("Calendar") }} — the shop's schedule and its activity log in one grid (Mon–Sun, 06:00–21:00, 15-minute steps).
-  Needs {{ perm("calendar.view", "View calendar") }}.
+  Sidebar → {{ ui("Calendar") }} — the shop's appointment board: who is booked for what, and when. Needs {{ perm("calendar.view", "View calendar") }}.
+  It shows <strong>appointments</strong> — blocks created by hand on the web or in the mobile app. Work orders are not drawn on it by
+  themselves; a work order is on the calendar only through an appointment linked to it ({{ lesson_link("calendar/wo-on-calendar") }}).
 </p>
-{{ shot("calendar-week", "The week view.") }}
+{{ shot("calendar-week", "The week view: one column per day, blocks coloured by status, mechanic initials in the corner.") }}
 
-<h2>Two kinds of blocks</h2>
+<h2>Two views</h2>
 <ul>
-  <li><strong>Appointments</strong> — what you planned by hand. Click an empty slot to create one, click a block to edit, drag &amp; drop to move. See {{ lesson_link("calendar/appointments") }}.</li>
-  <li><strong>Work orders</strong> — every active work order appears automatically, even if nobody scheduled it, so you can see who did what, when, and what is still waiting. A WO block has a left edge in the mechanic's color, their initials in the corner and a status chip. See {{ lesson_link("calendar/wo-on-calendar") }}.</li>
+  <li><strong>Week</strong> — seven columns, Monday to Sunday. Today's number is highlighted; click a day header to open that day in the By mechanic view.</li>
+  <li><strong>By mechanic</strong> — one day, a column per mechanic plus <em>Unassigned</em>; each header counts the mechanic's live appointments that day ({{ lesson_link("calendar/by-mechanic") }}).</li>
 </ul>
-
-<h2>Colors</h2>
-<table>
-  <thead><tr><th>Chip</th><th>Meaning</th></tr></thead>
-  <tbody>
-    <tr><td>Not started</td><td>The work order exists, no mechanic has started it.</td></tr>
-    <tr><td>In progress</td><td>A mechanic is working on it — a pulsing chip means a timer is running right now.</td></tr>
-    <tr><td>Mechanic done</td><td>All mechanics pressed Done; the manager has not reviewed it yet.</td></tr>
-    <tr><td>Completed</td><td>Work finished, payment pending.</td></tr>
-    <tr><td>Paid</td><td>Invoice paid. Mechanic-mode users see it as Completed.</td></tr>
-  </tbody>
-</table>
-<p>Estimates are not shown — they are quotes, not work. The legend under the toolbar explains the colors.</p>
-
-<h2>Who is who</h2>
 <p>
-  Every mechanic has a color. The row of markers on top (color, initials, name) is the key; each block carries the same color on its
-  left edge and the initials in its corner. Click a marker to show only that mechanic; click again to show everyone.
+  In both views the hours run down the left side (hour lines, lighter quarter-hour lines) and a red line marks the current time in today's
+  column. The visible hours come from <em>Working hours</em> in the settings (06:00–20:00 by default) and stretch automatically when an
+  appointment starts earlier or ends later — nothing is ever hidden. A normal day fits the screen; a long one scrolls inside the grid.
 </p>
+
+<h2>What a block shows</h2>
+<ul>
+  <li><strong>Colour</strong> = appointment status; the legend under the toolbar lists them.</li>
+  <li>First line: the time (07:30–09:00). Then the <strong>title</strong> in bold — the free-text field for the phone number and the job list; when it is empty the customer's name is shown instead. Then the customer (when it differs from the title) and the unit.</li>
+  <li>In Week view each mechanic of the appointment has a small chip with their initials in that mechanic's colour (top-right corner); the same colour marks their column in By mechanic.</li>
+  <li>A linked appointment carries a <strong>WO #123</strong> badge; a <strong>Cancelled</strong> one stays on the grid, faded and struck through.</li>
+  <li>Two appointments at the same time in one column are drawn <strong>side by side</strong> — overlaps are allowed, the calendar never refuses them.</li>
+</ul>
+<p>Hover a block for the full text.</p>
 
 <h2>Toolbar</h2>
 <ul>
-  <li>{{ ui("‹") }} {{ ui("Today") }} {{ ui("›") }} — move by week (or by day in the By mechanic view).</li>
-  <li>{{ ui("Week") }} — the classic 7-day grid; inside each day every mechanic with blocks gets their own narrow lane. Click a day header to expand that day into one lane per mechanic; click again to make it wider; a third time returns to normal.</li>
-  <li>{{ ui("By mechanic") }} — one day, a column per mechanic plus Unassigned ({{ lesson_link("calendar/by-mechanic") }}).</li>
-  <li><strong>All mechanics</strong> dropdown — show one mechanic or only unassigned blocks.</li>
-  <li><strong>Work orders</strong> switch — hide the automatic WO blocks and keep only appointments; remembered in this browser.</li>
-  <li>⚙ — calendar settings: appointment statuses and colors.</li>
+  <li>{{ ui("‹") }} {{ ui("Today") }} {{ ui("›") }} — move by week (Week) or by day (By mechanic); the date box jumps straight to a date.</li>
+  <li>{{ ui("Week") }} / {{ ui("By mechanic") }} — switch the view.</li>
+  <li><strong>All mechanics</strong> dropdown — show one mechanic, or only unassigned appointments, in either view. The view and the filter are remembered in this browser.</li>
+  <li>⚙ — calendar settings: statuses, colours and working hours (needs {{ perm("calendar.manage_settings", "Manage calendar settings") }}).</li>
 </ul>
-{{ shot("calendar-controls", "Toolbar with the mechanic filter, the Work orders switch and the view buttons highlighted.") }}
+{{ shot("calendar-controls", "Toolbar with the mechanic filter, the By mechanic button and the date box highlighted.") }}
+
+{% call note("It keeps itself fresh") %}
+Every 30 seconds the calendar re-reads the visible days, so an appointment created on a phone or by a colleague appears without reloading the page (paused while a dialog is open, while you drag a block and while the tab is hidden). The address bar follows the date and view, so a bookmark or a link sent to a colleague opens the same day.
+{% endcall %}

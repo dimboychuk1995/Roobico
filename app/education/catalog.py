@@ -168,17 +168,17 @@ MODULES: tuple[Module, ...] = (
     ),
     _module(
         "calendar", "Calendar",
-        "Plan appointments, see work orders on the days mechanics actually worked, and schedule by mechanic.",
+        "Plan appointments by day and by mechanic, move them by drag & drop, and link them to work orders.",
         "bi-calendar3",
         [
             ("calendar-basics", "Calendar views",
-             "Day / week / month, the Work orders switch, colors and what the blocks mean.", 4),
+             "Week and By mechanic views, the toolbar, what a block shows, the legend and live refresh.", 4),
             ("appointments", "Appointments",
-             "Create, edit, move and cancel appointments; statuses and presets from calendar settings.", 5),
-            ("wo-on-calendar", "Work orders on the calendar",
-             "Work orders placed by mechanic timers, Create Work Order from an appointment, linked status.", 5),
+             "Create, edit, move, resize and cancel appointments; statuses and working hours in calendar settings.", 5),
+            ("wo-on-calendar", "Appointments and work orders",
+             "Create Work Order from an appointment, Schedule from a work order, what follows the WO and what the calendar never changes.", 5),
             ("by-mechanic", "By mechanic view & scheduling",
-             "One column per mechanic, the Not scheduled strip, drag to schedule and the booked-slot rule.", 5),
+             "One column per mechanic plus Unassigned: plan by clicking a column, move jobs between mechanics, filter.", 5),
         ],
     ),
     _module(

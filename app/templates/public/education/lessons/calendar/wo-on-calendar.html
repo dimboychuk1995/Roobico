@@ -2,45 +2,53 @@
 
 {% call summary_box() %}
 <ul>
-  <li>Where a work order lands on the grid — timer sessions, the Not scheduled strip.</li>
-  <li>Creating a work order from an appointment and what gets linked.</li>
-  <li>Facts beat plans.</li>
+  <li>From an appointment to a work order: Create Work Order.</li>
+  <li>From a work order to the calendar: the Schedule button and the Scheduled card.</li>
+  <li>What follows the work order automatically — and what the calendar never changes.</li>
 </ul>
 {% endcall %}
 
-<h2>Where a work order lands</h2>
 <p>
-  If mechanics tracked time on it, the work order shows as <strong>one block per mechanic per work session</strong>, exactly when that
-  mechanic's timer was running (pauses under 20 minutes are merged). Two mechanics on the same job = two blocks with their names. A work
-  order with no tracked time and no appointment is not placed on the grid at all — it sits as a chip in the <strong>Not scheduled</strong>
-  strip under the day header on its work order date, so the calendar never invents a time.
+  The calendar shows appointments only — a work order is on it when an appointment is <strong>linked</strong> to it. The rule behind the
+  link is simple: <strong>the work order is the source of truth; the calendar never changes a work order.</strong>
 </p>
-{{ shot("calendar-week", "Work order blocks placed by mechanic timers; the Not scheduled strip under the day header.") }}
-<p>Click a block or chip for the summary — customer, unit, mechanic hours, jobs, planned hours, its appointments — and {{ ui("Open Work Order") }}.</p>
-{{ shot("calendar-wo-event-modal", "The work order block details.", "md") }}
 
 <h2>From appointment to work order</h2>
 {% call step(1, "Fill the appointment") %}
-<p>Customer and unit are required; add presets, a mechanic and a note if you like.</p>
+<p>Customer and unit are required for this; add presets, mechanics and a note if you like.</p>
 {% endcall %}
 {% call step(2, "Press Create Work Order") %}
-<p>The appointment is saved first, then the work order page opens in a new tab with everything prefilled: customer, unit, one labor block per preset, the mechanic assigned 100% to each block, and the note as the labor description.</p>
+<p>The appointment is saved first, then the work order page opens in a new tab with everything prefilled: customer, unit, one labor block per preset, all mechanics of the appointment assigned to every block (even split), and the note as the job description — or, when it is long or a preset already named the job, as the block's <em>Describe Issue</em> text that the mechanic sees under the job.</p>
 {% endcall %}
 {% call step(3, "Save the work order") %}
-<p>The appointment is linked: it gets a dashed border, shows the live WO status, number and jobs, and keeps {{ ui("Open WO") }} and {{ ui("Unlink") }} buttons in its dialog. Deleting the work order keeps the appointment and only removes the link.</p>
+<p>The appointment is now linked: its block carries a <strong>WO #</strong> badge, and its dialog shows “Linked to WO #…” with the live work-order state (Not started, In progress, Mechanic done, Completed, Paid), the first jobs, {{ ui("Open WO") }} and {{ ui("Unlink") }}.</p>
+{{ shot("calendar-appointment-modal", "The appointment dialog — Create Work Order sits in its footer; a linked appointment shows the WO panel at the top.", "md") }}
 {% endcall %}
+<p>Mechanics (mechanic mode) do not get the button: on the phone they press <strong>Start work</strong> in the appointment and the server builds the work order from its presets, crew and note.</p>
 
-<h2>Scheduling an existing work order</h2>
+<h2>From work order to calendar</h2>
 <p>
-  Drag a chip from the Not scheduled strip onto the grid (into a mechanic's lane or column to pick who), or click a chip / timer block and
-  press {{ ui("Add to schedule") }} — a new appointment linked to the work order opens, prefilled with the customer, unit, planned hours
-  and mechanic. Timer blocks themselves are facts and cannot be moved.
+  On the page of an existing work order press {{ ui("Schedule") }} (next to History / Back). The calendar opens with a new appointment
+  already linked to the WO and prefilled from it: customer, unit, the mechanics of its labor blocks, the first jobs as the title and the
+  planned hours as the duration (today at 08:00 — set the real date and time, then Save). A work order can have several appointments, for
+  example two visits. The <strong>Scheduled</strong> card at the top of the WO page lists every live (not cancelled) appointment — date,
+  time, mechanics, presets, note — with an <em>Open calendar</em> link.
 </p>
 
-{% call note("Facts beat plans") %}
-Once the planned mechanic actually works on that work order during the planned time, the plan disappears from the grid (it stays listed in the WO window under <em>Planned for this day</em>, where you can edit or delete it). A plan for a different mechanic on the same work order stays — they still have their part to do.
-{% endcall %}
+<h2>What follows the work order</h2>
+<ul>
+  <li><strong>Status</strong> — when a mechanic starts a timer on the WO (or takes it into work from the phone) the appointment turns <em>In Progress</em>; when the mechanic presses Done, or the WO is completed or paid by any route, it turns <em>Completed</em>. The status never goes back by itself — if a job is reopened, set the appointment by hand. A <em>Cancelled</em> appointment is never touched. (If your shop replaced the built-in statuses, the sync has nothing to set and leaves the appointment alone.)</li>
+  <li><strong>Customer and unit</strong> — a Transfer or a unit change on the work order moves the appointment along. In the dialog these two fields are read-only while linked: “Customer and unit come from WO #… — change them there or unlink”.</li>
+</ul>
 
-{% call tip("An old appointment still hanging around?") %}
-Click the WO block → <em>Planned for this day</em> lists every appointment for that work order that day, hidden ones marked “replaced by actual work” → Delete, or Edit to move it to a real follow-up slot.
+<h2>What the calendar never changes</h2>
+<ul>
+  <li>Moving an appointment to another mechanic or time does <strong>not</strong> reassign anyone on the work order.</li>
+  <li>Reassigning a mechanic in the WO's labor blocks does <strong>not</strong> move its appointments — drag them yourself.</li>
+  <li>The status buttons in the appointment do not change the work order's status.</li>
+  <li>{{ ui("Unlink") }} clears the link and nothing else. Deleting the work order does the same for all its appointments — they stay on the grid with their status.</li>
+</ul>
+
+{% call tip("Who actually worked, and when?") %}
+That is tracked time, not the calendar: Reports → Mechanic Hours ({{ lesson_link("reports/mechanic-hours") }}) and the work order's time logs ({{ lesson_link("mechanic/timers") }}).
 {% endcall %}

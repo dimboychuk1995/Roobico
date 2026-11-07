@@ -207,168 +207,189 @@ Widgets:
 
 ## Calendar
 
-Sidebar → **Calendar** — the shop's schedule and its activity log in one
-grid (Mon–Sun, 06:00–21:00, 15-minute steps). It shows two kinds of blocks:
+Sidebar → **Calendar** — the shop's appointment board: who is booked for
+what, and when. It shows **appointments only** — the blocks you, a
+colleague or someone in the mobile app created by hand. Work orders do
+not appear on it by themselves; a work order is on the calendar only
+when an appointment is **linked** to it (see "Appointments and work
+orders" below). The page keeps itself fresh: every 30 seconds it
+re-reads the visible days, so an appointment created on a phone or by a
+colleague shows up without pressing F5 (the check pauses while a dialog
+is open, while you are dragging a block and while the browser tab is
+hidden).
 
-- **Appointments** — what you planned by hand. Click an empty slot to
-  create one, click a block to edit, drag & drop to move it (while you
-  drag, the block slides into the mechanic lane under the cursor), and
-  **drag its bottom edge** to make it longer or shorter — 15-minute steps,
-  the new end time shows in the corner, no need to open the dialog (a busy
-  mechanic blocks a stretch the same way as a move). Fields: Customer,
-  Unit, Service Presets, Start/End, Assign to Mechanics, Status,
-  Title/Note. The **date is the day you clicked** — the dialog only shows
-  it; to move a plan to another day drag the block. **Several mechanics**
-  can be assigned to one appointment (pick them one by one, each becomes
-  a tag): the block then appears in every one of their lanes and the slot
-  is checked for each of them. **Dragging a block into another mechanic's
-  lane reassigns it**: a single-mechanic plan simply gets the new
-  mechanic; for a crew, the member whose lane you dragged it out of is
-  swapped for the new one and the rest of the crew stays (drop it on a
-  lane of someone already in the crew, or on "Unassigned", to just remove
-  that member). Appointment statuses (Scheduled, Confirmed, In
-  Progress, Completed, Cancelled) and their colors are editable per shop
-  via the gear → "Appointment Statuses". **A linked appointment follows
-  the work**: as soon as a mechanic starts a timer on the linked WO (or
-  starts it from the phone) the appointment turns In Progress; when the
-  mechanic presses Done, or the WO is completed / paid by any route (the
-  office's Save, the status menu, Mark paid, a payment or a bulk
-  payment), it turns Completed — no manual status changes needed. The
-  link works both ways: if the office **reopens a job that never really
-  started** (marks it unpaid or saves it back to Open while nobody has
-  tracked time on it, no payment is recorded and Done was not pressed)
-  an In Progress / Completed appointment goes back to Scheduled — a job
-  with tracked hours, a Done mark or a deposit keeps its colour; if the WO is
-  **transferred** to another customer or its unit is changed, the
-  appointment's customer and unit follow; if the office **reassigns the
-  mechanic** in the WO's labor blocks, the WO's future appointments move
-  to the new mechanic (one that would collide with the new mechanic's
-  other job stays put — move it by hand; plans of the other crew members
-  stay where they are); and dragging a linked appointment into another
-  mechanic's lane changes the WO's labor assignments the same way (as
-  long as nobody has tracked time on the WO yet and you are allowed to
-  edit work orders — lines already given to other mechanics stay; in a
-  crew line only the mechanic you dragged away is replaced). That is why
-  a linked appointment's dialog
-  keeps **customer and unit read-only** ("come from WO #…" — change them
-  on the work order, or Unlink first) and, once the WO is in work, locks
-  the status buttons to the WO except **Cancelled** (the sync never
-  touches a cancelled appointment, and Cancelled can always be set by
-  hand).
-- **Work orders** — every active WO appears on the calendar automatically,
-  even if nobody ever scheduled it, so you can see who did what, when, and
-  what is still waiting. A WO block has a left edge in the mechanic's colour
-  (plus their initials in the corner) and a status chip; the legend under
-  the toolbar explains the colors:
-  - **Not started** — WO exists, no mechanic has started it;
-  - **In progress** — a mechanic is working on it (a pulsing chip means a
-    timer is running right now);
-  - **Mechanic done** — all mechanics pressed Done, the manager has not
-    reviewed it yet;
-  - **Completed** — the work is finished (manager saved/confirmed it or
-    hours were tracked), payment still pending;
-  - **Paid** — invoice paid.
-  Estimates are not shown (they are quotes, not work). In mechanic mode
-  "Paid" is shown as "Completed" — mechanics never see money.
+**Two views.**
 
-**Where a work order lands on the grid.** If mechanics tracked time on it,
-the WO shows as one block per mechanic per work session, exactly when that
-mechanic's timer was running (short stop/start pauses under 20 minutes are
-merged). So a mechanic's blocks never overlap: if Sergey worked on WO A
-8:00–9:00, then on WO B 9:10–11:00 and came back to WO A after lunch, you
-see three separate blocks, not two day-long bars. Two mechanics on the same
-job show as two blocks with their names. A WO with no tracked time and no
-appointment is **not placed on the grid at all** — it sits as a chip in the
-**"Not scheduled"** strip under the day (or mechanic) header on its Work
-Order Date, so the calendar never invents a time. The strip shows up to
-four chips per day; when a day has more, three are shown and the fourth
-reads **"+N more"** — click it to see them all. A WO with an appointment is
-"scheduled" and has no chip. Click a WO block or chip for
-the summary — customer, unit, mechanic hours, jobs, planned hours, its
-appointments — and **Open Work Order**.
+- **Week** — seven columns, Monday to Sunday, of the selected week.
+  Today's number has a filled circle. Click a day header to open that
+  day in the By mechanic view.
+- **By mechanic** — one day, one column per mechanic of the shop (the
+  same order as in work orders) plus a last **Unassigned** column for
+  appointments nobody is assigned to yet. Each header shows the
+  mechanic's colour dot, name and how many appointments (cancelled ones
+  not counted) they have that day.
 
-**Views and filters** (toolbar, right side):
+In both views the hours run down the left side: hour lines, lighter
+quarter-hour lines and a red line at the current time in today's
+column. The visible hours come from **Working hours** in the settings
+(06:00–20:00 by default) and stretch automatically whenever an
+appointment starts earlier or ends later — nothing is ever hidden. A
+normal day fits on the screen; a very long one scrolls inside the grid.
 
-- **Week** — 7-day grid where **every day is split into one lane per
-  mechanic of the shop** (three mechanics = three lanes, same order as the
-  "By mechanic" view) — empty future days too, so the week reads like a
-  staffing board. The marker row under each date names the lanes (initials
-  in the mechanic's colour; hover for the name); an "Unassigned" lane
-  (grey "–" marker) appears only when something has no mechanic. **Click
-  an empty slot inside a lane and the new appointment is already assigned
-  to that mechanic**; dropping a chip or a plan into a lane assigns it
-  too. Clicking a marker filters the calendar to that mechanic (click
-  again to show everyone). Lanes never get narrower than readable: with
-  many mechanics the grid grows and scrolls sideways. Click a day header
-  to widen that day (the markers gain names), a second time to give it
-  almost the whole grid (the other six days shrink to narrow strips), a
-  third time to go back to the normal week.
-- **Who is who**: every mechanic has a colour. The row of markers on top
-  (colour, initials, name) is the key; each block carries the same colour
-  on its left edge and the mechanic's initials in its corner, so you can
-  tell at a glance whose block it is. Click a marker to show only that
-  mechanic, click it again to show everyone.
-- **By mechanic** — one day, a column per mechanic plus "Unassigned". Each
-  header shows how many different jobs (work orders / appointments) the
-  mechanic has that day — several timer sessions on one WO count once. A WO with several
-  mechanics appears in each of their columns. Use ‹ › to move by day. In
-  this view, dragging a block into another column reassigns the mechanic
-  of that appointment.
-- **All mechanics** dropdown — show only one mechanic (or only unassigned
-  blocks) in either view.
-- **Work orders** switch — hide the automatic WO blocks and keep only your
-  appointments. The choice is remembered in this browser.
+**Toolbar.** ‹ **Today** › move by a week (Week) or by a day (By
+mechanic); the date box jumps straight to a date; **Week / By mechanic**
+switch the view; the **All mechanics** dropdown shows one mechanic (or
+only unassigned appointments) in either view — the view and the filter
+are remembered in this browser; the gear opens **Calendar settings**
+(needs "Manage calendar settings"). Under the toolbar a legend shows one
+dot per status. The address bar follows you
+(`/calendar?date=2026-11-09&view=day`), so a bookmark or a link pasted
+to a colleague opens the same day in the same view.
 
-**Scheduling a work order.** Drag a chip from the "Not scheduled" strip
-onto the grid (into a mechanic's lane or column to pick who), or click a
-chip / a timer block and press **Add to schedule** — this opens a new
-appointment linked to the WO, prefilled with the customer, unit, planned
-hours and the mechanic (for a timer block: the next quarter-hour after
-that session, so you plan the follow-up, not the past); save it to put
-the plan on the grid. Timer blocks themselves are facts and cannot be
-moved. **Facts beat plans**: timer blocks are always
-shown; once the planned mechanic actually works on that WO during the
-planned time, the plan disappears from the grid (it is still listed in the
-WO window under "Planned for this day", where you can edit or delete it),
-so the calendar shows what really happened, not what was planned. A plan
-for a *different* mechanic on the same WO stays on the grid — that
-mechanic still has their part to do. **One mechanic, one job at a time**: an appointment cannot be saved
-or moved onto a slot where the same mechanic already has another
-appointment (cancelled ones don't count) or where the mechanic's timer
-shows they were actually working on a different work order — the
-calendar refuses with the conflicting time and work order, so pick another
-time or mechanic. An older appointment that overlaps such actual work is
-marked with a red **!** badge and outline ("planned here, but the mechanic
-was actually working on WO #…"); fix or delete it. Linked appointments have a dashed border, show the live WO
-status, number and jobs, and keep an **Open WO** button and an **Unlink**
-button in the edit dialog. As soon as a WO has at least one linked
-appointment, its "Not scheduled" chip disappears (it is in the plan now);
-actual timer blocks are never hidden. Deleting the WO keeps the
-appointment, removes the link and, if the appointment was already In
-Progress or Completed, puts it back to Scheduled (pressing **Unlink** in
-the dialog does the same).
+**What a block shows.** The colour is the appointment status. The first
+line is the time (07:30–09:00), then the **title** in bold — the free
+text where dispatchers put the phone number and the job list; when it
+is empty the customer's name is shown instead — then the customer (when
+it differs from the title) and the unit. In Week view every mechanic of
+the appointment has a small chip with their initials in the top-right
+corner, in that mechanic's colour (the same colour marks their column in
+By mechanic). A linked appointment carries a **WO #123** badge. A
+**Cancelled** appointment stays on the grid, faded and with the title
+struck through, so you can still see what fell out of the day. Hover a
+block for the full text. Two appointments at the same time in one
+column are drawn **side by side**, each narrower: overlaps are allowed
+(one mechanic can be double-booked on purpose — a drop-off and a quick
+check), the calendar never refuses them.
 
-**Creating a work order from the calendar.** Fill customer and unit (the
-unit box searches by number, make/model and **VIN**) and, optionally,
-presets, mechanics and a note, then press **Create Work Order**. The
-appointment is saved first, then the WO page opens in a new tab with
-everything prefilled: customer, unit, one labor block per preset, the
-**whole crew** assigned to every block with an even split (one mechanic —
-100 %, two — 50/50, three — 33.34/33.33/33.33), and the note as the
-labor description (or, when it is long or a preset already named the
-job, as the block's **Describe Issue** text — the mechanic sees it under
-the job). Once you save the WO, the appointment is linked to it and
-starts showing the WO status, and the WO page shows a compact
-**Scheduled** card at the top (date, time, mechanics, presets, note) for
-every live (not cancelled) appointment of that WO. Mechanics (mechanic mode) do not get this
-button — on the phone they press **Start work** in the appointment and
-the server builds the WO for them: one job per preset with the preset's
-hours and prices, the crew assigned, the note in the job's issue
-description (see Mechanic app → Calendar on the phone).
+**Create an appointment** (needs "Create appointments"). Click an empty
+spot on the grid: the dialog opens with the date of that column (Week)
+or of the selected day (By mechanic), the start snapped to the nearest
+15 minutes and an end one hour later; in By mechanic the mechanic of
+that column is already chosen. Fields:
 
-**Live refresh.** The web calendar checks every 15 seconds whether
-anything changed in the visible week (an appointment edited from a phone,
-a timer started, a WO saved) and reloads itself — no need to press F5 to
-see that a job turned In Progress. The check pauses while you are
-dragging a block or have the dialog open, and while the tab is hidden.
+- **Customer** — type to search and pick from the list; optional (the ×
+  clears it, typing something else does too). **Unit** becomes available
+  once a customer is chosen and searches by unit number, make/model and
+  VIN.
+- **Service presets** — one or several, each becomes a tag. They turn
+  into labor blocks when you create a work order from the appointment.
+- **Date**, **Start**, **End** — 15-minute steps; End also offers 24:00
+  (midnight). Changing Start keeps the duration. An appointment stays
+  within one day and must end after it starts.
+- **Mechanics** — one or several tags. Leave empty for "Unassigned".
+- **Status** — one button per status; the chosen one is filled with the
+  status colour. Always editable, also on a linked appointment.
+- **Title / note** — up to 500 characters: "(773) 331-2795 — oil change,
+  check brakes, DOT sticker". Shown in bold on the block and carried into
+  the job when you create a work order from the appointment.
 
+If a chosen mechanic already has another appointment at that time, a
+small hint appears under the fields — information only, Save still
+works. Press **Save**.
+
+**Edit, move, resize, cancel, delete.** Click a block to open the same
+dialog (without "Edit appointments" it opens read-only). Drag a block to
+move it: it snaps to 15 minutes and can go to another day (Week) or into
+another mechanic's column (By mechanic — a one-mechanic plan simply gets
+that mechanic; for a crew the member whose column you dragged out of is
+swapped for the new one and the rest stay; dropping on **Unassigned**
+removes the mechanics). Esc while dragging cancels. Drag the **bottom
+edge** of a block to make it longer or shorter (15-minute steps, at
+least 15 minutes). Change the status with the buttons in the dialog —
+**Cancelled** keeps the record visible but faded; **Delete** (needs
+"Delete appointments") removes it for good.
+
+**Calendar settings** (gear; needs "Manage calendar settings").
+*Appointment statuses*: rename a status, pick its colour, add your own
+("Waiting for parts", "Warning"), remove a custom one with the ✕ button
+next to it. The four built-in statuses — Scheduled, In Progress,
+Completed, Cancelled — show a lock instead of the ✕ and cannot be
+removed, because the work-order link uses them (Confirmed is a normal
+status you may rename or drop).
+*Working hours*: the first and last hour of the grid. Save re-draws the
+legend, the grid and the status buttons.
+
+**Appointments and work orders.** The two are tied by one link, and the
+rule is simple: **the work order is the source of truth; the calendar
+never changes a work order.**
+
+- *From an appointment to a work order* — fill customer and unit (and,
+  if you like, presets, mechanics and the note), press **Create Work
+  Order**. The appointment is saved first, then the work order page
+  opens in a new tab with everything prefilled: customer, unit, one
+  labor block per preset, all mechanics of the appointment assigned to
+  every block (even split: one mechanic — 100 %, two — 50/50), and the
+  note as the job description — or, when it is long or a preset already
+  named the job, as the block's **Describe Issue** text that the
+  mechanic sees under the job. Save the work order and the appointment
+  is linked to it. Mechanics (mechanic mode) do not get this button: on
+  the phone they press **Start work** in the appointment and the server
+  builds the work order for them (see Mechanic app → Calendar on the
+  phone).
+- *From a work order to the calendar* — on the page of an existing work
+  order (not an estimate) press **Schedule** next to History / Back: the
+  calendar opens with a new appointment already linked to the WO and
+  prefilled from it — customer, unit, the mechanics of its labor blocks,
+  the first jobs as the title and the planned hours as the duration
+  (today at 08:00; set the real date and time and Save). A work order
+  may have several appointments, e.g. two visits. The **Scheduled** card
+  at the top of the WO page lists every live (not cancelled) appointment
+  — date, time, mechanics, presets, note — with an **Open calendar**
+  link.
+- *What a linked appointment shows* — the **WO #** badge on the block;
+  in the dialog a panel "Linked to WO #…" with the live work-order state
+  (Not started, In progress, Mechanic done, Completed, Paid — mechanics
+  see Paid as Completed), the first jobs, **Open WO** and **Unlink**
+  (press it, then Save).
+- *What follows the work order automatically* — the **status**: when a
+  mechanic starts a timer on the WO (or takes it into work from the
+  phone) the appointment turns **In Progress**; when the mechanic
+  presses Done, or the WO is completed or paid by any route (the
+  office's Save, the status menu, Mark paid, a payment, a bulk payment),
+  it turns **Completed**. The status never goes back by itself — if a
+  job is reopened, set the appointment status by hand — and a
+  **Cancelled** appointment is never touched. If your shop replaced the
+  built-in statuses, the sync has nothing to set and leaves the
+  appointment alone. The **customer and unit**: a Transfer or a unit
+  change on the work order moves the appointment to the new
+  customer/unit; in the dialog these two fields are read-only while
+  linked ("Customer and unit come from WO #… — change them there or
+  unlink").
+- *What never happens* — moving an appointment to another mechanic or
+  another time does **not** reassign anyone on the work order and
+  changes nothing else there; reassigning a mechanic in the WO's labor
+  blocks does **not** move its appointments (drag them yourself); the
+  status buttons on the appointment do not change the WO status.
+  **Unlink** clears the link and nothing else; deleting the work order
+  does the same for all its appointments — they stay on the grid with
+  the status they had.
+
+**Mechanic mode.** Mechanics see the same calendar (every default role
+has "View calendar") and can create or edit appointments if their role
+allows it; the dialog has no Create Work Order button for them and the
+work-order state shows Paid as Completed.
+
+**On the phone.** The mobile app's Calendar tab shows the same
+appointments (Schedule / Day / 3 Day / Week / Month, mechanic lanes,
+"Only mine"), and anything created or moved there appears on the web
+within half a minute — see Mechanic app → Calendar on the phone.
+
+**How to…**
+
+- *Plan a job for a mechanic* — By mechanic → click inside the
+  mechanic's column at the start time → customer, unit, presets, note →
+  Save.
+- *Move a job to another day* — Week → drag the block into the other
+  day's column; or open it and change **Date**.
+- *Give a job to another mechanic* — By mechanic → drag the block into
+  the other column; or open it and change the **Mechanics** tags.
+- *Make a job longer or shorter* — drag the block's bottom edge.
+- *See one mechanic's week* — Week → **All mechanics** → pick the name.
+- *Find jobs nobody is assigned to* — By mechanic → the **Unassigned**
+  column; or **All mechanics** → Unassigned in Week view.
+- *Put an existing work order on the schedule* — WO page →
+  **Schedule** → date and time → Save.
+- *A customer calls to cancel* — open the appointment → **Cancelled** →
+  Save (it stays visible, faded); Delete only if it was a mistake.
+- *Who actually worked on what* — that is tracked time, not the
+  calendar: Reports → **Mechanic Hours**, or the work order's time logs.

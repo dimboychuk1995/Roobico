@@ -447,7 +447,7 @@ S("customers-list", "Customers list: search by any field, the Active / Inactive 
   "/customers", hl=["button[data-bs-target='#createCustomerModal']"])
 S("customers-search-filter", "Search box and the status filter above the customers table — the same filter exists on Vendors, Parts, Users and Units.",
   "/customers", element="form.row", hl=["select[name=status]"])
-S("customer-add-modal", "Add Customer dialog: company name, Taxable switch, Pricing Scale, Override part selling price, address with autocomplete and the contacts block.",
+S("customer-add-modal", "Add Customer dialog: company name, Default Labor Rate, Taxable switch, Pricing Scale, Override part selling price, address with autocomplete and the contacts block.",
   "/customers", prep=modal("createCustomerModal", "button[data-bs-target='#createCustomerModal']"), element="#createCustomerModal .modal-dialog")
 S("customer-add-modal-filled", "Add Customer with the fields filled in: a company with its address and main contact — at least a company name or a named contact is required.",
   "/customers", prep=seq(modal("createCustomerModal", "button[data-bs-target='#createCustomerModal']"),
@@ -577,18 +577,24 @@ S("wo-history-button", "History (top-right of a work order or customer) opens th
   lambda: f"/work_orders/details?work_order_id={state['wo']}", prep=wait(800), hl=["a[href*='/reports/audit?entity_type=work_order']"])
 
 # Calendar
-S("calendar-week", "Calendar week view: appointments and work-order blocks per day, mechanic markers with initials, Today and the ‹ › arrows, Week / By mechanic switches, mechanic filter and the Work orders toggle.",
-  "/calendar", prep=wait(1200))
-S("calendar-by-mechanic", "By mechanic view: one column per mechanic for a single day; drag a work order chip from the Not scheduled strip into a lane to plan it.",
-  "/calendar", prep=seq(wait(800), click("#calViewMechanics"), wait(1200)))
-S("calendar-controls", "Calendar controls: navigation, view switches, the mechanic filter and the Work orders switch that shows WOs on the days mechanics actually worked.",
-  "/calendar", prep=wait(800), hl=["#calMechanicFilter", "#calShowWO", "#calViewMechanics"])
-S("calendar-appointment-modal", "New Appointment: title, date, start and end, customer, unit, mechanic, presets, status — and Create Work Order to turn the plan into a WO with everything carried over.",
-  "/calendar", prep=seq(wait(800), modal("appointmentModal"), wait(500)), element="#appointmentModal .modal-dialog")
-S("calendar-settings-modal", "Calendar Settings: the list of appointment statuses with their colors; add your own.",
-  "/calendar", prep=seq(wait(800), modal("calSettingsModal", "#calSettingsBtn"), wait(500)), element="#calSettingsModal .modal-dialog")
-S("calendar-wo-event-modal", "Work order block details: customer, unit, mechanics and hours, state, Open work order, Add to schedule and Planned for this day.",
-  "/calendar", prep=seq(wait(800), modal("woEventModal"), wait(400)), element="#woEventModal .modal-dialog", optional=True)
+S("calendar-week", "Calendar week view: Mon–Sun columns with appointments coloured by status (time, title, customer, unit, mechanic initials chips), the red now line, ‹ Today › and the date box, the Week / By mechanic switch, the mechanic filter and the status legend.",
+  "/calendar?view=week", prep=wait(1200))
+S("calendar-by-mechanic", "By mechanic view: one day, a column per mechanic plus Unassigned, each header with the mechanic's colour dot, name and the count of live appointments; drag a block into another column to hand the job to that mechanic.",
+  "/calendar?view=week",
+  # the busiest day of the week (click its header) — today may have no appointments
+  prep=seq(wait(800), js("""(() => {
+      const cols = Array.from(document.querySelectorAll('.cal-col'));
+      let best = 0, most = -1;
+      cols.forEach((c, i) => { const n = c.querySelectorAll('.cal-event').length; if (n > most) { most = n; best = i; } });
+      const heads = document.querySelectorAll('.cal-col-head.is-clickable');
+      if (heads[best]) heads[best].click(); else document.getElementById('calViewDay').click();
+    })()"""), wait(1200)))
+S("calendar-controls", "Calendar controls: ‹ Today › and the date box to jump to a day, the Week / By mechanic switch and the mechanic filter (All mechanics, one mechanic or Unassigned) that applies to both views.",
+  "/calendar?view=week", prep=wait(800), hl=["#calMechanicFilter", "#calViewDay", "#calDate"])
+S("calendar-appointment-modal", "Appointment dialog: customer and unit search, service presets, date, start and end in 15-minute steps, mechanics, status buttons, title / note — plus Create Work Order and Delete in the footer; a linked appointment shows its WO panel at the top.",
+  "/calendar?view=week", prep=seq(wait(800), modal("appointmentModal", ".cal-event"), wait(500)), element="#appointmentModal .modal-dialog")
+S("calendar-settings-modal", "Calendar settings: the list of appointment statuses with colours (system ones locked, add your own) and the working hours shown on the grid.",
+  "/calendar?view=week", prep=seq(wait(800), modal("calSettingsModal", "#calSettingsBtn"), wait(500)), element="#calSettingsModal .modal-dialog")
 
 # Parts
 S("parts-list", "Parts list: search by any field, Active / Inactive / All, columns Part #, Description, Reference, In stock, Avg cost, Last price, Vendor, Category, Location and the row actions; Order and Add Part in the header.",

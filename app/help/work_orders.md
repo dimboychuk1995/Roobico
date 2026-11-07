@@ -111,27 +111,29 @@ Three tabs: **"Work Orders"**, **"Payments"**, **"Estimates"**.
    Issue** text, which the mechanic sees under the job. Saving links the
    appointment to the WO: the page then shows a **Scheduled** card at the
    top (date, time, mechanics, presets and note of every live appointment
-   of this WO), the calendar shows the live WO status, and the appointment's
-   own status follows the work (In Progress once a mechanic starts,
-   Completed on Done / completed / paid, back to Scheduled if the office
-   reopens a job nobody has started yet — no tracked time, no payment, no
-   Done). The link keeps the two in step the other way too:
-   Transfer and a unit change move the appointment to the new
-   customer/unit, reassigning the mechanic in a labor block moves the
-   WO's future appointments to that mechanic (only the plans of the
-   mechanic you replaced; the rest of the crew keeps its slots), and
-   dragging the appointment onto another mechanic in the calendar changes
-   the labor assignments as long as nobody has tracked time on the WO
-   yet (and the person dragging may edit work orders). Change customer
-   and unit on the WO, not in the
-   appointment (its dialog keeps them read-only while linked). On the
+   of this WO, with an Open calendar link), the appointment's block on the
+   calendar carries the WO number and live state, and its own status
+   follows the work (In Progress once a mechanic starts, Completed on
+   Done / completed / paid; it never goes back by itself and a Cancelled
+   appointment is never touched). Transfer and a unit change move the
+   appointment to the new customer/unit — change customer and unit on
+   the WO, not in the appointment (its dialog keeps them read-only while
+   linked). Everything else is one-way: the calendar never changes a work
+   order — moving an appointment to another mechanic or time leaves the
+   labor assignments alone, and reassigning a mechanic here does not move
+   the appointments. The other direction, from a saved WO to the
+   calendar: the **Schedule** button (next to History / Back on an
+   existing work order, not an estimate) opens the calendar with a new
+   linked appointment prefilled from the WO — customer, unit, the
+   mechanics of the labor blocks, the first jobs as the title, the
+   planned hours as the duration; set the date and time and Save. On the
    phone a mechanic does the same with **Start work** in the appointment:
    the server builds the jobs from the presets (hours, rate and pinned
    part prices of each preset, crew on every job) and puts the note into
    the first job's issue description — or makes the note the only job
-   line when the appointment has no presets. Every saved WO also appears on the
-   Calendar by itself — see Reports → Calendar in the help for how it is
-   placed and colored.
+   line when the appointment has no presets. Work orders are not shown
+   on the Calendar by themselves — only their appointments are; see
+   Reports → Calendar in the help.
 
 ## Transfer to another customer
 

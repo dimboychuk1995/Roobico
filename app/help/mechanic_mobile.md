@@ -232,9 +232,9 @@ checks each request itself and answers 403 if the key is missing.
 
 ### Calendar on the phone
 
-The **Calendar** tab shows the same schedule as the web calendar (needs
-"View calendar", which every default role has, mechanics included) and
-works like Google Calendar on a phone:
+The **Calendar** tab shows the same appointments as the web calendar
+(needs "View calendar", which every default role has, mechanics included)
+and works like Google Calendar on a phone:
 
 - **Views** — tap the icon at the top-left to switch: **Schedule** (a
   running list of days with events, empty days skipped, "Show earlier /
@@ -255,46 +255,44 @@ works like Google Calendar on a phone:
 - **Jump to a date** — tap the month name in the header to drop down a
   month picker (dots mark days with events); the square "today" icon
   returns to today.
-- **What is on the grid** — both kinds of blocks from the web calendar:
-  **appointments** (colour = appointment status) and **work orders**
-  (colour = WO state: Not started / In progress / Mechanic done /
-  Completed / Paid; a ▶ before the title means a timer is running right
-  now). A WO with tracked time appears exactly when the mechanic's timer
-  was running; a WO nobody has started yet sits in the **WO strip** under
-  the day header (and as an outlined chip in Month/Schedule) with "Not
-  scheduled" — the phone never invents a time either. Mechanics see "Paid"
-  as "Completed" and never see money here.
+- **What is on the grid** — the shop's **appointments**, the same ones
+  the web calendar shows: colour = appointment status (the statuses and
+  colours set on the web), the title (the office's note — phone number,
+  job list), customer and unit. An appointment linked to a work order
+  also shows the WO number and the live work-order state (Not started /
+  In progress / Mechanic done / Completed / Paid). Work orders themselves
+  are not drawn on the calendar — a job is on the schedule only when
+  somebody planned it as an appointment. Mechanics see "Paid" as
+  "Completed" and never see money here.
 - **Mechanic lanes** — in Day, 3 Day and Week every day is split into one
-  column per mechanic of the shop (same colours and initials as the web
-  calendar), empty future days included; an "Unassigned" lane (grey "–")
-  appears only when something has no mechanic. The marker row under the
-  dates names the lanes. **Tap an empty slot inside a lane and the new
-  appointment is already assigned to that mechanic.** In Week the whole
-  week always stays on the screen, so lanes appear there only when they
-  have room — turn the phone sideways or use an iPad; in a portrait phone
-  week each day is one column and the blocks carry the mechanic's
+  column per mechanic of the shop (each mechanic has a colour, as on the
+  web), empty future days included; an "Unassigned" lane (grey "–")
+  appears only when an appointment has no mechanic. The marker row under
+  the dates names the lanes. **Tap an empty slot inside a lane and the
+  new appointment is already assigned to that mechanic.** In Week the
+  whole week always stays on the screen, so lanes appear there only when
+  they have room — turn the phone sideways or use an iPad; in a portrait
+  phone week each day is one column and the blocks carry the mechanic's
   initials badge instead. In Day / 3 Day the lanes keep a readable width
   and the grid scrolls sideways if a shop has many mechanics (the time
   column stays; ‹ › next to the dates move between days). The lanes can
   be switched off in the view menu (top-left icon → "Mechanic lanes");
   "Only mine" hides them automatically.
-- **Only mine** — the person icon in the header filters the calendar to
-  events assigned to you (appointments where you are the mechanic and WO
-  blocks of your own timers). Handy for a mechanic's "what's my day"; the
-  choice is remembered.
-- **Open an event** — tap a block for the details: time, customer, unit,
-  mechanic(s), presets, jobs and planned hours, time worked per mechanic.
-  A WO block (or an appointment linked to a WO) has **Open work order**,
-  which opens the WO screen (mechanics get their mechanic view with
-  timers).
+- **Only mine** — the person icon in the header keeps only the
+  appointments you are assigned to (alone or as part of a crew). Handy
+  for a mechanic's "what's my day"; the choice is remembered.
+- **Open an appointment** — tap a block for the details: time, customer,
+  unit, mechanic(s), presets and the note. A linked appointment shows
+  "Linked to WO #…", the work-order state and **Open work order**, which
+  opens the WO screen (mechanics get their mechanic view with timers).
 - **Create an appointment** (needs "Create appointments") — tap an empty
   slot (30-minute steps) or the **+** button. Fields: optional title,
   customer (search), unit chips, start/end (tap the time, pick an hour
   from the strip and :00 / :15 / :30 / :45), **mechanics** — tap one or
-  several chips; the plan then shows in every one of their lanes and the
-  slot is checked for each of them. The date is the day you tapped (the
-  form only shows it). The server refuses a slot where a chosen mechanic
-  already has a job (same rule as the web) and the app shows the reason.
+  several chips; the plan then shows in every one of their lanes. The
+  date is the day you tapped (the form only shows it). Two appointments
+  of one mechanic may overlap — nothing refuses the slot; the web
+  calendar draws such blocks side by side.
 - **Edit / status / delete** — in the event details: status chips switch
   the appointment status in one tap ("Edit appointments"), **Edit** opens
   the full form, **Delete** removes it ("Delete appointments"). **Create
@@ -305,8 +303,8 @@ works like Google Calendar on a phone:
   job line when it is short, up to 200 characters, and the issue text
   otherwise; an office user still needs at least one job line to
   save); on save the server assigns the appointment's crew to the jobs
-  and links the appointment to the WO — the appointment then shows as
-  scheduled on the web, no duplicate "Not scheduled" chip.
+  and links the appointment to the WO — on the web its block then
+  carries the "WO #" badge.
 - **Mechanic: Start work from the calendar** — a mechanic who taps an
   appointment sees **Start work** (or **Open work order** if it is
   already linked). Start work opens the new-WO flow with the customer and
@@ -317,30 +315,30 @@ works like Google Calendar on a phone:
   and the appointment's **note** in the first job's *Describe issue*
   field — it opens expanded under the job, so the mechanic sees (and can
   add to) what the office wrote ("customer hears grinding front left").
-  An appointment
-  without presets but with a note gives one job whose description is the
-  note itself. The WO screen also shows a **Scheduled** card at the top
-  with the planned time, crew and note. Fine print: presets, crew and
-  note are copied only when the appointment is for the same unit as the
-  WO (an appointment without a unit counts as a match; one for another
-  unit is linked but not copied), and a
-  crew member who is no longer an active mechanic is skipped. If that
-  unit already has a work order in progress, the app opens that WO
-  instead and the appointment is linked to it. **The
-  appointment's colour then follows the work**: it turns In Progress the
-  moment the WO is in work (a timer is started or the mechanic saves),
-  and Completed when the mechanic presses Done (or the office completes /
-  pays the WO); if the office reopens a job nobody has started yet (no
-  tracked time, payment or Done) it goes back to Scheduled. This is
+  An appointment without presets but with a note gives one job whose
+  description is the note itself. The WO screen also shows a
+  **Scheduled** card at the top with the planned time, crew and note.
+  Fine print: presets, crew and note are copied only when the appointment
+  is for the same unit as the WO (an appointment without a unit counts as
+  a match; one for another unit is linked but not copied), and a crew
+  member who is no longer an active mechanic is skipped. If that unit
+  already has a work order in progress, the app opens that WO instead
+  and the appointment is linked to it. **The appointment's colour then
+  follows the work**: it turns In Progress the moment the WO is in work
+  (a timer is started or the mechanic saves), and Completed when the
+  mechanic presses Done (or the office completes / pays the WO). The
+  status never goes back by itself — if the office reopens the job, the
+  appointment keeps its colour until someone changes it by hand. This is
   automatic on the web calendar too; a Cancelled appointment is never
   touched.
 - **Linked appointments are driven by the work order** — in a linked
   appointment the customer and unit cannot be edited (change them on the
   WO; Transfer moves the appointment along), and the In progress /
   Completed status chips follow the WO while it is in work — only
-  Cancelled can be set by hand. The web calendar shows such changes
-  within seconds; the phone reloads whenever you return to the tab or
-  pull down.
+  Cancelled can be set by hand. Moving the appointment to another time or
+  mechanic never changes the work order. The web calendar picks such
+  changes up within half a minute (it refreshes every 30 seconds); the
+  phone reloads whenever you return to the tab or pull down.
 - Pull down in Day/3 Day/Week/Schedule to refresh; the calendar also
   reloads every time you return to the tab.
 

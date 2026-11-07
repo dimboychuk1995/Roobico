@@ -590,7 +590,7 @@ def mobile_work_order_create():
             if calendar_event_id:
                 # Механик стартует работу из записи, а по юниту WO уже идёт:
                 # запись привязываем к нему — приложение откроет этот WO.
-                from app.blueprints.calendar.routes import link_event_to_work_order
+                from app.blueprints.calendar.services.work_orders import link_event_to_work_order
 
                 link_event_to_work_order(shop_db, shop, calendar_event_id, existing.get("id"), existing.get("wo_number"))
             return jsonify({
@@ -715,7 +715,7 @@ def mobile_work_order_create():
     notify_after_mechanic_save(shop, None, doc, res.inserted_id, doc["wo_number"], user_id)
 
     if calendar_event_id:
-        from app.blueprints.calendar.routes import link_event_to_work_order
+        from app.blueprints.calendar.services.work_orders import link_event_to_work_order
 
         link_event_to_work_order(shop_db, shop, calendar_event_id, res.inserted_id, doc["wo_number"])
 

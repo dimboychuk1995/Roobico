@@ -118,28 +118,38 @@ Pricing scales: `name`, `mode` ("margin"/"markup"), `rules: [{from, to,
 value_percent}]`, `is_default: bool`.
 
 ### calendar_events
-Appointments: `title` (doubles as the note for the mechanic; when the
-user typed nothing it equals `customer_label`, so treat it as a note only
-when it differs), `start_time`/`end_time: datetime` (shop wall-clock,
-no timezone), `status` ("scheduled", "confirmed", "in_progress",
-"completed", "cancelled" — per-shop statuses; a WO-linked appointment's
-status follows the work automatically: WO in work → "in_progress",
-mechanic done / completed / paid → "completed", WO back to open with no
-time logs, payments or Done → back to "scheduled"; "cancelled" is never
-touched), `customer_id`,
-`customer_label`, `unit_id`, `unit_label` (for a linked appointment these
-are copied from the WO and follow transfers / unit changes), `presets:
-[{id, name}]` → wo_presets, `work_order_id` → work_orders (linked plan;
-a WO a mechanic starts from the appointment gets one labor per preset with
+Appointments — the only thing the calendar shows (work orders are not
+drawn on it; a WO is on the calendar only through a linked appointment).
+`title` (free text stored exactly as typed — dispatchers put the phone
+number and the job list here; may be ""; the API's `note` = the title
+when it differs from `customer_label`, else ""), `start_time`/`end_time:
+datetime` (shop wall-clock, no timezone; both on the same calendar day),
+`status` ("scheduled", "confirmed", "in_progress", "completed",
+"cancelled" plus custom per-shop keys; a WO-linked appointment's status
+follows the work one way only: WO in work → "in_progress", mechanic done
+/ completed / paid → "completed"; nothing ever reverts it to "scheduled",
+"cancelled" is never touched, and when the shop's statuses lack the
+target key nothing changes), `customer_id` (null when there is no
+customer; an old record may carry `customer_label` "New Customer" with
+no id — treat that label as empty), `customer_label`, `unit_id`,
+`unit_label` (labels are refreshed from the live customer/unit when
+read; for a linked appointment customer and unit are copied from the WO
+and follow transfers / unit changes), `presets: [{id, name}]` →
+wo_presets, `work_order_id` → work_orders (linked plan; a WO a mechanic
+starts from the appointment gets one labor per preset with
 `hours_source: "preset"`, the crew in `assigned_mechanics` and the note
 in `issue_description` — the office web/phone forms prefill the same
-things on the client; reassigning a mechanic on the WO moves its
-future appointments and vice versa), `wo_number`. Mechanics (one or a
-crew):
-`mechanic_ids: [ObjectId]` (filter by a mechanic with
+things on the client; the calendar itself never writes to work orders:
+moving an appointment does not reassign WO mechanics and reassigning WO
+mechanics does not move appointments), `wo_number`. Mechanics (one or a
+crew): `mechanic_ids: [ObjectId]` (filter by a mechanic with
 `{"mechanic_ids": <id>}`), `mechanics: [{id, name}]`; legacy
 `mechanic_id`/`mechanic_name` = the first mechanic only — older records
-may have only these.
+may have only these. Overlapping appointments of one mechanic are
+allowed. Per-shop settings live in `calendar_settings`: `{key:
+"statuses", statuses: [{key, label, color}]}` (system keys scheduled,
+in_progress, completed, cancelled cannot be removed) and `{key: "hours",
+start_hour, end_hour}` (visible grid hours, default 6–20).
 
 ### wo_time_logs
 Mechanic timers: `work_order_id` → work_orders, `wo_number: int`, `labor_id`,

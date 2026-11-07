@@ -321,8 +321,8 @@ def ensure_shop_collections_indexes(shop_db):
     _safe_create_index(shop_db.calendar_events, [("shop_id", ASCENDING), ("unit_id", ASCENDING), ("start_time", ASCENDING)], name="idx_calendar_events_shop_unit_start")
     # Записи, привязанные к WO (календарь ↔ work orders): unlink при удалении WO.
     _safe_create_index(shop_db.calendar_events, [("shop_id", ASCENDING), ("work_order_id", ASCENDING)], name="idx_calendar_events_shop_wo")
-    # Занятость механика (find_mechanic_conflict): бригада в mechanic_ids
-    # (multikey), старые записи — в mechanic_id.
+    # Записи механика (фильтр mechanic_id= в GET /calendar/api/events, отчёты):
+    # бригада в mechanic_ids (multikey), старые записи — в mechanic_id.
     _safe_create_index(shop_db.calendar_events, [("shop_id", ASCENDING), ("mechanic_ids", ASCENDING), ("start_time", ASCENDING)], name="idx_calendar_events_shop_mechanics_start")
     _safe_create_index(shop_db.calendar_events, [("shop_id", ASCENDING), ("mechanic_id", ASCENDING), ("start_time", ASCENDING)], name="idx_calendar_events_shop_mechanic_start")
     _safe_create_index(shop_db.calendar_settings, [("key", ASCENDING)], unique=True, name="uniq_calendar_settings_key")

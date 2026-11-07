@@ -80,7 +80,7 @@ ENDPOINT_LABELS: dict[str, tuple[str, str, str]] = {
     "settings.api_roles_clone": ("create", "role", "Role cloned"),
     "settings.api_user_permissions_update": ("permissions", "user", "Per-user permission overrides changed"),
     "dashboard.dashboard_goals_save_api": ("settings", "settings", "Dashboard goals saved"),
-    "calendar.api_save_statuses": ("settings", "calendar_event", "Appointment statuses saved"),
+    "calendar.api_save_settings": ("settings", "calendar_event", "Calendar settings saved"),
     # ── billing ──
     "billing.set_billing_period": ("settings", "billing", "Billing period changed"),
     "billing.pay_now": ("payment", "billing", "Subscription invoice paid"),

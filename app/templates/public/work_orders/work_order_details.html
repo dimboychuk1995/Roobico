@@ -30,6 +30,14 @@
           <i class="bi bi-clock-history me-1"></i>History
         </a>
         {% endif %}
+        {% if created_work_order_id and work_order_status != 'estimate' and "calendar.create" in user_permissions %}
+        {# Opens the calendar with a new appointment prefilled from this WO (?wo=) #}
+        <a class="btn btn-outline-secondary btn-sm" target="_blank" rel="noopener"
+           href="{{ url_for('calendar.calendar_page') }}?wo={{ created_work_order_id }}"
+           title="Plan this work order on the calendar">
+          <i class="bi bi-calendar-plus me-1"></i>Schedule
+        </a>
+        {% endif %}
         <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('work_orders.work_orders_page') }}">Back</a>
       </div>
     </div>
@@ -41,7 +49,8 @@
     <div id="woScheduledBlock" class="mb-3 mb-lg-4 p-3 rounded-3 border bg-light-subtle">
       <div class="d-flex justify-content-between align-items-start flex-wrap gap-2 mb-1">
         <div class="fw-semibold text-uppercase small text-muted"><i class="bi bi-calendar-check me-1"></i>Scheduled</div>
-        <a href="{{ url_for('calendar.calendar_page') }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">Open calendar</a>
+        {# Lands on the week of the first (earliest) linked appointment #}
+        <a href="{{ url_for('calendar.calendar_page') }}?date={{ (linked_appointments[0].start_time or '')[:10] }}" target="_blank" rel="noopener" class="btn btn-sm btn-outline-primary">Open calendar</a>
       </div>
       <div id="woScheduledList" class="small"></div>
     </div>

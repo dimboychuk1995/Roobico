@@ -243,11 +243,11 @@ create/edit/delete with the user, time and a Before/After of the fields.
 Fastest path: open the work order or customer and press **History**; or
 type the WO number / part number / customer into the journal search.
 
-**Who did what today / this week?** Calendar → switch **Work orders** on:
-every WO shows on the days mechanics actually worked on it (from their job
-timers), with names and hours; click a block for details. **By mechanic**
-view gives one column per mechanic for a single day; the dropdown filters a
-single mechanic in the week view.
+**Who did what today / this week?** That is tracked time, not the
+calendar: Reports → **Mechanic Hours** (Tracked vs Billed hours per
+mechanic for any period), the Work Orders list → **In Work** group for
+what is running right now, or a work order's time logs for every
+session. The calendar shows plans (appointments) only.
 
 **The mechanic sees a "Current mileage" window and cannot continue.** That
 is intended: confirm the odometer reading (prefilled with the last known
@@ -262,65 +262,69 @@ red **Unassigned labor** badge next to the status have a labor line with
 no mechanic. Open the WO, pick the mechanic in that labor block (and the
 split percentage if several share it), Save.
 
-**Plan a job for a mechanic.** Calendar → click the slot inside the
-mechanic's lane (Week) or column (By mechanic) → customer, unit (the unit
+**Plan a job for a mechanic.** Calendar → **By mechanic** → click inside
+the mechanic's column at the start time (in Week view click the day and
+pick the mechanic in the dialog) → customer and unit if known (the unit
 box searches by number, make/model and VIN), presets, more mechanics if
-it is a crew job, a note for the mechanic → Save. To turn the plan into a
-WO press **Create Work Order**: customer, unit, presets, the whole crew
-and the note are carried over and the appointment is linked to the new
-WO, so its status updates automatically. Or leave it to the mechanic: on
-the phone the appointment has **Start work**, which builds the WO from
-the presets (hours, parts, crew) and shows the note under the job. An
-existing WO can be scheduled too: drag its chip from the "Not scheduled"
-strip into a mechanic's lane, or open it → **Add to schedule** and pick
-the time.
+it is a crew job, the phone number and the job list in the title → Save.
+To turn the plan into a WO press **Create Work Order** (needs customer
+and unit): customer, unit, presets, the whole crew and the note are
+carried over and the appointment is linked to the new WO, so its status
+updates automatically. Or leave it to the mechanic: on the phone the
+appointment has **Start work**, which builds the WO from the presets
+(hours, parts, crew) and shows the note under the job. An existing WO
+can be scheduled too: open it → **Schedule** → the calendar opens a
+linked, prefilled appointment — set the date and time, Save.
 
 **Wrong customer or unit on a linked appointment.** While an appointment
 is linked to a work order its customer and unit are read-only in the
 dialog — fix them on the work order (Transfer for the customer, the unit
 field for the unit) and the appointment follows; or press **Unlink** in
-the appointment if the link itself was the mistake. The same goes for the
-status: a linked appointment shows In Progress / Completed from the WO —
-to "reopen" it, reopen the job (mark the WO unpaid / open): if nobody has
-tracked time on it, no payment was taken and Done was not pressed, the
-appointment goes back to Scheduled; otherwise the work is a fact and it
-stays as it is. Cancelled can always be set by hand.
+the appointment and Save if the link itself was the mistake (the
+appointment stays, only the link goes). The status is different: In
+Progress / Completed arrive from the WO automatically, but nothing ever
+moves them back — if the job was reopened, or the mechanic started the
+wrong WO, click the appointment and set the status by hand. Cancelled
+can always be set by hand and the sync never touches it.
 
-**Move a planned job to another mechanic.** Drag the appointment into the
-other mechanic's lane (Week) or column (By mechanic) — the mechanic
-inside the appointment changes, and if it is linked to a WO the WO's
-mechanic assignments change with it (until someone has tracked time on
-the job; needs the right to edit work orders). Or do it from the WO: pick the new mechanic in the labor block
-and Save — the future appointments of the mechanic you replaced move to
-the new one (one that would collide with the new mechanic's other job
-stays with the old one; move it by hand). Plans of the other crew members
-are left alone, so a job split as "Mike on Monday, Sam on Tuesday" stays
-split; starting a timer never moves anyone's plan either.
+**Move a planned job (other time, day or mechanic).** Drag the block: in
+Week view to another time or day, in By mechanic into another column —
+a one-mechanic plan gets that mechanic, for a crew the member whose
+column you left is swapped for the new one, the Unassigned column
+removes the mechanics. Drag the bottom edge to change the length; Esc
+cancels a drag. The dialog does the same: Date, Start / End (changing
+Start keeps the duration), the Mechanics tags. Moving an appointment
+never changes the work order it is linked to — the mechanics on the WO's
+labor blocks stay as they are; reassign them on the WO if the job really
+changed hands.
 
 **Check the schedule from the phone (mechanic: "what's my day?").** Open
 the **Calendar** tab in the app — every role with "View calendar" has it,
-mechanics included. Tap the person icon for **Only mine**: just your
-appointments and your own timer blocks remain; the choice sticks. Tap
-the view icon (top-left) for Schedule / Day / 3 Day / Week / Month; tap
-the month name to jump to a date. Tap any WO block → **Open work order**
-to go straight to the job. Office users can create an appointment from
-the **+** button or an empty slot and turn it into a WO with **Create
-work order** — customer and unit are carried over and the appointment is
-linked automatically.
+mechanics included. Tap the person icon for **Only mine**: only the
+appointments you are assigned to remain; the choice sticks. Tap the view
+icon (top-left) for Schedule / Day / 3 Day / Week / Month; tap the month
+name to jump to a date. Tap an appointment for its details: a linked one
+has **Open work order** to go straight to the job, an unlinked one gives
+a mechanic **Start work**, which builds the WO from it. Office users can
+create an appointment from the **+** button or an empty slot and turn it
+into a WO with **Create work order** — customer and unit are carried
+over and the appointment is linked automatically.
 
 **An old appointment is still hanging around after the job was done.**
-The calendar hides a plan once the planned mechanic actually worked on
-that WO at that time (the timer block replaces it), but the appointment
-still exists. Click the WO block → **Planned for this day** lists every
-appointment for that WO that day, hidden ones marked "replaced by actual
-work" → **Delete** (or **Edit** to move it to a real follow-up slot).
+Nothing leaves the calendar by itself — a linked appointment turns
+Completed when the work order is done, an unlinked one keeps the status
+you gave it. Click it and set **Completed** (or **Cancelled** if the
+visit never happened — it stays visible but faded), or **Delete** it if
+it was created by mistake. To tidy a whole day use By mechanic: the
+header counts each mechanic's live appointments, cancelled ones are not
+counted.
 
-**"Mechanic is already booked" when the slot looks empty?** The slot is
-held by another appointment of that mechanic (cancelled ones don't count)
-or by their timer: a running timer blocks only the time up to now, a
-finished session blocks its real time. The message names the work order
-and time; open that WO's block → Planned for this day to fix or delete
-the plan.
+**Two jobs at the same time for one mechanic?** Allowed — the calendar
+never refuses an overlap. The two blocks are drawn side by side in the
+column so the clash is visible at a glance, and the dialog shows a small
+overlap hint under the fields while you pick the time. Decide yourself:
+move one of them (drag), shorten it (bottom edge) or give it to someone
+else (By mechanic → drag into another column).
 
 **Revenue looks too high?** Total Revenue includes collected sales tax, and
 Sales reports date WOs by their Work Order Date (falling back to creation

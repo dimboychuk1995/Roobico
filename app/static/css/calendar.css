@@ -1,850 +1,704 @@
-/* ── Calendar – Google Calendar style ── */
+/*
+ * Calendar (appointments dispatch board) — page styles.
+ * Everything is driven by the app CSS variables (--surface, --border, --text,
+ * --muted, --primary …) plus a few calendar-only variables declared on
+ * .cal-grid; theme_dark.css redefines those for the dark theme.
+ * Block (event) colours come from the shop's status settings and are set
+ * inline by calendar.js, with the text colour picked by luminance.
+ */
 
-#calWeekContainer {
+/* ── Page & toolbar ──────────────────────────────────────────────── */
+.cal-page {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  overflow-x: auto; /* week lanes keep a minimum width — the grid scrolls sideways instead */
+  gap: 0.5rem;
 }
 
 .cal-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  background: #fff;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.55rem 0.75rem;
 }
 
-.cal-toolbar-actions {
-  min-width: 120px; /* симметрия с блоком навигации слева */
+.cal-toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
 }
 
 .cal-title {
-  font-family: "Manrope", "Segoe UI", sans-serif; /* единый шрифт приложения */
-  font-weight: 400;
-  font-size: 1.15rem;
+  flex: 1 1 auto;
+  min-width: 200px;
+  text-align: center;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--text);
   white-space: nowrap;
-  color: #3c4043;
 }
 
-/* ── outer wrapper: header row + scrollable body ── */
-
-.cal-grid {
-  display: flex;
-  flex-direction: column;
-  border-top: 1px solid #dadce0;
-  background: #fff;
+.cal-toolbar-nav {
+  flex: 0 0 auto;
 }
 
-/* ── header row (day names + numbers) ── */
-
-.cal-header-row {
-  display: flex;
-  flex-shrink: 0;
-  border-bottom: 1px solid #dadce0;
-}
-
-.cal-header-gutter {
-  flex: 0 0 56px;
-  min-width: 56px;
-}
-
-.cal-header-cols {
-  display: flex;
-  flex: 1;
+.cal-toolbar .cal-date-input {
+  flex: 0 0 auto;
+  width: 150px;
   min-width: 0;
-}
-
-/* one vertical rhythm for every state (normal / widened / strip): same
-   padding, top-aligned, the lane markers row always reserves its space —
-   so the header never steps or jumps when a day is widened */
-.cal-grid:not(.cal-grid--mechanics) .cal-header-row {
-  height: 88px;
-}
-
-.cal-header-cell {
-  flex: 1 1 0;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  padding: 6px 0 4px;
-  cursor: pointer;
-  user-select: none;
-  border-left: 1px solid #dadce0;
-  transition: flex .25s ease;
-}
-
-.cal-header-cell:hover {
-  background: #f8f9fa;
-}
-
-.cal-day-name {
-  font-family: "Manrope", "Segoe UI", sans-serif; /* единый шрифт приложения */
-  font-size: .6875rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: .03em;
-  color: #70757a;
-  line-height: 1;
-  margin-bottom: 2px;
-}
-
-.cal-header-cell.cal-today .cal-day-name {
-  color: #1a73e8;
-}
-
-.cal-day-number {
-  font-family: "Manrope", "Segoe UI", sans-serif; /* единый шрифт приложения */
-  font-size: 1.5rem;
-  font-weight: 400;
-  color: #3c4043;
-  line-height: 1;
-  width: 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-}
-
-.cal-day-number:hover {
-  background: #f1f3f4;
-}
-
-.cal-day-number-today {
-  background: #1a73e8 !important;
-  color: #fff !important;
-  font-weight: 500;
-}
-
-/* ── scrollable body (gutter + day columns) ── */
-
-.cal-body-scroll {
-  display: flex;
-  flex: 1;
-  overflow: hidden;
-  position: relative;
-  padding-top: 6px;
-  padding-bottom: 12px; /* the closing "21:00" label hangs below the last slot */
-}
-
-/* ── time gutter ── */
-
-.cal-time-gutter {
-  flex: 0 0 56px;
-  min-width: 56px;
-  position: relative;
-  z-index: 3;
-}
-
-.cal-time-label {
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  padding: 0 8px 0 0;
-  font-family: "Manrope", "Segoe UI", sans-serif; /* единый шрифт приложения */
-  font-size: .75rem;
-  color: #70757a;
-  box-sizing: border-box;
-  position: relative;
-  top: -5px;
-  line-height: 1;
-}
-
-/* ── day columns area ── */
-
-.cal-body-cols {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  position: relative;
-}
-
-.cal-day-col {
-  flex: 1 1 0;
-  min-width: 0;
-  border-left: 1px solid #dadce0;
-  position: relative;
-  transition: flex .25s ease;
-}
-
-.cal-hour-slot {
-  border-bottom: 1px solid #bdc1c6;
-  box-sizing: border-box;
-  position: relative;
-}
-
-.cal-hour-slot:last-child {
-  border-bottom: none;
-}
-
-/* half-hour line */
-.cal-hour-slot::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 50%;
-  border-top: 1px solid #f1f3f4;
-}
-
-/* ── expanded / collapsed ── */
-
-.cal-header-cell.cal-expanded {
-  flex: 4.9 1 0 !important;
-}
-
-.cal-header-cell.cal-expanded {
-  background: #f8f9fa;
-}
-
-.cal-day-col.cal-expanded,
-.cal-unscheduled-cell.cal-expanded {
-  flex: 4.9 1 0 !important;
-}
-
-.cal-day-col.cal-collapsed,
-.cal-unscheduled-cell.cal-collapsed {
-  flex: 1 1 0 !important;
-}
-
-/* second click on the header: the day takes almost the whole grid */
-.cal-header-cell.cal-expanded--full,
-.cal-day-col.cal-expanded--full,
-.cal-unscheduled-cell.cal-expanded--full {
-  flex: 16 1 0 !important;
-}
-
-/* ── current time red line ── */
-
-.cal-now-line {
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: #ea4335;
-  z-index: 4;
-  pointer-events: none;
-}
-
-.cal-now-line::before {
-  content: "";
-  position: absolute;
-  left: -5px;
-  top: -4px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #ea4335;
-}
-
-/* ── event blocks ── */
-
-.cal-event {
-  position: absolute;
-  left: 0;
-  width: 100%;
-  border-radius: 4px;
-  padding: 2px 6px;
-  box-sizing: border-box;
-  border: 1px solid rgba(255,255,255,.45);
-  color: #fff;
-  font-family: "Manrope", "Segoe UI", sans-serif; /* единый шрифт приложения */
-  font-size: .75rem;
-  line-height: 1.25;
-  overflow: hidden;
-  cursor: grab;
-  z-index: 3;
-  box-shadow: 0 1px 2px rgba(0,0,0,.2);
-  transition: box-shadow .15s ease;
-}
-
-.cal-event:hover {
-  box-shadow: 0 3px 6px rgba(0,0,0,.3);
-}
-
-.cal-event.cal-dragging {
-  opacity: .85;
-  box-shadow: 0 6px 14px rgba(0,0,0,.35);
-  z-index: 10;
-  cursor: grabbing;
-}
-
-/* bottom edge of a plan: drag it to change the end time */
-.cal-event-resize {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 7px;
-  max-height: 40%; /* a 15-minute block keeps most of its height for moving */
-  cursor: ns-resize;
-  z-index: 2;
-}
-
-/* the status chip of a linked plan stays clickable above the handle and
-   steps aside while the new end time is shown in the same corner */
-.cal-event .cal-event-chip {
-  z-index: 3;
-}
-
-.cal-event.cal-resizing .cal-event-chip {
-  visibility: hidden;
-}
-
-.cal-event-resize::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: 2px;
-  width: 22px;
-  height: 2px;
-  margin-left: -11px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, .75);
-  opacity: 0;
-  transition: opacity .15s ease;
-}
-
-.cal-event:hover .cal-event-resize::after,
-.cal-event.cal-resizing .cal-event-resize::after {
-  opacity: 1;
-}
-
-.cal-event.cal-resizing {
-  z-index: 10;
-  box-shadow: 0 6px 14px rgba(0,0,0,.35);
-  cursor: ns-resize;
-}
-
-/* the new end time in the corner while the edge is being dragged */
-.cal-event.cal-resizing::after {
-  content: attr(data-resize-end);
-  position: absolute;
-  right: 5px;
-  bottom: 8px;
-  font-size: .68rem;
-  font-weight: 600;
-  opacity: .95;
-}
-
-.cal-event-title {
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.cal-event-sub {
-  font-size: .675rem;
-  opacity: .85;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.cal-event-note {
-  font-size: .675rem;
-  opacity: .9;
-  font-style: italic;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.cal-hour-slot {
-  cursor: pointer;
-}
-
-.cal-hour-slot:hover {
-  background: #f1f3f4;
-}
-
-/* ── status toggle buttons in modal ── */
-
-.cal-status-btn {
-  border-width: 2px;
-  font-size: .8rem;
-  padding: 3px 10px;
-  border-radius: 999px;
-  font-weight: 500;
-  transition: background .15s, color .15s;
-}
-
-.cal-status-btn:hover {
-  opacity: .85;
-}
-
-/* ── settings modal ── */
-
-.settings-status-row input.form-control-color {
-  height: 31px;
-  cursor: pointer;
-}
-
-.settings-status-row .btn-outline-danger {
-  line-height: 1;
-  padding: 2px 7px;
-}
-
-/* ── toolbar: view toggle, mechanic filter, legend ── */
-
-.cal-toolbar {
-  padding-bottom: 4px;
-}
-
-.cal-view-toggle .btn {
-  white-space: nowrap;
+  min-height: calc(1.5em + 0.5rem + 2px); /* match the btn-sm row (public.css widens date inputs) */
 }
 
 .cal-mech-filter {
   width: auto;
+  min-width: 150px;
   max-width: 220px;
 }
 
-.cal-wo-switch {
-  padding-left: 2.5em;
-  white-space: nowrap;
+.cal-legend-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 1.5rem;
+  margin-top: 0.45rem;
 }
 
 .cal-legend {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 14px;
-  padding: 4px 0 2px;
-  color: #5f6368;
+  gap: 0.25rem 0.85rem;
+  color: var(--muted);
 }
 
-.cal-legend-label {
-  font-weight: 600;
+.cal-legend:empty {
+  display: none;
 }
 
 .cal-legend-item {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 0.3rem;
   white-space: nowrap;
 }
 
 .cal-legend-dot {
+  display: inline-block;
+  flex: none;
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  display: inline-block;
-  flex: 0 0 auto;
 }
 
-.cal-legend-hint {
-  color: #80868b;
-  font-style: italic;
-}
-
-/* ── mechanics view: one column per mechanic ── */
-
-.cal-header-cell--mech {
-  cursor: default;
-  padding: 6px 6px 4px;
-}
-
-.cal-header-cell--mech:hover {
-  background: transparent;
-}
-
-.cal-mech-name {
-  font-family: "Manrope", "Segoe UI", sans-serif;
-  font-size: .9rem;
-  font-weight: 600;
-  color: #3c4043;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  line-height: 1.2;
-}
-
-.cal-mech-sub {
-  font-family: "Manrope", "Segoe UI", sans-serif;
-  font-size: .68rem;
-  color: #70757a;
-  text-transform: capitalize;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-}
-
-.cal-header-cell--unassigned .cal-mech-name {
-  color: #80868b;
-  font-style: italic;
-}
-
-/* ── work order events ── */
-
-.cal-event--wo {
-  padding-left: 9px;
-}
-
-.cal-event--linked {
-  border-style: dashed;
-  border-color: rgba(255, 255, 255, .85);
-}
-
-.cal-event-chip {
-  position: absolute;
-  right: 4px;
-  bottom: 3px;
-  font-size: .6rem;
-  line-height: 1;
-  padding: 2px 5px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, .22);
-  color: #fff;
-  letter-spacing: .02em;
-  white-space: nowrap;
-  max-width: calc(100% - 8px);
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.cal-event--running .cal-event-chip {
-  background: rgba(255, 255, 255, .35);
-  animation: cal-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes cal-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: .55; }
-}
-
-/* ── linked WO panel + WO modal ── */
-
-.cal-linked-wo {
-  background: #f8f9fa;
-}
-
-.cal-wo-details dt {
-  font-weight: 500;
-  color: #5f6368;
-}
-
-.cal-wo-details dd {
-  margin-bottom: .35rem;
-}
-
-/* ── "Not scheduled" strip: work orders without time, as chips ── */
-
-.cal-unscheduled-row {
-  display: flex;
-  flex-shrink: 0;
-  /* grows with its chips (narrow lane-days stack them) up to 4 chip rows
-     (18.67px chip + 3px gap, 6px padding, 1px border); past that the cell
-     shows "+N more". The hour slots are re-fitted to what is left. */
-  min-height: 34px;
-  max-height: 94px;
-  border-bottom: 1px solid #dadce0;
-  background: #fafbfc;
-}
-
-.cal-unscheduled-gutter {
-  flex: 0 0 56px;
-  min-width: 56px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding-right: 6px;
-  font-family: "Manrope", "Segoe UI", sans-serif;
-  font-size: .62rem;
-  line-height: 1.15;
-  text-align: right;
-  text-transform: uppercase;
-  letter-spacing: .03em;
-  color: #70757a;
-}
-
-.cal-unscheduled-cols {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-}
-
-.cal-unscheduled-cell {
-  flex: 1 1 0;
-  min-width: 0;
-  transition: flex .25s ease;
-  border-left: 1px solid #dadce0;
-  /* no horizontal padding: with flex-basis 0 it would make this cell's base
-     size 8px wider than the header cell / day column above and below, and
-     the strip would drift sideways when a day is widened (chips carry the
-     inset instead) */
-  padding: 4px 0 2px;
-  overflow: hidden;
-  display: flex;
-  flex-wrap: wrap;
-  align-content: flex-start;
-  gap: 3px;
-}
-
-/* "+N more": the rest of the chips, click shows them all (cell scrolls) */
-.cal-unscheduled-cell--all {
-  overflow-y: auto;
-  scrollbar-width: thin;
-}
-
-.cal-chip {
+/* Mechanic legend: a chip with initials per mechanic, click = filter */
+.cal-mech-legend-btn {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  max-width: calc(100% - 8px);
-  margin-left: 4px;
-  padding: 1px 7px 1px 5px;
-  border: 1px solid;
-  border-radius: 999px;
-  background: #fff;
-  font-family: "Manrope", "Segoe UI", sans-serif;
-  font-size: .68rem;
-  font-weight: 500;
-  line-height: 1.35;
-  cursor: grab;
-  user-select: none;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.cal-chip:hover {
-  box-shadow: 0 1px 3px rgba(0, 0, 0, .25);
-}
-
-/* "+N more" chip: dashed, a button rather than a draggable card
-   (after .cal-chip so its border / weight / cursor win) */
-.cal-chip.cal-chip--more {
-  border-style: dashed;
-  border-color: #9aa0a6;
-  color: #5f6368;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.cal-chip-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  flex: 0 0 auto;
-}
-
-.cal-chip-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.cal-event--ghost {
-  opacity: .9;
-  border-style: dashed;
-}
-
-/* ── appointment that overlaps the mechanic's actual work on another job ── */
-
-.cal-event--conflict {
-  outline: 2px solid #ea4335;
-  outline-offset: -2px;
-}
-
-.cal-event-warn {
-  position: absolute;
-  top: 2px;
-  right: 4px;
-  min-width: 16px;
-  text-align: center;
-  font-size: .68rem;
-  font-weight: 700;
-  line-height: 1.35;
-  border-radius: 999px;
-  background: #ea4335;
-  color: #fff;
-}
-
-/* ── who is who: mechanic markers (legend on top + badge on every block) ── */
-
-.cal-event {
-  padding-left: 9px; /* room for the coloured mechanic edge */
-}
-
-.cal-mech-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 20px;
-  height: 20px;
-  padding: 0 4px;
-  border-radius: 999px;
-  font-family: "Manrope", "Segoe UI", sans-serif;
-  font-size: .62rem;
-  font-weight: 700;
-  letter-spacing: .02em;
-  color: #fff;
-  text-shadow: 0 0 2px rgba(0, 0, 0, .45);
-  flex: 0 0 auto;
-}
-
-.cal-event-mechs {
-  position: absolute;
-  top: 2px;
-  right: 3px;
-  display: flex;
-  gap: 2px;
-}
-
-.cal-event-mechs .cal-mech-badge {
-  min-width: 18px;
-  height: 18px;
-  font-size: .58rem;
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, .7);
-}
-
-.cal-event-title {
-  padding-right: 24px; /* keep the title clear of the badges */
-}
-
-.cal-legend-break {
-  flex-basis: 100%;
-  height: 0;
-}
-
-.cal-mech-marker {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 1px 8px 1px 2px;
+  gap: 0.35rem;
+  padding: 0.1rem 0.5rem 0.1rem 0.15rem;
   border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
-  color: #3c4043;
+  color: var(--muted);
   font: inherit;
-  line-height: 1.2;
   cursor: pointer;
   white-space: nowrap;
 }
 
-.cal-mech-marker:hover {
-  background: #f1f3f4;
+.cal-mech-legend-btn:hover {
+  background: var(--surface-soft);
+  color: var(--text);
 }
 
-.cal-mech-marker.active {
-  border-color: #1a73e8;
-  background: #e8f0fe;
+.cal-mech-legend-btn.is-active {
+  border-color: var(--primary);
+  color: var(--text);
+  background: var(--surface-soft);
 }
 
-.cal-mech-name .cal-mech-badge {
-  margin-right: 5px;
-  vertical-align: middle;
+/* ── Grid ────────────────────────────────────────────────────────── */
+.cal-grid {
+  --cal-gutter-w: 56px;
+  --cal-col-min: 120px;
+  --cal-hour-h: 48px;              /* set by JS */
+  --cal-hours: 14;                 /* set by JS */
+  --cal-line: var(--border);
+  --cal-line-soft: #e6ebe7;
+  --cal-head-bg: var(--surface);
+  --cal-body-bg: var(--surface);
+  --cal-col-hover: rgba(26, 122, 66, 0.045);
+  --cal-today-bg: rgba(26, 122, 66, 0.055);
+  --cal-now: #d93025;
+
+  position: relative;
+  min-height: 320px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
 }
 
-.cal-event-warn {
-  top: auto;
-  bottom: 3px;
-  left: 4px;
-  right: auto;
+.cal-scroll {
+  height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
 }
 
-/* ── expanded day: one lane per mechanic, markers in the day header ── */
+/* One CSS grid for header + body, so the columns always line up. */
+.cal-sheet {
+  display: grid;
+  grid-template-columns: var(--cal-gutter-w) repeat(7, minmax(var(--cal-col-min), 1fr)); /* overridden inline */
+  min-width: 100%;
+}
 
-.cal-lane-sep {
-  position: absolute;
+.cal-gutter-head,
+.cal-col-head {
+  position: sticky;
   top: 0;
-  bottom: 0;
-  border-left: 1px dashed #c6c9cc;
-  pointer-events: none;
-  z-index: 2;
+  z-index: 6;
+  background: var(--cal-head-bg);
+  border-bottom: 1px solid var(--cal-line);
 }
 
-/* the lane markers row always takes its 22px (visibility, not display),
-   so cells of every state share one height */
-.cal-lane-names {
-  display: flex;
-  visibility: hidden;
-  width: 100%;
-  height: 22px;
-  margin-top: 2px;
-  align-items: center;
-  border-top: 1px solid #e8eaed;
+.cal-gutter-head {
+  left: 0;
+  z-index: 8;
+  border-right: 1px solid var(--cal-line);
 }
 
-/* lanes exist on every day; the normal week shows badges only, a widened
-   day adds the names */
-.cal-lane-names.has-lanes {
-  visibility: visible;
-}
-
-.cal-lane-name {
-  flex: 1 1 0;
+.cal-col-head {
   min-width: 0;
+  overflow: hidden;
+  padding: 0.4rem 0.3rem 0.35rem;
+  text-align: center;
+  border-left: 1px solid var(--cal-line);
+  user-select: none;
+}
+
+.cal-col-head.is-clickable {
+  cursor: pointer;
+}
+
+.cal-col-head.is-clickable:hover {
+  background: var(--surface-soft);
+}
+
+.cal-dow {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.cal-dom {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  padding: 0 2px;
-  font-family: "Manrope", "Segoe UI", sans-serif;
-  font-size: .7rem;
+  width: 30px;
+  height: 30px;
+  margin-top: 2px;
+  border-radius: 50%;
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1;
+  color: var(--text);
+}
+
+.cal-col-head.is-today .cal-dow {
+  color: var(--primary);
+}
+
+.cal-col-head.is-today .cal-dom {
+  background: var(--primary);
+  color: #ffffff;
+}
+
+.cal-mech-head {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  min-width: 0;
+  font-size: 0.86rem;
   font-weight: 600;
-  color: #3c4043;
+  color: var(--text);
+}
+
+.cal-mech-head-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-mech-head.is-unassigned {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* italic glyphs overhang the ellipsis box — keep the last letter visible */
+.cal-mech-head.is-unassigned .cal-mech-head-name {
+  padding-right: 0.2em;
+}
+
+.cal-mech-count {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.cal-gutter {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  height: calc(var(--cal-hours) * var(--cal-hour-h));
+  background: var(--cal-head-bg);
+  border-right: 1px solid var(--cal-line);
+}
+
+.cal-gutter-label {
+  position: absolute;
+  right: 6px;
+  font-size: 0.68rem;
+  line-height: 1;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  transform: translateY(3px);
+}
+
+.cal-col {
+  position: relative;
+  min-width: 0;
+  height: calc(var(--cal-hours) * var(--cal-hour-h));
+  border-left: 1px solid var(--cal-line);
+  background-color: var(--cal-body-bg);
+  /* hour lines on top, lighter quarter lines beneath */
+  background-image:
+    linear-gradient(var(--cal-line) 1px, transparent 1px),
+    linear-gradient(var(--cal-line-soft) 1px, transparent 1px);
+  background-size: 100% var(--cal-hour-h), 100% calc(var(--cal-hour-h) / 4);
+}
+
+.cal-col.is-today {
+  background-color: var(--cal-today-bg);
+}
+
+.cal-grid.can-create .cal-col {
+  cursor: cell;
+}
+
+.cal-grid.can-create .cal-col:hover {
+  background-color: var(--cal-col-hover);
+}
+
+.cal-grid.can-create .cal-col.is-today:hover {
+  background-color: var(--cal-today-bg);
+}
+
+.cal-now {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  height: 2px;
+  background: var(--cal-now);
+  pointer-events: none;
+}
+
+.cal-now::before {
+  content: "";
+  position: absolute;
+  left: -4px;
+  top: -3px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--cal-now);
+}
+
+.cal-grid-msg {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  text-align: center;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+/* ── Appointment blocks ──────────────────────────────────────────── */
+.cal-event {
+  position: absolute;
+  box-sizing: border-box;
+  overflow: hidden;
+  container-type: inline-size; /* lets the first row adapt to the block width (@container below) */
+  padding: 2px 5px 3px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 6px;
+  font-size: 0.74rem;
+  line-height: 1.25;
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+}
+
+.cal-event:hover {
+  z-index: 3;
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22);
+}
+
+.cal-event.is-cancelled {
+  opacity: 0.55;
+}
+
+.cal-event.is-cancelled .cal-event-title {
+  text-decoration: line-through;
+}
+
+.cal-event.is-dragging,
+.cal-event.is-resizing {
+  z-index: 20;
+  opacity: 0.92;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+.cal-event.is-dragging {
+  cursor: grabbing;
+}
+
+/* pointer left the grid: releasing here cancels the move */
+.cal-event.is-dragging.is-outside {
+  opacity: 0.35;
+}
+
+.cal-grid.is-dragging .cal-col {
+  cursor: grabbing;
+}
+
+.cal-grid.is-resizing .cal-col,
+.cal-grid.is-resizing .cal-event {
+  cursor: ns-resize;
+}
+
+/* First row: time on the left, crew chips (week view) on the right; the time shrinks with an
+   ellipsis instead of running under the chips or past the block edge. */
+.cal-event-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.cal-event-time {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.92;
+  white-space: nowrap;
+}
+
+.cal-event-title {
+  font-weight: 700;
+  word-break: break-word;
+}
+
+.cal-event-sub {
+  font-size: 0.68rem;
+  opacity: 0.92;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* divider as an inset shadow: a border would make this lane 1px wider
-     than the first and the header line would miss the dashed body separator */
-  box-shadow: inset 1px 0 0 #e0e0e0;
-  cursor: pointer;
 }
 
-.cal-lane-name:first-child {
-  box-shadow: none;
+.cal-event-mechs {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
 }
 
-.cal-lane-name:hover .cal-mech-badge {
-  box-shadow: 0 0 0 2px rgba(60, 64, 67, .25);
+/* Narrow blocks (side-by-side overlaps, small screens): first the extra chips go, then all
+   chips, then the end time — the tooltip always has the full crew and range. */
+@container (max-width: 131px) {
+  .cal-event-mechs .cal-mech-chip:nth-child(n + 2) {
+    display: none;
+  }
 }
 
-.cal-lane-label {
-  display: none;
-  overflow: hidden;
-  text-overflow: ellipsis;
+@container (max-width: 103px) {
+  .cal-event-mechs {
+    display: none;
+  }
 }
 
-.cal-header-cell.cal-expanded .cal-lane-label {
-  display: inline;
+@container (max-width: 79px) {
+  .cal-event-time-end {
+    display: none;
+  }
 }
 
-/* full-width day: the other days are narrow strips — no room for markers
-   (the row keeps its height so the header stays level) */
-.cal-grid--full .cal-header-cell.cal-collapsed .cal-lane-names {
-  visibility: hidden;
-}
-
-.cal-lane-name--unassigned {
-  color: #80868b;
+/* day view, Unassigned column: the stored crew is nobody assignable any more */
+.cal-event-former {
   font-style: italic;
+}
+
+.cal-mech-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.7);
+  flex: none;
+}
+
+.cal-mech-chip.is-lg {
+  width: 22px;
+  height: 22px;
+  font-size: 0.66rem;
+}
+
+.cal-event-wo {
+  display: inline-block;
+  margin-top: 2px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.88);
+  color: #1a2e22;
+}
+
+.cal-event-resize {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.cal-event-resize::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 1px;
+  width: 22px;
+  height: 2px;
+  margin-left: -11px;
+  border-radius: 2px;
+  background: currentColor;
+  opacity: 0;
+}
+
+.cal-event:hover .cal-event-resize::after {
+  opacity: 0.55;
+}
+
+/* ── Appointment modal ───────────────────────────────────────────── */
+.cal-search {
+  position: relative;
+}
+
+.cal-search .form-control {
+  padding-right: 2rem;
+}
+
+/* locked customer/unit of a linked appointment */
+.cal-search .form-control[readonly]:not(:disabled) {
+  background-color: var(--surface-soft);
+  color: var(--muted);
   cursor: default;
 }
 
-.cal-mech-badge--unassigned {
-  background: #e0e3e7;
-  color: #5f6368;
-  text-shadow: none;
-}
-
-/* facts (timer sessions) and read-only blocks open details on click, never move */
-.cal-event--fact,
-.cal-event--static,
-.cal-chip--static {
+.cal-search-clear {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: none;
+  padding: 0 6px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.25rem;
+  line-height: 1;
+  transform: translateY(-50%);
   cursor: pointer;
 }
 
-/* plans (appointments linked to a work order) sit under the facts */
-.cal-event--linked {
-  z-index: 2;
+.cal-search-clear:hover {
+  color: var(--danger);
 }
 
-.cal-wo-plan + .cal-wo-plan {
-  margin-top: 4px;
+.cal-search.has-value .cal-search-clear {
+  display: block;
+}
+
+.cal-search .dd-scroll {
+  top: 100%;
+  left: 0;
+  margin-top: 2px;
+}
+
+.cal-search .list-group-item {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.cal-dd-sub {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.list-group-item.active .cal-dd-sub {
+  color: inherit;
+  opacity: 0.85;
+}
+
+.cal-dd-empty {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.cal-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.4rem;
+}
+
+.cal-tags:empty {
+  display: none;
+}
+
+.cal-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.15rem 0.45rem 0.15rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-soft);
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.cal-tag-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.cal-tag-remove {
+  padding: 0 0 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.cal-tag-remove:hover {
+  color: var(--danger);
+}
+
+.cal-tag-remove:disabled {
+  display: none;
+}
+
+.cal-status-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+/* Status colour on the border and the dot; the label keeps the theme's text colour unless the
+   button is selected (then calendar.js fills it with the colour and picks the text by luminance). */
+.cal-status-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: transparent;
+  color: var(--text);
+}
+
+.cal-status-btn:focus-visible {
+  box-shadow: 0 0 0 0.2rem rgba(26, 122, 66, 0.25);
+}
+
+.cal-linked-wo {
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+#apptLinkedWOSummary:empty {
+  display: none;
+}
+
+#apptOverlapHint {
+  color: var(--warning);
+}
+
+/* ── Settings modal ──────────────────────────────────────────────── */
+.cal-settings-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.cal-settings-row .form-control-color {
+  flex: none;
+  width: 2.7rem;
+  padding: 0.15rem;
+}
+
+.cal-settings-row .form-control {
+  min-width: 0;
+}
+
+.cal-settings-row .cal-settings-label {
+  flex: 1 1 auto;
+}
+
+.cal-settings-lock,
+.cal-settings-remove {
+  flex: none;
+  width: 2.2rem;
+  text-align: center;
+}
+
+.cal-settings-lock {
+  color: var(--muted);
+}
+
+/* ── Narrow screens ──────────────────────────────────────────────── */
+@media (max-width: 768px) {
+  .cal-title {
+    order: -1;
+    flex-basis: 100%;
+    min-width: 0;
+    white-space: normal;
+  }
+
+  .cal-grid {
+    --cal-col-min: 110px;
+  }
 }

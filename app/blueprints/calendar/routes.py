@@ -1,778 +1,324 @@
+"""
+HTTP календаря: страница, справочники, настройки, CRUD записей.
+
+Тонкие хендлеры — логика в services (events, statuses, work_orders).
+Shop-база только через get_shop_db; каждый запрос по shop-коллекциям
+фильтрует shop_id. Ошибки: {"error": "..."} с 400 (валидация) / 404 (нет
+или чужое); 403 отдаёт permission_required; 500 на /api/ — JSON глобального
+обработчика. Пути и имена полей ответов — контракт мобильного приложения.
+"""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from flask import jsonify, request, session
 
-from flask import current_app, request, session, jsonify
-
-from app.utils import audit_log
 from app.blueprints.calendar import calendar_bp
+from app.blueprints.calendar.services import statuses as calendar_settings
+from app.blueprints.calendar.services.events import (
+    AUDIT_FIELD_LABELS,
+    CUSTOMER_PROJECTION,
+    UNIT_PROJECTION,
+    CalendarError,
+    customer_label,
+    display_customer_label,
+    event_label,
+    load_events,
+    naive_iso,
+    prepare_event_updates,
+    prepare_new_event,
+    refresh_labels,
+    serialize_event,
+    unit_label,
+)
 from app.blueprints.calendar.services.work_orders import (
-    SYNCED_APPOINTMENT_STATUSES,
-    SYSTEM_STATUS_KEYS,
     WO_STATES,
-    appointment_status_for_wo,
-    calendar_live_signature,
-    conflict_message,
-    get_statuses,
-    identity_updates_for_event,
-    sync_linked_appointments_status,
-    customer_label as _customer_label,
     enrich_linked_appointments,
-    find_mechanic_conflict,
-    load_work_order_events,
-    mark_superseded_plans,
-    parse_range_param,
-    unit_label as _unit_label,
+    link_event_to_work_order,
+    snapshot_payload,
+    unlink_work_order_events,
     work_order_snapshot_for_event,
-    _build_mechanics,
-    _event_mechanics,
-    _mechanic_fields,
-    _shop_tz,
 )
 from app.blueprints.main.routes import NAV_ITEMS
+from app.blueprints.work_orders.services.lookups import get_assignable_mechanics
 from app.extensions import get_master_db
-from app.utils.auth import login_required, SESSION_TENANT_ID, SESSION_USER_ID
+from app.utils import audit_log
+from app.utils.auth import SESSION_TENANT_ID, SESSION_USER_ID, login_required
+from app.utils.display_datetime import get_active_shop_today_iso
 from app.utils.layout import render_internal_page
 from app.utils.permissions import filter_nav_items, has_permission, is_mechanic_mode, permission_required
+from app.utils.tenant import get_shop_db, oid
+
+# Хуки для других модулей исторически импортировались из routes — оставляем имена.
+__all__ = ["link_event_to_work_order", "unlink_work_order_events"]
 
 
-# ── helpers ──────────────────────────────────────────────────
-
-def _utcnow():
-    return datetime.now(timezone.utc)
+def _shop():
+    return get_shop_db(get_master_db())
 
 
-from app.utils.tenant import (
-    oid as _oid,
-    tenant_id_variants as _tenant_variants,
-    get_shop_db as _tenant_get_shop_db,
-)
+def _not_found(message: str = "Not found"):
+    return jsonify({"error": message}), 404
 
 
-def _get_shop_db():
-    return _tenant_get_shop_db(get_master_db())
+def _json_body() -> dict:
+    """Тело запроса как dict; не-объект (массив, строка, число, мусор) → {},
+    чтобы валидация ответила 400, а не AttributeError."""
+    data = request.get_json(force=True, silent=True)
+    return data if isinstance(data, dict) else {}
 
 
-def _get_assignable_mechanics(shop):
-    shop_id = shop.get("_id")
-    if not shop_id:
-        return []
-    tv = _tenant_variants()
-    if not tv:
-        return []
-    master = get_master_db()
-    rows = list(
-        master.users.find(
-            {
-                "tenant_id": {"$in": tv},
-                "is_active": True,
-                "role": {"$in": ["senior_mechanic", "mechanic"]},
-                "$or": [
-                    {"shop_ids": {"$in": [shop_id, str(shop_id)]}},
-                    {"shop_id": {"$in": [shop_id, str(shop_id)]}},
-                ],
-            },
-            {"first_name": 1, "last_name": 1, "name": 1, "email": 1, "role": 1},
-        ).sort([("first_name", 1), ("last_name", 1)])
-    )
-    out = []
-    for u in rows:
-        fn = (u.get("first_name") or "").strip()
-        ln = (u.get("last_name") or "").strip()
-        full = f"{fn} {ln}".strip() or (u.get("name") or "").strip() or (u.get("email") or "").strip()
-        if not full:
-            continue
-        out.append({"id": str(u["_id"]), "name": full, "role": u.get("role", "")})
-    return out
+def _present(shop_db, shop, rows: list[dict]) -> list[dict]:
+    """Документы → payload API с живыми лейблами и данными WO."""
+    refresh_labels(shop_db, shop, rows)
+    items = [serialize_event(r) for r in rows]
+    enrich_linked_appointments(shop_db, shop, items, rows, is_mechanic_mode())
+    return items
 
 
-_get_statuses = get_statuses
-
-
-# ── механики записи ──────────────────────────────────────────
-# На одну работу можно поставить бригаду: документ хранит mechanics[{id,name}]
-# и mechanic_ids[] (для запросов), а legacy mechanic_id/mechanic_name = первый
-# механик. Хелперы _event_mechanics / _mechanic_fields / _build_mechanics живут
-# в services.work_orders (ими же пользуется синк бригады с WO) и импортированы
-# сюда под теми же именами.
-
-def _parse_mechanics(data: dict, shop) -> list[dict] | None:
-    """Механики из запроса: mechanics[{id,name}] / mechanic_ids[] (новые
-    клиенты) или mechanic_id/mechanic_name (legacy). None — поле не передано."""
-    if isinstance(data.get("mechanics"), list):
-        return _build_mechanics(data["mechanics"], shop)
-    if isinstance(data.get("mechanic_ids"), list):
-        return _build_mechanics(data["mechanic_ids"], shop)
-    if "mechanic_id" in data:
-        raw = str(data.get("mechanic_id") or "").strip()
-        if not raw:
-            return []
-        return _build_mechanics([{"id": raw, "name": data.get("mechanic_name") or ""}], shop)
-    return None
-
-
-def _serialize_event(r: dict) -> dict:
-    """Запись calendar_events → payload API (без данных WO — их добавляет
-    enrich_linked_appointments)."""
-    mechanics = [{"id": str(m["id"]), "name": m["name"]} for m in _event_mechanics(r)]
-    return {
-        "id": str(r["_id"]),
-        "kind": "appointment",
-        "is_virtual": False,
-        "editable": True,
-        "title": r.get("title") or "",
-        "start_time": r["start_time"].isoformat() if r.get("start_time") else "",
-        "end_time": r["end_time"].isoformat() if r.get("end_time") else "",
-        "status": r.get("status", "scheduled"),
-        "customer_id": str(r["customer_id"]) if r.get("customer_id") else "",
-        "customer_label": r.get("customer_label") or "",
-        "unit_id": str(r["unit_id"]) if r.get("unit_id") else "",
-        "unit_label": r.get("unit_label") or "",
-        "mechanic_id": mechanics[0]["id"] if mechanics else "",
-        "mechanic_name": ", ".join(m["name"] for m in mechanics),
-        "mechanics": mechanics,
-        "mechanic_ids": [m["id"] for m in mechanics],
-        "presets": r.get("presets") or [],
-        "work_order_id": str(r["work_order_id"]) if r.get("work_order_id") else "",
-        "wo_number": r.get("wo_number"),
-        "wo_state": "",
-        "labor_summary": [],
-    }
-
-
-def _refresh_row_labels(db, shop: dict, rows: list[dict]) -> None:
-    """
-    Лейблы клиента/юнита в ответе — из живых документов, а не из снимка в
-    записи: переименованный клиент или юнит показывается актуальным именем.
-    Два запроса $in на всю выборку. title, дублирующий старый лейбл клиента
-    (заметки нет), тоже следует за ним. Мутирует rows.
-    """
-    customer_ids = {r["customer_id"] for r in rows if r.get("customer_id")}
-    unit_ids = {r["unit_id"] for r in rows if r.get("unit_id")}
-    customers = {
-        c["_id"]: _customer_label(c)
-        for c in db.customers.find(
-            {"_id": {"$in": list(customer_ids)}, "shop_id": shop["_id"]},
-            {"company_name": 1, "contacts": 1, "first_name": 1, "last_name": 1},
-        )
-    } if customer_ids else {}
-    units = {
-        u["_id"]: _unit_label(u)
-        for u in db.units.find(
-            {"_id": {"$in": list(unit_ids)}, "shop_id": shop["_id"]},
-            {"unit_number": 1, "year": 1, "make": 1, "model": 1},
-        )
-    } if unit_ids else {}
-    for r in rows:
-        label = customers.get(r.get("customer_id"))
-        if label:
-            if (r.get("title") or "") == (r.get("customer_label") or ""):
-                r["title"] = label
-            r["customer_label"] = label
-        label = units.get(r.get("unit_id"))
-        if label:
-            r["unit_label"] = label
-
-
-def _parse_presets(raw_presets) -> list[dict]:
-    presets = []
-    if isinstance(raw_presets, list):
-        for rp in raw_presets:
-            if not isinstance(rp, dict):
-                continue
-            pid = (rp.get("id") or "").strip()
-            pname = (rp.get("name") or "").strip()
-            if pid and pname:
-                presets.append({"id": pid, "name": pname})
-    return presets
-
-
-def _parse_event_datetime(raw: str):
-    """ISO без зоны — настенные часы магазина (так хранит календарь)."""
-    value = (raw or "").strip()
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except Exception:
-        return None
-    if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(_shop_tz()).replace(tzinfo=None)
-    return parsed
-
-
-# ── page ─────────────────────────────────────────────────────
+# ── страница ─────────────────────────────────────────────────
 
 @calendar_bp.get("/calendar")
 @login_required
 @permission_required("calendar.view")
 def calendar_page():
-    layout_nav = filter_nav_items(NAV_ITEMS)
     return render_internal_page(
         "public/calendar.html",
-        layout_nav,
+        filter_nav_items(NAV_ITEMS),
         "calendar",
-        calendar_can_create_wo=not is_mechanic_mode(),
         calendar_can_create=has_permission("calendar.create"),
         calendar_can_edit=has_permission("calendar.edit"),
         calendar_can_delete=has_permission("calendar.delete"),
+        calendar_can_manage_settings=has_permission("calendar.manage_settings"),
+        calendar_can_create_wo=not is_mechanic_mode(),
+        calendar_today=get_active_shop_today_iso(),
     )
 
 
-# ── API: lookup data ─────────────────────────────────────────
+# ── справочники ──────────────────────────────────────────────
 
 @calendar_bp.get("/calendar/api/customers")
 @login_required
 @permission_required("calendar.view")
 def api_customers():
-    try:
-        db, shop = _get_shop_db()
-        if db is None:
-            return jsonify([])
-        rows = list(
-            db.customers.find(
-                {"is_active": True},
-                {"company_name": 1, "contacts": 1},
-            ).sort([("company_name", 1), ("last_name", 1)])
-        )
-        return jsonify([{"id": str(c["_id"]), "label": _customer_label(c)} for c in rows])
-    except Exception as e:
-        current_app.logger.exception("Calendar customers lookup failed")
-        return jsonify({"error": str(e)}), 500
+    shop_db, shop = _shop()
+    if shop_db is None:
+        return jsonify([])
+    rows = shop_db.customers.find({"shop_id": shop["_id"], "is_active": True}, CUSTOMER_PROJECTION)
+    items = [{"id": str(c["_id"]), "label": customer_label(c)} for c in rows]
+    items.sort(key=lambda c: c["label"].lower())
+    return jsonify(items)
 
 
 @calendar_bp.get("/calendar/api/units/<customer_id>")
 @login_required
 @permission_required("calendar.view")
 def api_units(customer_id):
-    try:
-        db, shop = _get_shop_db()
-        cid = _oid(customer_id)
-        if db is None or not cid:
-            return jsonify([])
-        rows = list(
-            db.units.find(
-                {"customer_id": cid, "is_active": True},
-                {"unit_number": 1, "year": 1, "make": 1, "model": 1, "vin": 1},
-            ).sort([("created_at", -1)])
-        )
-        # vin отдельно: модалка ищет и по нему, но в лейбл записи его не тянет
-        return jsonify([
-            {"id": str(u["_id"]), "label": _unit_label(u), "vin": str(u.get("vin") or "").strip()}
-            for u in rows
-        ])
-    except Exception as e:
-        current_app.logger.exception("Calendar units lookup failed")
-        return jsonify({"error": str(e)}), 500
+    shop_db, shop = _shop()
+    cid = oid(customer_id)
+    if shop_db is None or not cid:
+        return jsonify([])
+    rows = shop_db.units.find(
+        {"shop_id": shop["_id"], "customer_id": cid, "is_active": True}, UNIT_PROJECTION
+    )
+    items = [
+        {"id": str(u["_id"]), "label": unit_label(u), "vin": str(u.get("vin") or "").strip()}
+        for u in rows
+    ]
+    items.sort(key=lambda u: u["label"].lower())
+    return jsonify(items)
 
 
 @calendar_bp.get("/calendar/api/mechanics")
 @login_required
 @permission_required("calendar.view")
 def api_mechanics():
-    try:
-        _, shop = _get_shop_db()
-        if not shop:
-            return jsonify([])
-        return jsonify(_get_assignable_mechanics(shop))
-    except Exception as e:
-        current_app.logger.exception("Calendar mechanics lookup failed")
-        return jsonify({"error": str(e)}), 500
-
-
-@calendar_bp.get("/calendar/api/statuses")
-@login_required
-@permission_required("calendar.view")
-def api_statuses():
-    db, _ = _get_shop_db()
-    return jsonify(_get_statuses(db))
-
-
-@calendar_bp.get("/calendar/api/wo_states")
-@login_required
-@permission_required("calendar.view")
-def api_wo_states():
-    """Статусы WO на календаре (фиксированные, не редактируются). В
-    механик-режиме paid не существует — маскируется как completed."""
-    states = [dict(s) for s in WO_STATES]
-    if is_mechanic_mode():
-        states = [s for s in states if s["key"] != "paid"]
-    return jsonify(states)
+    _, shop = _shop()
+    return jsonify(get_assignable_mechanics(shop) if shop else [])
 
 
 @calendar_bp.get("/calendar/api/presets")
 @login_required
 @permission_required("calendar.view")
 def api_presets():
-    db, shop = _get_shop_db()
-    if db is None:
+    shop_db, shop = _shop()
+    if shop_db is None:
         return jsonify([])
-    rows = list(
-        db.wo_presets.find(
-            {"shop_id": shop["_id"], "is_active": True},
-            {"name": 1, "description": 1},
-        ).sort([("name", 1)])
+    rows = shop_db.wo_presets.find({"shop_id": shop["_id"], "is_active": True}, {"name": 1})
+    items = [{"id": str(r["_id"]), "name": str(r.get("name") or "")} for r in rows]
+    items.sort(key=lambda p: p["name"].lower())
+    return jsonify(items)
+
+
+@calendar_bp.get("/calendar/api/statuses")
+@login_required
+@permission_required("calendar.view")
+def api_statuses():
+    shop_db, _ = _shop()
+    return jsonify(calendar_settings.get_statuses(shop_db))
+
+
+@calendar_bp.get("/calendar/api/wo_states")
+@login_required
+@permission_required("calendar.view")
+def api_wo_states():
+    """Состояния WO на календаре (фиксированные). В механик-режиме paid не
+    существует — маскируется как completed."""
+    states = [dict(s) for s in WO_STATES]
+    if is_mechanic_mode():
+        states = [s for s in states if s["key"] != "paid"]
+    return jsonify(states)
+
+
+@calendar_bp.get("/calendar/api/settings")
+@login_required
+@permission_required("calendar.view")
+def api_settings():
+    shop_db, _ = _shop()
+    return jsonify(calendar_settings.get_settings(shop_db))
+
+
+@calendar_bp.get("/calendar/api/work_orders/<work_order_id>/snapshot")
+@login_required
+@permission_required("calendar.view")
+def api_work_order_snapshot(work_order_id):
+    """Предзаполнение записи для существующего WO (ссылка «Schedule» со страницы WO)."""
+    shop_db, shop = _shop()
+    snapshot = work_order_snapshot_for_event(shop_db, shop, work_order_id) if shop_db is not None else None
+    if not snapshot:
+        return _not_found("Work order not found")
+    return jsonify(snapshot_payload(snapshot, is_mechanic_mode()))
+
+
+# ── настройки ────────────────────────────────────────────────
+
+def _save_settings(payload: dict):
+    """(settings, None) или (None, error). Пишет событие журнала."""
+    shop_db, _ = _shop()
+    if shop_db is None:
+        return None, "Shop not configured"
+    settings, error = calendar_settings.save_settings(shop_db, payload)
+    if error:
+        return None, error
+    audit_log.log_event(
+        "settings", "calendar_event", label="Calendar settings", summary="Calendar settings saved",
+        details={
+            "statuses": [s["key"] for s in settings["statuses"]],
+            "start_hour": settings["start_hour"], "end_hour": settings["end_hour"],
+        },
     )
-    return jsonify([{"id": str(r["_id"]), "name": r.get("name") or ""} for r in rows])
+    return settings, None
+
+
+@calendar_bp.put("/calendar/api/settings")
+@login_required
+@permission_required("calendar.manage_settings")
+def api_save_settings():
+    settings, error = _save_settings(_json_body())
+    if error:
+        return jsonify({"error": error}), 400
+    return jsonify(settings)
 
 
 @calendar_bp.put("/calendar/api/statuses")
 @login_required
 @permission_required("calendar.manage_settings")
 def api_save_statuses():
-    import re
-    db, _ = _get_shop_db()
-    if db is None:
-        return jsonify({"error": "Shop not configured"}), 400
-
-    data = request.get_json(force=True, silent=True) or {}
-    items = data.get("statuses")
-    if not isinstance(items, list) or not items:
-        return jsonify({"error": "At least one status is required"}), 400
-
-    clean = []
-    seen_keys = set()
-    for s in items:
-        key = re.sub(r"[^a-z0-9_]", "_", (s.get("key") or "").strip().lower())
-        label = (s.get("label") or "").strip()
-        color = (s.get("color") or "#888888").strip()
-        if not key or not label:
-            continue
-        if key in seen_keys:
-            continue
-        seen_keys.add(key)
-        if not re.match(r"^#[0-9a-fA-F]{6}$", color):
-            color = "#888888"
-        clean.append({"key": key, "label": label, "color": color})
-
-    if not clean:
-        return jsonify({"error": "At least one valid status is required"}), 400
-    # Системные статусы можно переименовать/перекрасить, но не удалить: на
-    # них держится синк записей с WO и правило «отменённую не трогаем».
-    missing = [key for key in SYSTEM_STATUS_KEYS if key not in seen_keys]
-    if missing:
-        return jsonify({"error": "System statuses cannot be removed: " + ", ".join(missing)}), 400
-
-    db.calendar_settings.update_one(
-        {"key": "statuses"},
-        {"$set": {"statuses": clean, "updated_at": _utcnow()}},
-        upsert=True,
-    )
-    return jsonify(clean)
+    """Тонкий алиас PUT /settings только для статусов; отдаёт их список."""
+    settings, error = _save_settings({"statuses": _json_body().get("statuses")})
+    if error:
+        return jsonify({"error": error}), 400
+    return jsonify(settings["statuses"])
 
 
-# ── API: events CRUD ─────────────────────────────────────────
+# ── записи ───────────────────────────────────────────────────
 
 @calendar_bp.get("/calendar/api/events")
 @login_required
 @permission_required("calendar.view")
 def api_events():
-    """
-    События за диапазон [start, end).
-
-    include_work_orders=1 — добавить виртуальные события WO (веб-календарь).
-    Без флага — только записи calendar_events (так работает мобильное
-    приложение, которому WO-события редактировать нельзя).
-    """
-    db, shop = _get_shop_db()
-    if db is None:
+    """Записи с start_time в [start, end) по возрастанию; mechanic_id=<id> |
+    unassigned — фильтр по бригаде. include_work_orders принимается и игнорируется."""
+    shop_db, shop = _shop()
+    if shop_db is None:
         return jsonify([])
-
-    tz = _shop_tz()
-    start_local, _ = parse_range_param(request.args.get("start", ""), tz)
-    end_local, _ = parse_range_param(request.args.get("end", ""), tz)
-    include_wo = str(request.args.get("include_work_orders") or "").strip().lower() in ("1", "true", "yes")
-    mechanic_mode = is_mechanic_mode()
-
-    query = {"shop_id": shop["_id"]}
-    if start_local:
-        query["start_time"] = {"$gte": start_local}
-    if end_local:
-        query.setdefault("start_time", {})
-        query["start_time"]["$lt"] = end_local
-
-    rows = list(db.calendar_events.find(query).sort("start_time", 1))
-    _refresh_row_labels(db, shop, rows)
-    events = [_serialize_event(r) for r in rows]
-    enrich_linked_appointments(db, shop, events, rows, mechanic_mode=mechanic_mode)
-
-    if include_wo and start_local and end_local:
-        try:
-            events.extend(
-                load_work_order_events(db, shop, start_local, end_local, mechanic_mode=mechanic_mode)
-            )
-            # Факты важнее плана: записи, пересёкшиеся с реальной работой по
-            # тому же WO, помечаются, фронт убирает их с сетки.
-            mark_superseded_plans(events)
-        except Exception:
-            current_app.logger.exception("Calendar: failed to build work order events")
-
-    events.sort(key=lambda e: e.get("start_time") or "")
-    return jsonify(events)
-
-
-@calendar_bp.get("/calendar/api/live_signature")
-@login_required
-@permission_required("calendar.view")
-def api_live_signature():
-    """
-    Сигнатура изменений для live-поллинга календаря (веб опрашивает раз в
-    15 с): только таймстемпы и счётчики, без данных — клиент сравнивает
-    строку и перечитывает события при сдвиге (см. calendar_live_signature).
-    """
-    db, shop = _get_shop_db()
-    if db is None:
-        return jsonify({"signature": ""})
-
-    tz = _shop_tz()
-    start_local, _ = parse_range_param(request.args.get("start", ""), tz)
-    end_local, _ = parse_range_param(request.args.get("end", ""), tz)
-    try:
-        return jsonify({"signature": calendar_live_signature(db, shop, start_local, end_local)})
-    except Exception as e:
-        current_app.logger.exception("Calendar live signature failed")
-        return jsonify({"signature": "", "error": str(e)}), 500
+    rows = load_events(
+        shop_db, shop, request.args.get("start"), request.args.get("end"), request.args.get("mechanic_id")
+    )
+    return jsonify(_present(shop_db, shop, rows))
 
 
 @calendar_bp.post("/calendar/api/events")
 @login_required
 @permission_required("calendar.create")
 def api_create_event():
-    db, shop = _get_shop_db()
-    if db is None:
+    shop_db, shop = _shop()
+    if shop_db is None:
         return jsonify({"error": "Shop not configured"}), 400
+    try:
+        doc = prepare_new_event(
+            shop_db, shop, _json_body(),
+            user_id=session.get(SESSION_USER_ID), tenant_id=session.get(SESSION_TENANT_ID),
+        )
+    except CalendarError as e:
+        return jsonify({"error": e.message}), e.status
 
-    data = request.get_json(force=True, silent=True) or {}
+    # Статус — что выбрал диспетчер (или scheduled); за WO он следует только
+    # по хукам work orders (таймер, Done, completed/paid), не при привязке.
+    doc["_id"] = shop_db.calendar_events.insert_one(doc).inserted_id
 
-    start_time = _parse_event_datetime(data.get("start_time"))
-    end_time = _parse_event_datetime(data.get("end_time"))
-    if not (data.get("start_time") or "").strip() or not (data.get("end_time") or "").strip():
-        return jsonify({"error": "Start and end time are required"}), 400
-    if start_time is None or end_time is None:
-        return jsonify({"error": "Invalid date format"}), 400
-    if end_time <= start_time:
-        return jsonify({"error": "End time must be after start time"}), 400
-
-    customer_id_raw = (data.get("customer_id") or "").strip()
-    customer_label_val = (data.get("customer_label") or "").strip()
-    unit_id_raw = (data.get("unit_id") or "").strip()
-    unit_label_val = (data.get("unit_label") or "").strip() or ""
-    mechanics = _parse_mechanics(data, shop) or []
-    status = (data.get("status") or "scheduled").strip()
-    title = (data.get("title") or "").strip()
-    presets = _parse_presets(data.get("presets") or [])
-
-    # Привязка к существующему WO (перетащили WO на сетку / «Schedule»):
-    # клиент, юнит, механик и описание берём с WO, если не переданы.
-    work_order_id = None
-    wo_number = None
-    wo_snapshot = None
-    if (data.get("work_order_id") or "").strip():
-        wo_snapshot = work_order_snapshot_for_event(db, shop, data.get("work_order_id"))
-        if not wo_snapshot:
-            return jsonify({"error": "Work order not found"}), 404
-        work_order_id = wo_snapshot["work_order_id"]
-        wo_number = wo_snapshot["wo_number"]
-        if not customer_id_raw and wo_snapshot.get("customer_id"):
-            customer_id_raw = str(wo_snapshot["customer_id"])
-            customer_label_val = wo_snapshot.get("customer_label") or customer_label_val
-        if not unit_id_raw and wo_snapshot.get("unit_id"):
-            unit_id_raw = str(wo_snapshot["unit_id"])
-            unit_label_val = wo_snapshot.get("unit_label") or unit_label_val
-        # keep_unassigned — бросили в колонку «Unassigned»: механиков с WO не брать.
-        if not mechanics and wo_snapshot.get("mechanics") and not data.get("keep_unassigned"):
-            mechanics = _build_mechanics(wo_snapshot["mechanics"], shop)
-        if not title:
-            title = wo_snapshot.get("title") or ""
-
-    if not customer_label_val:
-        customer_label_val = "New Customer"
-
-    valid_statuses = {s["key"] for s in _get_statuses(db)}
-    if status not in valid_statuses:
-        status = "scheduled"
-    # Привязка к WO, по которому уже идёт / закончена работа: запись сразу
-    # отражает факт, а не «Scheduled»/«Confirmed» поверх работы — присланный
-    # статус здесь дефолт, а не override. Только cancelled — воля пользователя.
-    if work_order_id and status != "cancelled":
-        status = appointment_status_for_wo(db, shop, work_order_id) or status
-
-    # Один механик — одна работа в один момент времени (проверяем каждого в бригаде).
-    if status != "cancelled":
-        for m in mechanics:
-            conflict = find_mechanic_conflict(db, shop, m["id"], start_time, end_time, exclude_wo_id=work_order_id)
-            if conflict:
-                return jsonify({"error": conflict_message(conflict, m["name"]), "conflict_id": str(conflict.get("_id") or "")}), 409
-
-    user_id = _oid(session.get(SESSION_USER_ID))
-    now = _utcnow()
-
-    doc = {
-        "title": title or customer_label_val,
-        "start_time": start_time,
-        "end_time": end_time,
-        "status": status,
-        "customer_id": _oid(customer_id_raw),
-        "customer_label": customer_label_val,
-        "unit_id": _oid(unit_id_raw),
-        "unit_label": unit_label_val,
-        **_mechanic_fields(mechanics),
-        "presets": presets,
-        "work_order_id": work_order_id,
-        "wo_number": wo_number,
-        "shop_id": shop["_id"],
-        "tenant_id": _oid(session.get(SESSION_TENANT_ID)),
-        "created_at": now,
-        "updated_at": now,
-        "created_by": user_id,
-        "updated_by": user_id,
-    }
-
-    result = db.calendar_events.insert_one(doc)
-    doc["_id"] = result.inserted_id
-    audit_log.log_event("create", "calendar_event", doc["_id"], label=doc.get("title") or customer_label_val,
-                        summary=f"Appointment created: {doc.get('title') or customer_label_val} on {start_time:%m/%d/%Y %H:%M}"
-                        + (f" (linked to WO #{wo_number})" if wo_number else ""),
-                        details={"start": start_time.isoformat(), "end": end_time.isoformat(),
-                                 "mechanic": ", ".join(m["name"] for m in mechanics),
-                                 "unit": unit_label_val, "work_order_id": str(work_order_id or "")})
-
-    payload = _serialize_event(doc)
-    enrich_linked_appointments(db, shop, [payload], [doc], mechanic_mode=is_mechanic_mode())
-    return jsonify(payload), 201
+    label = event_label(doc)
+    audit_log.log_event(
+        "create", "calendar_event", doc["_id"], label=label,
+        summary=f"Appointment created: {label} on {doc['start_time']:%m/%d/%Y %H:%M}"
+        + (f" (linked to WO #{doc['wo_number']})" if doc.get("wo_number") else ""),
+        details={
+            "start": naive_iso(doc["start_time"]), "end": naive_iso(doc["end_time"]),
+            "mechanics": ", ".join(m["name"] for m in doc.get("mechanics") or []),
+            "customer": display_customer_label(doc), "unit": doc.get("unit_label") or "",
+            "work_order_id": str(doc.get("work_order_id") or ""),
+        },
+    )
+    return jsonify(_present(shop_db, shop, [doc])[0]), 201
 
 
 @calendar_bp.put("/calendar/api/events/<event_id>")
 @login_required
 @permission_required("calendar.edit")
 def api_update_event(event_id):
-    db, shop = _get_shop_db()
-    eid = _oid(event_id)
-    if db is None or not eid:
-        return jsonify({"error": "Not found"}), 404
-
-    existing = db.calendar_events.find_one({"_id": eid, "shop_id": shop["_id"]})
+    shop_db, shop = _shop()
+    eid = oid(event_id)
+    if shop_db is None or not eid:
+        return _not_found()
+    existing = shop_db.calendar_events.find_one({"_id": eid, "shop_id": shop["_id"]})
     if not existing:
-        return jsonify({"error": "Not found"}), 404
+        return _not_found()
 
-    data = request.get_json(force=True, silent=True) or {}
-    updates = {"updated_at": _utcnow(), "updated_by": _oid(session.get(SESSION_USER_ID))}
+    try:
+        updates = prepare_event_updates(shop_db, shop, existing, _json_body(), user_id=session.get(SESSION_USER_ID))
+    except CalendarError as e:
+        return jsonify({"error": e.message}), e.status
 
-    for field in ("title", "status", "customer_label", "unit_label"):
-        if field in data:
-            updates[field] = (data[field] or "").strip()
+    shop_db.calendar_events.update_one({"_id": eid, "shop_id": shop["_id"]}, {"$set": updates})
+    updated = shop_db.calendar_events.find_one({"_id": eid, "shop_id": shop["_id"]}) or {**existing, **updates}
 
-    for field in ("customer_id", "unit_id"):
-        if field in data:
-            updates[field] = _oid(data[field])
-
-    mechanics = _parse_mechanics(data, shop)
-    if mechanics is not None:
-        updates.update(_mechanic_fields(mechanics))
-
-    if "presets" in data:
-        updates["presets"] = _parse_presets(data["presets"] or [])
-
-    for field in ("start_time", "end_time"):
-        if field in data and data[field]:
-            parsed = _parse_event_datetime(data[field])
-            if parsed is not None:
-                updates[field] = parsed
-
-    new_start = updates.get("start_time", existing.get("start_time"))
-    new_end = updates.get("end_time", existing.get("end_time"))
-    if new_start and new_end and new_end <= new_start:
-        return jsonify({"error": "End time must be after start time"}), 400
-
-    # Привязка / отвязка WO: "" — отвязать.
-    linked_wo_id = existing.get("work_order_id")
-    snapshot = None
-    if "work_order_id" in data:
-        raw_wo = (data.get("work_order_id") or "").strip()
-        if not raw_wo:
-            updates["work_order_id"] = None
-            updates["wo_number"] = None
-            linked_wo_id = None
-            # Отвязали руками — как при удалении WO (unlink_work_order_events):
-            # статус, проставленный синком по работе (in_progress/completed),
-            # возвращается в scheduled — без WO это снова просто план. Явный
-            # статус в этом же запросе важнее.
-            if existing.get("work_order_id") and "status" not in data and existing.get("status") in SYNCED_APPOINTMENT_STATUSES:
-                updates["status"] = "scheduled"
-        else:
-            snapshot = work_order_snapshot_for_event(db, shop, raw_wo)
-            if not snapshot:
-                return jsonify({"error": "Work order not found"}), 404
-            linked_wo_id = snapshot["work_order_id"]
-            updates["work_order_id"] = linked_wo_id
-            updates["wo_number"] = snapshot["wo_number"]
-            # Привязали к WO без явного статуса — статус записи по факту работы.
-            if "status" not in updates and existing.get("status") != "cancelled":
-                synced = appointment_status_for_wo(db, shop, linked_wo_id)
-                if synced:
-                    updates["status"] = synced
-    elif linked_wo_id:
-        # WO удалён/неактивен — snapshot None, запись ведёт себя как обычная.
-        snapshot = work_order_snapshot_for_event(db, shop, linked_wo_id)
-
-    if snapshot:
-        # Клиент и юнит привязанной записи — это клиент и юнит WO: отдельно
-        # их не меняют (меняются на самом WO и приезжают сюда синком).
-        for field in ("customer_id", "unit_id"):
-            if field in data and updates.get(field) != existing.get(field) and updates.get(field) != snapshot.get(field):
-                return jsonify({
-                    "error": f"This appointment is linked to WO #{snapshot.get('wo_number')} — change the customer or unit on the work order",
-                    "work_order_id": str(linked_wo_id),
-                }), 409
-        for key, value in identity_updates_for_event(existing, snapshot).items():
-            # Явно присланный заголовок важнее переезда лейбла в title.
-            if key == "title" and "title" in data:
-                continue
-            updates[key] = value
-        if existing.get("wo_number") != snapshot.get("wo_number"):
-            updates["wo_number"] = snapshot.get("wo_number")
-        # «В работе» / «сделано» у привязанной записи определяет WO, а не
-        # рука: ручной in_progress/completed заменяется фактическим;
-        # cancelled и scheduled/confirmed остаются за пользователем.
-        if "status" in data and updates.get("status") in SYNCED_APPOINTMENT_STATUSES:
-            derived = appointment_status_for_wo(db, shop, linked_wo_id)
-            if derived:
-                updates["status"] = derived
-
-    valid_statuses = {s["key"] for s in _get_statuses(db)}
-    if "status" in updates and updates["status"] not in valid_statuses:
-        updates["status"] = existing.get("status", "scheduled")
-
-    # Один механик — одна работа в один момент времени. Проверяем только
-    # когда меняется сама бронь (время, бригада, WO) или запись возвращается
-    # из cancelled: правка заголовка/статуса старой записи с конфликтом
-    # (помечена «!» на сетке) должна проходить.
-    new_mechanics = updates["mechanics"] if "mechanics" in updates else _event_mechanics(existing)
-    new_ids = [str(m["id"]) for m in new_mechanics]
-    old_ids = [str(m["id"]) for m in _event_mechanics(existing)]
-    new_status = updates.get("status", existing.get("status"))
-    new_wo = linked_wo_id
-    booking_changed = (
-        new_ids != old_ids
-        or new_start != existing.get("start_time")
-        or new_end != existing.get("end_time")
-        or new_wo != existing.get("work_order_id")
-        or (existing.get("status") == "cancelled" and new_status != "cancelled")
+    audit_log.log_event(
+        "update", "calendar_event", eid, label=event_label(updated),
+        changes=audit_log.diff_fields(existing, updates, AUDIT_FIELD_LABELS),
     )
-    if booking_changed and new_mechanics and new_status != "cancelled" and new_start and new_end:
-        for m in new_mechanics:
-            conflict = find_mechanic_conflict(db, shop, m["id"], new_start, new_end, exclude_id=eid, exclude_wo_id=new_wo)
-            if conflict:
-                return jsonify({"error": conflict_message(conflict, m["name"]), "conflict_id": str(conflict.get("_id") or "")}), 409
-
-    db.calendar_events.update_one({"_id": eid}, {"$set": updates})
-
-    # Обратная связь: бригаду привязанной записи поменяли (перетащили между
-    # дорожками / модалка) — назначения строк WO следуют за ней, пока работа
-    # не началась (assign_crew_from_appointment). Снятие бригады WO не трогает.
-    # Назначения строк — вход в payroll, поэтому только с правом редактировать
-    # WO; без него меняется запись, а WO — нет. Запись уже обновлена: сбой
-    # синка логируем, PUT не валим.
-    if linked_wo_id and mechanics is not None and new_mechanics and set(new_ids) != set(old_ids):
-        if has_permission("work_orders.edit"):
-            try:
-                from app.blueprints.work_orders.services.mechanic_editor import assign_crew_from_appointment
-
-                assign_crew_from_appointment(db, shop, linked_wo_id, new_ids, old_ids)
-            except Exception:
-                current_app.logger.exception(
-                    "Calendar: failed to sync WO %s crew from appointment %s", linked_wo_id, eid
-                )
-        else:
-            current_app.logger.info(
-                "Calendar: appointment %s crew changed without work_orders.edit — WO %s assignments left as is",
-                eid, linked_wo_id,
-            )
-
-    updated = db.calendar_events.find_one({"_id": eid})
-    audit_log.log_event("update", "calendar_event", eid, label=updated.get("title") or updated.get("customer_label") or "Appointment",
-                        changes=audit_log.diff_fields(existing, updates, {"start_time": "Start", "end_time": "End", "status": "Status",
-                                                                          "mechanic_name": "Mechanic", "customer_label": "Customer",
-                                                                          "unit_label": "Unit", "title": "Title", "wo_number": "Work order"}))
-    payload = _serialize_event(updated)
-    enrich_linked_appointments(db, shop, [payload], [updated], mechanic_mode=is_mechanic_mode())
-    return jsonify(payload)
+    return jsonify(_present(shop_db, shop, [updated])[0])
 
 
 @calendar_bp.delete("/calendar/api/events/<event_id>")
 @login_required
 @permission_required("calendar.delete")
 def api_delete_event(event_id):
-    db, shop = _get_shop_db()
-    eid = _oid(event_id)
-    if db is None or not eid:
-        return jsonify({"error": "Not found"}), 404
-
-    _existing = db.calendar_events.find_one({"_id": eid, "shop_id": shop["_id"]}, {"title": 1, "customer_label": 1, "start_time": 1, "wo_number": 1})
-    if _existing:
-        audit_log.log_event("delete", "calendar_event", eid, label=_existing.get("title") or _existing.get("customer_label") or "Appointment",
-                            details={"start": str(_existing.get("start_time") or ""), "wo_number": _existing.get("wo_number")})
-    db.calendar_events.delete_one({"_id": eid, "shop_id": shop["_id"]})
-    return jsonify({"ok": True})
-
-
-# ── links from work orders ───────────────────────────────────
-
-def link_event_to_work_order(shop_db, shop: dict, event_id, work_order_id, wo_number) -> bool:
-    """
-    Привязать запись календаря к только что созданному WO (кнопка «Create
-    Work Order» в календаре передаёт calendar_event_id на страницу WO;
-    «Start work» в приложении механика). Клиент/юнит записи становятся
-    клиентом/юнитом WO, статус — по факту работы. Запись, уже привязанная к
-    ДРУГОМУ живому WO, не перепривязывается (лог, False).
-    Возвращает True, если запись найдена и обновлена.
-    """
-    eid = _oid(event_id)
-    wo_id = _oid(work_order_id)
-    if shop_db is None or not eid or not wo_id:
-        return False
-    event = shop_db.calendar_events.find_one({"_id": eid, "shop_id": shop["_id"]})
-    if not event:
-        return False
-    current_wo_id = event.get("work_order_id")
-    if current_wo_id and current_wo_id != wo_id:
-        other = shop_db.work_orders.find_one(
-            {"_id": current_wo_id, "shop_id": shop["_id"], "is_active": True}, {"wo_number": 1}
+    shop_db, shop = _shop()
+    eid = oid(event_id)
+    if shop_db is None or not eid:
+        return jsonify({"ok": True})
+    existing = shop_db.calendar_events.find_one_and_delete({"_id": eid, "shop_id": shop["_id"]})
+    if existing:
+        audit_log.log_event(
+            "delete", "calendar_event", eid, label=event_label(existing),
+            details={"start": naive_iso(existing.get("start_time")), "wo_number": existing.get("wo_number")},
         )
-        if other:
-            current_app.logger.warning(
-                "Calendar: appointment %s is already linked to active WO #%s — not relinking to WO #%s",
-                eid, other.get("wo_number"), wo_number,
-            )
-            return False
-    updates = {"work_order_id": wo_id, "wo_number": wo_number, "updated_at": _utcnow()}
-    snapshot = work_order_snapshot_for_event(shop_db, shop, wo_id)
-    if snapshot:
-        updates.update(identity_updates_for_event(event, snapshot))
-    res = shop_db.calendar_events.update_one({"_id": eid, "shop_id": shop["_id"]}, {"$set": updates})
-    # Запись теперь следует за работой: механик уже начал — она In Progress.
-    sync_linked_appointments_status(shop_db, shop, wo_id)
-    return res.modified_count > 0
-
-
-def unlink_work_order_events(shop_db, shop: dict, work_order_id) -> int:
-    """
-    WO удалён — записи календаря остаются, но больше на него не ссылаются:
-    номер WO снимается, а статус, проставленный синком по работе
-    (in_progress/completed), возвращается в scheduled — без WO это снова
-    просто план.
-    """
-    wo_id = _oid(work_order_id)
-    if shop_db is None or not wo_id:
-        return 0
-    now = _utcnow()
-    linked = {"shop_id": shop["_id"], "work_order_id": wo_id}
-    shop_db.calendar_events.update_many(
-        {**linked, "status": {"$in": list(SYNCED_APPOINTMENT_STATUSES)}},
-        {"$set": {"status": "scheduled", "updated_at": now}},
-    )
-    res = shop_db.calendar_events.update_many(
-        linked,
-        {"$set": {"work_order_id": None, "wo_number": None, "updated_at": now}},
-    )
-    return res.modified_count
+    return jsonify({"ok": True})

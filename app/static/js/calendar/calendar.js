@@ -1,2775 +1,1550 @@
+/*
+ * Calendar — appointments dispatch board (page: /calendar).
+ *
+ * Plain JS, no build step. Sections:
+ *   1. utilities (dates, colours, http)
+ *   2. state + data layer (/calendar/api/*)
+ *   3. rendering (toolbar, legend, grid, blocks)
+ *   4. interactions (navigation, grid click, drag & drop, resize, refresh)
+ *   5. appointment modal
+ *   6. settings modal
+ *   7. boot
+ *
+ * All times are the shop's wall clock without a zone ("YYYY-MM-DDTHH:MM:SS"),
+ * exactly as the API sends and expects them; inside the page an appointment
+ * is {date: "YYYY-MM-DD", startMin, endMin} (minutes since midnight, end may
+ * be 1440 = next-day midnight).
+ */
 (function () {
   "use strict";
 
-  /* SweetAlert-уведомление с fallback на нативный alert. */
-  function notify(message, type) {
-    if (window.appAlert) window.appAlert(message, type || "error");
-    else window.alert(message);
+  const toolbar = document.getElementById("calToolbar");
+  const gridEl = document.getElementById("calGrid");
+  if (!toolbar || !gridEl) return;
+
+  // Re-init safety: if the script runs twice on one document, drop the old timers/listeners.
+  if (window.__roobicoCalendar && typeof window.__roobicoCalendar.destroy === "function") {
+    window.__roobicoCalendar.destroy();
   }
 
-  /* ── constants ── */
-  var DAY_NAMES = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"];
-  var DAY_NAMES_LONG = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-  var MONTH_NAMES = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December",
+  const SLOT = 15;
+  const MIN_HOUR_H = 44;
+  const REFRESH_MS = 30000;
+  const DRAG_THRESHOLD = 4;
+  const UNASSIGNED = "unassigned";
+  const LS_VIEW = "roobico.calendar.view";
+  const LS_MECH = "roobico.calendar.mechanic";
+  const MECH_PALETTE = [
+    "#d81b60", "#e65100", "#00838f", "#6a1b9a", "#2e7d32", "#1565c0",
+    "#8d6e63", "#c2185b", "#f9a825", "#00695c", "#5e35b1", "#ef6c00",
   ];
-  var HOURS_START = 6;
-  var HOURS_END = 21;
-  var SLOT_HEIGHT = 48;
-  var STEP_MINUTES = 15;
-  var PX_PER_MINUTE = SLOT_HEIGHT / 60;
-  var UNASSIGNED_KEY = "unassigned";
-  var UNSCHEDULED_ROW_H = 66; // first-render estimate of the "Not scheduled" strip; measured afterwards
-  var LS_PREFIX = "roobico.calendar.";
+  const UNASSIGNED_COLOR = "#8a8f98";
+  const DEFAULT_STATUSES = [
+    { key: "scheduled", label: "Scheduled", color: "#1a73e8" },
+    { key: "confirmed", label: "Confirmed", color: "#0d904f" },
+    { key: "in_progress", label: "In Progress", color: "#e8710a" },
+    { key: "completed", label: "Completed", color: "#5f6368" },
+    { key: "cancelled", label: "Cancelled", color: "#d93025" },
+  ];
+  const SYSTEM_STATUS_KEYS = ["scheduled", "in_progress", "completed", "cancelled"];
 
-  function lsGet(key, fallback) {
-    try {
-      var v = window.localStorage.getItem(LS_PREFIX + key);
-      return v === null ? fallback : v;
-    } catch (e) { return fallback; }
+  const can = {
+    create: toolbar.dataset.canCreate === "1",
+    edit: toolbar.dataset.canEdit === "1",
+    delete: toolbar.dataset.canDelete === "1",
+    manageSettings: toolbar.dataset.canManageSettings === "1",
+    createWo: toolbar.dataset.canCreateWo === "1",
+  };
+
+  const $ = (id) => document.getElementById(id);
+  const ui = {
+    prev: $("calPrev"), today: $("calToday"), next: $("calNext"), date: $("calDate"), title: $("calTitle"),
+    viewWeek: $("calViewWeek"), viewDay: $("calViewDay"), filter: $("calMechanicFilter"),
+    settingsBtn: $("calSettingsBtn"), legend: $("calLegend"), mechLegend: $("calMechLegend"),
+  };
+
+  // ── 1. Utilities ─────────────────────────────────────────────────────────
+
+  const pad2 = (n) => (n < 10 ? "0" : "") + n;
+  const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const snapDown = (min) => Math.floor(min / SLOT) * SLOT;
+  const snapRound = (min) => Math.round(min / SLOT) * SLOT;
+
+  function isValidIso(s) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "")) && !Number.isNaN(dateFromIso(s).getTime());
   }
-  function lsSet(key, value) {
-    try { window.localStorage.setItem(LS_PREFIX + key, String(value)); } catch (e) { /* private mode */ }
+  function dateFromIso(iso) {
+    const p = String(iso).split("-").map(Number);
+    return new Date(p[0], p[1] - 1, p[2]);
   }
-
-  function calcSlotHeight() {
-    var toolbar = document.querySelector('.cal-toolbar');
-    var topbar = document.querySelector('.app-topbar');
-    var toolbarH = toolbar ? toolbar.offsetHeight : 0;
-    var topbarH = topbar ? topbar.offsetHeight : 0;
-    // Real heights once the grid exists (lane markers row, chips strip that
-    // grows with its chips); estimates for the very first render.
-    var headerEl = container ? container.querySelector(".cal-header-row") : null;
-    var stripEl = container ? container.querySelector(".cal-unscheduled-row") : null;
-    var headerRowH = headerEl ? headerEl.offsetHeight : (viewMode === "week" ? 94 : 70);
-    var stripH = stripEl ? stripEl.offsetHeight : UNSCHEDULED_ROW_H;
-    // Everything above the grid is measured from the container itself (page
-    // padding, topbar, toolbar); below it: grid border, body padding, page bottom.
-    var rect = container ? container.getBoundingClientRect() : null;
-    var above = rect ? rect.top + window.scrollY : topbarH + toolbarH + 40;
-    // (+12: room under the columns for the closing "21:00" label, see .cal-body-scroll)
-    var chrome = above + headerRowH + stripH + 1 + 6 + 16 + 12;
-    var available = window.innerHeight - chrome;
-    var numSlots = HOURS_END - HOURS_START;
-    var h = Math.floor(available / numSlots);
-    return Math.max(h, 30);
-  }
-
-  /* ── state ── */
-  var weekStart = null;
-  var expandedDayIndex = -1;
-  var expandLevel = 0;               // 0 - none, 1 - wide day, 2 - full-width day
-  var selectedDayIndex = 0;          // mechanics view: which day of the week
-  var viewMode = lsGet("view", "week") === "mechanics" ? "mechanics" : "week";
-  var mechanicFilter = "";
-  var showWorkOrders = lsGet("showWO", "1") !== "0";
-  var nowLineTimer = null;
-  var cachedEvents = [];
-  var cachedCustomers = [];
-  var cachedMechanics = [];
-  var cachedStatuses = [];
-  var cachedWoStates = [];
-  var cachedPresets = [];
-  var drag = null; // active drag state
-  var resize = null; // active resize state (the bottom edge of a plan)
-  var dragJustEnded = false;
-
-  /* ── DOM refs ── */
-  var container = document.getElementById("calWeekContainer");
-  var toolbarEl = document.querySelector(".cal-toolbar");
-  var canCreateWO = !!(toolbarEl && toolbarEl.getAttribute("data-can-create-wo") === "1");
-  var canCreate = !!(toolbarEl && toolbarEl.getAttribute("data-can-create") === "1");
-  var canEdit = !!(toolbarEl && toolbarEl.getAttribute("data-can-edit") === "1");
-  var canDelete = !!(toolbarEl && toolbarEl.getAttribute("data-can-delete") === "1");
-  var titleEl   = document.getElementById("calTitle");
-  var btnPrev   = document.getElementById("calPrev");
-  var btnNext   = document.getElementById("calNext");
-  var btnToday  = document.getElementById("calToday");
-  var btnViewWeek = document.getElementById("calViewWeek");
-  var btnViewMech = document.getElementById("calViewMechanics");
-  var mechFilterEl = document.getElementById("calMechanicFilter");
-  var showWOEl = document.getElementById("calShowWO");
-  var legendEl = document.getElementById("calLegend");
-  var modalEl   = document.getElementById("appointmentModal");
-  var modalTitle = document.getElementById("appointmentModalLabel");
-  var elEventId         = document.getElementById("apptEventId");
-  var elWorkOrderId     = document.getElementById("apptWorkOrderId");
-  var elLinkedWO        = document.getElementById("apptLinkedWO");
-  var elLinkedWONumber  = document.getElementById("apptLinkedWONumber");
-  var elLinkedWOState   = document.getElementById("apptLinkedWOState");
-  var elLinkedWOSummary = document.getElementById("apptLinkedWOSummary");
-  var elLinkedWOOpen    = document.getElementById("apptLinkedWOOpen");
-  var elUnlinkWOBtn     = document.getElementById("apptUnlinkWOBtn");
-  var elCustomer        = document.getElementById("apptCustomer");
-  var elCustomerSearch  = document.getElementById("apptCustomerSearch");
-  var elCustomerDrop    = document.getElementById("apptCustomerDrop");
-  var elUnit            = document.getElementById("apptUnit");
-  var elUnitSearch      = document.getElementById("apptUnitSearch");
-  var elUnitDrop        = document.getElementById("apptUnitDrop");
-  var elDate            = document.getElementById("apptDate");
-  var elDateLabel       = document.getElementById("apptDateLabel");
-  var elStart           = document.getElementById("apptStart");
-  var elEnd             = document.getElementById("apptEnd");
-  var elMechanic        = document.getElementById("apptMechanic");
-  var elMechanicSearch  = document.getElementById("apptMechanicSearch");
-  var elMechanicDrop    = document.getElementById("apptMechanicDrop");
-  var elMechanicTags    = document.getElementById("apptMechanicTags");
-  var elStatusGrp       = document.getElementById("apptStatusGroup");
-  var elStatusHint      = document.getElementById("apptStatusHint");
-  var elLinkedFieldsHint = document.getElementById("apptLinkedFieldsHint");
-  var elTitleInp        = document.getElementById("apptTitle");
-  var elPresetSearch    = document.getElementById("apptPresetSearch");
-  var elPresetDrop      = document.getElementById("apptPresetDrop");
-  var elPresetPendingId = document.getElementById("apptPresetPendingId");
-  var elPresetAddBtn    = document.getElementById("apptPresetAddBtn");
-  var elPresetTags      = document.getElementById("apptPresetTags");
-  var elSaveBtn         = document.getElementById("apptSaveBtn");
-  var elDelBtn          = document.getElementById("apptDeleteBtn");
-  var elCreateWOBtn     = document.getElementById("apptCreateWOBtn");
-  var selectedPresets   = []; // [{id, name}]
-  var selectedMechanics = []; // [{id, name}] — one plan, one or several mechanics
-  var unlinkRequested   = false;
-  var linkedEvent       = null;  // event shown in the "Linked to WO" panel (null once unlinked)
-
-  // WO modal refs
-  var woModalEl   = document.getElementById("woEventModal");
-  var woModalTitle = document.getElementById("woEventModalLabel");
-  var woStateEl   = document.getElementById("woEventState");
-  var woWhenEl    = document.getElementById("woEventWhen");
-  var woCustomerEl = document.getElementById("woEventCustomer");
-  var woUnitEl    = document.getElementById("woEventUnit");
-  var woMechanicsEl = document.getElementById("woEventMechanics");
-  var woLaborsEl  = document.getElementById("woEventLabors");
-  var woHoursEl   = document.getElementById("woEventHours");
-  var woHintEl    = document.getElementById("woEventHint");
-  var woScheduleBtn = document.getElementById("woEventScheduleBtn");
-  var woOpenBtn   = document.getElementById("woEventOpenBtn");
-  var currentWoEvent = null;
-
-  if (!container) return;
-
-  var bsModal = null;
-  function getModal() {
-    if (!bsModal && modalEl) {
-      try { bsModal = new bootstrap.Modal(modalEl); } catch (e) {}
-    }
-    return bsModal;
-  }
-  var bsWoModal = null;
-  function getWoModal() {
-    if (!bsWoModal && woModalEl) {
-      try { bsWoModal = new bootstrap.Modal(woModalEl); } catch (e) {}
-    }
-    return bsWoModal;
-  }
-
-  /* ── date helpers ── */
-
-  function cloneDate(d) {
-    return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  }
-
-  function mondayOfWeek(d) {
-    var c = cloneDate(d);
-    var diff = (c.getDay() + 6) % 7;
-    c.setDate(c.getDate() - diff);
-    return c;
-  }
-
-  function addDays(d, n) {
-    var c = cloneDate(d);
-    c.setDate(c.getDate() + n);
-    return c;
-  }
-
-  function isSameDay(a, b) {
-    return a.getFullYear() === b.getFullYear() &&
-           a.getMonth() === b.getMonth() &&
-           a.getDate() === b.getDate();
-  }
-
-  function pad2(v) { return String(v).padStart(2, "0"); }
-
-  function formatDateShort(d) {
-    return MONTH_NAMES[d.getMonth()].slice(0, 3) + " " + d.getDate();
-  }
-
-  function toISODate(d) {
+  function isoFromDate(d) {
     return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
   }
-
-  function toLocalISO(dateStr, timeStr) {
-    return dateStr + "T" + timeStr + ":00";
+  function addDays(iso, n) {
+    const d = dateFromIso(iso);
+    d.setDate(d.getDate() + n);
+    return isoFromDate(d);
   }
-
-  function parseISODate(str) {
-    var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(str || ""));
-    if (!m) return null;
-    return new Date(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10));
+  function weekStartOf(iso) {
+    const d = dateFromIso(iso);
+    const dow = (d.getDay() + 6) % 7; // Monday = 0
+    return addDays(iso, -dow);
   }
-
-  function dayIndexOf(date) {
-    for (var d = 0; d < 7; d++) {
-      if (isSameDay(date, addDays(weekStart, d))) return d;
-    }
-    return -1;
+  function minutesOf(dt) {
+    const m = /T(\d{2}):(\d{2})/.exec(String(dt || ""));
+    return m ? Number(m[1]) * 60 + Number(m[2]) : 0;
   }
-
-  function fmtTime(d) {
-    return pad2(d.getHours()) + ":" + pad2(d.getMinutes());
-  }
-
-  /* Time selects know only 15-minute steps between HOURS_START and HOURS_END:
-     snap any (start, end) in minutes of the day into that grid, end > start. */
-  function clampGridMinutes(min) {
-    return Math.max(HOURS_START * 60, Math.min(HOURS_END * 60, min));
-  }
-
-  function snapRange(startMin, endMin) {
-    var st = clampGridMinutes(Math.floor(startMin / STEP_MINUTES) * STEP_MINUTES);
-    var en = clampGridMinutes(Math.ceil(endMin / STEP_MINUTES) * STEP_MINUTES);
-    if (en <= st) en = Math.min(st + STEP_MINUTES, HOURS_END * 60);
-    if (en <= st) st = en - STEP_MINUTES;
-    return [st, en];
-  }
-
-  function minutesToValue(min) {
+  function fmtMin(min) {
     return pad2(Math.floor(min / 60)) + ":" + pad2(min % 60);
   }
-
-  function fmtDuration(seconds) {
-    var s = Math.max(0, Math.floor(Number(seconds) || 0));
-    var h = Math.floor(s / 3600);
-    var m = Math.round((s % 3600) / 60);
-    return h > 0 ? h + "h " + m + "m" : m + "m";
+  function fmtRange(s, e) {
+    return fmtMin(s) + "–" + fmtMin(e);
+  }
+  /* First line of a block: the end time sits in its own span so a very narrow block can drop it (CSS). */
+  function timeHtml(s, e) {
+    return fmtMin(s) + '<span class="cal-event-time-end">–' + fmtMin(e) + "</span>";
+  }
+  function toApiDatetime(date, min) {
+    if (min >= 1440) return addDays(date, 1) + "T00:00:00";
+    return date + "T" + fmtMin(min) + ":00";
+  }
+  function monthName(d) {
+    return d.toLocaleDateString("en-US", { month: "long" });
+  }
+  function longDate(iso) {
+    return dateFromIso(iso).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  }
+  function weekTitle(ws) {
+    const a = dateFromIso(ws);
+    const b = dateFromIso(addDays(ws, 6));
+    const ma = monthName(a);
+    const mb = monthName(b);
+    if (a.getFullYear() !== b.getFullYear()) {
+      return ma + " " + a.getDate() + ", " + a.getFullYear() + " – " + mb + " " + b.getDate() + ", " + b.getFullYear();
+    }
+    if (ma !== mb) return ma + " " + a.getDate() + " – " + mb + " " + b.getDate() + ", " + a.getFullYear();
+    return ma + " " + a.getDate() + " – " + b.getDate() + ", " + a.getFullYear();
   }
 
-  /* ── time select options (15-min step) ── */
-
-  function buildTimeOptions(selectEl) {
-    selectEl.innerHTML = "";
-    for (var h = HOURS_START; h <= HOURS_END; h++) {
-      for (var m = 0; m < 60; m += STEP_MINUTES) {
-        if (h === HOURS_END && m > 0) break;
-        var opt = document.createElement("option");
-        var val = pad2(h) + ":" + pad2(m);
-        opt.value = val;
-        opt.textContent = val;
-        selectEl.appendChild(opt);
+  /* Current wall clock of the shop (body[data-app-timezone]); falls back to the browser clock. */
+  function shopNow() {
+    const now = new Date();
+    const tz = document.body.getAttribute("data-app-timezone") || "";
+    if (tz) {
+      try {
+        const parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: tz, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+        }).formatToParts(now);
+        const get = (t) => { const p = parts.find((x) => x.type === t); return p ? p.value : ""; };
+        let hour = Number(get("hour"));
+        if (hour === 24) hour = 0;
+        const date = get("year") + "-" + get("month") + "-" + get("day");
+        if (isValidIso(date)) return { date, minutes: hour * 60 + Number(get("minute")) };
+      } catch (e) {
+        // unknown zone name — browser clock below
       }
     }
+    const fallback = toolbar.dataset.today;
+    return { date: isValidIso(fallback) ? fallback : isoFromDate(now), minutes: now.getHours() * 60 + now.getMinutes() };
   }
 
-  // pre-fill both selects
-  buildTimeOptions(elStart);
-  buildTimeOptions(elEnd);
-
-  /* ── event classification ── */
-
-  function isWorkOrderEvent(ev) {
-    return !!(ev && (ev.kind === "work_order" || ev.work_order_id));
+  function hexToRgb(hex) {
+    let h = String(hex || "").trim().replace(/^#/, "");
+    if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+    if (!/^[0-9a-f]{6}$/i.test(h)) return null;
+    const n = parseInt(h, 16);
+    return [n >> 16, (n >> 8) & 255, n & 255];
   }
-
-  function isVirtual(ev) {
-    return !!(ev && ev.is_virtual);
+  /* Black or white text for a given background, by perceived brightness. */
+  function textOn(bg) {
+    const rgb = hexToRgb(bg);
+    if (!rgb) return "#ffffff";
+    const yiq = (rgb[0] * 299 + rgb[1] * 587 + rgb[2] * 114) / 1000;
+    return yiq >= 150 ? "#1b1b1b" : "#ffffff";
   }
-
-  function eventMechanicIds(ev) {
-    if (Array.isArray(ev.mechanic_ids) && ev.mechanic_ids.length) return ev.mechanic_ids.map(String);
-    if (ev.mechanic_id) return [String(ev.mechanic_id)];
-    return [];
-  }
-
-  function eventMechanicNames(ev) {
-    if (Array.isArray(ev.mechanics) && ev.mechanics.length) {
-      return ev.mechanics.map(function (m) { return m.name || ""; }).filter(Boolean);
-    }
-    return ev.mechanic_name ? [ev.mechanic_name] : [];
-  }
-
-  /* Each mechanic gets a stable colour (by position in the shop's mechanic
-     list) and initials; both appear in the legend on top and on every block. */
-  // Deliberately away from the status hues (amber / blue / violet / teal /
-  // green), so "who" never looks like "what state".
-  var MECHANIC_COLORS = ["#d81b60", "#f4511e", "#8d6e63", "#00acc1", "#c0ca33", "#6d4c41", "#ad1457", "#ff8f00", "#607d8b", "#9e9d24", "#e91e63", "#546e7a"];
-
-  function mechanicIndex(id) {
-    for (var i = 0; i < cachedMechanics.length; i++) {
-      if (String(cachedMechanics[i].id) === String(id)) return i;
-    }
-    return -1;
-  }
-
-  function mechanicColor(id) {
-    var idx = mechanicIndex(id);
-    if (idx < 0) {
-      // not in the current list (deactivated) — hash the id
-      var h = 0, str = String(id || "");
-      for (var c = 0; c < str.length; c++) h = (h * 31 + str.charCodeAt(c)) & 0xffff;
-      idx = h;
-    }
-    return MECHANIC_COLORS[idx % MECHANIC_COLORS.length];
-  }
-
-  function mechanicInitials(name) {
-    var parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  function initialsOf(name) {
+    const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
     if (!parts.length) return "?";
     if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   }
 
-  function eventMechanicList(ev) {
-    if (Array.isArray(ev.mechanics) && ev.mechanics.length) return ev.mechanics;
-    if (ev.mechanic_id) return [{ id: ev.mechanic_id, name: ev.mechanic_name || "" }];
-    return [];
+  /* Date inputs may be enhanced by flatpickr (public.js): keep the picker in sync with the value. */
+  function setDateInput(el, ymd) {
+    el.value = ymd || "";
+    if (el._flatpickr) el._flatpickr.setDate(ymd || null, false, "Y-m-d");
+  }
+  function setDateDisabled(el, flag) {
+    el.disabled = flag;
+    if (el._flatpickr && el._flatpickr.altInput) el._flatpickr.altInput.disabled = flag;
   }
 
-  function woStateInfo(key) {
-    for (var i = 0; i < cachedWoStates.length; i++) {
-      if (cachedWoStates[i].key === key) return cachedWoStates[i];
+  function lsGet(key) { try { return window.localStorage.getItem(key); } catch (e) { return null; } }
+  function lsSet(key, value) { try { window.localStorage.setItem(key, value); } catch (e) { /* private mode */ } }
+
+  function notify(message, type) {
+    if (typeof window.appAlert === "function") return window.appAlert(message, type || "info");
+    window.alert(message);
+    return Promise.resolve();
+  }
+  function confirmDialog(message) {
+    if (typeof window.appConfirm === "function") return window.appConfirm(message);
+    return Promise.resolve(window.confirm(message));
+  }
+
+  /* JSON fetch; CSRF header is added by static/js/csrf.js. Rejects with Error(message) on !ok. */
+  function api(method, url, body) {
+    const opts = { method, credentials: "same-origin", headers: { Accept: "application/json" } };
+    if (body !== undefined) {
+      opts.headers["Content-Type"] = "application/json";
+      opts.body = JSON.stringify(body);
     }
-    return { key: key || "open", label: key ? key.replace(/_/g, " ") : "Work order", color: "#1a73e8" };
+    return fetch(url, opts).then((res) => res.text().then((text) => {
+      let data = null;
+      if (text) { try { data = JSON.parse(text); } catch (e) { data = null; } }
+      if (!res.ok) {
+        const err = new Error((data && data.error) || ("Request failed (" + res.status + ")"));
+        err.status = res.status;
+        throw err;
+      }
+      return data;
+    }));
   }
 
-  function eventColor(ev, statusColors) {
-    if (isWorkOrderEvent(ev) && ev.wo_state) return woStateInfo(ev.wo_state).color;
-    return statusColors[ev.status] || "#1a73e8";
-  }
+  // ── 2. State & data layer ────────────────────────────────────────────────
 
-  function woPageUrl(workOrderId) {
-    return "/work_orders/details?work_order_id=" + encodeURIComponent(workOrderId);
-  }
+  const state = {
+    view: "week",
+    date: shopNow().date,
+    filter: "",
+    settings: { statuses: DEFAULT_STATUSES.slice(), start_hour: 6, end_hour: 20, slot_minutes: SLOT },
+    mechanics: [],
+    woStates: [],
+    events: [],
+    eventsSig: "",
+    loadedWeek: "",
+    loadError: "",
+    customers: null,
+    presets: null,
+    unitsCache: {},
+    columns: [],
+    visStart: 0,
+    visEnd: 1440,
+    hourH: 48,
+  };
+  let drag = null;
+  let suppressClickUntil = 0;
+  let refreshTimer = null;
+  let nowTimer = null;
+  let resizeTimer = null;
 
-  function passesFilters(ev) {
-    if (!showWorkOrders && isVirtual(ev)) return false;
-    if (mechanicFilter) {
-      var ids = eventMechanicIds(ev);
-      if (mechanicFilter === UNASSIGNED_KEY) return ids.length === 0;
-      return ids.indexOf(mechanicFilter) !== -1;
+  const statusByKey = (key) => state.settings.statuses.find((s) => s.key === key) || null;
+  const statusColor = (key) => { const s = statusByKey(key); return s ? s.color : "#888888"; };
+  const statusLabel = (key) => { const s = statusByKey(key); return s ? s.label : String(key || "").replace(/_/g, " "); };
+  const mechanicById = (id) => state.mechanics.find((m) => m.id === id) || null;
+  function mechColor(id) {
+    const idx = state.mechanics.findIndex((m) => m.id === id);
+    return idx >= 0 ? MECH_PALETTE[idx % MECH_PALETTE.length] : UNASSIGNED_COLOR;
+  }
+  const eventById = (id) => state.events.find((e) => e.id === id) || null;
+  const anyModalOpen = () => !!document.querySelector(".modal.show");
+
+  function normalizeEvent(raw) {
+    const start = String(raw.start_time || "");
+    const end = String(raw.end_time || "");
+    const date = start.slice(0, 10);
+    const startMin = minutesOf(start);
+    let endMin = end.slice(0, 10) > date ? 1440 : minutesOf(end);
+    if (endMin <= startMin) endMin = Math.min(1440, startMin + SLOT);
+    let mechanics = (Array.isArray(raw.mechanics) ? raw.mechanics : [])
+      .filter((m) => m && m.id)
+      .map((m) => ({ id: String(m.id), name: String(m.name || "") }));
+    if (!mechanics.length && raw.mechanic_id) {
+      mechanics = [{ id: String(raw.mechanic_id), name: String(raw.mechanic_name || "") }];
     }
-    return true;
+    return {
+      id: String(raw.id || ""),
+      date, startMin, endMin,
+      title: String(raw.title || ""),
+      status: String(raw.status || "scheduled"),
+      customerId: String(raw.customer_id || ""),
+      customerLabel: String(raw.customer_label || ""),
+      unitId: String(raw.unit_id || ""),
+      unitLabel: String(raw.unit_label || ""),
+      mechanics,
+      presets: (Array.isArray(raw.presets) ? raw.presets : [])
+        .filter((p) => p && p.id)
+        .map((p) => ({ id: String(p.id), name: String(p.name || "") })),
+      workOrderId: String(raw.work_order_id || ""),
+      woNumber: raw.wo_number == null ? null : raw.wo_number,
+      woState: String(raw.wo_state || ""),
+      laborSummary: Array.isArray(raw.labor_summary) ? raw.labor_summary.map(String) : [],
+    };
   }
 
-  /* ── title ── */
-
-  function updateTitle() {
-    var txt;
-    if (viewMode === "mechanics") {
-      var day = addDays(weekStart, selectedDayIndex);
-      txt = DAY_NAMES_LONG[selectedDayIndex] + ", " + MONTH_NAMES[day.getMonth()] + " " + day.getDate() + ", " + day.getFullYear();
-      titleEl.textContent = txt;
-      return;
+  function applySettings(data) {
+    const s = data && typeof data === "object" ? data : {};
+    const statuses = (Array.isArray(s.statuses) ? s.statuses : [])
+      .filter((x) => x && x.key)
+      .map((x) => ({ key: String(x.key), label: String(x.label || x.key), color: hexToRgb(x.color) ? String(x.color) : "#888888" }));
+    state.settings = {
+      statuses: statuses.length ? statuses : DEFAULT_STATUSES.slice(),
+      start_hour: Number.isInteger(s.start_hour) ? clamp(s.start_hour, 0, 23) : 6,
+      end_hour: Number.isInteger(s.end_hour) ? clamp(s.end_hour, 1, 24) : 20,
+      slot_minutes: SLOT,
+    };
+    if (state.settings.end_hour <= state.settings.start_hour) {
+      state.settings.start_hour = 6;
+      state.settings.end_hour = 20;
     }
-    var end = addDays(weekStart, 6);
-    if (weekStart.getMonth() === end.getMonth()) {
-      txt = MONTH_NAMES[weekStart.getMonth()] + " " + weekStart.getDate() + " – " + end.getDate() + ", " + weekStart.getFullYear();
-    } else if (weekStart.getFullYear() === end.getFullYear()) {
-      txt = formatDateShort(weekStart) + " – " + formatDateShort(end) + ", " + weekStart.getFullYear();
-    } else {
-      txt = formatDateShort(weekStart) + ", " + weekStart.getFullYear() + " – " + formatDateShort(end) + ", " + end.getFullYear();
-    }
-    titleEl.textContent = txt;
   }
 
-  /* ── API helpers ── */
-
-  function fetchJSON(url, opts) {
-    return fetch(url, opts).then(function (r) {
-      return r.json().catch(function () { return {}; }).then(function (data) {
-        if (!r.ok) {
-          var msg = (data && data.error) ? data.error : ("HTTP " + r.status);
-          throw new Error(msg);
-        }
-        return data;
+  function loadSettings() {
+    return api("GET", "/calendar/api/settings")
+      .then(applySettings)
+      .catch((err) => {
+        console.error("calendar settings", err);
+        applySettings(null);
+        notify("Could not load calendar settings — using defaults.", "warning");
       });
-    });
-  }
-
-  function sendJSON(url, method, payload) {
-    return fetchJSON(url, {
-      method: method,
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload || {}),
-    });
-  }
-
-  function loadCustomers() {
-    return fetchJSON("/calendar/api/customers").then(function (data) {
-      cachedCustomers = Array.isArray(data) ? data : [];
-    });
   }
 
   function loadMechanics() {
-    return fetchJSON("/calendar/api/mechanics").then(function (data) {
-      cachedMechanics = Array.isArray(data) ? data : [];
-      renderMechanicFilter();
-      renderLegend();
-    });
-  }
-
-  function loadStatuses() {
-    return fetchJSON("/calendar/api/statuses").then(function (data) {
-      cachedStatuses = Array.isArray(data) ? data : [];
-    });
-  }
-
-  function loadWoStates() {
-    return fetchJSON("/calendar/api/wo_states").then(function (data) {
-      cachedWoStates = Array.isArray(data) ? data : [];
-      renderLegend();
-    });
-  }
-
-  function loadPresets() {
-    return fetchJSON("/calendar/api/presets").then(function (data) {
-      cachedPresets = Array.isArray(data) ? data : [];
-    });
-  }
-
-  function loadUnits(customerId) {
-    if (!customerId) return Promise.resolve([]);
-    return fetchJSON("/calendar/api/units/" + customerId);
-  }
-
-  var loadSeq = 0;
-
-  function loadEvents() {
-    var ws = toISODate(weekStart);
-    var we = toISODate(addDays(weekStart, 7));
-    var url = "/calendar/api/events?start=" + ws + "T00:00:00&end=" + we + "T00:00:00&include_work_orders=1";
-    var seq = ++loadSeq;
-    return fetchJSON(url)
-      .then(function (data) {
-        if (seq !== loadSeq) return; // a newer week was requested meanwhile
-        cachedEvents = Array.isArray(data) ? data : [];
-        renderEvents();
-        updateMechanicHeaderCounts();
-        liveSignature = null; // fresh data on screen: the next poll re-baselines instead of reloading
+    return api("GET", "/calendar/api/mechanics")
+      .then((rows) => {
+        state.mechanics = (Array.isArray(rows) ? rows : [])
+          .filter((m) => m && m.id)
+          .map((m) => ({ id: String(m.id), name: String(m.name || ""), role: String(m.role || "") }));
       })
-      .catch(function (e) {
-        notify("Could not load calendar events: " + (e.message || e), "error");
+      .catch((err) => {
+        console.error("calendar mechanics", err);
+        state.mechanics = [];
+        notify("Could not load the mechanics list.", "error");
       });
   }
 
-  /* ── toolbar: filters, legend ── */
-
-  function renderMechanicFilter() {
-    if (!mechFilterEl) return;
-    var current = mechFilterEl.value || mechanicFilter;
-    mechFilterEl.innerHTML = "";
-    var optAll = document.createElement("option");
-    optAll.value = "";
-    optAll.textContent = "All mechanics";
-    mechFilterEl.appendChild(optAll);
-    for (var i = 0; i < cachedMechanics.length; i++) {
-      var opt = document.createElement("option");
-      opt.value = cachedMechanics[i].id;
-      opt.textContent = cachedMechanics[i].name;
-      mechFilterEl.appendChild(opt);
-    }
-    var optNone = document.createElement("option");
-    optNone.value = UNASSIGNED_KEY;
-    optNone.textContent = "Unassigned only";
-    mechFilterEl.appendChild(optNone);
-    mechFilterEl.value = current;
-    if (mechFilterEl.value !== current) { mechFilterEl.value = ""; mechanicFilter = ""; }
+  function loadWoStates() {
+    return api("GET", "/calendar/api/wo_states")
+      .then((rows) => { state.woStates = Array.isArray(rows) ? rows : []; })
+      .catch((err) => { console.error("calendar wo_states", err); state.woStates = []; });
   }
 
-  function renderLegend() {
-    if (!legendEl) return;
-    legendEl.innerHTML = "";
-    var showStates = showWorkOrders && cachedWoStates.length > 0;
-    if (!showStates && !cachedMechanics.length) { legendEl.classList.add("d-none"); return; }
-    legendEl.classList.remove("d-none");
-    if (showStates) {
-      var label = document.createElement("span");
-      label.className = "cal-legend-label";
-      label.textContent = "Work orders:";
-      legendEl.appendChild(label);
-      for (var i = 0; i < cachedWoStates.length; i++) {
-        var item = document.createElement("span");
-        item.className = "cal-legend-item";
-        var dot = document.createElement("span");
-        dot.className = "cal-legend-dot";
-        dot.style.backgroundColor = cachedWoStates[i].color;
-        item.appendChild(dot);
-        item.appendChild(document.createTextNode(cachedWoStates[i].label));
-        legendEl.appendChild(item);
+  /* Loads the week that contains state.date. silent = live refresh (no toasts, re-render only on change). */
+  function loadEvents(silent) {
+    const ws = weekStartOf(state.date);
+    const url = "/calendar/api/events?start=" + encodeURIComponent(ws + "T00:00:00") +
+      "&end=" + encodeURIComponent(addDays(ws, 7) + "T00:00:00");
+    return api("GET", url).then((rows) => {
+      const list = Array.isArray(rows) ? rows : [];
+      const sig = JSON.stringify(list);
+      const changed = sig !== state.eventsSig || state.loadedWeek !== ws;
+      state.eventsSig = sig;
+      state.loadedWeek = ws;
+      state.loadError = "";
+      if (changed) state.events = list.map(normalizeEvent).filter((e) => e.id && e.date);
+      return changed;
+    }).catch((err) => {
+      console.error("calendar events", err);
+      if (!silent) {
+        state.loadError = err.message || "Could not load appointments";
+        notify(state.loadError, "error");
       }
-      var hint = document.createElement("span");
-      hint.className = "cal-legend-hint";
-      hint.textContent = "Blocks = when mechanics actually worked (from their timers). Work orders with no time yet sit in the \"Not scheduled\" strip.";
-      legendEl.appendChild(hint);
-    }
-    renderMechanicMarkers();
+      return false;
+    });
   }
 
-  /* Who is who: one marker per mechanic (colour + initials + name). Click a
-     marker to show only that mechanic; click again to show everyone. */
-  function renderMechanicMarkers() {
-    if (!legendEl || !cachedMechanics.length) return;
-    if (legendEl.childNodes.length) {
-      var br = document.createElement("span");
-      br.className = "cal-legend-break";
-      legendEl.appendChild(br);
+  function upsertEvent(raw) {
+    const ev = normalizeEvent(raw);
+    const idx = state.events.findIndex((e) => e.id === ev.id);
+    const inRange = state.loadedWeek && ev.date >= state.loadedWeek && ev.date < addDays(state.loadedWeek, 7);
+    if (idx >= 0) {
+      if (inRange) state.events[idx] = ev; else state.events.splice(idx, 1);
+    } else if (inRange) {
+      state.events.push(ev);
     }
-    var label = document.createElement("span");
-    label.className = "cal-legend-label";
-    label.textContent = "Mechanics:";
-    legendEl.appendChild(label);
-    for (var i = 0; i < cachedMechanics.length; i++) {
-      (function (m) {
-        var marker = document.createElement("button");
-        marker.type = "button";
-        marker.className = "cal-mech-marker" + (mechanicFilter === String(m.id) ? " active" : "");
-        marker.title = mechanicFilter === String(m.id) ? "Show everyone" : "Show only " + m.name;
-        var dot = document.createElement("span");
-        dot.className = "cal-mech-badge";
-        dot.style.backgroundColor = mechanicColor(m.id);
-        dot.textContent = mechanicInitials(m.name);
-        marker.appendChild(dot);
-        marker.appendChild(document.createTextNode(m.name));
-        marker.addEventListener("click", function () {
-          setMechanicFilter(mechanicFilter === String(m.id) ? "" : String(m.id));
-        });
-        legendEl.appendChild(marker);
-      })(cachedMechanics[i]);
-    }
+    state.eventsSig = "";
+    return ev;
   }
 
-  function setMechanicFilter(value) {
-    mechanicFilter = value || "";
-    if (mechFilterEl) mechFilterEl.value = mechanicFilter;
-    renderLegend();
-    if (viewMode === "mechanics") render();
-    else { renderEvents(); }
+  function removeEvent(id) {
+    state.events = state.events.filter((e) => e.id !== id);
+    state.eventsSig = "";
   }
 
-  function setViewMode(mode) {
-    viewMode = mode === "mechanics" ? "mechanics" : "week";
-    lsSet("view", viewMode);
-    if (btnViewWeek) btnViewWeek.classList.toggle("active", viewMode === "week");
-    if (btnViewMech) btnViewMech.classList.toggle("active", viewMode === "mechanics");
-    if (viewMode === "mechanics") {
-      var todayIdx = dayIndexOf(new Date());
-      if (selectedDayIndex < 0 || selectedDayIndex > 6) selectedDayIndex = todayIdx >= 0 ? todayIdx : 0;
-    }
-    expandedDayIndex = -1;
-    expandLevel = 0;
-    render();
+  const loadCustomers = () => state.customers
+    ? Promise.resolve(state.customers)
+    : api("GET", "/calendar/api/customers").then((rows) => { state.customers = Array.isArray(rows) ? rows : []; return state.customers; });
+  const loadPresets = () => state.presets
+    ? Promise.resolve(state.presets)
+    : api("GET", "/calendar/api/presets").then((rows) => { state.presets = Array.isArray(rows) ? rows : []; return state.presets; });
+  const loadUnits = (customerId) => {
+    if (!customerId) return Promise.resolve([]);
+    if (state.unitsCache[customerId]) return Promise.resolve(state.unitsCache[customerId]);
+    return api("GET", "/calendar/api/units/" + encodeURIComponent(customerId))
+      .then((rows) => { state.unitsCache[customerId] = Array.isArray(rows) ? rows : []; return state.unitsCache[customerId]; });
+  };
+
+  // ── 3. Rendering ─────────────────────────────────────────────────────────
+
+  /* A mechanic who is no longer assignable (deactivated, lost the role) is missing from
+     state.mechanics; an appointment whose whole crew is like that counts as unassigned, so
+     the By-mechanic view and the Unassigned filter never lose sight of it. */
+  const hasKnownMechanic = (ev) => ev.mechanics.some((m) => !!mechanicById(m.id));
+
+  function passesFilter(ev) {
+    if (!state.filter) return true;
+    if (state.filter === UNASSIGNED) return !hasKnownMechanic(ev);
+    return ev.mechanics.some((m) => m.id === state.filter);
   }
 
-  /* ── columns (days in week view, mechanics in mechanics view) ── */
-
-  function getColumns() {
-    var cols = [];
-    if (viewMode === "mechanics") {
-      var day = addDays(weekStart, selectedDayIndex);
-      for (var i = 0; i < cachedMechanics.length; i++) {
-        var m = cachedMechanics[i];
-        if (mechanicFilter === UNASSIGNED_KEY || (mechanicFilter && mechanicFilter !== String(m.id))) continue;
-        cols.push({ key: "mech:" + m.id, mechanicId: m.id, mechanicName: m.name, role: m.role || "", date: day, dayIndex: selectedDayIndex });
-      }
-      if (!mechanicFilter || mechanicFilter === UNASSIGNED_KEY) {
-        cols.push({ key: "mech:" + UNASSIGNED_KEY, mechanicId: "", mechanicName: "Unassigned", role: "", date: day, dayIndex: selectedDayIndex, unassigned: true });
-      }
-      return cols;
+  /* Columns of the current view: week → 7 dates; day → mechanics (+ Unassigned) for state.date. */
+  function buildColumns() {
+    const today = shopNow().date;
+    if (state.view === "week") {
+      const ws = weekStartOf(state.date);
+      return Array.from({ length: 7 }, (_, i) => {
+        const date = addDays(ws, i);
+        const d = dateFromIso(date);
+        return {
+          key: date, date, mechId: null, isToday: date === today,
+          dow: d.toLocaleDateString("en-US", { weekday: "short" }), dom: d.getDate(),
+          events: state.events.filter((e) => e.date === date && passesFilter(e)),
+        };
+      });
     }
-    for (var d = 0; d < 7; d++) {
-      cols.push({ key: "day:" + d, date: addDays(weekStart, d), dayIndex: d });
+    const dayEvents = state.events.filter((e) => e.date === state.date);
+    const cols = state.mechanics
+      .filter((m) => !state.filter || state.filter === m.id)
+      .map((m) => ({
+        key: "m:" + m.id, date: state.date, mechId: m.id, name: m.name, color: mechColor(m.id), isToday: state.date === today,
+        events: dayEvents.filter((e) => e.mechanics.some((x) => x.id === m.id)),
+      }));
+    if (!state.filter || state.filter === UNASSIGNED) {
+      cols.push({
+        key: "m:", date: state.date, mechId: "", name: "Unassigned", color: UNASSIGNED_COLOR, isToday: state.date === today,
+        events: dayEvents.filter((e) => !hasKnownMechanic(e)),
+      });
     }
     return cols;
   }
 
-  function eventInColumn(col, ev) {
-    if (!ev.start_time) return false;
-    if (!passesFilters(ev)) return false;
-    var st = new Date(ev.start_time);
-    if (!isSameDay(st, col.date)) return false;
-    if (viewMode === "mechanics") {
-      var ids = eventMechanicIds(ev);
-      if (col.unassigned) {
-        if (ids.length) return false;
-      } else if (ids.indexOf(String(col.mechanicId)) === -1) {
-        return false;
-      }
-    }
-    return true;
+  /* Hour range shown: working hours from settings, widened so every block of the view is visible. */
+  function computeVisibleRange(cols) {
+    let s = state.settings.start_hour * 60;
+    let e = state.settings.end_hour * 60;
+    cols.forEach((c) => c.events.forEach((ev) => {
+      s = Math.min(s, Math.floor(ev.startMin / 60) * 60);
+      e = Math.max(e, Math.ceil(ev.endMin / 60) * 60);
+    }));
+    s = clamp(s, 0, 1380);
+    e = clamp(Math.max(e, s + 60), 60, 1440);
+    return { start: s, end: e };
   }
 
-  // Events drawn on the time grid (appointments + actual mechanic sessions).
-  function columnEvents(col, events) {
-    var out = [];
-    for (var i = 0; i < events.length; i++) {
-      if (events[i].unscheduled) continue;
-      // a plan replaced by actual work is hidden only while that work is shown
-      if (events[i].superseded && showWorkOrders) continue;
-      if (eventInColumn(col, events[i])) out.push(events[i]);
-    }
-    return out;
-  }
-
-  // Work orders without any scheduled or tracked time: chips in the strip.
-  function columnChips(col, events) {
-    var out = [];
-    for (var i = 0; i < events.length; i++) {
-      if (!events[i].unscheduled) continue;
-      if (eventInColumn(col, events[i])) out.push(events[i]);
-    }
-    out.sort(function (a, b) { return (a.wo_number || 0) - (b.wo_number || 0); });
-    return out;
-  }
-
-  /* ── build grid ── */
-
-  function buildHeaderRow(columns) {
-    var row = document.createElement("div");
-    row.className = "cal-header-row";
-
-    var gutter = document.createElement("div");
-    gutter.className = "cal-header-gutter";
-    row.appendChild(gutter);
-
-    var cols = document.createElement("div");
-    cols.className = "cal-header-cols";
-
-    var today = new Date();
-    for (var i = 0; i < columns.length; i++) {
-      var col = columns[i];
-      var cell = document.createElement("div");
-      cell.className = "cal-header-cell";
-      cell.setAttribute("data-col-key", col.key);
-
-      if (viewMode === "mechanics") {
-        cell.classList.add("cal-header-cell--mech");
-        if (col.unassigned) cell.classList.add("cal-header-cell--unassigned");
-        var name = document.createElement("span");
-        name.className = "cal-mech-name";
-        if (!col.unassigned) {
-          var hb = document.createElement("span");
-          hb.className = "cal-mech-badge";
-          hb.style.backgroundColor = mechanicColor(col.mechanicId);
-          hb.textContent = mechanicInitials(col.mechanicName);
-          name.appendChild(hb);
-        }
-        name.appendChild(document.createTextNode(col.mechanicName));
-        name.title = col.mechanicName;
-        cell.appendChild(name);
-        var sub = document.createElement("span");
-        sub.className = "cal-mech-sub";
-        sub.setAttribute("data-count-for", col.key);
-        sub.textContent = col.role ? col.role.replace(/_/g, " ") : "";
-        cell.appendChild(sub);
+  /* Overlapping blocks: cluster → columns → equal widths. Returns [{ev, col, n}]. */
+  function layoutOverlaps(events) {
+    const sorted = events.slice().sort((a, b) => a.startMin - b.startMin || (b.endMin - b.startMin) - (a.endMin - a.startMin));
+    const out = [];
+    let cluster = null;
+    let clusterEnd = -1;
+    const flush = () => {
+      if (!cluster) return;
+      const n = cluster.cols.length;
+      cluster.items.forEach((it) => out.push({ ev: it.ev, col: it.col, n }));
+    };
+    sorted.forEach((ev) => {
+      if (!cluster || ev.startMin >= clusterEnd) {
+        flush();
+        cluster = { items: [], cols: [] };
+        clusterEnd = ev.endMin;
       } else {
-        var isToday = isSameDay(col.date, today);
-        if (isToday) cell.classList.add("cal-today");
-        cell.setAttribute("data-day-index", col.dayIndex);
-
-        var dayName = document.createElement("span");
-        dayName.className = "cal-day-name";
-        dayName.textContent = DAY_NAMES[col.dayIndex];
-        cell.appendChild(dayName);
-
-        var dayNum = document.createElement("span");
-        dayNum.className = "cal-day-number" + (isToday ? " cal-day-number-today" : "");
-        dayNum.textContent = col.date.getDate();
-        cell.appendChild(dayNum);
-
-        // markers on top of the lanes - filled when the day is expanded
-        var laneNames = document.createElement("div");
-        laneNames.className = "cal-lane-names";
-        cell.appendChild(laneNames);
-
-        cell.title = "Click to widen this day, click again for full width, once more to collapse";
-        (function (idx) {
-          cell.addEventListener("click", function () { toggleExpandDay(idx); });
-        })(col.dayIndex);
+        clusterEnd = Math.max(clusterEnd, ev.endMin);
       }
-
-      cols.appendChild(cell);
-    }
-
-    row.appendChild(cols);
-    return row;
-  }
-
-  function buildUnscheduledRow(columns) {
-    var row = document.createElement("div");
-    row.className = "cal-unscheduled-row";
-
-    var gutter = document.createElement("div");
-    gutter.className = "cal-unscheduled-gutter";
-    gutter.title = "Work orders without a scheduled time or tracked work yet. Drag a chip onto the grid to schedule it.";
-    gutter.innerHTML = '<span>Not<br>scheduled</span>';
-    row.appendChild(gutter);
-
-    var cells = document.createElement("div");
-    cells.className = "cal-unscheduled-cols";
-    for (var i = 0; i < columns.length; i++) {
-      var cell = document.createElement("div");
-      cell.className = "cal-unscheduled-cell";
-      cell.setAttribute("data-col-key", columns[i].key);
-      cells.appendChild(cell);
-    }
-    row.appendChild(cells);
-    return row;
-  }
-
-  var MAX_CHIPS_VISIBLE = 4; // beyond that a "+N more" chip; click shows them all
-
-  function renderUnscheduled() {
-    var columns = getColumns();
-    var cells = container.querySelectorAll(".cal-unscheduled-cell");
-    for (var ci = 0; ci < columns.length; ci++) {
-      if (cells[ci]) fillChipCell(cells[ci], columnChips(columns[ci], cachedEvents), false);
-    }
-  }
-
-  /* The strip keeps to a few chip rows (see calendar.css); the rest hides
-     behind "+N more" instead of a scrollbar that would squeeze the chips. */
-  function fillChipCell(cell, chips, showAll) {
-    cell.innerHTML = "";
-    cell.classList.toggle("cal-unscheduled-cell--all", showAll);
-    var limit = showAll || chips.length <= MAX_CHIPS_VISIBLE ? chips.length : MAX_CHIPS_VISIBLE - 1;
-    for (var k = 0; k < limit; k++) cell.appendChild(buildChip(chips[k]));
-    if (limit < chips.length) {
-      var more = document.createElement("div");
-      more.className = "cal-chip cal-chip--more";
-      more.textContent = "+" + (chips.length - limit) + " more";
-      more.title = "Show every work order waiting for a slot";
-      more.addEventListener("click", function (e) {
-        e.stopPropagation();
-        fillChipCell(cell, chips, true);
-      });
-      cell.appendChild(more);
-    }
-  }
-
-  function buildChip(ev) {
-    var info = woStateInfo(ev.wo_state);
-    var chip = document.createElement("div");
-    chip.className = "cal-chip";
-    chip.style.borderColor = info.color;
-    chip.style.color = info.color;
-    var label = (ev.wo_number ? "WO #" + ev.wo_number : "WO") + (ev.customer_label ? " · " + ev.customer_label : "");
-    chip.innerHTML = '<span class="cal-chip-dot" style="background:' + escapeHtml(info.color) + '"></span>' +
-      '<span class="cal-chip-text">' + escapeHtml(label) + '</span>';
-    var tip = [label];
-    if (ev.unit_label) tip.push(ev.unit_label);
-    if (Array.isArray(ev.labor_summary) && ev.labor_summary.length) tip.push(ev.labor_summary.join(", "));
-    var names = eventMechanicNames(ev);
-    if (names.length) tip.push("Assigned: " + names.join(", "));
-    tip.push("Status: " + info.label);
-    tip.push(canCreate ? "Drag onto the grid to schedule, click for details" : "Click for details");
-    chip.title = tip.join("\n");
-
-    chip.addEventListener("click", function (e) {
-      e.stopPropagation();
-      if (dragJustEnded) return;
-      openWoModal(ev);
+      let col = cluster.cols.findIndex((end) => end <= ev.startMin);
+      if (col < 0) { col = cluster.cols.length; cluster.cols.push(ev.endMin); } else { cluster.cols[col] = ev.endMin; }
+      cluster.items.push({ ev, col });
     });
-    if (canCreate) {
-      chip.addEventListener("mousedown", function (e) {
-        if (e.button !== 0) return;
-        e.preventDefault();
-        e.stopPropagation();
-        startChipDrag(ev, e);
-      });
+    flush();
+    return out;
+  }
+
+  const yOf = (min) => ((min - state.visStart) / 60) * state.hourH;
+
+  function eventTooltip(ev) {
+    const lines = [fmtRange(ev.startMin, ev.endMin) + " · " + statusLabel(ev.status)];
+    if (ev.title) lines.push(ev.title);
+    if (ev.customerLabel) lines.push("Customer: " + ev.customerLabel);
+    if (ev.unitLabel) lines.push("Unit: " + ev.unitLabel);
+    lines.push(ev.mechanics.length
+      ? "Mechanics: " + ev.mechanics.map((m) => m.name + (mechanicById(m.id) ? "" : " (former mechanic)")).join(", ")
+      : "No mechanic assigned");
+    if (ev.presets.length) lines.push("Presets: " + ev.presets.map((p) => p.name).join(", "));
+    if (ev.workOrderId) lines.push("WO #" + (ev.woNumber || "?") + (ev.woState ? " · " + woStateLabel(ev.woState) : ""));
+    return lines.join("\n");
+  }
+
+  function woStateInfo(key) {
+    return state.woStates.find((s) => s && s.key === key) || null;
+  }
+  function woStateLabel(key) {
+    const s = woStateInfo(key);
+    return s ? s.label : String(key || "").replace(/_/g, " ");
+  }
+
+  function mechChipHtml(mech, large) {
+    const color = mechColor(mech.id);
+    return '<span class="cal-mech-chip' + (large ? " is-lg" : "") + '" style="background:' + esc(color) + ";color:" + esc(textOn(color)) +
+      '" title="' + esc(mech.name) + '">' + esc(initialsOf(mech.name)) + "</span>";
+  }
+
+  function buildEventEl(place, col) {
+    const ev = place.ev;
+    const bg = statusColor(ev.status);
+    const el = document.createElement("div");
+    const cancelled = ev.status === "cancelled";
+    const showChips = state.view === "week" && ev.mechanics.length > 0;
+    el.className = "cal-event" + (cancelled ? " is-cancelled" : "") + (showChips ? " has-mechs" : "");
+    el.dataset.id = ev.id;
+    el.dataset.colKey = col.key;
+    el.style.top = yOf(ev.startMin) + "px";
+    el.style.height = Math.max(18, ((ev.endMin - ev.startMin) / 60) * state.hourH - 2) + "px";
+    el.style.left = "calc(" + ((place.col / place.n) * 100) + "% + 1px)";
+    el.style.width = "calc(" + (100 / place.n) + "% - 3px)";
+    el.style.background = bg;
+    el.style.color = textOn(bg);
+    el.title = eventTooltip(ev);
+
+    const title = ev.title || ev.customerLabel || "(no title)";
+    // First row: the time (shrinks with an ellipsis) and, in week view, the crew chips beside it.
+    // Narrow blocks drop chips, then the end time (@container rules in calendar.css); the tooltip has it all.
+    let html = '<div class="cal-event-head"><div class="cal-event-time">' + timeHtml(ev.startMin, ev.endMin) + "</div>";
+    if (showChips) html += '<div class="cal-event-mechs">' + ev.mechanics.map((m) => mechChipHtml(m, false)).join("") + "</div>";
+    html += "</div>";
+    html += '<div class="cal-event-title">' + esc(title) + "</div>";
+    if (ev.customerLabel && ev.customerLabel !== title) html += '<div class="cal-event-sub">' + esc(ev.customerLabel) + "</div>";
+    if (ev.unitLabel) html += '<div class="cal-event-sub">' + esc(ev.unitLabel) + "</div>";
+    if (state.view === "day" && !col.mechId && ev.mechanics.length) {
+      // Unassigned column, day view: the stored crew is nobody we can assign to any more — say who it was.
+      html += '<div class="cal-event-sub cal-event-former">Former mechanic: ' + esc(ev.mechanics.map((m) => m.name).join(", ")) + "</div>";
+    }
+    if (ev.workOrderId) html += '<span class="cal-event-wo">WO #' + esc(ev.woNumber || "?") + "</span>";
+    if (can.edit) html += '<div class="cal-event-resize" title="Drag to change the end time"></div>';
+    el.innerHTML = html;
+    return el;
+  }
+
+  function buildHeadCell(col) {
+    const head = document.createElement("div");
+    head.className = "cal-col-head" + (col.isToday ? " is-today" : "");
+    head.dataset.colKey = col.key;
+    if (state.view === "week") {
+      head.classList.add("is-clickable");
+      head.title = "Open " + longDate(col.date) + " by mechanic";
+      head.innerHTML = '<div class="cal-dow">' + esc(col.dow) + '</div><div class="cal-dom">' + col.dom + "</div>";
     } else {
-      chip.classList.add("cal-chip--static");
+      const n = col.events.filter((e) => e.status !== "cancelled").length;
+      head.innerHTML =
+        '<div class="cal-mech-head' + (col.mechId ? "" : " is-unassigned") + '">' +
+          (col.mechId
+            ? mechChipHtml({ id: col.mechId, name: col.name }, true)
+            : '<span class="cal-legend-dot" style="background:' + UNASSIGNED_COLOR + '"></span>') +
+          '<span class="cal-mech-head-name" title="' + esc(col.name) + '">' + esc(col.name) + "</span>" +
+        "</div>" +
+        '<div class="cal-mech-count">' + n + (n === 1 ? " appointment" : " appointments") + "</div>";
     }
-    return chip;
+    return head;
   }
 
-  function buildTimeGutter() {
-    var gutter = document.createElement("div");
-    gutter.className = "cal-time-gutter";
-
-    for (var h = HOURS_START; h <= HOURS_END; h++) {
-      var label = document.createElement("div");
-      var last = h === HOURS_END;
-      label.className = "cal-time-label" + (last ? " cal-time-label--last" : "");
-      // the closing label sits on the bottom line (its text is offset by
-      // top:-5px) - it must not add a 16th slot to the gutter
-      label.style.height = (last ? 0 : SLOT_HEIGHT) + "px";
-      label.textContent = pad2(h) + ":00";
-      gutter.appendChild(label);
-    }
-    return gutter;
-  }
-
-  function buildColumn(col) {
-    var colEl = document.createElement("div");
-    colEl.className = "cal-day-col";
-    colEl.setAttribute("data-col-key", col.key);
-    colEl.setAttribute("data-day-index", col.dayIndex);
-    if (col.mechanicId !== undefined) colEl.setAttribute("data-mechanic-id", col.mechanicId || "");
-
-    for (var h = HOURS_START; h < HOURS_END; h++) {
-      var slot = document.createElement("div");
-      slot.className = "cal-hour-slot";
-      slot.style.height = SLOT_HEIGHT + "px";
-      slot.setAttribute("data-hour", h);
-
-      (function (hour, column, slotEl) {
-        slot.addEventListener("click", function (e) {
-          if (dragJustEnded || !canCreate) return;
-          if (e.target.closest(".cal-event")) return;
-          var mechId = column.unassigned ? null : column.mechanicId || null;
-          // week view: the lane under the cursor says who the plan is for
-          var lane = laneAtX(column, e.clientX, slotEl.getBoundingClientRect());
-          if (lane) mechId = lane.key === UNASSIGNED_KEY ? null : lane.key;
-          openModal(null, column.dayIndex, hour, mechId);
-        });
-      })(h, col, slot);
-
-      colEl.appendChild(slot);
-    }
-    return colEl;
+  function gridHeight() {
+    const top = gridEl.getBoundingClientRect().top;
+    return Math.max(320, Math.floor(window.innerHeight - top - 16));
   }
 
   function render() {
-    container.innerHTML = "";
-    updateTitle();
+    const cols = buildColumns();
+    state.columns = cols;
+    const vr = computeVisibleRange(cols);
+    state.visStart = vr.start;
+    state.visEnd = vr.end;
+    const hours = (vr.end - vr.start) / 60;
 
-    SLOT_HEIGHT = calcSlotHeight();
-    PX_PER_MINUTE = SLOT_HEIGHT / 60;
+    const oldScroll = gridEl.querySelector(".cal-scroll");
+    const keepTop = oldScroll ? oldScroll.scrollTop : 0;
+    const keepLeft = oldScroll ? oldScroll.scrollLeft : 0;
 
-    var columns = getColumns();
+    gridEl.style.height = gridHeight() + "px";
+    gridEl.classList.toggle("can-create", can.create);
 
-    var grid = document.createElement("div");
-    grid.className = "cal-grid";
-    grid.classList.toggle("cal-grid--mechanics", viewMode === "mechanics");
+    const scroll = document.createElement("div");
+    scroll.className = "cal-scroll";
+    const sheet = document.createElement("div");
+    sheet.className = "cal-sheet";
+    sheet.style.gridTemplateColumns = "var(--cal-gutter-w) repeat(" + cols.length + ", minmax(var(--cal-col-min), 1fr))";
+    const gutterHead = document.createElement("div");
+    gutterHead.className = "cal-gutter-head";
+    sheet.appendChild(gutterHead);
+    cols.forEach((col) => sheet.appendChild(buildHeadCell(col)));
+    scroll.appendChild(sheet);
+    gridEl.replaceChildren(scroll);
 
-    grid.appendChild(buildHeaderRow(columns));
-    grid.appendChild(buildUnscheduledRow(columns));
+    const headH = gutterHead.nextElementSibling ? gutterHead.nextElementSibling.offsetHeight : 48;
+    state.hourH = Math.max(MIN_HOUR_H, Math.floor((gridEl.clientHeight - headH - 2) / hours));
+    gridEl.style.setProperty("--cal-hour-h", state.hourH + "px");
+    gridEl.style.setProperty("--cal-hours", String(hours));
 
-    var body = document.createElement("div");
-    body.className = "cal-body-scroll";
-
-    body.appendChild(buildTimeGutter());
-
-    var bodyCols = document.createElement("div");
-    bodyCols.className = "cal-body-cols";
-    for (var i = 0; i < columns.length; i++) {
-      bodyCols.appendChild(buildColumn(columns[i]));
+    const gutter = document.createElement("div");
+    gutter.className = "cal-gutter";
+    for (let m = vr.start; m < vr.end; m += 60) {
+      const lbl = document.createElement("div");
+      lbl.className = "cal-gutter-label";
+      lbl.style.top = yOf(m) + "px";
+      lbl.textContent = fmtMin(m);
+      gutter.appendChild(lbl);
     }
-    body.appendChild(bodyCols);
+    sheet.appendChild(gutter);
 
-    grid.appendChild(body);
-    container.appendChild(grid);
-
-    applyLayout();
-    // Lane markers and min-widths from the shop's mechanic list right away:
-    // the header has its final shape before the events arrive (no jump, no
-    // lane-less flash after a week change).
-    if (viewMode === "week") {
-      var preLanes = dayLanes([]);
-      var preCounts = [];
-      for (var d = 0; d < columns.length; d++) {
-        updateLaneHeader(columns[d], preLanes);
-        preCounts[columns[d].dayIndex] = preLanes.length || 1;
+    const now = shopNow();
+    cols.forEach((col) => {
+      const colEl = document.createElement("div");
+      colEl.className = "cal-col" + (col.isToday ? " is-today" : "");
+      colEl.dataset.colKey = col.key;
+      layoutOverlaps(col.events).forEach((place) => colEl.appendChild(buildEventEl(place, col)));
+      if (col.isToday && now.minutes >= vr.start && now.minutes <= vr.end) {
+        const line = document.createElement("div");
+        line.className = "cal-now";
+        line.style.top = yOf(now.minutes) + "px";
+        colEl.appendChild(line);
       }
-      applyLaneWidths(preCounts);
-      fitSlotHeight();
-    }
-    updateNowLine();
-    startNowLineTimer();
-    loadEvents();
-    restartLivePolling();
-  }
-
-  /* ── live refresh ──
-     Other people (and mechanics from the app) move plans and run timers
-     while this page is open: every LIVE_POLL_MS the page asks the server for
-     a signature of the visible week and reloads the events when it changed.
-     Paused while the tab is hidden, a block is being dragged or a modal is
-     open (a reload would pull the form from under the user). Only a 401 /
-     403 / 404 (no access, or an older server without the endpoint) stops the
-     polling for this page; a 5xx or a network blip is simply retried on the
-     next tick -- every LIVE_SLOW_POLL_MS after LIVE_FAILS_BEFORE_SLOW failures
-     in a row, back to LIVE_POLL_MS after the first successful poll. */
-  var LIVE_POLL_MS = 15000;
-  var LIVE_SLOW_POLL_MS = 60000;
-  var LIVE_FAILS_BEFORE_SLOW = 3;
-  var LIVE_FIRST_POLL_MS = 1000; // the baseline poll waits a moment: rapid week clicks coalesce
-  var liveTimer = null;
-  var liveFirstTimer = null;
-  var liveSignature = null;   // baseline of the current week; null = not taken yet
-  var liveBusy = false;
-  var liveStopped = false;
-  var liveFailures = 0;       // failed polls in a row (5xx / network)
-  var livePollMs = LIVE_POLL_MS;
-
-  function pollLiveSignature() {
-    if (liveStopped || liveBusy || !weekStart) return;
-    if (document.visibilityState !== "visible") return;
-    if (drag || resize || document.querySelector(".modal.show")) return;
-    liveBusy = true;
-    var ws = toISODate(weekStart);
-    var we = toISODate(addDays(weekStart, 7));
-    var url = "/calendar/api/live_signature?start=" + ws + "T00:00:00&end=" + we + "T00:00:00";
-    fetch(url, { headers: { "Accept": "application/json" } })
-      .then(function (r) {
-        if (r.status === 401 || r.status === 403 || r.status === 404) {
-          // no access, or an older server without the endpoint: give up for this page
-          liveStopped = true;
-          stopLivePolling();
-          return null;
-        }
-        if (!r.ok) throw new Error("live_signature HTTP " + r.status);
-        return r.json();
-      })
-      .then(function (data) {
-        if (liveStopped) return;
-        liveNoteSuccess();
-        if (!data || typeof data.signature === "undefined") return;
-        // a drag or a dialog started while the request was in flight: leave the
-        // grid alone, the next tick compares again
-        if (drag || resize || document.querySelector(".modal.show")) return;
-        var sig = String(data.signature || "");
-        if (liveSignature === null) { liveSignature = sig; return; }
-        if (sig !== liveSignature) {
-          liveSignature = sig;
-          loadEvents();
-        }
-      })
-      .catch(function () {
-        // a 5xx or a network blip in a background poll: keep the timer, the
-        // next tick tries again (slower after a few failures in a row)
-        liveNoteFailure();
-      })
-      .then(function () { liveBusy = false; });
-  }
-
-  function stopLivePolling() {
-    if (liveTimer) { clearInterval(liveTimer); liveTimer = null; }
-    if (liveFirstTimer) { clearTimeout(liveFirstTimer); liveFirstTimer = null; }
-  }
-
-  /* Back off while the server keeps failing, so an outage is not hammered
-     every 15 s; the first good poll restores the normal pace. */
-  function setLivePollInterval(ms) {
-    if (livePollMs === ms) return;
-    livePollMs = ms;
-    if (liveTimer) {
-      clearInterval(liveTimer);
-      liveTimer = setInterval(pollLiveSignature, livePollMs);
-    }
-  }
-
-  function liveNoteFailure() {
-    liveFailures += 1;
-    if (liveFailures >= LIVE_FAILS_BEFORE_SLOW) setLivePollInterval(LIVE_SLOW_POLL_MS);
-  }
-
-  function liveNoteSuccess() {
-    liveFailures = 0;
-    setLivePollInterval(LIVE_POLL_MS);
-  }
-
-  /* Every render (week / day / view change) re-arms the poll: the signature
-     describes the visible week, so its baseline is taken afresh. */
-  function restartLivePolling() {
-    stopLivePolling();
-    liveSignature = null;
-    if (liveStopped) return;
-    liveFirstTimer = setTimeout(pollLiveSignature, LIVE_FIRST_POLL_MS);
-    liveTimer = setInterval(pollLiveSignature, livePollMs);
-  }
-
-  document.addEventListener("visibilitychange", function () {
-    if (document.visibilityState === "visible") pollLiveSignature();
-  });
-
-  /* The chips strip and the header are measured only after they are filled:
-     if the real chrome height differs from the first estimate, resize the
-     hour slots so the day still ends at the bottom of the window. Called
-     before the blocks are placed, so they use the final slot height. */
-  function fitSlotHeight() {
-    var h = calcSlotHeight();
-    if (h === SLOT_HEIGHT) return;
-    SLOT_HEIGHT = h;
-    PX_PER_MINUTE = SLOT_HEIGHT / 60;
-    var els = container.querySelectorAll(".cal-hour-slot, .cal-time-label:not(.cal-time-label--last)");
-    for (var i = 0; i < els.length; i++) els[i].style.height = SLOT_HEIGHT + "px";
-    updateNowLine();
-  }
-
-  /* ── render events on grid ── */
-
-  function renderEvents() {
-    var columns = getColumns();
-    var colEls = container.querySelectorAll(".cal-day-col");
-    for (var c = 0; c < colEls.length; c++) {
-      var old = colEls[c].querySelectorAll(".cal-event, .cal-lane-sep");
-      for (var x = 0; x < old.length; x++) old[x].remove();
-    }
-    renderUnscheduled();
-
-    var statusColors = {};
-    for (var s = 0; s < cachedStatuses.length; s++) {
-      statusColors[cachedStatuses[s].key] = cachedStatuses[s].color;
-    }
-
-    // Pass 1 - lanes. Week view: every day - empty future days too - is
-    // split into one lane per mechanic of the shop (same order as "By
-    // mechanic") plus "Unassigned" when something has no mechanic, so a
-    // plan always sits in its mechanic's lane and a click in a lane books
-    // that mechanic. Markers in the header name the lanes (names appear on
-    // a widened day). Header rows and min-widths are final before the slot
-    // height is fitted and the blocks are placed, so nothing moves afterwards.
-    var colEvents = [], colLanes = [], laneCounts = [];
-    for (var ci = 0; ci < columns.length; ci++) {
-      colEvents[ci] = columnEvents(columns[ci], cachedEvents);
-      markConflicts(colEvents[ci]);
-      colLanes[ci] = viewMode === "week" ? dayLanes(colEvents[ci]) : null;
-      updateLaneHeader(columns[ci], colLanes[ci]);
-      if (viewMode === "week") laneCounts[columns[ci].dayIndex] = colLanes[ci] && colLanes[ci].length ? colLanes[ci].length : 1;
-    }
-    applyLaneWidths(laneCounts);
-    fitSlotHeight();
-
-    // Pass 2 - blocks.
-    for (var cj = 0; cj < columns.length; cj++) {
-      var colEl = colEls[cj];
-      if (!colEl) continue;
-      var events = colEvents[cj];
-      var lanes = colLanes[cj];
-      if (lanes && lanes.length) {
-        var laneCount = lanes.length;
-        for (var li = 0; li < laneCount; li++) {
-          if (li > 0) {
-            var sep = document.createElement("div");
-            sep.className = "cal-lane-sep";
-            sep.style.left = (li / laneCount * 100) + "%";
-            colEl.appendChild(sep);
-          }
-          var laneKey = lanes[li].key;
-          var laneEvents = events.filter(function (ev) { return eventLaneKeys(ev).indexOf(laneKey) !== -1; });
-          var laneLayout = layoutItems(laneEvents);
-          for (var la = 0; la < laneLayout.length; la++) {
-            var item = laneLayout[la];
-            renderSingleEvent(item.ev, colEl, statusColors,
-              (li + item.colIndex / item.totalCols) / laneCount * 100,
-              (1 / item.totalCols) / laneCount * 100);
-          }
-        }
-      } else {
-        var layout = layoutItems(events);
-        for (var a = 0; a < layout.length; a++) {
-          renderSingleEvent(layout[a].ev, colEl, statusColors,
-            layout[a].colIndex / layout[a].totalCols * 100,
-            1 / layout[a].totalCols * 100);
-        }
-      }
-    }
-  }
-
-  /* Narrower lanes are unreadable: a day keeps lanes x LANE_MIN_PX and the
-     whole grid grows past the viewport instead (#calWeekContainer scrolls
-     sideways). Header cell, chip cell and body column of a day share one
-     min-width so the three rows stay aligned. */
-  var LANE_MIN_PX = 56;
-  function applyLaneWidths(laneCounts) {
-    var grid = container.querySelector(".cal-grid");
-    if (!grid) return;
-    if (viewMode !== "week") { grid.style.minWidth = ""; return; }
-    var headerCells = container.querySelectorAll(".cal-header-cell");
-    var bodyCols    = container.querySelectorAll(".cal-day-col");
-    var chipCells   = container.querySelectorAll(".cal-unscheduled-cell");
-    var total = 56; // time gutter
-    for (var i = 0; i < 7; i++) {
-      // full-width day: the other six are narrow strips by design
-      var strip = expandedDayIndex >= 0 && expandLevel >= 2 && i !== expandedDayIndex;
-      var w = strip ? 40 : Math.max(1, laneCounts[i] || 1) * LANE_MIN_PX;
-      total += w;
-      var els = [headerCells[i], bodyCols[i], chipCells[i]];
-      for (var k = 0; k < els.length; k++) if (els[k]) els[k].style.minWidth = w + "px";
-    }
-    grid.style.minWidth = total + "px";
-  }
-
-  /* Lane of a week-view day column under viewport x (slot click / drop). */
-  function laneAtX(col, clientX, rect) {
-    if (viewMode !== "week" || typeof clientX !== "number" || !rect || !(rect.width > 0)) return null;
-    var lanes = dayLanes(columnEvents(col, cachedEvents));
-    if (!lanes.length) return null;
-    var idx = Math.floor((clientX - rect.left) / rect.width * lanes.length);
-    return lanes[Math.max(0, Math.min(idx, lanes.length - 1))];
-  }
-
-  /* Which lane(s) an event belongs to: its mechanics that exist in the shop's
-     list; anything else (no mechanic, deactivated user) goes to "Unassigned". */
-  function eventLaneKeys(ev) {
-    var keys = [];
-    var ids = eventMechanicIds(ev);
-    for (var i = 0; i < ids.length; i++) {
-      if (mechanicIndex(ids[i]) >= 0 && keys.indexOf(ids[i]) === -1) keys.push(ids[i]);
-    }
-    return keys.length ? keys : [UNASSIGNED_KEY];
-  }
-
-  /* Lanes of a week-view day: every mechanic of the shop (respecting the
-     mechanic filter) + "Unassigned" only when something has no mechanic. */
-  function dayLanes(colEvents) {
-    var lanes = [];
-    for (var i = 0; i < cachedMechanics.length; i++) {
-      var m = cachedMechanics[i];
-      if (mechanicFilter === UNASSIGNED_KEY || (mechanicFilter && mechanicFilter !== String(m.id))) continue;
-      lanes.push({ key: String(m.id), name: m.name });
-    }
-    var hasUnassigned = false;
-    for (var k = 0; k < colEvents.length; k++) {
-      if (eventLaneKeys(colEvents[k]).indexOf(UNASSIGNED_KEY) !== -1) { hasUnassigned = true; break; }
-    }
-    if (hasUnassigned && (!mechanicFilter || mechanicFilter === UNASSIGNED_KEY)) {
-      lanes.push({ key: UNASSIGNED_KEY, name: "Unassigned" });
-    }
-    return lanes;
-  }
-
-  /* Markers on top of a day: whose lane is which. They live in the header
-     cell, which has the same width as the column below. Normal week shows
-     the initials badge only; a widened day adds the name. Clicking a
-     marker filters the calendar to that mechanic, like the legend. */
-  function updateLaneHeader(col, lanes) {
-    if (viewMode !== "week") return;
-    var cell = container.querySelector('.cal-header-cell[data-day-index="' + col.dayIndex + '"]');
-    if (!cell) return;
-    var holder = cell.querySelector(".cal-lane-names");
-    if (!holder) return;
-    holder.innerHTML = "";
-    var show = !!(lanes && lanes.length);
-    holder.classList.toggle("has-lanes", show);
-    if (!show) return;
-    for (var i = 0; i < lanes.length; i++) {
-      var unassigned = lanes[i].key === UNASSIGNED_KEY;
-      var name = document.createElement("span");
-      name.className = "cal-lane-name" + (unassigned ? " cal-lane-name--unassigned" : "");
-      var badge = document.createElement("span");
-      badge.className = "cal-mech-badge" + (unassigned ? " cal-mech-badge--unassigned" : "");
-      if (!unassigned) badge.style.backgroundColor = mechanicColor(lanes[i].key);
-      badge.textContent = unassigned ? "–" : mechanicInitials(lanes[i].name);
-      name.appendChild(badge);
-      var label = document.createElement("span");
-      label.className = "cal-lane-label";
-      label.textContent = lanes[i].name;
-      name.appendChild(label);
-      name.title = lanes[i].name + (unassigned ? "" : " — click to show only this mechanic");
-      (function (key) {
-        name.addEventListener("click", function (e) {
-          e.stopPropagation(); // the header cell itself widens the day
-          if (key === UNASSIGNED_KEY) return;
-          setMechanicFilter(mechanicFilter === key ? "" : key);
-        });
-      })(lanes[i].key);
-      holder.appendChild(name);
-    }
-  }
-
-  /* Side-by-side layout for overlapping events: returns [{ev, colIndex, totalCols}]. */
-  function layoutItems(events) {
-    var sorted = events.slice().sort(function (a, b) {
-      var d = new Date(a.start_time) - new Date(b.start_time);
-      if (d !== 0) return d;
-      return new Date(b.end_time) - new Date(a.end_time);
+      sheet.appendChild(colEl);
     });
-    var items = [];
-    for (var j = 0; j < sorted.length; j++) {
-      var stD = new Date(sorted[j].start_time);
-      var enD = new Date(sorted[j].end_time);
-      items.push({
-        ev: sorted[j],
-        startMin: stD.getHours() * 60 + stD.getMinutes(),
-        endMin: enD.getHours() * 60 + enD.getMinutes()
-      });
+
+    const total = cols.reduce((n, c) => n + c.events.length, 0);
+    if (state.loadError) {
+      showGridMessage(state.loadError);
+    } else if (!total && state.loadedWeek) {
+      showGridMessage(state.view === "week" ? "No appointments this week" : "No appointments on this day" +
+        (can.create ? " — click a time slot to add one" : ""));
     }
 
-    // split into independent clusters (connected overlap groups)
-    var clusters = [];
-    var idx = 0;
-    while (idx < items.length) {
-      var cluster = [items[idx]];
-      var clusterEnd = items[idx].endMin;
-      idx++;
-      while (idx < items.length && items[idx].startMin < clusterEnd) {
-        cluster.push(items[idx]);
-        if (items[idx].endMin > clusterEnd) clusterEnd = items[idx].endMin;
-        idx++;
-      }
-      clusters.push(cluster);
-    }
-
-    var out = [];
-    for (var gc = 0; gc < clusters.length; gc++) {
-      var clItems = clusters[gc];
-      var subCols = [];
-      var assignments = [];
-      for (var k = 0; k < clItems.length; k++) {
-        var it = clItems[k];
-        var placed = false;
-        for (var sc = 0; sc < subCols.length; sc++) {
-          var fits = true;
-          for (var p = 0; p < subCols[sc].length; p++) {
-            if (it.startMin < subCols[sc][p].endMin && it.endMin > subCols[sc][p].startMin) {
-              fits = false;
-              break;
-            }
-          }
-          if (fits) {
-            subCols[sc].push(it);
-            assignments.push({ ev: it.ev, colIndex: sc });
-            placed = true;
-            break;
-          }
-        }
-        if (!placed) {
-          subCols.push([it]);
-          assignments.push({ ev: it.ev, colIndex: subCols.length - 1 });
-        }
-      }
-      for (var a = 0; a < assignments.length; a++) {
-        out.push({ ev: assignments[a].ev, colIndex: assignments[a].colIndex, totalCols: subCols.length });
-      }
-    }
-    return out;
+    scroll.scrollTop = keepTop;
+    scroll.scrollLeft = keepLeft;
+    updateToolbar();
   }
 
-  /* An appointment that overlaps the same mechanic's actual timer session on
-     another work order is a plan that did not happen that way - flag it. */
-  function markConflicts(colEvents) {
-    for (var i = 0; i < colEvents.length; i++) {
-      var ev = colEvents[i];
-      ev._conflict = null;
-      if (isVirtual(ev) || !ev.mechanic_id) continue;
-      var st = new Date(ev.start_time), en = new Date(ev.end_time);
-      for (var j = 0; j < colEvents.length; j++) {
-        var other = colEvents[j];
-        if (!isVirtual(other) || other.source !== "time_logs") continue;
-        if (other.work_order_id && ev.work_order_id && other.work_order_id === ev.work_order_id) continue;
-        if (eventMechanicIds(other).indexOf(String(ev.mechanic_id)) === -1) continue;
-        var ost = new Date(other.start_time), oen = new Date(other.end_time);
-        if (ost < en && oen > st) { ev._conflict = other; break; }
-      }
-    }
+  function showGridMessage(text) {
+    const msg = document.createElement("div");
+    msg.className = "cal-grid-msg small";
+    msg.textContent = text;
+    gridEl.appendChild(msg);
   }
-
-  function updateMechanicHeaderCounts() {
-    if (viewMode !== "mechanics") return;
-    var columns = getColumns();
-    for (var i = 0; i < columns.length; i++) {
-      var sub = container.querySelector('[data-count-for="' + columns[i].key + '"]');
-      if (!sub) continue;
-      var seen = {};
-      columnEvents(columns[i], cachedEvents).forEach(function (e) { seen[e.work_order_id || e.id] = true; });
-      var n = Object.keys(seen).length;
-      var pending = columnChips(columns[i], cachedEvents).length;
-      var role = columns[i].role ? columns[i].role.replace(/_/g, " ") : "";
-      sub.textContent = (role ? role + " · " : "") + n + (n === 1 ? " job" : " jobs") +
-        (pending ? " · " + pending + " not scheduled" : "");
-    }
-  }
-
-  function renderSingleEvent(ev, col, statusColors, leftPct, widthPct) {
-    var st = new Date(ev.start_time);
-    var en = new Date(ev.end_time);
-    // a fact = one mechanic's timer session; a running one keeps growing
-    // with the clock (the server's end is "now" at load time)
-    var isFact = isVirtual(ev) && ev.source === "time_logs";
-    var nowDt = new Date();
-    if (ev.running && isSameDay(st, nowDt) && nowDt > en) en = nowDt;
-
-    var startH = st.getHours() + st.getMinutes() / 60;
-    var endHr  = en.getHours() + en.getMinutes() / 60;
-    if (endHr <= HOURS_START || startH >= HOURS_END) return;
-
-    var topClamped = Math.max(startH, HOURS_START);
-    var botClamped = Math.min(endHr, HOURS_END);
-    var topPx  = (topClamped - HOURS_START) * SLOT_HEIGHT;
-    var height = (botClamped - topClamped) * SLOT_HEIGHT;
-    if (height < 12) height = 12;
-
-    var isWO = isWorkOrderEvent(ev);
-    var color = eventColor(ev, statusColors);
-
-    var block = document.createElement("div");
-    block.className = "cal-event";
-    if (isWO) block.classList.add("cal-event--wo");
-    if (isWO && !isVirtual(ev)) block.classList.add("cal-event--linked");
-    if (ev.running) block.classList.add("cal-event--running");
-    if (isFact) block.classList.add("cal-event--fact");
-    if (ev.running) {
-      block.setAttribute("data-running", "1");
-      block.setAttribute("data-start-h", String(startH));
-      block.setAttribute("data-day", toISODate(st));
-    }
-    block.style.top = topPx + "px";
-    block.style.height = height + "px";
-    block.style.backgroundColor = color;
-
-    // side-by-side layout for overlaps
-    block.style.left = leftPct + "%";
-    block.style.width = widthPct + "%";
-    if (ev._conflict) block.classList.add("cal-event--conflict");
-
-    // whose block: coloured left edge + initials of the mechanic(s)
-    var mechList = eventMechanicList(ev);
-    if (mechList.length) {
-      block.style.boxShadow = "inset 5px 0 0 " + mechanicColor(mechList[0].id) + ", 0 1px 2px rgba(0,0,0,.2)";
-    }
-
-    var line1, line2Parts = [], line3 = "";
-    var mechanicNames = eventMechanicNames(ev);
-    if (isWO) {
-      var woLabel = ev.wo_number ? "WO #" + ev.wo_number : "Work order";
-      line1 = woLabel + (ev.customer_label ? " · " + ev.customer_label : "");
-      if (ev.unit_label) line2Parts.push(ev.unit_label);
-      if (viewMode !== "mechanics" && mechanicNames.length) line2Parts.push(mechanicNames.join(", "));
-      if (Array.isArray(ev.labor_summary) && ev.labor_summary.length) line3 = ev.labor_summary.join(", ");
-      else if (ev.title && ev.title !== woLabel) line3 = ev.title;
-    } else {
-      line1 = ev.customer_label || ev.title || "Appointment";
-      if (ev.unit_label) line2Parts.push(ev.unit_label);
-      if (viewMode !== "mechanics" && mechanicNames.length) line2Parts.push(mechanicNames.join(", "));
-      if (ev.title && ev.title !== line1) line3 = ev.title;
-    }
-
-    var html = '<div class="cal-event-title">' + escapeHtml(line1) + '</div>';
-    if (line2Parts.length) html += '<div class="cal-event-sub">' + escapeHtml(line2Parts.join(" · ")) + '</div>';
-    if (line3) html += '<div class="cal-event-note">' + escapeHtml(line3) + '</div>';
-    if (isWO && ev.wo_state) {
-      var info = woStateInfo(ev.wo_state);
-      html += '<span class="cal-event-chip">' + escapeHtml(info.label) + (ev.running ? ' ●' : '') + '</span>';
-    }
-    if (mechList.length) {
-      html += '<span class="cal-event-mechs">';
-      for (var mi = 0; mi < Math.min(mechList.length, 3); mi++) {
-        html += '<span class="cal-mech-badge" style="background:' + escapeHtml(mechanicColor(mechList[mi].id)) + '" title="' +
-          escapeHtml(mechList[mi].name || "") + '">' + escapeHtml(mechanicInitials(mechList[mi].name)) + '</span>';
-      }
-      html += '</span>';
-    }
-    if (ev._conflict) {
-      html += '<span class="cal-event-warn" title="Overlaps this mechanic&#39;s actual work on ' +
-        escapeHtml(ev._conflict.wo_number ? "WO #" + ev._conflict.wo_number : "another work order") + '">!</span>';
-    }
-    block.innerHTML = html;
-    block.title = buildTooltip(ev, line1);
-
-    (function (evt, blk) {
-      blk.addEventListener("click", function (e) {
-        e.stopPropagation();
-        if (dragJustEnded) return;
-        if (isVirtual(evt)) openWoModal(evt);
-        else openModalForEdit(evt);
-      });
-      // Facts (timer sessions) cannot be moved. Plans need the edit right;
-      // putting a work order onto the grid needs the create right.
-      var draggable = !isFact && (isVirtual(evt) ? canCreate : canEdit);
-      if (draggable) {
-        blk.addEventListener("mousedown", function (e) {
-          if (e.button !== 0) return;
-          e.preventDefault();
-          e.stopPropagation();
-          startDrag(evt, blk, e);
-        });
-      } else {
-        blk.classList.add("cal-event--static");
-      }
-      // (not while a timer runs on it - the block shows the fact's edge - and
-      // not when the plan sticks out of the grid)
-      if (draggable && !isVirtual(evt) && !evt.running && startH >= HOURS_START && endHr <= HOURS_END) {
-        // bottom edge of a plan: drag it to change the end time (Google-style)
-        var handle = document.createElement("div");
-        handle.className = "cal-event-resize";
-        handle.title = "Drag to change the end time";
-        handle.addEventListener("mousedown", function (e) {
-          if (e.button !== 0) return;
-          e.preventDefault();
-          e.stopPropagation();
-          startResize(evt, blk, e);
-        });
-        blk.appendChild(handle);
-      }
-    })(ev, block);
-
-    col.appendChild(block);
-  }
-
-  function buildTooltip(ev, line1) {
-    var parts = [line1];
-    var st = new Date(ev.start_time), en = new Date(ev.end_time);
-    parts.push(fmtTime(st) + "–" + fmtTime(en));
-    var names = eventMechanicNames(ev);
-    if (names.length) parts.push("Mechanics: " + names.join(", "));
-    if (isWorkOrderEvent(ev) && ev.wo_state) parts.push("Status: " + woStateInfo(ev.wo_state).label);
-    if (Array.isArray(ev.worked) && ev.worked.length) {
-      parts.push("Worked: " + ev.worked.map(function (u) {
-        return u.name + " " + fmtDuration(u.seconds) + (u.running ? " (now)" : "");
-      }).join(", "));
-    }
-    if (ev._conflict) {
-      var c = ev._conflict;
-      parts.push("! Planned here, but the mechanic was actually working on " +
-        (c.wo_number ? "WO #" + c.wo_number : "another work order") + " " +
-        fmtTime(new Date(c.start_time)) + "-" + fmtTime(new Date(c.end_time)));
-    }
-    return parts.join("\n");
-  }
-
-  function escapeHtml(str) {
-    var div = document.createElement("div");
-    div.appendChild(document.createTextNode(str == null ? "" : String(str)));
-    return div.innerHTML;
-  }
-
-  /* ── drag & drop ── */
-
-  function snapTo15(minutes) {
-    return Math.round(minutes / STEP_MINUTES) * STEP_MINUTES;
-  }
-
-  function startDrag(evt, blockEl, mouseEvt) {
-    var bodyCols = container.querySelector(".cal-body-cols");
-    if (!bodyCols) return;
-    var cols = bodyCols.querySelectorAll(".cal-day-col");
-
-    var st = new Date(evt.start_time);
-    var en = new Date(evt.end_time);
-    var durationMin = Math.max(1, Math.round((en - st) / 60000));
-
-    var origColIdx = 0;
-    for (var i = 0; i < cols.length; i++) {
-      if (cols[i] === blockEl.parentNode) { origColIdx = i; break; }
-    }
-
-    // Whose lane / column the block was picked up from: a crew plan dragged
-    // into another mechanic's lane swaps exactly this member (see onDragEnd).
-    var fromLaneKey = null;
-    var origCol = getColumns()[origColIdx];
-    if (origCol && viewMode === "mechanics") {
-      fromLaneKey = origCol.unassigned ? UNASSIGNED_KEY : String(origCol.mechanicId);
-    } else if (origCol) {
-      var fromLane = laneAtX(origCol, mouseEvt.clientX, cols[origColIdx].getBoundingClientRect());
-      fromLaneKey = fromLane ? fromLane.key : null;
-    }
-
-    drag = {
-      evt: evt,
-      el: blockEl,
-      durationMin: durationMin,
-      startX: mouseEvt.clientX,
-      startY: mouseEvt.clientY,
-      origTop: parseFloat(blockEl.style.top),
-      origLeft: blockEl.style.left,
-      origWidth: blockEl.style.width,
-      origColIdx: origColIdx,
-      currentColIdx: origColIdx,
-      fromLaneKey: fromLaneKey,
-      cols: cols,
-      inGrid: true,
-      moved: false
-    };
-
-    blockEl.classList.add("cal-dragging");
-    document.addEventListener("mousemove", onDragMove);
-    document.addEventListener("mouseup", onDragEnd);
-  }
-
-  /* Drag a not-yet-scheduled work order from the strip onto the grid: a
-     temporary block appears under the cursor and follows the normal drag
-     flow; dropping it creates a linked appointment. */
-  function startChipDrag(evt, mouseEvt) {
-    var bodyCols = container.querySelector(".cal-body-cols");
-    if (!bodyCols) return;
-    var cols = bodyCols.querySelectorAll(".cal-day-col");
-    if (!cols.length) return;
-
-    var st = new Date(evt.start_time);
-    var en = new Date(evt.end_time);
-    var durationMin = Math.max(STEP_MINUTES, Math.round((en - st) / 60000) || 60);
-
-    // start in the column under the cursor (or the first one)
-    var colIdx = 0;
-    for (var i = 0; i < cols.length; i++) {
-      var cr = cols[i].getBoundingClientRect();
-      if (mouseEvt.clientX >= cr.left && mouseEvt.clientX < cr.right) { colIdx = i; break; }
-    }
-    var colEl = cols[colIdx];
-    var rect = colEl.getBoundingClientRect();
-    // the chip sits above the grid, so its own offset starts negative; the
-    // unclamped value is what lets the block follow the cursor 1:1
-    var rawTop = snapTo15((mouseEvt.clientY - rect.top) / PX_PER_MINUTE) * PX_PER_MINUTE;
-    var maxTop = (HOURS_END - HOURS_START) * SLOT_HEIGHT - durationMin * PX_PER_MINUTE;
-    var top = Math.max(0, Math.min(rawTop, maxTop));
-
-    var info = woStateInfo(evt.wo_state);
-    var block = document.createElement("div");
-    block.className = "cal-event cal-event--wo cal-event--ghost";
-    block.style.top = top + "px";
-    block.style.height = Math.max(12, durationMin * PX_PER_MINUTE) + "px";
-    block.style.left = "0";
-    block.style.width = "100%";
-    block.style.backgroundColor = info.color;
-    block.innerHTML = '<div class="cal-event-title">' + escapeHtml((evt.wo_number ? "WO #" + evt.wo_number : "Work order") +
-      (evt.customer_label ? " · " + evt.customer_label : "")) + '</div>' +
-      '<div class="cal-event-sub">Drop to schedule</div>';
-    colEl.appendChild(block);
-
-    startDrag(evt, block, mouseEvt);
-    if (drag) {
-      drag.fromChip = true;
-      drag.origTop = rawTop;
-      drag.startY = mouseEvt.clientY;
-      drag.inGrid = false;
-    }
-  }
-
-  function onDragMove(e) {
-    if (!drag) return;
-    if (e.buttons === 0) { cancelDrag(); return; } // button released outside the window
-    var dx = e.clientX - drag.startX;
-    var dy = e.clientY - drag.startY;
-    if (Math.abs(dy) > 3 || Math.abs(dx) > 3) drag.moved = true;
-
-    // vertical: snap to 15 min
-    var newTop = drag.origTop + dy;
-    var maxTop = (HOURS_END - HOURS_START) * SLOT_HEIGHT - parseFloat(drag.el.style.height);
-    newTop = Math.max(0, Math.min(newTop, maxTop));
-    var snappedMin = snapTo15(newTop / PX_PER_MINUTE);
-    newTop = snappedMin * PX_PER_MINUTE;
-    drag.el.style.top = newTop + "px";
-
-    // horizontal: detect column under cursor & move block
-    var colIdx = -1;
-    for (var i = 0; i < drag.cols.length; i++) {
-      var cr = drag.cols[i].getBoundingClientRect();
-      if (e.clientX >= cr.left && e.clientX < cr.right) { colIdx = i; break; }
-    }
-    if (colIdx >= 0 && colIdx !== drag.currentColIdx) {
-      drag.cols[colIdx].appendChild(drag.el);
-      drag.currentColIdx = colIdx;
-    }
-    // week view: the block slides into the mechanic lane under the cursor,
-    // so a move to another mechanic is visible before the drop
-    if (viewMode === "week" && colIdx >= 0) {
-      var laneCol = getColumns()[drag.currentColIdx];
-      var laneRect = drag.cols[drag.currentColIdx].getBoundingClientRect();
-      var overLane = laneCol ? laneAtX(laneCol, e.clientX, laneRect) : null;
-      if (overLane) {
-        var laneList = dayLanes(columnEvents(laneCol, cachedEvents));
-        var laneIdx = -1;
-        for (var li = 0; li < laneList.length; li++) { if (laneList[li].key === overLane.key) { laneIdx = li; break; } }
-        var backHome = drag.currentColIdx === drag.origColIdx && overLane.key === drag.fromLaneKey;
-        if (laneIdx >= 0 && laneList.length > 1 && !backHome) {
-          drag.el.style.left = (laneIdx / laneList.length * 100) + "%";
-          drag.el.style.width = (100 / laneList.length) + "%";
-        } else if (drag.origLeft) {
-          drag.el.style.left = drag.origLeft;
-          drag.el.style.width = drag.origWidth;
-        }
-      }
-    }
-    // Is the cursor over the time grid at all? A chip dragged around the
-    // strip and released there must not be scheduled at 06:00.
-    var gridRect = drag.cols[drag.currentColIdx].getBoundingClientRect();
-    drag.inGrid = colIdx >= 0 && e.clientY >= gridRect.top && e.clientY <= gridRect.bottom;
-  }
-
-  function onDragEnd(e) {
-    document.removeEventListener("mousemove", onDragMove);
-    document.removeEventListener("mouseup", onDragEnd);
-    if (!drag) return;
-
-    drag.el.classList.remove("cal-dragging");
-
-    if (!drag.moved || (drag.fromChip && !drag.inGrid)) {
-      if (drag.fromChip) {
-        // a plain click on a chip (or a drag that never reached the grid):
-        // nothing is scheduled; a click shows the work order instead
-        var chipEvt = drag.evt;
-        var wasClick = !drag.moved;
-        drag.el.remove();
-        drag = null;
-        if (wasClick) openWoModal(chipEvt);
-        return;
-      }
-      drag = null;
-      return;
-    }
-
-    // suppress clicks briefly after drag
-    dragJustEnded = true;
-    setTimeout(function () { dragJustEnded = false; }, 300);
-
-    var topPx = parseFloat(drag.el.style.top);
-    var totalMin = snapTo15(topPx / PX_PER_MINUTE);
-    var newHour = HOURS_START + Math.floor(totalMin / 60);
-    var newMin = totalMin % 60;
-
-    var columns = getColumns();
-    var targetCol = columns[drag.currentColIdx] || columns[drag.origColIdx];
-    var newDate = targetCol ? targetCol.date : addDays(weekStart, 0);
-    var startISO = toISODate(newDate) + "T" + pad2(newHour) + ":" + pad2(newMin) + ":00";
-    // whole minutes, never past the end of the grid
-    var gridMinutes = (HOURS_END - HOURS_START) * 60;
-    var endTotalMin = Math.min(Math.round(totalMin + drag.durationMin), gridMinutes);
-    if (endTotalMin <= totalMin) endTotalMin = Math.min(totalMin + STEP_MINUTES, gridMinutes);
-    var endH = HOURS_START + Math.floor(endTotalMin / 60);
-    var endM = endTotalMin % 60;
-    var endISO = toISODate(newDate) + "T" + pad2(endH) + ":" + pad2(endM) + ":00";
-
-    var evt = drag.evt;
-    var fromLaneKey = drag.fromLaneKey;
-    var dropLane = null;
-    if (viewMode === "week" && targetCol && drag.cols[drag.currentColIdx]) {
-      // the lane under the cursor says who the plan is for
-      dropLane = laneAtX(targetCol, e ? e.clientX : null, drag.cols[drag.currentColIdx].getBoundingClientRect());
-    }
-    drag = null;
-
-    var payload = { start_time: startISO, end_time: endISO };
-    var target = null;
-    if (viewMode === "mechanics" && targetCol) {
-      target = targetCol.unassigned ? { key: UNASSIGNED_KEY } : { key: String(targetCol.mechanicId), name: targetCol.mechanicName };
-    } else if (dropLane) {
-      target = dropLane;
-    }
-    // A crew plan (several mechanics) dragged out of one member's lane into
-    // another mechanic's lane: that member is swapped, the rest of the crew
-    // stays. Dropped on a lane of someone already in the crew, or on
-    // "Unassigned": the member is simply removed (at least one stays).
-    // Dropped back into the lane it was picked up from: a plain time change,
-    // the crew (or the single mechanic) stays as is.
-    if (target && fromLaneKey && target.key === fromLaneKey) target = null;
-    var crewIds = isVirtual(evt) ? [] : eventMechanicIds(evt);
-    if (target && crewIds.length > 1) {
-      var next = crewIds.slice();
-      var at = fromLaneKey ? next.indexOf(fromLaneKey) : -1;
-      if (target.key === UNASSIGNED_KEY || next.indexOf(target.key) !== -1) {
-        if (at !== -1 && next.length > 1) next.splice(at, 1);
-      } else if (at !== -1) {
-        next[at] = target.key;
-      } else {
-        next.push(target.key);
-      }
-      payload.mechanic_ids = next;
-      payload.mechanics = next.map(function (id) {
-        var m = mechanicById(id);
-        return { id: id, name: m ? m.name : "" };
-      });
-      target = null;
-    }
-    if (target) {
-      // Dropped into a mechanic column / lane - that mechanic gets the plan.
-      if (target.key === UNASSIGNED_KEY) {
-        payload.mechanic_id = "";
-        payload.mechanic_name = "";
-        payload.keep_unassigned = true;
-      } else {
-        payload.mechanic_id = target.key;
-        payload.mechanic_name = target.name;
-      }
-    }
-
-    var req;
-    if (isVirtual(evt)) {
-      // A work order dragged onto the grid becomes a scheduled, linked appointment.
-      payload.work_order_id = evt.work_order_id;
-      req = sendJSON("/calendar/api/events", "POST", payload);
-    } else {
-      req = sendJSON("/calendar/api/events/" + evt.id, "PUT", payload);
-    }
-    req
-      .then(function () { loadEvents(); })
-      .catch(function (e) { notify(e.message || "Could not move the event.", "error"); loadEvents(); });
-  }
-
-  /* ── resize: the bottom edge of a plan changes its end time ── */
-
-  function startResize(evt, blockEl, mouseEvt) {
-    var st = new Date(evt.start_time);
-    var en = new Date(evt.end_time);
-    var startMin = Math.round(((st.getHours() + st.getMinutes() / 60) - HOURS_START) * 60);
-    resize = {
-      evt: evt,
-      el: blockEl,
-      startY: mouseEvt.clientY,
-      origHeight: parseFloat(blockEl.style.height),
-      // the real duration, not the drawn height (a block may be clamped to the grid)
-      origDurMin: Math.max(STEP_MINUTES, Math.round((en - st) / 60000)),
-      startMin: Math.max(0, startMin),
-      endMin: null,
-      moved: false
-    };
-    blockEl.classList.add("cal-resizing");
-    document.addEventListener("mousemove", onResizeMove);
-    document.addEventListener("mouseup", onResizeEnd);
-  }
-
-  function onResizeMove(e) {
-    if (!resize) return;
-    if (e.buttons === 0) { cancelResize(); return; } // button released outside the window
-    var dy = e.clientY - resize.startY;
-    if (Math.abs(dy) > 3) resize.moved = true;
-    var gridMinutes = (HOURS_END - HOURS_START) * 60;
-    // 15-minute steps from the real duration, at least one step, never past the grid
-    var durMin = snapTo15(resize.origDurMin + dy / PX_PER_MINUTE);
-    durMin = Math.max(STEP_MINUTES, Math.min(durMin, gridMinutes - resize.startMin));
-    resize.endMin = resize.startMin + durMin;
-    resize.el.style.height = Math.max(12, durMin * PX_PER_MINUTE) + "px";
-    var endH = HOURS_START + Math.floor(resize.endMin / 60);
-    var endM = resize.endMin % 60;
-    resize.el.setAttribute("data-resize-end", pad2(endH) + ":" + pad2(endM));
-  }
-
-  function onResizeEnd() {
-    document.removeEventListener("mousemove", onResizeMove);
-    document.removeEventListener("mouseup", onResizeEnd);
-    if (!resize) return;
-    var r = resize;
-    resize = null;
-    r.el.classList.remove("cal-resizing");
-    r.el.removeAttribute("data-resize-end");
-    if (!r.moved || r.endMin === null || r.endMin - r.startMin === r.origDurMin) {
-      r.el.style.height = r.origHeight + "px"; // nothing changed: put the drawn height back
-      return;
-    }
-
-    // suppress the click that follows the mouseup
-    dragJustEnded = true;
-    setTimeout(function () { dragJustEnded = false; }, 300);
-
-    var day = toISODate(new Date(r.evt.start_time));
-    var endH = HOURS_START + Math.floor(r.endMin / 60);
-    var endM = r.endMin % 60;
-    var endISO = day + "T" + pad2(endH) + ":" + pad2(endM) + ":00";
-    // only the end changes - a move someone else made meanwhile is not clobbered
-    sendJSON("/calendar/api/events/" + r.evt.id, "PUT", { end_time: endISO })
-      .then(function () { loadEvents(); })
-      .catch(function (e) { notify(e.message || "Could not change the end time.", "error"); loadEvents(); });
-  }
-
-  function cancelResize() {
-    document.removeEventListener("mousemove", onResizeMove);
-    document.removeEventListener("mouseup", onResizeEnd);
-    if (!resize) return;
-    resize.el.style.height = resize.origHeight + "px";
-    resize.el.classList.remove("cal-resizing");
-    resize.el.removeAttribute("data-resize-end");
-    resize = null;
-  }
-
-  function cancelDrag() {
-    document.removeEventListener("mousemove", onDragMove);
-    document.removeEventListener("mouseup", onDragEnd);
-    if (!drag) return;
-    var d = drag;
-    drag = null;
-    d.el.classList.remove("cal-dragging");
-    if (d.fromChip) { d.el.remove(); return; }
-    if (d.cols[d.origColIdx] && d.el.parentNode !== d.cols[d.origColIdx]) d.cols[d.origColIdx].appendChild(d.el);
-    d.el.style.top = d.origTop + "px";
-    if (d.origLeft) { d.el.style.left = d.origLeft; d.el.style.width = d.origWidth; }
-  }
-
-  // Escape, or losing the window (alt-tab, a context menu), abandons a drag / resize
-  // instead of leaving the block half-moved and live refresh paused
-  document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape") { cancelDrag(); cancelResize(); }
-  });
-  window.addEventListener("blur", function () { cancelDrag(); cancelResize(); });
-
-  /* ── now line ── */
 
   function updateNowLine() {
-    var grid = container.querySelector(".cal-body-cols");
-    if (!grid) return;
-
-    var old = grid.querySelectorAll(".cal-now-line");
-    for (var i = 0; i < old.length; i++) old[i].remove();
-
-    var now = new Date();
-    var hours = now.getHours();
-    var mins  = now.getMinutes();
-    if (hours < HOURS_START || hours >= HOURS_END) return;
-    var pxFromTop = (hours - HOURS_START) * SLOT_HEIGHT + (mins / 60) * SLOT_HEIGHT;
-
-    var columns = getColumns();
-    var colEls = grid.querySelectorAll(".cal-day-col");
-    for (var c = 0; c < columns.length; c++) {
-      if (!isSameDay(columns[c].date, now)) continue;
-      var col = colEls[c];
-      if (!col) continue;
-      var line = document.createElement("div");
-      line.className = "cal-now-line";
-      line.style.top = pxFromTop + "px";
-      col.appendChild(line);
-      if (viewMode !== "mechanics") break;
-    }
+    const now = shopNow();
+    const todayCols = state.columns.filter((c) => c.isToday);
+    if (todayCols.length && todayCols[0].date !== now.date) { render(); return; }
+    gridEl.querySelectorAll(".cal-col.is-today").forEach((colEl) => {
+      let line = colEl.querySelector(".cal-now");
+      const inRange = now.minutes >= state.visStart && now.minutes <= state.visEnd;
+      if (!inRange) { if (line) line.remove(); return; }
+      if (!line) { line = document.createElement("div"); line.className = "cal-now"; colEl.appendChild(line); }
+      line.style.top = yOf(now.minutes) + "px";
+    });
   }
 
-  /* Running timers: the block's bottom edge follows the clock until the
-     next reload (otherwise it would freeze at the load time). */
-  function stretchRunningBlocks() {
-    var now = new Date();
-    var nowH = now.getHours() + now.getMinutes() / 60;
-    var blocks = container.querySelectorAll(".cal-event[data-running]");
-    for (var i = 0; i < blocks.length; i++) {
-      var b = blocks[i];
-      if (b.getAttribute("data-day") !== toISODate(now)) continue;
-      var startH = Math.max(parseFloat(b.getAttribute("data-start-h")) || HOURS_START, HOURS_START);
-      var bot = Math.min(Math.max(nowH, startH), HOURS_END);
-      var h = (bot - startH) * SLOT_HEIGHT;
-      if (h > (parseFloat(b.style.height) || 0)) b.style.height = Math.max(12, h) + "px";
-    }
+  function updateToolbar() {
+    ui.title.textContent = state.view === "week" ? weekTitle(weekStartOf(state.date)) : longDate(state.date);
+    if (ui.date.value !== state.date) setDateInput(ui.date, state.date);
+    ui.viewWeek.classList.toggle("active", state.view === "week");
+    ui.viewDay.classList.toggle("active", state.view === "day");
+    ui.viewWeek.setAttribute("aria-pressed", String(state.view === "week"));
+    ui.viewDay.setAttribute("aria-pressed", String(state.view === "day"));
+    if (ui.filter.value !== state.filter) ui.filter.value = state.filter;
+    ui.mechLegend.querySelectorAll(".cal-mech-legend-btn").forEach((b) => {
+      b.classList.toggle("is-active", b.dataset.mech === state.filter && state.filter !== "");
+    });
   }
 
-  function startNowLineTimer() {
-    if (nowLineTimer) clearInterval(nowLineTimer);
-    nowLineTimer = setInterval(function () { updateNowLine(); stretchRunningBlocks(); }, 60000);
+  function renderFilterOptions() {
+    const opts = ['<option value="">All mechanics</option>'];
+    state.mechanics.forEach((m) => opts.push('<option value="' + esc(m.id) + '">' + esc(m.name) + "</option>"));
+    opts.push('<option value="' + UNASSIGNED + '">Unassigned</option>');
+    ui.filter.innerHTML = opts.join("");
+    if (state.filter && state.filter !== UNASSIGNED && !mechanicById(state.filter)) state.filter = "";
+    ui.filter.value = state.filter;
   }
 
-  /* ── layout / expand ── */
-
-  /* Header cell, time column and the "Not scheduled" cell of a day always
-     share the same width classes: normal / wide (level 1) / full (level 2)
-     for the expanded day, collapsed for the others. */
-  function applyLayout() {
-    if (viewMode === "mechanics") return;
-    var headerCells = container.querySelectorAll(".cal-header-cell");
-    var bodyCols    = container.querySelectorAll(".cal-day-col");
-    var chipCells   = container.querySelectorAll(".cal-unscheduled-cell");
-
-    var isExpanded = expandedDayIndex >= 0 && expandedDayIndex < 7;
-    // full-width day: the other days are strips too narrow for lane markers
-    var grid = container.querySelector(".cal-grid");
-    if (grid) grid.classList.toggle("cal-grid--full", isExpanded && expandLevel >= 2);
-
-    for (var i = 0; i < 7; i++) {
-      var els = [headerCells[i], bodyCols[i], chipCells[i]];
-      for (var k = 0; k < els.length; k++) {
-        var el = els[k];
-        if (!el) continue;
-        el.classList.remove("cal-expanded", "cal-expanded--full", "cal-collapsed");
-        if (!isExpanded) continue;
-        if (i === expandedDayIndex) {
-          el.classList.add("cal-expanded");
-          if (expandLevel >= 2) el.classList.add("cal-expanded--full");
-        } else {
-          el.classList.add("cal-collapsed");
-        }
-      }
-    }
+  function renderLegend() {
+    ui.legend.innerHTML = state.settings.statuses.map((s) =>
+      '<span class="cal-legend-item"><span class="cal-legend-dot" style="background:' + esc(s.color) + '"></span>' + esc(s.label) + "</span>"
+    ).join("");
+    ui.mechLegend.innerHTML = state.mechanics.map((m) =>
+      '<button type="button" class="cal-mech-legend-btn" data-mech="' + esc(m.id) + '" title="Show only ' + esc(m.name) + '">' +
+        mechChipHtml(m, false) + "<span>" + esc(m.name) + "</span></button>"
+    ).join("");
   }
 
-  /* Click on a day header: 1st - wide day (lane markers get names), 2nd -
-     the day takes almost the whole grid (other days become narrow strips),
-     3rd - back to the normal week. Lanes themselves are always there. */
-  function toggleExpandDay(idx) {
-    if (expandedDayIndex !== idx) {
-      expandedDayIndex = idx;
-      expandLevel = 1;
-    } else if (expandLevel === 1) {
-      expandLevel = 2;
+  // ── 4. Interactions ──────────────────────────────────────────────────────
+
+  function syncUrl() {
+    const params = new URLSearchParams();
+    params.set("date", state.date);
+    params.set("view", state.view);
+    try { window.history.replaceState(null, "", window.location.pathname + "?" + params.toString()); } catch (e) { /* ignore */ }
+  }
+
+  /* Go to a date: refetch when the week changes, otherwise just redraw. */
+  function navigate(dateIso) {
+    if (!isValidIso(dateIso)) return;
+    state.date = dateIso;
+    updateToolbar();
+    syncUrl();
+    if (weekStartOf(dateIso) !== state.loadedWeek) {
+      loadEvents(false).then(render);
     } else {
-      expandedDayIndex = -1;
-      expandLevel = 0;
-    }
-    applyLayout();
-    renderEvents();
-  }
-
-  /* ── searchable dropdown helper ── */
-  /* extraFn (optional): secondary text that is searched too but never becomes
-     the field value — e.g. a unit's VIN. Shown muted next to the label. */
-  function bindSearchable(searchInput, dropDiv, hiddenInput, items, valueFn, labelFn, onSelect, extraFn) {
-    var list = items.map(function (item) {
-      return { value: valueFn(item), label: labelFn(item), extra: extraFn ? String(extraFn(item) || "") : "" };
-    });
-    function matches(entry, q) {
-      return entry.label.toLowerCase().indexOf(q) !== -1 || entry.extra.toLowerCase().indexOf(q) !== -1;
-    }
-
-    // Remove old listeners by cloning the search input
-    var newInput = searchInput.cloneNode(true);
-    searchInput.parentNode.replaceChild(newInput, searchInput);
-
-    // Update DOM references
-    if (searchInput === elCustomerSearch) elCustomerSearch = newInput;
-    else if (searchInput === elUnitSearch) elUnitSearch = newInput;
-    else if (searchInput === elMechanicSearch) elMechanicSearch = newInput;
-    else if (searchInput === elPresetSearch) elPresetSearch = newInput;
-
-    function renderList(filtered) {
-      dropDiv.innerHTML = "";
-      for (var i = 0; i < filtered.length; i++) {
-        (function (entry) {
-          var a = document.createElement("a");
-          a.href = "#";
-          a.className = "list-group-item list-group-item-action py-1 px-2";
-          a.style.fontSize = "0.9em";
-          a.textContent = entry.label;
-          if (entry.extra) {
-            var extra = document.createElement("small");
-            extra.className = "text-muted ms-2";
-            extra.textContent = entry.extra;
-            a.appendChild(extra);
-          }
-          a.addEventListener("mousedown", function (e) {
-            e.preventDefault();
-            hiddenInput.value = entry.value;
-            newInput.value = entry.label;
-            dropDiv.style.display = "none";
-            if (onSelect) onSelect(entry.value, entry.label);
-          });
-          dropDiv.appendChild(a);
-        })(filtered[i]);
-      }
-      dropDiv.style.display = filtered.length ? "block" : "none";
-    }
-
-    newInput.addEventListener("input", function () {
-      var q = this.value.toLowerCase();
-      if (!q) {
-        hiddenInput.value = "";
-        renderList(list);
-        return;
-      }
-      renderList(list.filter(function (entry) { return matches(entry, q); }));
-    });
-
-    newInput.addEventListener("focus", function () {
-      var q = this.value.toLowerCase();
-      var filtered = q ? list.filter(function (entry) { return matches(entry, q); }) : list;
-      renderList(filtered);
-    });
-
-    newInput.addEventListener("blur", function () {
-      setTimeout(function () { dropDiv.style.display = "none"; }, 150);
-    });
-
-    return newInput;
-  }
-
-  function clearSearchable(searchInput, hiddenInput, dropDiv) {
-    searchInput.value = "";
-    hiddenInput.value = "";
-    dropDiv.innerHTML = "";
-    dropDiv.style.display = "none";
-  }
-
-  function buildStatusButtons(selectedKey) {
-    elStatusGrp.innerHTML = "";
-    for (var i = 0; i < cachedStatuses.length; i++) {
-      var st = cachedStatuses[i];
-      var btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "btn btn-sm cal-status-btn";
-      btn.setAttribute("data-status", st.key);
-      btn.style.borderColor = st.color;
-      btn.style.color = st.color;
-      btn.textContent = st.label;
-      if (st.key === selectedKey) {
-        btn.style.backgroundColor = st.color;
-        btn.style.color = "#fff";
-        btn.classList.add("active");
-      }
-      btn.addEventListener("click", function () {
-        var allBtns = elStatusGrp.querySelectorAll(".cal-status-btn");
-        for (var j = 0; j < allBtns.length; j++) {
-          var sColor = allBtns[j].style.borderColor;
-          allBtns[j].classList.remove("active");
-          allBtns[j].style.backgroundColor = "transparent";
-          allBtns[j].style.color = sColor;
-        }
-        this.classList.add("active");
-        this.style.backgroundColor = this.style.borderColor;
-        this.style.color = "#fff";
-      });
-      elStatusGrp.appendChild(btn);
+      render();
     }
   }
 
-  function getSelectedStatus() {
-    var active = elStatusGrp.querySelector(".cal-status-btn.active");
-    return active ? active.getAttribute("data-status") : "scheduled";
-  }
-
-  /* A plan linked to a work order follows the work: once the job is running
-     or done, the appointment status is derived from the WO state (the server
-     overrides a manual In progress / Completed anyway) and only Cancelled
-     stays a manual choice. Statuses are per shop: an unknown key = no lock. */
-  var WO_STATE_TO_STATUS = { in_progress: "in_progress", mechanic_done: "completed", completed: "completed", paid: "completed" };
-
-  function statusKnown(key) {
-    for (var i = 0; i < cachedStatuses.length; i++) {
-      if (cachedStatuses[i].key === key) return true;
-    }
-    return false;
-  }
-
-  function statusForWoState(woState) {
-    var key = WO_STATE_TO_STATUS[woState] || null;
-    return key && statusKnown(key) ? key : null;
-  }
-
-  function lockedStatusKey() {
-    return linkedEvent && !unlinkRequested ? statusForWoState(linkedEvent.wo_state) : null;
-  }
-
-  function applyStatusLock() {
-    var derived = lockedStatusKey();
-    var btns = elStatusGrp.querySelectorAll(".cal-status-btn");
-    for (var i = 0; i < btns.length; i++) {
-      var key = btns[i].getAttribute("data-status");
-      btns[i].disabled = !!derived && key !== "cancelled" && key !== derived;
-    }
-    if (elStatusHint) elStatusHint.classList.toggle("d-none", !derived);
-  }
-
-  /* Customer and unit of a linked plan belong to the work order (the server
-     answers 409 to a change): the pickers are read-only until Unlink. */
-  function applyLinkedLocks() {
-    var locked = !!(linkedEvent && !unlinkRequested && elWorkOrderId.value);
-    elCustomerSearch.disabled = locked;
-    if (locked) elUnitSearch.disabled = true;
-    if (elLinkedFieldsHint) {
-      elLinkedFieldsHint.classList.toggle("d-none", !locked);
-      elLinkedFieldsHint.textContent = locked
-        ? "Customer and unit come from " + (linkedEvent.wo_number ? "WO #" + linkedEvent.wo_number : "the work order")
-        : "";
-    }
-    applyStatusLock();
-  }
-
-  /* Unit picker: searches the label (number, year, make, model) and the VIN. */
-  function bindUnitSearchable(units) {
-    bindSearchable(elUnitSearch, elUnitDrop, elUnit, units,
-      function (u) { return u.id; },
-      function (u) { return u.label; },
-      function () { updateCreateWOBtn(); },
-      function (u) { return u.vin ? "VIN " + u.vin : ""; }
-    );
-  }
-
-  function loadUnitsForCustomer(customerId) {
-    clearSearchable(elUnitSearch, elUnit, elUnitDrop);
-    if (!customerId) {
-      elUnitSearch.disabled = true;
-      return;
-    }
-    elUnitSearch.disabled = false;
-    loadUnits(customerId).then(function (units) {
-      bindUnitSearchable(units);
-    }).catch(function () { notify("Could not load units.", "error"); });
-  }
-
-  function mechanicById(id) {
-    for (var i = 0; i < cachedMechanics.length; i++) {
-      if (String(cachedMechanics[i].id) === String(id)) return cachedMechanics[i];
-    }
-    return null;
-  }
-
-  function renderLinkedPanel(ev) {
-    var linked = !!(ev && ev.work_order_id && !unlinkRequested);
-    linkedEvent = linked ? ev : null;
-    if (!elLinkedWO) return;
-    elLinkedWO.classList.toggle("d-none", !linked);
-    if (!linked) return;
-    var info = woStateInfo(ev.wo_state);
-    elLinkedWONumber.textContent = ev.wo_number ? "WO #" + ev.wo_number : "work order";
-    elLinkedWOState.textContent = info.label;
-    elLinkedWOState.style.backgroundColor = info.color;
-    elLinkedWOState.style.color = "#fff";
-    var summaryParts = [];
-    if (Array.isArray(ev.labor_summary) && ev.labor_summary.length) summaryParts.push(ev.labor_summary.join(", "));
-    var names = eventMechanicNames(ev);
-    if (names.length) summaryParts.push("Mechanics: " + names.join(", "));
-    elLinkedWOSummary.textContent = summaryParts.join(" · ");
-    elLinkedWOOpen.href = woPageUrl(ev.work_order_id);
-  }
-
-  function openModal(existingEvent, dayIndex, hour, presetMechanicId) {
-    var isEdit = !!existingEvent;
-    unlinkRequested = false;
-    modalTitle.textContent = isEdit ? "Edit Appointment" : "New Appointment";
-    elEventId.value = isEdit ? existingEvent.id : "";
-    elWorkOrderId.value = isEdit && existingEvent.work_order_id ? existingEvent.work_order_id : "";
-    elDelBtn.classList.toggle("d-none", !isEdit);
-    renderLinkedPanel(isEdit ? existingEvent : null);
-
-    // bind searchable dropdowns
-    bindSearchable(elCustomerSearch, elCustomerDrop, elCustomer, cachedCustomers,
-      function (c) { return c.id; },
-      function (c) { return c.label; },
-      function (val) { loadUnitsForCustomer(val); updateCreateWOBtn(); }
-    );
-    // clear units when customer text is manually edited
-    elCustomerSearch.addEventListener("input", function () {
-      if (!elCustomer.value) {
-        clearSearchable(elUnitSearch, elUnit, elUnitDrop);
-        elUnitSearch.disabled = true;
-        updateCreateWOBtn();
-      }
-    });
-
-    // picking a mechanic adds a tag; the search box is ready for the next one
-    bindSearchable(elMechanicSearch, elMechanicDrop, elMechanic, cachedMechanics,
-      function (m) { return m.id; },
-      function (m) { return m.name + (m.role ? " (" + m.role.replace(/_/g, " ") + ")" : ""); },
-      function (val) {
-        var m = mechanicById(val);
-        if (m) addMechanic(String(m.id), m.name);
-        clearSearchable(elMechanicSearch, elMechanic, elMechanicDrop);
-      }
-    );
-
-    // presets searchable
-    bindSearchable(elPresetSearch, elPresetDrop, elPresetPendingId, cachedPresets,
-      function (p) { return p.id; },
-      function (p) { return p.name; },
-      function () { elPresetAddBtn.disabled = false; }
-    );
-
-    if (isEdit) {
-      // customer
-      elCustomer.value = existingEvent.customer_id || "";
-      elCustomerSearch.value = existingEvent.customer_label || "";
-      if (existingEvent.customer_id) {
-        loadUnits(existingEvent.customer_id).then(function (units) {
-          bindUnitSearchable(units);
-          elUnitSearch.disabled = false;
-          elUnit.value = existingEvent.unit_id || "";
-          elUnitSearch.value = existingEvent.unit_label || "";
-          updateCreateWOBtn();
-          applyLinkedLocks(); // a linked plan keeps its unit read-only
-        }).catch(function () { notify("Could not load units.", "error"); });
-      } else {
-        elUnitSearch.disabled = true;
-      }
-
-      var stDt = new Date(existingEvent.start_time);
-      var enDt = new Date(existingEvent.end_time);
-      setModalDate(toISODate(stDt));
-      // the selects only know 15-minute steps inside the grid hours
-      var snapped = snapRange(stDt.getHours() * 60 + stDt.getMinutes(), enDt.getHours() * 60 + enDt.getMinutes());
-      elStart.value = minutesToValue(snapped[0]);
-      elEnd.value = minutesToValue(snapped[1]);
-
-      clearSearchable(elMechanicSearch, elMechanic, elMechanicDrop);
-      selectedMechanics = eventMechanicList(existingEvent).map(function (m) {
-        var known = mechanicById(m.id);
-        return { id: String(m.id), name: known ? known.name : (m.name || "Mechanic") };
-      });
-      renderMechanicTags();
-
-      elTitleInp.value = existingEvent.title || "";
-      selectedPresets = (existingEvent.presets || []).slice();
-      renderPresetTags();
-      // a plan whose work order is running / done shows the derived status
-      // (a Cancelled plan stays cancelled)
-      var initialStatus = existingEvent.status || "scheduled";
-      var derivedStatus = lockedStatusKey();
-      if (derivedStatus && initialStatus !== "cancelled") initialStatus = derivedStatus;
-      buildStatusButtons(initialStatus);
-    } else {
-      clearSearchable(elCustomerSearch, elCustomer, elCustomerDrop);
-      clearSearchable(elUnitSearch, elUnit, elUnitDrop);
-      clearSearchable(elMechanicSearch, elMechanic, elMechanicDrop);
-      clearSearchable(elPresetSearch, elPresetPendingId, elPresetDrop);
-      elPresetAddBtn.disabled = true;
-      elUnitSearch.disabled = true;
-
-      var dayDate = addDays(weekStart, dayIndex);
-      setModalDate(toISODate(dayDate));
-      elStart.value = pad2(hour) + ":00";
-      var endHour = Math.min(hour + 1, HOURS_END);
-      elEnd.value = pad2(endHour) + ":00";
-      elTitleInp.value = "";
-      selectedPresets = [];
-      renderPresetTags();
-      buildStatusButtons("scheduled");
-
-      var preMech = presetMechanicId ? mechanicById(presetMechanicId) : null;
-      selectedMechanics = preMech ? [{ id: String(preMech.id), name: preMech.name }] : [];
-      renderMechanicTags();
-    }
-
-    applyLinkedLocks();
-    updateCreateWOBtn();
-    getModal().show();
-  }
-
-  function updateCreateWOBtn() {
-    if (!elCreateWOBtn) return;
-    var hasCustomer = !!elCustomer.value;
-    var hasUnit = !!elUnit.value;
-    var alreadyLinked = !!elWorkOrderId.value && !unlinkRequested;
-    elCreateWOBtn.classList.toggle("d-none", !(canCreateWO && hasCustomer && hasUnit && !alreadyLinked));
-  }
-
-  function openModalForEdit(ev) {
-    openModal(ev, 0, 0, null);
-  }
-
-  /* New appointment prefilled from a work order block or chip: linked to
-     the WO, customer/unit carried over, startMin + planned hours as the
-     time, the given mechanic. The user picks the final time and saves. */
-  function openModalForWorkOrder(ev, dayDate, startMin, mechanicId) {
-    var dayIdx = dayIndexOf(dayDate);
-    openModal(null, dayIdx < 0 ? 0 : dayIdx, HOURS_START, mechanicId || null);
-    setModalDate(toISODate(dayDate));
-    elWorkOrderId.value = ev.work_order_id || "";
-    renderLinkedPanel(ev);
-    elCustomer.value = ev.customer_id || "";
-    elCustomerSearch.value = ev.customer_label || "";
-    if (ev.customer_id) {
-      elUnitSearch.disabled = false;
-      elUnit.value = ev.unit_id || "";
-      elUnitSearch.value = ev.unit_label || "";
-      loadUnits(ev.customer_id).then(function (units) {
-        bindUnitSearchable(units);
-        elUnit.value = ev.unit_id || "";
-        elUnitSearch.value = ev.unit_label || "";
-        updateCreateWOBtn();
-        applyLinkedLocks();
-      }).catch(function () { notify("Could not load units.", "error"); });
-    }
-    var hours = Number(ev.labor_hours) > 0 ? Math.min(Number(ev.labor_hours), 8) : 1;
-    var planned = Math.max(STEP_MINUTES, Math.ceil(hours * 60 / STEP_MINUTES) * STEP_MINUTES);
-    var range = snapRange(startMin, startMin + planned);
-    elStart.value = minutesToValue(range[0]);
-    elEnd.value = minutesToValue(range[1]);
-    if (Array.isArray(ev.labor_summary) && ev.labor_summary.length) elTitleInp.value = ev.labor_summary.join(", ");
-    // the status follows the work: a running / finished job is preselected
-    // as In progress / Completed rather than Scheduled
-    buildStatusButtons(statusForWoState(ev.wo_state) || "scheduled");
-    applyLinkedLocks();
-    updateCreateWOBtn();
-  }
-
-  if (elUnlinkWOBtn) {
-    elUnlinkWOBtn.addEventListener("click", function () {
-      unlinkRequested = true;
-      renderLinkedPanel(null);
-      // customer, unit and status are editable again
-      applyLinkedLocks();
-      elUnitSearch.disabled = !elCustomer.value;
-      updateCreateWOBtn();
-      notify("The link will be removed when you save.", "info");
-    });
-  }
-
-  /* ── WO modal ── */
-
-  function openWoModal(ev) {
-    currentWoEvent = ev;
-    var info = woStateInfo(ev.wo_state);
-    woModalTitle.textContent = (ev.wo_number ? "WO #" + ev.wo_number : "Work order") + (ev.customer_label ? " · " + ev.customer_label : "");
-    woStateEl.textContent = info.label;
-    woStateEl.style.backgroundColor = info.color;
-    woStateEl.style.color = "#fff";
-
-    var st = new Date(ev.start_time), en = new Date(ev.end_time);
-    var when = DAY_NAMES_LONG[(st.getDay() + 6) % 7] + ", " + formatDateShort(st);
-    if (ev.unscheduled) when += " · not scheduled";
-    else when += " · " + fmtTime(st) + "–" + fmtTime(en) + (ev.source === "time_logs" ? " (from the mechanic's timer)" : "");
-    woWhenEl.textContent = when;
-
-    woCustomerEl.textContent = ev.customer_label || "—";
-    woUnitEl.textContent = ev.unit_label || "—";
-
-    woMechanicsEl.innerHTML = "";
-    if (Array.isArray(ev.worked) && ev.worked.length) {
-      ev.worked.forEach(function (u) {
-        var row = document.createElement("div");
-        row.textContent = u.name + " — " + fmtDuration(u.seconds) + (u.running ? " (working now)" : "");
-        woMechanicsEl.appendChild(row);
-      });
-    } else {
-      var names = eventMechanicNames(ev);
-      woMechanicsEl.textContent = names.length ? names.join(", ") : "Not assigned";
-    }
-
-    woLaborsEl.innerHTML = "";
-    if (Array.isArray(ev.labor_summary) && ev.labor_summary.length) {
-      ev.labor_summary.forEach(function (text) {
-        var row = document.createElement("div");
-        row.textContent = text;
-        woLaborsEl.appendChild(row);
-      });
-    } else {
-      woLaborsEl.textContent = "—";
-    }
-    woHoursEl.textContent = ev.labor_hours ? ev.labor_hours + " h" : "—";
-    renderWoPlans(ev);
-    woHintEl.textContent = ev.source === "time_logs"
-      ? "This block is one mechanic's actual work session on the job (from the timer). It cannot be moved; \"Add to schedule\" plans a follow-up slot for this mechanic."
-      : "This work order has no scheduled time and no tracked work yet - it sits in the \"Not scheduled\" strip on its work order date. Drag it onto the grid or press Add to schedule to plan it.";
-    woOpenBtn.href = woPageUrl(ev.work_order_id);
-    getWoModal().show();
-  }
-
-  /* Appointments linked to this WO on the same day — including plans that
-     were superseded by actual work (hidden from the grid, editable here). */
-  function renderWoPlans(ev) {
-    var holder = document.getElementById("woEventPlans");
-    if (!holder) return;
-    holder.innerHTML = "";
-    var day = new Date(ev.start_time);
-    var plans = cachedEvents.filter(function (e) {
-      return !isVirtual(e) && e.work_order_id && e.work_order_id === ev.work_order_id &&
-        e.start_time && isSameDay(new Date(e.start_time), day);
-    });
-    if (!plans.length) { holder.classList.add("d-none"); return; }
-    holder.classList.remove("d-none");
-    var title = document.createElement("div");
-    title.className = "small text-muted mb-1";
-    title.textContent = "Planned for this day:";
-    holder.appendChild(title);
-    plans.forEach(function (p) {
-      var row = document.createElement("div");
-      row.className = "d-flex align-items-center justify-content-between gap-2 cal-wo-plan";
-      var st = new Date(p.start_time), en = new Date(p.end_time);
-      var text = document.createElement("span");
-      text.className = "small";
-      text.textContent = fmtTime(st) + "–" + fmtTime(en) + (p.mechanic_name ? " · " + p.mechanic_name : "") +
-        (p.superseded ? " · hidden: replaced by actual work" : "");
-      row.appendChild(text);
-      var btns = document.createElement("span");
-      btns.className = "d-flex gap-1";
-      if (canEdit) {
-        var btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "btn btn-sm btn-outline-secondary";
-        btn.textContent = "Edit";
-        btn.addEventListener("click", function () {
-          getWoModal().hide();
-          openModalForEdit(p);
-        });
-        btns.appendChild(btn);
-      }
-      if (canDelete) {
-        var del = document.createElement("button");
-        del.type = "button";
-        del.className = "btn btn-sm btn-outline-danger";
-        del.textContent = "Delete";
-        del.addEventListener("click", function () {
-          var proceed = window.appConfirm
-            ? window.appConfirm("Delete this appointment?")
-            : Promise.resolve(window.confirm("Delete this appointment?"));
-          proceed.then(function (ok) {
-            if (!ok) return;
-            fetchJSON("/calendar/api/events/" + p.id, { method: "DELETE" })
-              .then(function () { return loadEvents(); })
-              .then(function () { if (currentWoEvent) renderWoPlans(currentWoEvent); })
-              .catch(function (err) { notify(err.message || "Could not delete the appointment.", "error"); });
-          });
-        });
-        btns.appendChild(del);
-      }
-      row.appendChild(btns);
-      holder.appendChild(row);
-    });
-  }
-
-  if (woScheduleBtn) {
-    woScheduleBtn.classList.toggle("d-none", !canCreate);
-    woScheduleBtn.addEventListener("click", function () {
-      if (!currentWoEvent || !canCreate) return;
-      var ev = currentWoEvent;
-      var mechanicIds = eventMechanicIds(ev);
-      var mech = mechanicIds.length ? mechanicById(mechanicIds[0]) : null;
-      getWoModal().hide();
-      if (ev.source === "time_logs") {
-        // A fact already happened - plan the follow-up: the next quarter
-        // after this session, for the same mechanic; the user picks the time.
-        var en = new Date(ev.end_time);
-        openModalForWorkOrder(ev, en, Math.ceil((en.getHours() * 60 + en.getMinutes()) / STEP_MINUTES) * STEP_MINUTES, mech ? mech.id : null);
-        return;
-      }
-      // Not scheduled yet: plan it on its work order date from the default
-      // start the server suggested (nothing is saved until the user does).
-      var st = new Date(ev.start_time);
-      openModalForWorkOrder(ev, st, st.getHours() * 60 + st.getMinutes(), mech ? mech.id : null);
-    });
-  }
-
-  /* ── preset add / remove ── */
-  function renderPresetTags() {
-    elPresetTags.innerHTML = "";
-    for (var i = 0; i < selectedPresets.length; i++) {
-      (function (idx) {
-        var p = selectedPresets[idx];
-        var tag = document.createElement("span");
-        tag.className = "badge bg-secondary d-inline-flex align-items-center gap-1";
-        tag.style.fontSize = "0.85em";
-        tag.innerHTML = escapeHtml(p.name) + ' <button type="button" class="btn-close btn-close-white" style="font-size:0.6em;" aria-label="Remove"></button>';
-        tag.querySelector(".btn-close").addEventListener("click", function () {
-          selectedPresets.splice(idx, 1);
-          renderPresetTags();
-        });
-        elPresetTags.appendChild(tag);
-      })(i);
-    }
-  }
-
-  /* ── mechanics: tags, one or several per plan ── */
-  function renderMechanicTags() {
-    if (!elMechanicTags) return;
-    elMechanicTags.innerHTML = "";
-    for (var i = 0; i < selectedMechanics.length; i++) {
-      (function (idx) {
-        var m = selectedMechanics[idx];
-        var tag = document.createElement("span");
-        tag.className = "badge d-inline-flex align-items-center gap-1";
-        tag.style.fontSize = "0.85em";
-        tag.style.backgroundColor = mechanicColor(m.id);
-        tag.innerHTML = escapeHtml(m.name) + ' <button type="button" class="btn-close btn-close-white" style="font-size:0.6em;" aria-label="Remove"></button>';
-        tag.querySelector(".btn-close").addEventListener("click", function () {
-          selectedMechanics.splice(idx, 1);
-          renderMechanicTags();
-        });
-        elMechanicTags.appendChild(tag);
-      })(i);
-    }
-  }
-
-  function addMechanic(id, name) {
-    for (var i = 0; i < selectedMechanics.length; i++) {
-      if (selectedMechanics[i].id === id) return;
-    }
-    selectedMechanics.push({ id: id, name: name });
-    renderMechanicTags();
-  }
-
-  /* The day comes from the slot that was clicked (or the block being edited);
-     the modal only shows it — moving a plan to another day is drag & drop. */
-  function setModalDate(iso) {
-    elDate.value = iso || "";
-    if (!elDateLabel) return;
-    var d = iso ? parseISODate(iso) : null;
-    elDateLabel.textContent = d
-      ? DAY_NAMES_LONG[(d.getDay() + 6) % 7] + ", " + MONTH_NAMES[d.getMonth()] + " " + d.getDate() + ", " + d.getFullYear()
-      : "—";
-  }
-
-  elPresetAddBtn.addEventListener("click", function () {
-    var val = elPresetPendingId.value;
-    if (!val) return;
-    // don't add duplicates
-    for (var i = 0; i < selectedPresets.length; i++) {
-      if (selectedPresets[i].id === val) return;
-    }
-    selectedPresets.push({ id: val, name: elPresetSearch.value });
-    renderPresetTags();
-    clearSearchable(elPresetSearch, elPresetPendingId, elPresetDrop);
-    elPresetAddBtn.disabled = true;
-    // auto-fill title with preset names
-    elTitleInp.value = selectedPresets.map(function (p) { return p.name; }).join(", ");
-  });
-
-  /* ── save ── */
-  function collectPayload() {
-    var dateVal = elDate.value;
-    var startVal = elStart.value;
-    var endVal = elEnd.value;
-    if (!dateVal || !startVal || !endVal || !parseISODate(dateVal)) {
-      notify("Date and time are required.", "warning");
-      return null;
-    }
-    if (endVal <= startVal) {
-      notify("End time must be after start time.", "warning");
-      return null;
-    }
-    var firstMech = selectedMechanics[0] || null;
-    var payload = {
-      start_time: toLocalISO(dateVal, startVal),
-      end_time: toLocalISO(dateVal, endVal),
-      customer_id: elCustomer.value || "",
-      customer_label: elCustomer.value ? elCustomerSearch.value : "New Customer",
-      unit_id: elUnit.value || "",
-      unit_label: elUnit.value ? elUnitSearch.value : (elUnitSearch.disabled ? "" : "New Unit"),
-      // the whole crew; mechanic_id/_name = first one for older readers
-      mechanic_ids: selectedMechanics.map(function (m) { return m.id; }),
-      mechanics: selectedMechanics.map(function (m) { return { id: m.id, name: m.name }; }),
-      mechanic_id: firstMech ? firstMech.id : "",
-      mechanic_name: firstMech ? firstMech.name : "",
-      presets: selectedPresets.slice(),
-      status: getSelectedStatus(),
-      title: elTitleInp.value.trim(),
-    };
-    if (!elEventId.value && elWorkOrderId.value) payload.work_order_id = elWorkOrderId.value;
-    if (unlinkRequested) payload.work_order_id = "";
-    return payload;
-  }
-
-  function saveAppointment() {
-    var payload = collectPayload();
-    if (!payload) return Promise.reject(new Error("invalid"));
-    var eventId = elEventId.value;
-    var url = eventId ? "/calendar/api/events/" + eventId : "/calendar/api/events";
-    var method = eventId ? "PUT" : "POST";
-    return sendJSON(url, method, payload);
-  }
-
-  elSaveBtn.addEventListener("click", function () {
-    elSaveBtn.disabled = true;
-    saveAppointment()
-      .then(function () {
-        getModal().hide();
-        loadEvents();
-      })
-      .catch(function (e) {
-        if (e && e.message !== "invalid") notify(e.message || "Could not save the appointment.", "error");
-      })
-      .then(function () { elSaveBtn.disabled = false; });
-  });
-
-  /* ── create work order ──
-     Saves the appointment first (so the WO links back to it), then opens the
-     WO page prefilled with customer, unit, presets, the crew and the note. */
-  elCreateWOBtn.addEventListener("click", function () {
-    var customerId = elCustomer.value;
-    var unitId = elUnit.value;
-    if (!customerId || !unitId) {
-      notify("Please select a customer and unit first.", "warning");
-      return;
-    }
-    elCreateWOBtn.disabled = true;
-    saveAppointment()
-      .then(function (saved) {
-        var eventId = (saved && saved.id) || elEventId.value;
-        var url = "/work_orders/details?customer_id=" + encodeURIComponent(customerId) +
-                  "&unit_id=" + encodeURIComponent(unitId);
-        if (selectedPresets.length) {
-          var ids = selectedPresets.map(function (p) { return p.id; }).join(",");
-          url += "&presets=" + encodeURIComponent(ids);
-        }
-        if (selectedMechanics.length) {
-          // mechanic_id = the first one (older readers); mechanic_ids = the whole crew
-          url += "&mechanic_id=" + encodeURIComponent(selectedMechanics[0].id);
-          url += "&mechanic_ids=" + encodeURIComponent(selectedMechanics.map(function (m) { return m.id; }).join(","));
-        }
-        // the title doubles as the note; an untouched title is just the
-        // customer label the server filled in - not a note for the mechanic
-        var note = elTitleInp.value.trim();
-        if (note && note === (elCustomerSearch.value || "").trim()) note = "";
-        if (note) url += "&note=" + encodeURIComponent(note);
-        if (eventId) url += "&calendar_event_id=" + encodeURIComponent(eventId);
-        window.open(url, "_blank");
-        getModal().hide();
-        loadEvents();
-      })
-      .catch(function (e) {
-        if (e && e.message !== "invalid") notify(e.message || "Could not save the appointment.", "error");
-      })
-      .then(function () { elCreateWOBtn.disabled = false; });
-  });
-
-  /* ── delete ── */
-  elDelBtn.addEventListener("click", function () {
-    var eventId = elEventId.value;
-    if (!eventId) return;
-    var proceed = window.appConfirm
-      ? window.appConfirm("Delete this appointment?")
-      : Promise.resolve(window.confirm("Delete this appointment?"));
-    proceed.then(function (ok) {
-      if (!ok) return;
-      fetchJSON("/calendar/api/events/" + eventId, { method: "DELETE" })
-        .then(function () {
-          getModal().hide();
-          loadEvents();
-        })
-        .catch(function (e) { notify(e.message || "Could not delete the appointment.", "error"); });
-    });
-  });
-
-  /* ── settings modal ── */
-
-  var settingsModalEl = document.getElementById("calSettingsModal");
-  var settingsListEl  = document.getElementById("settingsStatusList");
-  var settingsAddBtn  = document.getElementById("settingsAddStatus");
-  var settingsSaveBtn = document.getElementById("settingsSaveBtn");
-  var settingsBtn     = document.getElementById("calSettingsBtn");
-  var bsSettingsModal = null;
-
-  function getSettingsModal() {
-    if (!bsSettingsModal && settingsModalEl) {
-      bsSettingsModal = new bootstrap.Modal(settingsModalEl);
-    }
-    return bsSettingsModal;
-  }
-
-  function renderSettingsRows() {
-    settingsListEl.innerHTML = "";
-    cachedStatuses.forEach(function (s, idx) {
-      var row = document.createElement("div");
-      row.className = "d-flex align-items-center gap-2 mb-2 settings-status-row";
-      row.dataset.index = idx;
-
-      var colorInput = document.createElement("input");
-      colorInput.type = "color";
-      colorInput.className = "form-control form-control-color";
-      colorInput.value = s.color;
-      colorInput.title = "Pick color";
-      colorInput.style.width = "40px";
-      colorInput.style.minWidth = "40px";
-      colorInput.style.padding = "2px";
-
-      var keyInput = document.createElement("input");
-      keyInput.type = "text";
-      keyInput.className = "form-control form-control-sm";
-      keyInput.value = s.key;
-      keyInput.placeholder = "key";
-      keyInput.style.width = "120px";
-
-      var labelInput = document.createElement("input");
-      labelInput.type = "text";
-      labelInput.className = "form-control form-control-sm";
-      labelInput.value = s.label;
-      labelInput.placeholder = "Label";
-      labelInput.style.flex = "1";
-
-      var removeBtn = document.createElement("button");
-      removeBtn.type = "button";
-      removeBtn.className = "btn btn-outline-danger btn-sm";
-      removeBtn.innerHTML = "&times;";
-      removeBtn.title = "Remove";
-      removeBtn.addEventListener("click", function () {
-        cachedStatuses.splice(idx, 1);
-        renderSettingsRows();
-      });
-
-      row.appendChild(colorInput);
-      row.appendChild(keyInput);
-      row.appendChild(labelInput);
-      row.appendChild(removeBtn);
-      settingsListEl.appendChild(row);
-    });
-  }
-
-  function collectStatusesFromRows() {
-    var rows = settingsListEl.querySelectorAll(".settings-status-row");
-    var result = [];
-    rows.forEach(function (row) {
-      var inputs = row.querySelectorAll("input");
-      var color = inputs[0].value;
-      var key = inputs[1].value.trim();
-      var label = inputs[2].value.trim();
-      if (key && label) {
-        result.push({ key: key, label: label, color: color });
-      }
-    });
-    return result;
-  }
-
-  if (settingsBtn) {
-    settingsBtn.addEventListener("click", function () {
-      renderSettingsRows();
-      getSettingsModal().show();
-    });
-  }
-
-  if (settingsAddBtn) {
-    settingsAddBtn.addEventListener("click", function () {
-      var fromRows = collectStatusesFromRows();
-      cachedStatuses = fromRows;
-      cachedStatuses.push({ key: "", label: "", color: "#888888" });
-      renderSettingsRows();
-    });
-  }
-
-  if (settingsSaveBtn) {
-    settingsSaveBtn.addEventListener("click", function () {
-      var statuses = collectStatusesFromRows();
-      if (!statuses.length) { notify("Add at least one status.", "warning"); return; }
-
-      sendJSON("/calendar/api/statuses", "PUT", { statuses: statuses })
-        .then(function (data) {
-          cachedStatuses = data;
-          getSettingsModal().hide();
-          renderEvents();
-        })
-        .catch(function (e) { notify(e.message || "Could not save statuses.", "error"); });
-    });
-  }
-
-  /* ── navigation ── */
-
-  function goToWeek(date) {
-    weekStart = mondayOfWeek(date);
-    expandedDayIndex = -1;
-    if (viewMode === "mechanics") {
-      selectedDayIndex = dayIndexOf(date);
-      if (selectedDayIndex < 0) selectedDayIndex = 0;
-    }
+  function setView(view) {
+    state.view = view === "day" ? "day" : "week";
+    lsSet(LS_VIEW, state.view);
+    syncUrl();
     render();
   }
 
-  function step(direction) {
-    if (viewMode === "mechanics") {
-      goToWeek(addDays(addDays(weekStart, selectedDayIndex), direction));
+  function setFilter(value) {
+    state.filter = value === UNASSIGNED || mechanicById(value) ? value : "";
+    lsSet(LS_MECH, state.filter);
+    render();
+  }
+
+  function columnByKey(key) {
+    return state.columns.find((c) => c.key === key) || null;
+  }
+
+  /* Click on an empty slot → new appointment; on a block → edit; on a week header → day view. */
+  function onGridClick(e) {
+    if (Date.now() < suppressClickUntil) return;
+    const head = e.target.closest(".cal-col-head.is-clickable");
+    if (head) {
+      const col = columnByKey(head.dataset.colKey);
+      if (col) { state.date = col.date; setView("day"); }
+      return;
+    }
+    const evEl = e.target.closest(".cal-event");
+    if (evEl) {
+      const ev = eventById(evEl.dataset.id);
+      if (ev) openEditModal(ev);
+      return;
+    }
+    const colEl = e.target.closest(".cal-col");
+    if (!colEl || !can.create) return;
+    const col = columnByKey(colEl.dataset.colKey);
+    if (!col) return;
+    const y = e.clientY - colEl.getBoundingClientRect().top;
+    const start = clamp(snapDown(state.visStart + (y / state.hourH) * 60), 0, 1440 - SLOT);
+    const mechanics = col.mechId ? [mechanicById(col.mechId)].filter(Boolean) : [];
+    openCreateModal({ date: col.date, startMin: start, endMin: Math.min(1440, start + 60), mechanics });
+  }
+
+  /* Mechanics after dropping a block into another mechanic column of the day view. */
+  function mechanicsAfterMove(ev, fromMechId, toMechId) {
+    const ids = ev.mechanics.map((m) => m.id);
+    if (!toMechId) return [];
+    if (!fromMechId || ids.length <= 1) return [toMechId];
+    const out = ids.filter((id) => id !== fromMechId);
+    if (out.indexOf(toMechId) < 0) out.push(toMechId);
+    return out;
+  }
+
+  function onPointerDown(e) {
+    if (e.button !== 0 || !can.edit) return;
+    if (drag) { const stale = releaseDrag(); if (stale && stale.active) render(); }
+    const evEl = e.target.closest(".cal-event");
+    if (!evEl) return;
+    const ev = eventById(evEl.dataset.id);
+    const colEl = evEl.closest(".cal-col");
+    if (!ev || !colEl) return;
+    const fromCol = columnByKey(colEl.dataset.colKey);
+    if (!fromCol) return;
+    const colRect = colEl.getBoundingClientRect();
+    const pointerMin = state.visStart + ((e.clientY - colRect.top) / state.hourH) * 60;
+    drag = {
+      ev, el: evEl, pointerId: e.pointerId,
+      mode: e.target.closest(".cal-event-resize") ? "resize" : "move",
+      startX: e.clientX, startY: e.clientY, active: false,
+      grabOffset: pointerMin - ev.startMin,
+      fromCol, curColKey: fromCol.key,
+      startMin: ev.startMin, endMin: ev.endMin,
+      colRects: Array.from(gridEl.querySelectorAll(".cal-col")).map((c) => ({ el: c, key: c.dataset.colKey, rect: c.getBoundingClientRect() })),
+      gridRect: gridEl.getBoundingClientRect(), inside: true,
+    };
+  }
+
+  function onPointerMove(e) {
+    if (!drag) return;
+    if (!drag.active) {
+      if (Math.abs(e.clientX - drag.startX) < DRAG_THRESHOLD && Math.abs(e.clientY - drag.startY) < DRAG_THRESHOLD) return;
+      drag.active = true;
+      // Capture only once a real drag starts (a plain click must keep its target),
+      // and on the grid rather than the block: re-parenting the block into another
+      // column would silently release a capture held by the block itself.
+      try { gridEl.setPointerCapture(e.pointerId); } catch (err) { /* capture unsupported */ }
+      drag.el.classList.add(drag.mode === "move" ? "is-dragging" : "is-resizing");
+      gridEl.classList.add(drag.mode === "move" ? "is-dragging" : "is-resizing");
+      if (drag.mode === "move") { drag.el.style.left = "1px"; drag.el.style.width = "calc(100% - 3px)"; }
+    }
+    // Outside the grid = "release to cancel": the block dims and dropping there changes nothing
+    // (the position below is only clamped so the block stays visible while the pointer is away).
+    const g = drag.gridRect;
+    drag.inside = e.clientX >= g.left && e.clientX < g.right && e.clientY >= g.top && e.clientY < g.bottom;
+    drag.el.classList.toggle("is-outside", !drag.inside);
+    const limit = Math.min(1440, state.visEnd);
+    if (drag.mode === "move") {
+      const target = drag.colRects.find((c) => e.clientX >= c.rect.left && e.clientX < c.rect.right) ||
+        drag.colRects.find((c) => c.key === drag.curColKey);
+      if (!target) return;
+      const dur = drag.ev.endMin - drag.ev.startMin;
+      const pointerMin = state.visStart + ((e.clientY - target.rect.top) / state.hourH) * 60;
+      const start = clamp(snapRound(pointerMin - drag.grabOffset), state.visStart, Math.max(state.visStart, limit - dur));
+      if (target.key !== drag.curColKey) { target.el.appendChild(drag.el); drag.curColKey = target.key; }
+      drag.startMin = start;
+      drag.endMin = start + dur;
+      drag.el.style.top = yOf(start) + "px";
     } else {
-      goToWeek(addDays(weekStart, 7 * direction));
+      const col = drag.colRects.find((c) => c.key === drag.fromCol.key);
+      if (!col) return;
+      const pointerMin = state.visStart + ((e.clientY - col.rect.top) / state.hourH) * 60;
+      drag.endMin = clamp(snapRound(pointerMin), drag.ev.startMin + SLOT, limit);
+      drag.el.style.height = Math.max(18, ((drag.endMin - drag.ev.startMin) / 60) * state.hourH - 2) + "px";
+    }
+    const timeEl = drag.el.querySelector(".cal-event-time");
+    if (timeEl) timeEl.innerHTML = timeHtml(drag.startMin, drag.endMin);
+  }
+
+  function releaseDrag() {
+    const d = drag;
+    drag = null;
+    if (!d) return null;
+    try { gridEl.releasePointerCapture(d.pointerId); } catch (err) { /* already released */ }
+    gridEl.classList.remove("is-dragging", "is-resizing");
+    return d;
+  }
+
+  function onPointerCancel() {
+    const d = releaseDrag();
+    if (d && d.active) render();
+  }
+
+  function onPointerUp() {
+    const d = releaseDrag();
+    if (!d || !d.active) return; // a plain click → handled by onGridClick
+    suppressClickUntil = Date.now() + 400;
+    if (!d.inside) { render(); return; } // released outside the grid → cancelled, like Esc
+    const toCol = columnByKey(d.curColKey) || d.fromCol;
+    const payload = {};
+    let changed = d.startMin !== d.ev.startMin || d.endMin !== d.ev.endMin;
+    const date = d.mode === "move" ? toCol.date : d.ev.date;
+    if (date !== d.ev.date) changed = true;
+    payload.start_time = toApiDatetime(date, d.startMin);
+    payload.end_time = toApiDatetime(date, d.endMin);
+    if (d.mode === "move" && state.view === "day" && toCol.key !== d.fromCol.key) {
+      payload.mechanic_ids = mechanicsAfterMove(d.ev, d.fromCol.mechId, toCol.mechId);
+      changed = true;
+    }
+    if (!changed) { render(); return; }
+    api("PUT", "/calendar/api/events/" + encodeURIComponent(d.ev.id), payload)
+      .then((saved) => { upsertEvent(saved); render(); })
+      .catch((err) => {
+        notify(err.message || "Could not move the appointment.", "error");
+        loadEvents(false).then(render);
+      });
+  }
+
+  function onKeyDown(e) {
+    if (e.key === "Escape" && drag) {
+      const d = releaseDrag();
+      if (d && d.active) { suppressClickUntil = Date.now() + 400; render(); }
     }
   }
 
-  btnPrev.addEventListener("click", function () { step(-1); });
-  btnNext.addEventListener("click", function () { step(1); });
-  btnToday.addEventListener("click", function () { goToWeek(new Date()); });
+  function onResize() {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(render, 120);
+  }
 
-  if (btnViewWeek) btnViewWeek.addEventListener("click", function () { setViewMode("week"); });
-  if (btnViewMech) btnViewMech.addEventListener("click", function () {
-    if (viewMode !== "mechanics") {
-      // Switching from the week: open today if it is in this week, else Monday.
-      var todayIdx = dayIndexOf(new Date());
-      selectedDayIndex = todayIdx >= 0 ? todayIdx : 0;
+  function liveRefreshTick() {
+    if (document.visibilityState !== "visible" || anyModalOpen() || drag) return;
+    loadEvents(true).then((changed) => { if (changed) render(); });
+  }
+
+  // ── 5. Appointment modal ─────────────────────────────────────────────────
+
+  const modalEl = $("appointmentModal");
+  const f = {
+    label: $("appointmentModalLabel"), eventId: $("apptEventId"), workOrderId: $("apptWorkOrderId"),
+    linked: $("apptLinkedWO"), linkedNumber: $("apptLinkedWONumber"), linkedState: $("apptLinkedWOState"),
+    linkedSummary: $("apptLinkedWOSummary"), linkedOpen: $("apptLinkedWOOpen"), unlinkBtn: $("apptUnlinkWOBtn"),
+    customer: $("apptCustomer"), customerSearch: $("apptCustomerSearch"), customerDrop: $("apptCustomerDrop"), customerClear: $("apptCustomerClear"),
+    unit: $("apptUnit"), unitSearch: $("apptUnitSearch"), unitDrop: $("apptUnitDrop"), unitClear: $("apptUnitClear"),
+    linkedHint: $("apptLinkedFieldsHint"),
+    presetSearch: $("apptPresetSearch"), presetDrop: $("apptPresetDrop"), presetTags: $("apptPresetTags"),
+    date: $("apptDate"), start: $("apptStart"), end: $("apptEnd"),
+    mechSearch: $("apptMechanicSearch"), mechDrop: $("apptMechanicDrop"), mechTags: $("apptMechanicTags"),
+    statusGroup: $("apptStatusGroup"), title: $("apptTitle"), overlap: $("apptOverlapHint"),
+    deleteBtn: $("apptDeleteBtn"), createWoBtn: $("apptCreateWOBtn"), saveBtn: $("apptSaveBtn"),
+  };
+  const modal = {
+    prepared: false,
+    mode: "create",
+    readOnly: false,
+    status: "scheduled",
+    mechanics: [],
+    presets: [],
+    linkWoId: "",          // work_order_id to send on save ("" = unlink, null = leave untouched)
+    linkInfo: null,        // {woNumber, woState, laborSummary, workOrderId} shown in the linked panel
+    saving: false,
+    focusTitle: false,     // focus the title once the modal is shown (create from an empty slot)
+  };
+  const bsModal = () => window.bootstrap && window.bootstrap.Modal ? window.bootstrap.Modal.getOrCreateInstance(modalEl) : null;
+
+  function fillTimeSelects() {
+    const start = [];
+    const end = [];
+    for (let m = 0; m < 1440; m += SLOT) {
+      start.push('<option value="' + m + '">' + fmtMin(m) + "</option>");
+      if (m > 0) end.push('<option value="' + m + '">' + fmtMin(m) + "</option>");
     }
-    setViewMode("mechanics");
-  });
-  if (mechFilterEl) mechFilterEl.addEventListener("change", function () {
-    setMechanicFilter(mechFilterEl.value || "");
-  });
-  if (showWOEl) {
-    showWOEl.checked = showWorkOrders;
-    showWOEl.addEventListener("change", function () {
-      showWorkOrders = !!showWOEl.checked;
-      lsSet("showWO", showWorkOrders ? "1" : "0");
-      renderLegend();
-      renderEvents();
-      updateMechanicHeaderCounts();
-      // toolbar height may change with the legend — recompute grid
-      setTimeout(function () { render(); }, 0);
+    end.push('<option value="1440">24:00 (midnight)</option>');
+    f.start.innerHTML = start.join("");
+    f.end.innerHTML = end.join("");
+  }
+
+  function setSearchValue(wrapInput, text) {
+    wrapInput.value = text || "";
+    const wrap = wrapInput.closest(".cal-search");
+    if (wrap) wrap.classList.toggle("has-value", !!text);
+  }
+
+  /* Searchable dropdown on a text input: list-group under the input, arrows/Enter/Esc, click to pick. */
+  function makeSearch(input, drop, opts) {
+    let visible = [];
+    let active = -1;
+    const hide = () => { drop.classList.add("d-none"); drop.innerHTML = ""; visible = []; active = -1; };
+    const setActive = (i) => {
+      active = i;
+      drop.querySelectorAll(".list-group-item").forEach((el, idx) => el.classList.toggle("active", idx === i));
+      const el = drop.querySelector(".list-group-item.active");
+      if (el && typeof el.scrollIntoView === "function") el.scrollIntoView({ block: "nearest" });
+    };
+    const show = () => {
+      if (input.disabled || input.readOnly) return;
+      const q = input.value.trim().toLowerCase();
+      Promise.resolve(opts.items()).then((list) => {
+        if (document.activeElement !== input) return;
+        // exclude() applies regardless of the query (the list also opens on focus with an empty
+        // query), so an already chosen item never shows up again.
+        visible = (list || []).filter((it) => (!q || opts.match(it, q)) && !(opts.exclude && opts.exclude(it))).slice(0, 80);
+        drop.innerHTML = visible.length
+          ? visible.map((it, i) => {
+              const sub = opts.sub ? opts.sub(it) : "";
+              return '<button type="button" class="list-group-item list-group-item-action" data-idx="' + i + '">' +
+                esc(opts.text(it)) + (sub ? '<span class="cal-dd-sub">' + esc(sub) + "</span>" : "") + "</button>";
+            }).join("")
+          : '<div class="cal-dd-empty">' + esc(opts.empty || "No matches") + "</div>";
+        drop.classList.remove("d-none");
+        setActive(visible.length ? 0 : -1);
+      }).catch((err) => {
+        drop.innerHTML = '<div class="cal-dd-empty">' + esc(err.message || "Could not load the list") + "</div>";
+        drop.classList.remove("d-none");
+      });
+    };
+    const pick = (it) => { hide(); opts.onPick(it); };
+    input.addEventListener("focus", show);
+    input.addEventListener("input", () => { if (opts.onType) opts.onType(); show(); });
+    input.addEventListener("blur", () => setTimeout(hide, 150));
+    input.addEventListener("keydown", (e) => {
+      if (drop.classList.contains("d-none")) { if (e.key === "ArrowDown") show(); return; }
+      if (e.key === "ArrowDown") { e.preventDefault(); if (visible.length) setActive((active + 1) % visible.length); }
+      else if (e.key === "ArrowUp") { e.preventDefault(); if (visible.length) setActive((active - 1 + visible.length) % visible.length); }
+      else if (e.key === "Enter") { e.preventDefault(); if (active >= 0 && visible[active]) pick(visible[active]); }
+      else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); hide(); }
+    });
+    drop.addEventListener("mousedown", (e) => e.preventDefault()); // keep the input focused
+    drop.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-idx]");
+      if (btn && visible[Number(btn.dataset.idx)]) pick(visible[Number(btn.dataset.idx)]);
+    });
+    return { hide };
+  }
+
+  function setCustomer(id, label) {
+    f.customer.value = id || "";
+    setSearchValue(f.customerSearch, label || "");
+    setUnit("", "");
+    f.unitSearch.disabled = !id || modal.readOnly;
+    f.unitSearch.placeholder = id ? "Search unit or VIN…" : "Choose a customer first";
+    if (id) loadUnits(id).catch((err) => console.error("calendar units", err));
+  }
+  function setUnit(id, label) {
+    f.unit.value = id || "";
+    setSearchValue(f.unitSearch, label || "");
+  }
+
+  const isLinkedNow = () => !!(modal.linkInfo && modal.linkWoId !== "");
+
+  function renderTags() {
+    f.mechTags.innerHTML = modal.mechanics.map((m) =>
+      '<span class="cal-tag"><span class="cal-tag-dot" style="background:' + esc(mechColor(m.id)) + '"></span>' + esc(m.name) +
+      '<button type="button" class="cal-tag-remove" data-kind="mech" data-id="' + esc(m.id) + '" title="Remove" aria-label="Remove ' + esc(m.name) + '"' +
+      (modal.readOnly ? " disabled" : "") + ">&times;</button></span>"
+    ).join("");
+    f.presetTags.innerHTML = modal.presets.map((p) =>
+      '<span class="cal-tag">' + esc(p.name) +
+      '<button type="button" class="cal-tag-remove" data-kind="preset" data-id="' + esc(p.id) + '" title="Remove" aria-label="Remove ' + esc(p.name) + '"' +
+      (modal.readOnly ? " disabled" : "") + ">&times;</button></span>"
+    ).join("");
+    updateOverlapHint();
+  }
+
+  function renderStatusButtons() {
+    const statuses = state.settings.statuses.slice();
+    if (modal.status && !statuses.some((s) => s.key === modal.status)) {
+      statuses.push({ key: modal.status, label: statusLabel(modal.status), color: "#888888" });
+    }
+    // Unselected: the status colour only on the border and the dot, the label in the theme's text
+    // colour — dark statuses on the dark modal (and light custom colours on the light one) stay readable.
+    f.statusGroup.innerHTML = statuses.map((s) => {
+      const selected = s.key === modal.status;
+      const style = selected
+        ? "background:" + esc(s.color) + ";border-color:" + esc(s.color) + ";color:" + esc(textOn(s.color))
+        : "border-color:" + esc(s.color);
+      const dot = '<span class="cal-legend-dot" style="background:' + esc(selected ? textOn(s.color) : s.color) + '"></span>';
+      return '<button type="button" class="btn btn-sm cal-status-btn' + (selected ? " is-selected" : "") + '" data-status="' + esc(s.key) +
+        '" style="' + style + '" aria-pressed="' + (selected ? "true" : "false") + '"' + (modal.readOnly ? " disabled" : "") + ">" +
+        dot + esc(s.label) + "</button>";
+    }).join("");
+  }
+
+  function renderLinkedPanel() {
+    const info = modal.linkInfo;
+    const linked = isLinkedNow();
+    f.linked.classList.toggle("d-none", !linked);
+    f.workOrderId.value = linked ? info.workOrderId : "";
+    if (linked) {
+      f.linkedNumber.textContent = "WO #" + (info.woNumber || "?");
+      const st = woStateInfo(info.woState);
+      const color = st ? st.color : "#888888";
+      f.linkedState.textContent = info.woState ? woStateLabel(info.woState) : "";
+      f.linkedState.classList.toggle("d-none", !info.woState);
+      f.linkedState.style.background = color;
+      f.linkedState.style.color = textOn(color);
+      f.linkedSummary.textContent = (info.laborSummary || []).join(", ");
+      f.linkedOpen.href = "/work_orders/details?work_order_id=" + encodeURIComponent(info.workOrderId);
+      f.unlinkBtn.classList.toggle("d-none", modal.readOnly);
+      f.linkedHint.textContent = "Customer and unit come from WO #" + (info.woNumber || "?") + " — change them there or unlink.";
+      f.linkedHint.classList.remove("d-none");
+    } else if (modal.linkInfo && modal.linkWoId === "") {
+      f.linkedHint.textContent = "The link to WO #" + (modal.linkInfo.woNumber || "?") + " will be removed when you save.";
+      f.linkedHint.classList.remove("d-none");
+    } else {
+      f.linkedHint.classList.add("d-none");
+    }
+    // linked → customer/unit are read-only (they follow the WO); view-only mode disables everything
+    const lockIdentity = modal.readOnly || linked;
+    f.customerSearch.readOnly = lockIdentity;
+    f.customerSearch.disabled = modal.readOnly;
+    f.unitSearch.readOnly = lockIdentity;
+    f.unitSearch.disabled = modal.readOnly || !f.customer.value;
+    f.customerClear.classList.toggle("d-none", lockIdentity);
+    f.unitClear.classList.toggle("d-none", lockIdentity);
+    f.createWoBtn.classList.toggle("d-none", !(can.createWo && !modal.readOnly && !linked));
+  }
+
+  function applyReadOnly() {
+    const ro = modal.readOnly;
+    [f.presetSearch, f.start, f.end, f.mechSearch, f.title].forEach((el) => { el.disabled = ro; });
+    setDateDisabled(f.date, ro);
+    f.saveBtn.classList.toggle("d-none", ro);
+    f.deleteBtn.classList.toggle("d-none", !(modal.mode === "edit" && can.delete));
+  }
+
+  function updateOverlapHint() {
+    const date = f.date.value;
+    const s = Number(f.start.value);
+    const e = Number(f.end.value);
+    const ids = modal.mechanics.map((m) => m.id);
+    const hits = [];
+    if (ids.length && isValidIso(date) && e > s) {
+      state.events.forEach((ev) => {
+        if (ev.id === f.eventId.value || ev.date !== date || ev.status === "cancelled") return;
+        if (!(ev.startMin < e && ev.endMin > s)) return;
+        ev.mechanics.filter((m) => ids.indexOf(m.id) >= 0).forEach((m) => {
+          hits.push(m.name + " " + fmtRange(ev.startMin, ev.endMin) + (ev.title ? " (" + ev.title.slice(0, 40) + ")" : ""));
+        });
+      });
+    }
+    f.overlap.classList.toggle("d-none", !hits.length);
+    f.overlap.textContent = hits.length ? "Already booked: " + hits.slice(0, 3).join("; ") + (hits.length > 3 ? " …" : "") : "";
+  }
+
+  function resetModal() {
+    modal.mode = "create";
+    modal.readOnly = false;
+    modal.status = state.settings.statuses[0] ? state.settings.statuses[0].key : "scheduled";
+    if (statusByKey("scheduled")) modal.status = "scheduled";
+    modal.mechanics = [];
+    modal.presets = [];
+    modal.linkWoId = null;
+    modal.linkInfo = null;
+    modal.saving = false;
+    modal.focusTitle = false;
+    f.eventId.value = "";
+    f.workOrderId.value = "";
+    f.title.value = "";
+    f.saveBtn.disabled = false;
+    f.createWoBtn.disabled = false;
+    f.deleteBtn.disabled = false;
+    setCustomer("", "");
+  }
+
+  function fillTimes(date, startMin, endMin) {
+    setDateInput(f.date, date);
+    f.start.value = String(clamp(snapDown(startMin), 0, 1440 - SLOT));
+    const end = clamp(snapRound(endMin), Number(f.start.value) + SLOT, 1440);
+    f.end.value = String(end);
+  }
+
+  function finishOpen() {
+    renderTags();
+    renderStatusButtons();
+    renderLinkedPanel();
+    applyReadOnly();
+    updateOverlapHint();
+    modal.prepared = true;
+    const m = bsModal();
+    if (m) m.show();
+  }
+
+  /* opts: {date, startMin, endMin, mechanics?, snapshot?} — snapshot = WO prefill from ?wo= */
+  function openCreateModal(opts) {
+    resetModal();
+    f.label.textContent = "New appointment";
+    fillTimes(opts.date, opts.startMin, opts.endMin);
+    modal.mechanics = (opts.mechanics || []).map((m) => ({ id: m.id, name: m.name }));
+    const snap = opts.snapshot;
+    if (snap) {
+      setCustomer(snap.customer_id || "", snap.customer_label || "");
+      if (snap.unit_id) setUnit(snap.unit_id, snap.unit_label || "");
+      modal.mechanics = (Array.isArray(snap.mechanics) ? snap.mechanics : [])
+        .filter((m) => m && m.id).map((m) => ({ id: String(m.id), name: String(m.name || "") }));
+      f.title.value = String(snap.title || "");
+      modal.linkWoId = String(snap.work_order_id || "");
+      modal.linkInfo = {
+        workOrderId: modal.linkWoId, woNumber: snap.wo_number, woState: String(snap.wo_state || ""), laborSummary: [],
+      };
+    }
+    modal.focusTitle = !snap;
+    finishOpen();
+  }
+
+  function openEditModal(ev) {
+    resetModal();
+    modal.mode = "edit";
+    modal.readOnly = !can.edit;
+    f.label.textContent = modal.readOnly ? "Appointment" : "Edit appointment";
+    f.eventId.value = ev.id;
+    fillTimes(ev.date, ev.startMin, ev.endMin);
+    setCustomer(ev.customerId, ev.customerLabel);
+    if (ev.unitId) setUnit(ev.unitId, ev.unitLabel);
+    modal.mechanics = ev.mechanics.map((m) => ({ id: m.id, name: m.name }));
+    modal.presets = ev.presets.map((p) => ({ id: p.id, name: p.name }));
+    modal.status = ev.status;
+    f.title.value = ev.title;
+    if (ev.workOrderId) {
+      modal.linkInfo = { workOrderId: ev.workOrderId, woNumber: ev.woNumber, woState: ev.woState, laborSummary: ev.laborSummary };
+      modal.linkWoId = null; // untouched unless the user unlinks
+    }
+    finishOpen();
+  }
+
+  function collectPayload() {
+    const date = f.date.value;
+    const s = Number(f.start.value);
+    const e = Number(f.end.value);
+    if (!isValidIso(date)) throw new Error("Please choose a date.");
+    if (!(e > s)) throw new Error("End time must be after start time.");
+    const payload = {
+      title: f.title.value.trim().slice(0, 500),
+      status: modal.status,
+      start_time: toApiDatetime(date, s),
+      end_time: toApiDatetime(date, e),
+      mechanics: modal.mechanics.map((m) => ({ id: m.id, name: m.name })),
+      presets: modal.presets.map((p) => ({ id: p.id, name: p.name })),
+    };
+    // Customer and unit are read-only while linked (they follow the WO) — not sent, so a stored
+    // identity that drifted from the WO can never block a title/status/time edit with a 400.
+    if (!isLinkedNow()) {
+      payload.customer_id = f.customer.value || "";
+      payload.unit_id = f.unit.value || "";
+    }
+    if (modal.linkWoId !== null) payload.work_order_id = modal.linkWoId;
+    return payload;
+  }
+
+  /* POST or PUT the modal content; resolves with the saved (normalized) appointment. */
+  function saveAppointment() {
+    let payload;
+    try { payload = collectPayload(); } catch (err) { notify(err.message, "warning"); return Promise.reject(new Error("invalid")); }
+    const id = f.eventId.value;
+    const req = id
+      ? api("PUT", "/calendar/api/events/" + encodeURIComponent(id), payload)
+      : api("POST", "/calendar/api/events", payload);
+    modal.saving = true;
+    f.saveBtn.disabled = true;
+    f.createWoBtn.disabled = true;
+    return req.then((saved) => upsertEvent(saved)).finally(() => {
+      modal.saving = false;
+      f.saveBtn.disabled = false;
+      f.createWoBtn.disabled = false;
     });
   }
 
-  /* ── keyboard ── */
+  function onSaveClick() {
+    if (modal.saving || modal.readOnly) return;
+    saveAppointment().then(() => {
+      const m = bsModal();
+      if (m) m.hide();
+      render();
+      notify("Appointment saved", "success");
+    }).catch((err) => {
+      if (err && err.message !== "invalid") notify(err.message || "Could not save the appointment.", "error");
+    });
+  }
 
-  document.addEventListener("keydown", function (e) {
-    if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
-    if (document.querySelector(".modal.show")) return;
-    if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
-    else if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
-    else if (e.key === "t" || e.key === "T") { goToWeek(new Date()); }
-  });
+  function onDeleteClick() {
+    const id = f.eventId.value;
+    if (!id || !can.delete) return;
+    confirmDialog("Delete this appointment?").then((ok) => {
+      if (!ok) return;
+      f.deleteBtn.disabled = true;
+      api("DELETE", "/calendar/api/events/" + encodeURIComponent(id))
+        .then(() => {
+          removeEvent(id);
+          const m = bsModal();
+          if (m) m.hide();
+          render();
+          notify("Appointment deleted", "success");
+        })
+        .catch((err) => notify(err.message || "Could not delete the appointment.", "error"))
+        .finally(() => { f.deleteBtn.disabled = false; });
+    });
+  }
 
-  /* ── init ── */
-  if (btnViewWeek) btnViewWeek.classList.toggle("active", viewMode === "week");
-  if (btnViewMech) btnViewMech.classList.toggle("active", viewMode === "mechanics");
-  weekStart = mondayOfWeek(new Date());
-  selectedDayIndex = Math.max(0, dayIndexOf(new Date()));
-  Promise.all([loadCustomers(), loadMechanics(), loadStatuses(), loadWoStates(), loadPresets()])
-    .catch(function (e) { notify("Calendar data load error: " + (e.message || e), "error"); })
-    .then(function () { goToWeek(new Date()); });
+  /* Saves first, then opens a prefilled WO page (same URL contract as before). */
+  function onCreateWoClick() {
+    if (modal.saving) return;
+    const customerId = f.customer.value;
+    const unitId = f.unit.value;
+    if (!customerId || !unitId) { notify("Please select a customer and unit first.", "warning"); return; }
+    saveAppointment().then((saved) => {
+      let url = "/work_orders/details?customer_id=" + encodeURIComponent(customerId) + "&unit_id=" + encodeURIComponent(unitId);
+      if (modal.presets.length) url += "&presets=" + encodeURIComponent(modal.presets.map((p) => p.id).join(","));
+      if (modal.mechanics.length) {
+        url += "&mechanic_id=" + encodeURIComponent(modal.mechanics[0].id);
+        url += "&mechanic_ids=" + encodeURIComponent(modal.mechanics.map((m) => m.id).join(","));
+      }
+      const note = f.title.value.trim();
+      if (note && note !== f.customerSearch.value.trim()) url += "&note=" + encodeURIComponent(note);
+      url += "&calendar_event_id=" + encodeURIComponent(saved.id);
+      window.open(url, "_blank");
+      const m = bsModal();
+      if (m) m.hide();
+      render();
+    }).catch((err) => {
+      if (err && err.message !== "invalid") notify(err.message || "Could not save the appointment.", "error");
+    });
+  }
 
-  var resizeTimer;
-  window.addEventListener("resize", function () {
-    clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(function () { render(); }, 150);
-  });
+  function bindModal() {
+    fillTimeSelects();
+
+    makeSearch(f.customerSearch, f.customerDrop, {
+      items: loadCustomers,
+      match: (c, q) => String(c.label || "").toLowerCase().indexOf(q) >= 0,
+      text: (c) => c.label || "(no name)",
+      empty: "No customers found",
+      onType: () => { if (f.customer.value) setCustomer("", f.customerSearch.value); },
+      onPick: (c) => { setCustomer(String(c.id), c.label || ""); renderLinkedPanel(); f.unitSearch.focus(); },
+    });
+    f.customerClear.addEventListener("click", () => { setCustomer("", ""); renderLinkedPanel(); f.customerSearch.focus(); });
+
+    makeSearch(f.unitSearch, f.unitDrop, {
+      items: () => loadUnits(f.customer.value),
+      match: (u, q) => (String(u.label || "") + " " + String(u.vin || "")).toLowerCase().indexOf(q) >= 0,
+      text: (u) => u.label || "(unit)",
+      sub: (u) => (u.vin ? "VIN " + u.vin : ""),
+      empty: "This customer has no active units",
+      onType: () => { if (f.unit.value) setUnit("", f.unitSearch.value); },
+      onPick: (u) => setUnit(String(u.id), u.label || ""),
+    });
+    f.unitClear.addEventListener("click", () => { setUnit("", ""); f.unitSearch.focus(); });
+
+    const presetChosen = (p) => modal.presets.some((x) => x.id === String(p.id));
+    const mechanicChosen = (m) => modal.mechanics.some((x) => x.id === String(m.id));
+    makeSearch(f.presetSearch, f.presetDrop, {
+      items: loadPresets,
+      match: (p, q) => String(p.name || "").toLowerCase().indexOf(q) >= 0,
+      exclude: presetChosen,
+      text: (p) => p.name || "(preset)",
+      empty: "No presets found",
+      onPick: (p) => {
+        if (!presetChosen(p)) modal.presets.push({ id: String(p.id), name: String(p.name || "") });
+        f.presetSearch.value = "";
+        renderTags();
+      },
+    });
+
+    makeSearch(f.mechSearch, f.mechDrop, {
+      items: () => state.mechanics,
+      match: (m, q) => m.name.toLowerCase().indexOf(q) >= 0,
+      exclude: mechanicChosen,
+      text: (m) => m.name,
+      sub: (m) => m.role.replace(/_/g, " "),
+      empty: "No more mechanics to add",
+      onPick: (m) => {
+        if (!mechanicChosen(m)) modal.mechanics.push({ id: m.id, name: m.name });
+        f.mechSearch.value = "";
+        renderTags();
+      },
+    });
+
+    modalEl.addEventListener("click", (e) => {
+      const rm = e.target.closest(".cal-tag-remove");
+      if (rm && !modal.readOnly) {
+        if (rm.dataset.kind === "mech") modal.mechanics = modal.mechanics.filter((m) => m.id !== rm.dataset.id);
+        else modal.presets = modal.presets.filter((p) => p.id !== rm.dataset.id);
+        renderTags();
+        return;
+      }
+      const st = e.target.closest(".cal-status-btn");
+      if (st && !modal.readOnly) { modal.status = st.dataset.status; renderStatusButtons(); }
+    });
+
+    f.start.addEventListener("change", () => {
+      const prevStart = Number(f.start.dataset.prev || f.start.value);
+      const dur = Math.max(SLOT, Number(f.end.value) - prevStart);
+      f.end.value = String(Math.min(1440, Number(f.start.value) + dur));
+      f.start.dataset.prev = f.start.value;
+      updateOverlapHint();
+    });
+    f.start.addEventListener("focus", () => { f.start.dataset.prev = f.start.value; });
+    f.end.addEventListener("change", updateOverlapHint);
+    f.date.addEventListener("change", updateOverlapHint);
+    f.title.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") onSaveClick(); });
+
+    f.unlinkBtn.addEventListener("click", () => { modal.linkWoId = ""; renderLinkedPanel(); });
+    f.saveBtn.addEventListener("click", onSaveClick);
+    f.deleteBtn.addEventListener("click", onDeleteClick);
+    f.createWoBtn.addEventListener("click", onCreateWoClick);
+
+    // Opened from outside (e.g. a screenshot script) without our prep → a blank "new appointment" for today.
+    modalEl.addEventListener("show.bs.modal", () => {
+      if (modal.prepared) return;
+      resetModal();
+      f.label.textContent = "New appointment";
+      fillTimes(shopNow().date, 8 * 60, 9 * 60);
+      renderTags(); renderStatusButtons(); renderLinkedPanel(); applyReadOnly();
+      modal.prepared = true;
+    });
+    modalEl.addEventListener("shown.bs.modal", () => {
+      f.start.dataset.prev = f.start.value;
+      // Focus the title only when the whole form is visible: in a scrollable body (small screens)
+      // focusing it would scroll the Customer field — the first thing to fill — out of view.
+      const body = modalEl.querySelector(".modal-body");
+      if (modal.focusTitle && body && body.scrollHeight <= body.clientHeight + 1) f.title.focus({ preventScroll: true });
+      modal.focusTitle = false;
+      if (body) body.scrollTop = 0;
+    });
+    modalEl.addEventListener("hidden.bs.modal", () => { modal.prepared = false; });
+  }
+
+  /* ?wo=<id> → prefill a new appointment from the work order snapshot. */
+  function openFromWorkOrder(woId, dateIso) {
+    if (!can.create) { notify("You do not have permission to create appointments.", "warning"); return; }
+    api("GET", "/calendar/api/work_orders/" + encodeURIComponent(woId) + "/snapshot")
+      .then((snap) => {
+        const hours = Number(snap && snap.hours) || 0;
+        const dur = clamp(Math.ceil(hours * 4) / 4, 1, 8);
+        openCreateModal({ date: dateIso, startMin: 8 * 60, endMin: Math.min(1440, 8 * 60 + Math.round(dur * 60)), snapshot: snap });
+      })
+      .catch((err) => notify(err.message || "Work order not found.", "error"));
+  }
+
+  // ── 6. Settings modal ────────────────────────────────────────────────────
+
+  const settingsEl = $("calSettingsModal");
+  const sf = settingsEl ? {
+    list: $("settingsStatusList"), add: $("settingsAddStatus"), start: $("settingsStartHour"), end: $("settingsEndHour"), save: $("settingsSaveBtn"),
+  } : null;
+  let settingsRows = [];
+
+  function slugify(label) {
+    return String(label || "").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
+  }
+
+  function renderSettingsRows() {
+    sf.list.innerHTML = settingsRows.map((r, i) => {
+      const system = SYSTEM_STATUS_KEYS.indexOf(r.key) >= 0;
+      return '<div class="cal-settings-row" data-idx="' + i + '">' +
+        '<input type="color" class="form-control form-control-color" data-field="color" value="' + esc(r.color) + '" title="Colour">' +
+        '<input type="text" class="form-control form-control-sm cal-settings-label" data-field="label" value="' + esc(r.label) + '" placeholder="Status name" maxlength="40">' +
+        (system
+          ? '<span class="cal-settings-lock" title="System status — cannot be removed"><i class="bi bi-lock-fill" aria-hidden="true"></i></span>'
+          : '<button type="button" class="btn btn-outline-danger btn-sm cal-settings-remove" data-remove="' + i + '" title="Remove status" aria-label="Remove status"><i class="bi bi-x-lg" aria-hidden="true"></i></button>') +
+        "</div>";
+    }).join("");
+  }
+
+  function openSettingsModal() {
+    settingsRows = state.settings.statuses.map((s) => ({ key: s.key, label: s.label, color: s.color }));
+    renderSettingsRows();
+    const startOpts = [];
+    const endOpts = [];
+    for (let h = 0; h <= 24; h += 1) {
+      if (h < 24) startOpts.push('<option value="' + h + '">' + fmtMin(h * 60) + "</option>");
+      if (h > 0) endOpts.push('<option value="' + h + '">' + fmtMin(h * 60) + "</option>");
+    }
+    sf.start.innerHTML = startOpts.join("");
+    sf.end.innerHTML = endOpts.join("");
+    sf.start.value = String(state.settings.start_hour);
+    sf.end.value = String(state.settings.end_hour);
+    const m = window.bootstrap && window.bootstrap.Modal ? window.bootstrap.Modal.getOrCreateInstance(settingsEl) : null;
+    if (m) m.show();
+  }
+
+  function saveSettings() {
+    const statuses = [];
+    for (let i = 0; i < settingsRows.length; i += 1) {
+      const r = settingsRows[i];
+      const label = String(r.label || "").trim();
+      if (!label) { notify("Every status needs a name.", "warning"); return; }
+      const key = r.key || slugify(label);
+      if (!key) { notify('"' + label + '" needs at least one letter or digit.', "warning"); return; }
+      if (statuses.some((s) => s.key === key)) { notify('Status "' + label + '" duplicates another one.', "warning"); return; }
+      statuses.push({ key, label, color: hexToRgb(r.color) ? r.color : "#888888" });
+    }
+    const startHour = Number(sf.start.value);
+    const endHour = Number(sf.end.value);
+    if (!(startHour < endHour)) { notify("Working hours: the end must be after the start.", "warning"); return; }
+    sf.save.disabled = true;
+    api("PUT", "/calendar/api/settings", { statuses, start_hour: startHour, end_hour: endHour })
+      .then((data) => {
+        applySettings(data);
+        renderLegend();
+        render();
+        const m = window.bootstrap && window.bootstrap.Modal ? window.bootstrap.Modal.getOrCreateInstance(settingsEl) : null;
+        if (m) m.hide();
+        notify("Calendar settings saved", "success");
+      })
+      .catch((err) => notify(err.message || "Could not save the settings.", "error"))
+      .finally(() => { sf.save.disabled = false; });
+  }
+
+  function bindSettings() {
+    if (!settingsEl || !sf) return;
+    if (ui.settingsBtn) ui.settingsBtn.addEventListener("click", openSettingsModal);
+    sf.add.addEventListener("click", () => {
+      settingsRows.push({ key: "", label: "", color: "#888888" });
+      renderSettingsRows();
+      const inputs = sf.list.querySelectorAll('[data-field="label"]');
+      if (inputs.length) inputs[inputs.length - 1].focus();
+    });
+    sf.list.addEventListener("input", (e) => {
+      const row = e.target.closest(".cal-settings-row");
+      const field = e.target.dataset.field;
+      if (!row || !field) return;
+      const r = settingsRows[Number(row.dataset.idx)];
+      if (r) r[field] = e.target.value;
+    });
+    sf.list.addEventListener("click", (e) => {
+      const btn = e.target.closest("[data-remove]");
+      if (!btn) return;
+      settingsRows.splice(Number(btn.dataset.remove), 1);
+      renderSettingsRows();
+    });
+    sf.save.addEventListener("click", saveSettings);
+  }
+
+  // ── 7. Boot ──────────────────────────────────────────────────────────────
+
+  function bindToolbar() {
+    ui.prev.addEventListener("click", () => navigate(addDays(state.date, state.view === "week" ? -7 : -1)));
+    ui.next.addEventListener("click", () => navigate(addDays(state.date, state.view === "week" ? 7 : 1)));
+    ui.today.addEventListener("click", () => navigate(shopNow().date));
+    ui.date.addEventListener("change", () => { if (isValidIso(ui.date.value)) navigate(ui.date.value); });
+    ui.viewWeek.addEventListener("click", () => setView("week"));
+    ui.viewDay.addEventListener("click", () => setView("day"));
+    ui.filter.addEventListener("change", () => setFilter(ui.filter.value));
+    ui.mechLegend.addEventListener("click", (e) => {
+      const btn = e.target.closest(".cal-mech-legend-btn");
+      if (!btn) return;
+      setFilter(state.filter === btn.dataset.mech ? "" : btn.dataset.mech);
+    });
+    gridEl.addEventListener("click", onGridClick);
+    gridEl.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerCancel);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("resize", onResize);
+  }
+
+  function init() {
+    const params = new URLSearchParams(window.location.search);
+    const savedView = lsGet(LS_VIEW);
+    const urlView = params.get("view");
+    state.view = urlView === "day" || urlView === "week" ? urlView : (savedView === "day" ? "day" : "week");
+    const savedFilter = lsGet(LS_MECH);
+    state.filter = savedFilter || "";
+    if (isValidIso(params.get("date"))) state.date = params.get("date");
+    const woParam = params.get("wo");
+
+    bindToolbar();
+    bindModal();
+    bindSettings();
+    updateToolbar();
+
+    Promise.all([loadSettings(), loadMechanics(), loadWoStates()])
+      .then(() => {
+        renderFilterOptions();
+        renderLegend();
+        return loadEvents(false);
+      })
+      .then(() => {
+        render();
+        syncUrl();
+        if (woParam) openFromWorkOrder(woParam, state.date);
+        refreshTimer = setInterval(liveRefreshTick, REFRESH_MS);
+        nowTimer = setInterval(updateNowLine, 60000);
+      });
+
+    window.__roobicoCalendar = {
+      destroy() {
+        clearInterval(refreshTimer);
+        clearInterval(nowTimer);
+        clearTimeout(resizeTimer);
+        document.removeEventListener("keydown", onKeyDown);
+        window.removeEventListener("pointermove", onPointerMove);
+        window.removeEventListener("pointerup", onPointerUp);
+        window.removeEventListener("pointercancel", onPointerCancel);
+        window.removeEventListener("resize", onResize);
+      },
+    };
+  }
+
+  init();
 })();

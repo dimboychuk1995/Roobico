@@ -2,37 +2,47 @@
 
 {% call summary_box() %}
 <ul>
-  <li>Creating, editing, moving and cancelling appointments.</li>
-  <li>Statuses and the settings dialog.</li>
-  <li>The “one mechanic, one job at a time” rule.</li>
+  <li>Creating an appointment: the slot, the dialog, the fields.</li>
+  <li>Editing, moving by drag &amp; drop, resizing, cancelling and deleting.</li>
+  <li>Statuses and working hours in Calendar settings.</li>
 </ul>
 {% endcall %}
 
 {% call step(1, "Click an empty slot") %}
-<p>In the week view click the slot where the job should start (in By mechanic view, click inside the mechanic's column — that assigns the mechanic). Needs {{ perm("calendar.create", "Create appointments") }}.</p>
+<p>In Week view click the day column at the start time; in By mechanic click inside the mechanic's column — that assigns the mechanic. The start snaps to 15 minutes and the end is set one hour later. Needs {{ perm("calendar.create", "Create appointments") }}.</p>
 {% endcall %}
 {% call step(2, "Fill the dialog") %}
-<p>Customer, Unit, Service Presets (several allowed), Date, Start / End, Assign to Mechanic, Status and a Title / Note. Save.</p>
-{{ shot("calendar-appointment-modal", "The New Appointment dialog.", "md") }}
+<ul>
+  <li><strong>Customer</strong> — type to search; optional. <strong>Unit</strong> opens once a customer is chosen and searches by number, make/model and VIN.</li>
+  <li><strong>Service presets</strong> — one or several tags; they become labor blocks when you create a work order from the appointment.</li>
+  <li><strong>Date</strong>, <strong>Start</strong>, <strong>End</strong> — 15-minute steps (End also offers 24:00); changing Start keeps the duration. One appointment stays within one day.</li>
+  <li><strong>Mechanics</strong> — one or several tags; leave empty for Unassigned.</li>
+  <li><strong>Status</strong> — one button per status; the chosen one is filled with its colour.</li>
+  <li><strong>Title / note</strong> — the free text shown in bold on the block: phone number, job list, anything the mechanic should know (up to 500 characters).</li>
+</ul>
+<p>If a chosen mechanic already has an appointment at that time a small hint appears — information only, Save still works. Press {{ ui("Save") }}.</p>
+{{ shot("calendar-appointment-modal", "The appointment dialog: customer, unit, presets, date and time, mechanics, status buttons, title / note.", "md") }}
 {% endcall %}
-{% call step(3, "Edit, move, delete") %}
-<p>Click a block to edit (needs {{ perm("calendar.edit", "Edit appointments") }}); drag &amp; drop to move it; in By mechanic view dragging into another column reassigns the mechanic. {{ ui("Delete") }} in the dialog removes it ({{ perm("calendar.delete", "Delete appointments") }}).</p>
+{% call step(3, "Edit, move, resize") %}
+<p>Click a block to open the same dialog (needs {{ perm("calendar.edit", "Edit appointments") }}; without it the dialog is read-only). <strong>Drag</strong> a block to another time, another day (Week) or another mechanic's column (By mechanic) — it snaps to 15 minutes; Esc cancels. Drag the <strong>bottom edge</strong> to make it longer or shorter (at least 15 minutes).</p>
+{% endcall %}
+{% call step(4, "Cancel or delete") %}
+<p>A customer called off? Set the status to <strong>Cancelled</strong> — the block stays on the grid, faded and struck through, so the day still tells its story. {{ ui("Delete") }} in the dialog removes the record for good (needs {{ perm("calendar.delete", "Delete appointments") }}).</p>
 {% endcall %}
 
-<h2>Statuses</h2>
+<h2>Statuses and working hours</h2>
 <p>
-  Scheduled, Confirmed, In Progress, Completed, Cancelled — editable per shop via ⚙ → <strong>Calendar Settings</strong>
-  (needs {{ perm("calendar.manage_settings", "Manage calendar settings") }}): rename, recolor, add your own.
+  Scheduled, Confirmed, In Progress, Completed and Cancelled come out of the box. ⚙ → <strong>Calendar settings</strong>
+  (needs {{ perm("calendar.manage_settings", "Manage calendar settings") }}) lets you rename and recolour them and add your own
+  (“Waiting for parts”, “Warning”). Scheduled, In Progress, Completed and Cancelled show a lock and cannot be removed — the
+  work-order link uses them. <strong>Working hours</strong> set the first and last hour of the grid; anything planned outside them is
+  still shown, the grid simply grows.
 </p>
-{{ shot("calendar-settings-modal", "Calendar Settings: appointment statuses with colors.", "sm") }}
+{{ shot("calendar-settings-modal", "Calendar settings: appointment statuses with colours, and the working hours.", "sm") }}
 
-<h2>One mechanic, one job at a time</h2>
-<p>
-  An appointment cannot be saved or moved onto a slot where the same mechanic already has another appointment (cancelled ones do not
-  count) or where the mechanic's timer shows they were actually working on a different work order. The calendar refuses with the
-  conflicting time and work order — pick another time or mechanic. An older appointment that overlaps such actual work gets a red
-  <strong>!</strong> badge; fix or delete it.
-</p>
+{% call note("Overlaps are allowed") %}
+One mechanic can have two appointments at the same time — a drop-off and a quick check, for instance. The calendar never refuses it; the blocks are drawn side by side so the clash is visible, and you decide: move one, shorten it, or hand it to someone else.
+{% endcall %}
 
 {% call tip("Turn the plan into a work order") %}
 Fill customer and unit, then press {{ ui("Create Work Order") }} in the dialog — the work order page opens with everything prefilled and the appointment is linked to it. See {{ lesson_link("calendar/wo-on-calendar") }}.

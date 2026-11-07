@@ -962,92 +962,87 @@ html[data-theme="dark"] .theme-toggle-label-light {
   display: none;
 }
 
-/* ── Calendar (Google-Calendar-style) ─────────────────────────────── */
-html[data-theme="dark"] .cal-toolbar {
-  background: #181818;
-  border-bottom: 1px solid var(--border);
+/* ── Calendar (appointments board) ────────────────────────────────
+   Grid colours live in CSS variables on .cal-grid (calendar.css);
+   block colours come from the status settings and pick their own text
+   colour by luminance, so only the surfaces need overriding here. */
+html[data-theme="dark"] .cal-grid {
+  --cal-line: #3a3a3a;
+  --cal-line-soft: #2d2d2d;
+  --cal-head-bg: #1e1e1e;
+  --cal-body-bg: #232323;
+  --cal-col-hover: rgba(255, 255, 255, 0.035);
+  --cal-today-bg: rgba(34, 197, 94, 0.07);
+  --cal-now: #f28b82;
 }
 
-html[data-theme="dark"] .cal-title {
+html[data-theme="dark"] .cal-col-head.is-clickable:hover {
+  background: #262626;
+}
+
+html[data-theme="dark"] .cal-col-head.is-today .cal-dom {
+  color: #0b1220;
+}
+
+html[data-theme="dark"] .cal-mech-legend-btn:hover,
+html[data-theme="dark"] .cal-mech-legend-btn.is-active {
+  background: #1e1e1e;
   color: var(--text);
 }
 
-html[data-theme="dark"] .cal-grid {
-  background: var(--bg);
-  border-top-color: var(--border);
-}
-
-html[data-theme="dark"] .cal-header-row {
-  border-bottom-color: var(--border);
-}
-
-html[data-theme="dark"] .cal-header-cell {
-  border-left-color: var(--border);
-}
-
-html[data-theme="dark"] .cal-header-cell:hover,
-html[data-theme="dark"] .cal-header-cell.cal-expanded {
-  background: #232323;
-}
-
-html[data-theme="dark"] .cal-day-name {
-  color: #9aa0a6;
-}
-
-html[data-theme="dark"] .cal-header-cell.cal-today .cal-day-name {
-  color: #8ab4f8;
-}
-
-html[data-theme="dark"] .cal-day-number {
-  color: #e8eaed;
-}
-
-html[data-theme="dark"] .cal-day-number:hover {
-  background: #2a2a2a;
-}
-
-html[data-theme="dark"] .cal-day-number-today {
-  background: #8ab4f8 !important;
-  color: #0b1220 !important;
-}
-
-html[data-theme="dark"] .cal-time-label {
-  color: #9aa0a6;
-}
-
-html[data-theme="dark"] .cal-day-col {
-  border-left-color: var(--border);
-}
-
-html[data-theme="dark"] .cal-hour-slot {
-  border-bottom-color: #2f2f2f;
-}
-
-html[data-theme="dark"] .cal-hour-slot:hover {
-  background: rgba(255, 255, 255, 0.03);
-}
-
-html[data-theme="dark"] .cal-hour-slot::after {
-  border-top-color: #262626;
-}
-
-html[data-theme="dark"] .cal-now-line,
-html[data-theme="dark"] .cal-now-line::before {
-  background: #f28b82;
-}
-
 html[data-theme="dark"] .cal-event {
-  border-color: rgba(0, 0, 0, 0.35);
+  border-color: rgba(0, 0, 0, 0.4);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
 html[data-theme="dark"] .cal-event:hover {
-  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.7);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.7);
 }
 
-html[data-theme="dark"] .cal-event.cal-resizing,
-html[data-theme="dark"] .cal-event.cal-dragging {
-  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.8);
+html[data-theme="dark"] .cal-event.is-dragging,
+html[data-theme="dark"] .cal-event.is-resizing {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.8);
+}
+
+html[data-theme="dark"] .cal-mech-chip {
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+}
+
+html[data-theme="dark"] .cal-event-wo {
+  background: rgba(0, 0, 0, 0.45);
+  color: #f1f1f1;
+}
+
+html[data-theme="dark"] .cal-linked-wo,
+html[data-theme="dark"] .cal-tag {
+  background: #1e1e1e;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+html[data-theme="dark"] .cal-search .form-control[readonly]:not(:disabled) {
+  background-color: #2a2a2a;
+  color: var(--muted);
+}
+
+html[data-theme="dark"] .cal-search .list-group-item-action:hover,
+html[data-theme="dark"] .cal-search .list-group-item-action:focus {
+  background: #333333;
+  color: var(--text);
+}
+
+html[data-theme="dark"] .cal-search .list-group-item.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #0b1220;
+}
+
+html[data-theme="dark"] .cal-status-btn:focus-visible {
+  box-shadow: 0 0 0 0.2rem rgba(34, 197, 94, 0.3);
+}
+
+html[data-theme="dark"] #apptOverlapHint {
+  color: #f59e0b;
 }
 
 /* -- WO header / Customer info / Timeline / Attachments -- */
@@ -1365,22 +1360,6 @@ html[data-theme="dark"] .badge-status-declined { background: rgba(239, 68, 68, 0
 [data-theme="dark"] th:last-child > .ft-resize-handle:hover::after,
 [data-theme="dark"] body.ft-resizing th:last-child > .ft-resize-handle::after { background: rgba(96, 165, 250, 0.7); }
 
-/* ── Calendar: work orders, mechanics view, legend ── */
-html[data-theme="dark"] .cal-legend { color: var(--muted); }
-html[data-theme="dark"] .cal-legend-hint { color: #80868b; }
-html[data-theme="dark"] .cal-mech-name { color: #e8eaed; }
-html[data-theme="dark"] .cal-mech-sub { color: #9aa0a6; }
-html[data-theme="dark"] .cal-header-cell--unassigned .cal-mech-name { color: #9aa0a6; }
-html[data-theme="dark"] .cal-header-cell--mech:hover { background: transparent; }
-html[data-theme="dark"] .cal-event--wo { box-shadow: inset 4px 0 0 rgba(0, 0, 0, .45), 0 1px 2px rgba(0, 0, 0, .5); }
-html[data-theme="dark"] .cal-event--linked { border-color: rgba(255, 255, 255, .6); }
-html[data-theme="dark"] .cal-event-chip { background: rgba(0, 0, 0, .35); }
-html[data-theme="dark"] .cal-event--running .cal-event-chip { background: rgba(0, 0, 0, .5); }
-html[data-theme="dark"] .cal-linked-wo { background: #1e1e1e !important; border-color: var(--border) !important; color: var(--text); }
-html[data-theme="dark"] .cal-linked-wo .text-muted { color: var(--muted) !important; }
-html[data-theme="dark"] .cal-wo-details dt { color: var(--muted); }
-html[data-theme="dark"] .cal-wo-switch .form-check-label { color: var(--text); }
-
 /* ── Activity Journal ── */
 html[data-theme="dark"] .journal-row--technical td { color: var(--muted); }
 html[data-theme="dark"] .journal-row--failed td:first-child { box-shadow: inset 3px 0 0 #f87171; }
@@ -1390,25 +1369,6 @@ html[data-theme="dark"] .journal-old { color: #f87171; text-decoration-color: rg
 html[data-theme="dark"] .journal-new { color: #4ade80; }
 html[data-theme="dark"] .journal-payload { background: #121212; border-color: var(--border); color: var(--text); }
 html[data-theme="dark"] .journal-table .badge.text-bg-light { background: #2a2a2a !important; color: var(--text) !important; border-color: var(--border) !important; }
-html[data-theme="dark"] .cal-unscheduled-row { background: #161616; border-bottom-color: var(--border); }
-html[data-theme="dark"] .cal-unscheduled-gutter { color: #9aa0a6; }
-html[data-theme="dark"] .cal-unscheduled-cell { border-left-color: var(--border); }
-html[data-theme="dark"] .cal-chip { background: #1e1e1e; }
-html[data-theme="dark"] .cal-chip:hover { box-shadow: 0 1px 3px rgba(0, 0, 0, .7); }
-html[data-theme="dark"] .cal-event--conflict { outline-color: #f28b82; }
-html[data-theme="dark"] .cal-event-warn { background: #f28b82; color: #1b1b1b; }
-html[data-theme="dark"] .cal-mech-marker { color: var(--text); }
-html[data-theme="dark"] .cal-mech-marker:hover { background: #2a2a2a; }
-html[data-theme="dark"] .cal-mech-marker.active { border-color: #8ab4f8; background: rgba(138, 180, 248, .16); }
-html[data-theme="dark"] .cal-event-mechs .cal-mech-badge { box-shadow: 0 0 0 1px rgba(0, 0, 0, .55); }
-html[data-theme="dark"] .cal-lane-sep { border-left-color: #3a3a3a; }
-html[data-theme="dark"] .cal-lane-names { border-top-color: var(--border); }
-html[data-theme="dark"] .cal-lane-name { color: #e8eaed; box-shadow: inset 1px 0 0 var(--border); }
-html[data-theme="dark"] .cal-lane-name:first-child { box-shadow: none; }
-html[data-theme="dark"] .cal-chip--more { border-color: #5c5c5c; color: #9aa0a6; background: #2a2a2a; }
-html[data-theme="dark"] .cal-lane-name--unassigned { color: #9aa0a6; }
-html[data-theme="dark"] .cal-mech-badge--unassigned { background: #3a3a3a; color: #9aa0a6; }
-html[data-theme="dark"] .cal-lane-name:hover .cal-mech-badge { box-shadow: 0 0 0 2px rgba(255, 255, 255, .25); }
 
 /* ── Education Center (/education) ─────────────────────────────────
    Основа education.css строится на --surface/--border/--text/--muted,

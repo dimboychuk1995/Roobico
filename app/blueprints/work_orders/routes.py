@@ -227,16 +227,15 @@ def get_shop_db():
     return _tenant_get_shop_db(get_master_db())
 
 
-def _sync_calendar_with_wo(shop_db, shop, work_order_id, *, identity=False, mechanics=False):
+def _sync_calendar_with_wo(shop_db, shop, work_order_id, *, identity=False):
     """
     Записи календаря, привязанные к WO, следуют за ним: статус — по факту
-    работы (всегда), клиент/юнит — когда их поменяли на WO (identity),
-    бригада будущих записей — когда переназначили механиков (mechanics).
-    Зовётся после записи WO и вне транзакций (у синка нет session); ошибки
-    логируются внутри сервиса, наружу не идут.
+    работы (всегда), клиент/юнит — когда их поменяли на WO (identity).
+    Бригаду записей за назначениями строк календарь не двигает и сам в WO
+    не пишет. Зовётся после записи WO и вне транзакций (у синка нет
+    session); ошибки логируются внутри сервиса, наружу не идут.
     """
     from app.blueprints.calendar.services.work_orders import (
-        follow_wo_mechanics,
         refresh_linked_appointments_identity,
         sync_linked_appointments_status,
     )
@@ -244,8 +243,6 @@ def _sync_calendar_with_wo(shop_db, shop, work_order_id, *, identity=False, mech
     if identity:
         refresh_linked_appointments_identity(shop_db, shop, work_order_id)
     sync_linked_appointments_status(shop_db, shop, work_order_id)
-    if mechanics:
-        follow_wo_mechanics(shop_db, shop, work_order_id)
 
 
 
@@ -996,7 +993,7 @@ def create_work_order():
     # на сетке вместо «запланировано» был живой статус WO.
     calendar_event_id = oid(request.form.get("calendar_event_id"))
     if calendar_event_id:
-        from app.blueprints.calendar.routes import link_event_to_work_order
+        from app.blueprints.calendar.services.work_orders import link_event_to_work_order
 
         link_event_to_work_order(shop_db, shop, calendar_event_id, new_wo_id, wo_number)
 
@@ -1893,11 +1890,8 @@ def api_work_order_update(work_order_id):
         shop_db, shop, wo_id, mechanics_by_id=mechanics_by_id
     )
     # Привязанные записи календаря: статус по сохранённому WO, клиент/юнит —
-    # если их поменяли, бригада будущих записей — по новым назначениям.
-    _sync_calendar_with_wo(
-        shop_db, shop, wo_id,
-        identity=bool(new_customer_id or new_unit_id), mechanics=True,
-    )
+    # если их поменяли.
+    _sync_calendar_with_wo(shop_db, shop, wo_id, identity=bool(new_customer_id or new_unit_id))
 
     return jsonify({
         "ok": True,
@@ -2624,7 +2618,7 @@ def api_work_order_delete(work_order_id):
     }).deleted_count
 
     # Записи календаря, привязанные к этому WO, остаются обычными записями.
-    from app.blueprints.calendar.routes import unlink_work_order_events
+    from app.blueprints.calendar.services.work_orders import unlink_work_order_events
 
     unlink_work_order_events(shop_db, shop, wo_id)
     audit_log.log_event("delete", "work_order", wo_id, label=audit_log.wo_label(wo),
@@ -3745,7 +3739,7 @@ def api_mechanic_work_order_create():
             if calendar_event_id:
                 # Старт работы из записи, а по юниту WO уже идёт: запись
                 # привязываем к нему — клиент откроет этот WO.
-                from app.blueprints.calendar.routes import link_event_to_work_order
+                from app.blueprints.calendar.services.work_orders import link_event_to_work_order
 
                 link_event_to_work_order(shop_db, shop, calendar_event_id, existing.get("id"), existing.get("wo_number"))
             return jsonify({
@@ -3858,7 +3852,7 @@ def api_mechanic_work_order_create():
 
     if calendar_event_id:
         # Запись календаря теперь следует за этим WO (статус — по факту работы).
-        from app.blueprints.calendar.routes import link_event_to_work_order
+        from app.blueprints.calendar.services.work_orders import link_event_to_work_order
 
         link_event_to_work_order(shop_db, shop, calendar_event_id, res.inserted_id, doc["wo_number"])
 
