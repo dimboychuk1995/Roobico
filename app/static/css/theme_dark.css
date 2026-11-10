@@ -136,6 +136,25 @@ html[data-theme="dark"] a:hover {
   color: #86efac;
 }
 
+/* Шапка страницы (.page-header из dashboard.css): светлая линия под
+   заголовком и тёмно-серые неактивные вкладки на тёмном фоне не читались. */
+html[data-theme="dark"] .page-header {
+  border-bottom-color: var(--border);
+}
+
+html[data-theme="dark"] .page-header__tabs .nav-link {
+  color: var(--muted);
+}
+
+html[data-theme="dark"] .page-header__tabs .nav-link:hover,
+html[data-theme="dark"] .page-header__tabs .nav-link.active {
+  color: var(--primary);
+}
+
+html[data-theme="dark"] .page-header__tabs .nav-link.active::after {
+  background: var(--primary);
+}
+
 /* ── Forms ───────────────────────────────────────────────────────── */
 html[data-theme="dark"] .form-label {
   color: #cbd5e1;
@@ -162,6 +181,14 @@ html[data-theme="dark"] textarea.form-control::placeholder {
   color: #6b7280;
 }
 
+/* Префиксы/суффиксы полей ($, %, ед. изм.) — общий Bootstrap-класс;
+   без правила в тёмной теме оставался белый «островок» у поля. */
+html[data-theme="dark"] .input-group-text {
+  background-color: #2a2a2a;
+  border-color: #3a3a3a;
+  color: #cbd5e1;
+}
+
 html[data-theme="dark"] .form-control:focus,
 html[data-theme="dark"] .form-select:focus,
 html[data-theme="dark"] textarea.form-control:focus,
@@ -170,6 +197,20 @@ html[data-theme="dark"] input[type="date"]:focus {
   border-color: var(--primary);
   color: var(--text);
   box-shadow: 0 0 0 0.2rem rgba(34, 197, 94, 0.18);
+}
+
+/* Невалидное поле (Bootstrap .is-invalid): правила выше по специфичности
+   перебивали красную рамку — в тёмной теме ошибку было видно только по
+   тексту под полем, а в фокусе рамка становилась зелёной. */
+html[data-theme="dark"] .form-control.is-invalid,
+html[data-theme="dark"] .form-select.is-invalid {
+  border-color: var(--danger);
+}
+
+html[data-theme="dark"] .form-control.is-invalid:focus,
+html[data-theme="dark"] .form-select.is-invalid:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 0.2rem rgba(239, 68, 68, 0.25);
 }
 
 /* Заблокированные поля (например, клиент/юнит привязанной записи
@@ -414,6 +455,32 @@ html[data-theme="dark"] .btn-outline-danger {
   --bs-btn-border-color: #7f1d1d;
   --bs-btn-hover-bg: #b91c1c;
   --bs-btn-hover-color: #fff;
+}
+
+/* В светлой теме у outline-warning/info белый фон (public.css) — без этих
+   правил в тёмной теме они горели белыми «островками» (Send for Authorization). */
+html[data-theme="dark"] .btn-outline-warning {
+  --bs-btn-bg: transparent;
+  --bs-btn-color: #fbbf24;
+  --bs-btn-border-color: #78350f;
+  --bs-btn-hover-bg: #d97706;
+  --bs-btn-hover-border-color: #d97706;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-active-bg: #b45309;
+  --bs-btn-active-border-color: #b45309;
+  --bs-btn-active-color: #fff;
+}
+
+html[data-theme="dark"] .btn-outline-info {
+  --bs-btn-bg: transparent;
+  --bs-btn-color: #67e8f9;
+  --bs-btn-border-color: #155e75;
+  --bs-btn-hover-bg: #0891b2;
+  --bs-btn-hover-border-color: #0891b2;
+  --bs-btn-hover-color: #fff;
+  --bs-btn-active-bg: #0e7490;
+  --bs-btn-active-border-color: #0e7490;
+  --bs-btn-active-color: #fff;
 }
 
 /* ── Filter / utility surfaces ───────────────────────────────────── */
@@ -1369,6 +1436,171 @@ html[data-theme="dark"] .journal-old { color: #f87171; text-decoration-color: rg
 html[data-theme="dark"] .journal-new { color: #4ade80; }
 html[data-theme="dark"] .journal-payload { background: #121212; border-color: var(--border); color: var(--text); }
 html[data-theme="dark"] .journal-table .badge.text-bg-light { background: #2a2a2a !important; color: var(--text) !important; border-color: var(--border) !important; }
+
+/* ── Roles & Permissions (roles.css) ───────────────────────────────
+   Один набор rp-* классов у страницы Settings → Roles и у модалки
+   Users & Roles → Permissions. Тёмные значения токенов roles.css плюс
+   поверхности, заданные там жёстко (#fff, светлые градиенты, тёмный
+   текст). Цветные варианты (is-allow / is-checked / is-partial…)
+   повторены явно — общие правила ниже их перебили бы. */
+html[data-theme="dark"] {
+  --rp-brand: #22c55e;
+  --rp-brand-soft: rgba(34, 197, 94, 0.14);
+  --rp-brand-soft-2: rgba(34, 197, 94, 0.32);
+  --rp-brand-dark: #16a34a;
+  --rp-danger: #f87171;
+  --rp-danger-soft: rgba(239, 68, 68, 0.16);
+  --rp-warn: #fbbf24;
+  --rp-warn-soft: rgba(245, 158, 11, 0.16);
+  --rp-muted: #9b9b9b;
+  --rp-border: #3a3a3a;
+  --rp-border-strong: #4a4a4a;
+  --rp-bg-soft: #2f2f2f;
+  --rp-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --rp-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.5);
+}
+
+html[data-theme="dark"] .rp-page-title,
+html[data-theme="dark"] .rp-card-header .rp-title,
+html[data-theme="dark"] .rp-role-name,
+html[data-theme="dark"] .rp-group-title,
+html[data-theme="dark"] .rp-perm-label,
+html[data-theme="dark"] .rp-empty-title,
+html[data-theme="dark"] .rp-up-stat .rp-up-stat-value {
+  color: var(--text);
+}
+
+html[data-theme="dark"] .rp-card {
+  background: var(--surface);
+}
+
+html[data-theme="dark"] .rp-card-header,
+html[data-theme="dark"] .rp-editor-toolbar {
+  background: var(--surface-soft);
+}
+
+html[data-theme="dark"] .rp-role-row.is-active .rp-role-icon {
+  background: #16a34a;
+  color: #fff;
+}
+
+/* Теги ролей */
+html[data-theme="dark"] .rp-tag-protected { border-color: rgba(245, 158, 11, 0.35); }
+html[data-theme="dark"] .rp-tag-system {
+  background: rgba(99, 102, 241, 0.18);
+  color: #a5b4fc;
+  border-color: rgba(129, 140, 248, 0.35);
+}
+html[data-theme="dark"] .rp-tag-users {
+  background: rgba(148, 163, 184, 0.16);
+  color: #cbd5e1;
+  border-color: #3a3a3a;
+}
+
+/* Поля: имя роли, поиск прав */
+html[data-theme="dark"] .rp-name-input,
+html[data-theme="dark"] .rp-search input {
+  background: #1f1f1f;
+  border-color: #3a3a3a;
+  color: var(--text);
+}
+html[data-theme="dark"] .rp-name-input::placeholder,
+html[data-theme="dark"] .rp-search input::placeholder {
+  color: #6b7280;
+}
+html[data-theme="dark"] .rp-name-input:focus,
+html[data-theme="dark"] .rp-search input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.18);
+}
+html[data-theme="dark"] .rp-name-input:disabled {
+  background: #2a2a2a;
+  color: var(--muted);
+}
+html[data-theme="dark"] .rp-meta-line code {
+  background: #1f1f1f;
+  color: #cbd5e1;
+}
+
+/* Кнопки */
+html[data-theme="dark"] .rp-btn-primary,
+html[data-theme="dark"] .rp-btn-success {
+  background: #16a34a;
+  border-color: #16a34a;
+  color: #fff;
+}
+html[data-theme="dark"] .rp-btn-primary:hover:not(:disabled),
+html[data-theme="dark"] .rp-btn-success:hover:not(:disabled) {
+  background: #15803d;
+  border-color: #15803d;
+}
+html[data-theme="dark"] .rp-btn-outline {
+  background: transparent;
+  color: var(--text);
+  border-color: #4a4a4a;
+}
+html[data-theme="dark"] .rp-btn-outline:hover:not(:disabled) {
+  background: #353535;
+  border-color: #5a5a5a;
+}
+html[data-theme="dark"] .rp-btn-danger {
+  background: transparent;
+  color: #f87171;
+  border-color: #7f1d1d;
+}
+html[data-theme="dark"] .rp-btn-ghost:hover:not(:disabled) {
+  color: var(--text);
+}
+
+/* Дерево прав роли */
+html[data-theme="dark"] .rp-group,
+html[data-theme="dark"] .rp-group-head {
+  background: var(--surface-soft);
+}
+html[data-theme="dark"] .rp-group:hover { border-color: #4a4a4a; }
+html[data-theme="dark"] .rp-group.is-open .rp-group-head { background: #1f1f1f; }
+html[data-theme="dark"] .rp-group-count { background: #333333; }
+html[data-theme="dark"] .rp-group-count.is-partial { background: var(--rp-brand-soft); color: #4ade80; }
+html[data-theme="dark"] .rp-group-count.is-full { background: #16a34a; color: #fff; }
+html[data-theme="dark"] .rp-mini-btn {
+  background: transparent;
+  color: #cbd5e1;
+}
+html[data-theme="dark"] .rp-mini-btn:hover {
+  background: var(--rp-brand-soft);
+  border-color: var(--rp-brand-soft-2);
+  color: #4ade80;
+}
+html[data-theme="dark"] .rp-perm.is-checked .rp-perm-label { color: #86efac; }
+
+/* Модалка прав пользователя: сводка, таблица, пилюли, тумблеры */
+html[data-theme="dark"] .rp-up-stat { background: var(--surface); }
+html[data-theme="dark"] .rp-up-stat.is-allow .rp-up-stat-value { color: #4ade80; }
+html[data-theme="dark"] .rp-up-stat.is-deny .rp-up-stat-value { color: #f87171; }
+html[data-theme="dark"] .rp-up-stat.is-eff .rp-up-stat-value { color: #93c5fd; }
+
+/* Строка-заголовок группы прав — как .table-section-row: не реагирует на hover */
+html[data-theme="dark"] .rp-up-table tbody tr.rp-up-group td,
+html[data-theme="dark"] .rp-up-table tbody tr.rp-up-group:hover td {
+  background: #1f1f1f !important;
+  color: #cbd5e1;
+}
+
+html[data-theme="dark"] .rp-pill-yes { color: #4ade80; }
+html[data-theme="dark"] .rp-pill-no {
+  background: rgba(148, 163, 184, 0.12);
+  color: #9b9b9b;
+}
+html[data-theme="dark"] .rp-pill-effective-on {
+  background: rgba(59, 130, 246, 0.18);
+  color: #93c5fd;
+}
+
+html[data-theme="dark"] .rp-toggle .slider { background: #4a4a4a; }
+html[data-theme="dark"] .rp-toggle .slider::before {
+  background: #f1f1f1;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
 
 /* ── Education Center (/education) ─────────────────────────────────
    Основа education.css строится на --surface/--border/--text/--muted,

@@ -63,7 +63,18 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
   onUnauthorized = handler;
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+// Таймауты запросов формы WO. Сеть «подключена, но не отвечает» (Wi-Fi
+// цеха без интернета) держит fetch без ответа как угодно долго (Android —
+// бесконечно, iOS — до ~60 с), а сохранения механика идут строго по одному:
+// один зависший запрос держал бы автосейв, Done, сохранение при уходе и
+// опрос. Обрыв по таймауту — обычная ошибка: форма повторит сохранение
+// (новые строки несут client_key, base не меняется — дублей не будет).
+// Создание WO таймаут не получает: его повтор создал бы второй WO.
+export const SAVE_TIMEOUT_MS = 30000;
+export const REFRESH_TIMEOUT_MS = 20000;
+export const REV_TIMEOUT_MS = 15000;
+
+async function request<T>(path: string, options: RequestInit = {}, timeoutMs = 0): Promise<T> {
   const headers: Record<string, string> = {
     Accept: "application/json",
     ...(options.headers as Record<string, string> | undefined),
@@ -76,33 +87,53 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     if (csrfToken) headers["X-CSRFToken"] = csrfToken;
   }
 
-  let res: Response;
-  try {
-    res = await fetch(`${baseUrl}${path}`, {
-      ...options,
-      headers,
-      credentials: "include",
-    });
-  } catch (e) {
-    throw new ApiError("Network error. Check the server address and connection.", 0, "network");
+  // timeoutMs > 0 — запрос обрывается, если сервер не ответил за это время.
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const controller = timeoutMs > 0 && typeof AbortController !== "undefined" ? new AbortController() : null;
+  if (controller) {
+    timer = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, timeoutMs);
   }
+  const timeoutError = () =>
+    new ApiError("The server did not answer in time. Check the connection and try again.", 0, "timeout");
 
-  let data: any = null;
   try {
-    data = await res.json();
-  } catch {
-    throw new ApiError(`Unexpected server response (${res.status}).`, res.status, "bad_response");
-  }
-
-  if (!res.ok || (data && data.ok === false)) {
-    if (res.status === 401 && !path.startsWith("/api/mobile/login") && !path.startsWith("/api/mobile/session")) {
-      onUnauthorized?.();
+    let res: Response;
+    try {
+      res = await fetch(`${baseUrl}${path}`, {
+        ...options,
+        headers,
+        credentials: "include",
+        ...(controller ? { signal: controller.signal } : {}),
+      });
+    } catch (e) {
+      if (timedOut) throw timeoutError();
+      throw new ApiError("Network error. Check the server address and connection.", 0, "network");
     }
-    const message = (data && (data.message || data.error)) || `Request failed (${res.status}).`;
-    throw new ApiError(String(message), res.status, String((data && data.error) || ""), data);
-  }
 
-  return data as T;
+    let data: any = null;
+    try {
+      data = await res.json();
+    } catch {
+      if (timedOut) throw timeoutError();
+      throw new ApiError(`Unexpected server response (${res.status}).`, res.status, "bad_response");
+    }
+
+    if (!res.ok || (data && data.ok === false)) {
+      if (res.status === 401 && !path.startsWith("/api/mobile/login") && !path.startsWith("/api/mobile/session")) {
+        onUnauthorized?.();
+      }
+      const message = (data && (data.message || data.error)) || `Request failed (${res.status}).`;
+      throw new ApiError(String(message), res.status, String((data && data.error) || ""), data);
+    }
+
+    return data as T;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 // ── Типы ответов ────────────────────────────────────────────────────
@@ -423,12 +454,40 @@ export interface WoAppointment {
   presets: { id: string; name: string }[];
 }
 
+/** Строка WO для мобильного редактора менеджера (деталка WO, поле raw_labors). */
+export interface WoRawLabor {
+  labor_id: string;
+  description: string;
+  hours: string;
+  rate_code: string;
+  issue_description: string;
+  /** Сохранённая база лейбора (ручные суммы веба не пересчитываются). */
+  labor_base: number;
+  parts: {
+    part_id?: string | null;
+    part_number?: string;
+    description?: string;
+    qty?: number;
+    cost?: number;
+    price?: number;
+    core_charge?: number;
+    misc_charge?: number;
+    misc_charge_description?: string;
+    one_time_part?: boolean;
+  }[];
+}
+
 export interface WorkOrderDetails {
   ok: boolean;
   id: string;
   status: string;
   is_estimate: boolean;
   manager_confirmed?: boolean;
+  /** Строки для формы правки; у старых серверов может не быть. */
+  raw_labors?: WoRawLabor[];
+  /** Ревизия строк WO (labors_rev) и edit view этого открытия — у старых серверов нет. */
+  labors_rev?: number;
+  view_id?: string;
   customer_id: string;
   unit_id: string;
   wo_number: string;
@@ -457,8 +516,51 @@ export interface WorkOrderDetails {
   };
 }
 
-export function fetchWorkOrderDetails(id: string) {
-  return request<WorkOrderDetails>(`/api/mobile/work_orders/${encodeURIComponent(id)}`);
+/** Параметры открытия WO формой правки. */
+export interface WoDetailsOptions {
+  /** Форма шлёт view_id сама (протокол слияния, ?mp=1). */
+  mergeProtocol?: boolean;
+  /** Оборвать запрос, если сервер не ответил за столько мс (0/нет — без таймаута). */
+  timeoutMs?: number;
+}
+
+function woDetailsPath(id: string, opts?: WoDetailsOptions) {
+  return `/api/mobile/work_orders/${encodeURIComponent(id)}${opts?.mergeProtocol ? "?mp=1" : ""}`;
+}
+
+export function fetchWorkOrderDetails(id: string, opts?: WoDetailsOptions) {
+  return request<WorkOrderDetails>(woDetailsPath(id, opts), {}, opts?.timeoutMs || 0);
+}
+
+/**
+ * Дешёвый опрос «WO изменился?»: ревизия строк (labors_rev). Механику
+ * статус не отдаётся — только locked (оплачен / смета / подтверждён) и его
+ * Done; менеджеру — status и manager_confirmed. Старый сервер эндпоинта не
+ * знает: 404 с кодом not_found (а не work_order_not_found).
+ */
+export interface WoRevInfo {
+  ok: boolean;
+  labors_rev: number;
+  locked?: boolean;
+  mechanic_done?: boolean;
+  status?: string;
+  manager_confirmed?: boolean;
+}
+
+export function fetchWorkOrderRev(id: string) {
+  // С таймаутом: зависший опрос не должен навсегда выключить следующие.
+  return request<WoRevInfo>(`/api/mobile/work_orders/${encodeURIComponent(id)}/rev`, {}, REV_TIMEOUT_MS);
+}
+
+/**
+ * Ключ новой строки работы (client_key): ставится при создании строки и
+ * живёт на ней до получения labor_id. Повтор сохранения после потерянного
+ * ответа сервер узнаёт по нему и не создаёт вторую такую же работу; id
+ * новых строк приходят в ответе как client_keys {client_key: labor_id}.
+ */
+export function newClientKey(): string {
+  const rnd = () => Math.random().toString(36).slice(2, 10);
+  return `ck-${Date.now().toString(36)}-${rnd()}${rnd()}`;
 }
 
 // ── Механик-режим: безденежные детали WO + таймеры работ ────────────
@@ -523,11 +625,14 @@ export interface MechWorkOrderDetails {
   appointments?: WoAppointment[];
   my_running_timer: MechRunningTimer | null;
   server_now: string;
+  /** Ревизия строк WO (labors_rev) и edit view этого открытия — у старых серверов нет. */
+  labors_rev?: number;
+  view_id?: string;
 }
 
 /** Для механиков /api/mobile/work_orders/<id> возвращает эту форму (без цен). */
-export function fetchMechanicWoDetails(id: string) {
-  return request<MechWorkOrderDetails>(`/api/mobile/work_orders/${encodeURIComponent(id)}`);
+export function fetchMechanicWoDetails(id: string, opts?: WoDetailsOptions) {
+  return request<MechWorkOrderDetails>(woDetailsPath(id, opts), {}, opts?.timeoutMs || 0);
 }
 
 export interface TimerLog {
@@ -548,6 +653,12 @@ export interface TimerResponse {
   stopped_previous?: TimerLog | null;
   time_summary: Record<string, MechLaborTime>;
   server_now: string;
+  /**
+   * Итоговая ревизия WO после старта/стопа (у старых серверов нет). В ней
+   * может быть и чужая правка, сделанная до таймера, — форма её не
+   * «запоминает», а сразу сверяется с сервером (опрос ревизии).
+   */
+  labors_rev?: number;
 }
 
 export function startLaborTimer(woId: string, laborId: string) {
@@ -776,12 +887,32 @@ export interface VendorFull {
   notes: string;
   is_active: boolean;
   contacts: { first_name?: string; last_name?: string; phone?: string; email?: string; is_main?: boolean }[];
+  /** Рабочая ссылка (https:// дописан) и подпись без схемы; у старых серверов полей нет. */
+  website_href?: string;
+  website_label?: string;
+  /** Только с правом vendors.view_credentials. Сам пароль здесь не приходит никогда. */
+  portal_login?: string;
+  has_portal_password?: boolean;
 }
 
 export function fetchVendorFull(id: string) {
   return request<{ ok: boolean; item: VendorFull }>(`/vendors/api/${encodeURIComponent(id)}`).then(
     (d) => d.item
   );
+}
+
+/** Учётка портала вендора с расшифрованным паролем (право vendors.view_credentials;
+ *  каждый показ сохранённого пароля пишется в Activity Journal). */
+export interface VendorCredentials {
+  ok: boolean;
+  website: string;
+  website_href: string;
+  login: string;
+  password: string;
+}
+
+export function fetchVendorCredentials(id: string) {
+  return request<VendorCredentials>(`/vendors/api/${encodeURIComponent(id)}/credentials`);
 }
 
 export interface VendorOrderRow {
@@ -887,7 +1018,16 @@ export function createVendor(payload: VendorPayload) {
   });
 }
 
-export function updateVendor(id: string, payload: VendorPayload) {
+/** Учётка портала в сохранении вендора (сервер учитывает только при праве
+ *  vendors.view_credentials): нет portal_login — логин не меняется, пустой
+ *  portal_password — сохранённый остаётся, portal_password_clear — удалить. */
+export interface VendorCredentialsPayload {
+  portal_login?: string;
+  portal_password?: string;
+  portal_password_clear?: boolean;
+}
+
+export function updateVendor(id: string, payload: VendorPayload & VendorCredentialsPayload) {
   return request<{ ok: boolean }>(`/vendors/api/${encodeURIComponent(id)}/update`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -1013,6 +1153,8 @@ export interface WoFormPart {
 
 export interface WoFormLabor {
   labor_id?: string; // стабильный ID строки: сервер сохраняет по нему часы/цены/таймеры
+  /** Ключ новой строки (newClientKey) — пока у неё нет labor_id. */
+  client_key?: string;
   description: string;
   hours: string;
   rate_code: string;
@@ -1029,8 +1171,27 @@ export interface WoSaveResult {
   id: string;
   wo_number?: number;
   status: string;
-  grand_total?: number; // отсутствует в ответах механик-эндпоинтов
+  grand_total?: number | null; // отсутствует (или null) в ответах механик-эндпоинтов
   inventory_warnings: string[];
+  // ── Протокол слияния (у старых серверов этих полей нет) ──
+  /** Edit view сохранения (что клиент отправил) — base следующего сохранения. */
+  view_id?: string;
+  /** Edit view записанного состояния; равна view_id, если чужого ничего не слили. */
+  merged_view_id?: string;
+  /** Ревизия WO после этого сохранения. */
+  labors_rev?: number;
+  /** id строк — 1:1 со строками запроса. */
+  labor_ids?: string[];
+  /** id новых строк по их client_key. */
+  client_keys?: Record<string, string>;
+  /** Сервер слил сохранение с чужими правками. */
+  merged_foreign?: boolean;
+  /** Короткие заметки, что сделали с чужими правками (до 6). */
+  merge_notes?: string[];
+  /** Сохранено, но побочное действие (склад, коры, уведомления) не удалось. */
+  warnings?: string[];
+  /** Сохранение механика: строки WO в форме деталей механика (с id и временем). */
+  labors?: MechWoLabor[];
 }
 
 export function createWorkOrder(payload: {
@@ -1056,12 +1217,18 @@ export function editWorkOrder(
     labors: WoFormLabor[];
     mechanic_state?: "in_progress" | "done";
     unit_mileage?: string | number;
+    /** 1 — сервер сливает сохранение с тем, что форма видела (view_id). */
+    merge_protocol?: 1;
+    /** Edit view, с которой форма начала правку (из деталей или прошлого сохранения). */
+    view_id?: string;
   }
 ) {
-  return request<WoSaveResult>(`/api/mobile/work_orders/${encodeURIComponent(id)}`, {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+  // Таймаут: повтор безопасен (client_key у новых строк, тот же view_id).
+  return request<WoSaveResult>(
+    `/api/mobile/work_orders/${encodeURIComponent(id)}`,
+    { method: "POST", body: JSON.stringify(payload) },
+    SAVE_TIMEOUT_MS
+  );
 }
 
 export interface PresetListItem {
@@ -1106,10 +1273,15 @@ export function sendWoAuthorization(
   woId: string,
   email: string,
   scope: "work_order" | "labor" = "work_order",
-  laborIndex?: number
+  laborIndex?: number,
+  /** labor_id работы — сервер, который его понимает, найдёт работу по нему. */
+  laborId?: string
 ) {
   const body: Record<string, unknown> = { email, scope };
-  if (scope === "labor") body.labor_index = laborIndex;
+  if (scope === "labor") {
+    body.labor_index = laborIndex;
+    if (laborId) body.labor_id = laborId;
+  }
   return request<{ ok: boolean }>(
     `/work_orders/api/work_orders/${encodeURIComponent(woId)}/send-authorization`,
     { method: "POST", body: JSON.stringify(body) }

@@ -35,6 +35,8 @@ SENSITIVE_KEYS = {
     "api_key",
     "authorization",
     "csrf_token",
+    # Логин портала вендора: журнал видят и те, кому учётки не показываются.
+    "portal_login",
 }
 # Эндпоинты, чьи тела не стоит хранить даже в замаскированном виде
 # (файлы/бинарные тела, большие AI-пейлоады).
@@ -70,7 +72,9 @@ def _sanitize_payload(value):
         sanitized = {}
         for key, item in value.items():
             lower_key = str(key or "").strip().lower()
-            if lower_key in SENSITIVE_KEYS:
+            # Любое *password* (portal_password вендора и т. п.) — тоже маска:
+            # отклонённый запрос пишется в журнал вместе с телом.
+            if lower_key in SENSITIVE_KEYS or "password" in lower_key:
                 sanitized[key] = "***"
             else:
                 sanitized[key] = _sanitize_payload(item)

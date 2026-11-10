@@ -36,6 +36,7 @@ from app.constants.permissions import (
     PERMISSION_GROUPS,
     ALL_PERMISSIONS,
     SYSTEM_ROLE_KEYS,
+    SYSTEM_ROLE_ORDER,
     PROTECTED_ROLE_KEYS,
 )
 
@@ -185,7 +186,16 @@ def api_roles_list():
     tenant_id = _maybe_oid(session.get(SESSION_TENANT_ID))
     users_by_role = _users_count_by_role(master, tenant_id)
 
-    roles = list(tdb.roles.find({}).sort([("is_system", -1), ("name", 1)]))
+    # Порядок как на странице Users & Roles: системные роли по иерархии
+    # (SYSTEM_ROLE_ORDER), затем кастомные по алфавиту.
+    order = {key: i for i, key in enumerate(SYSTEM_ROLE_ORDER)}
+    roles = sorted(
+        tdb.roles.find({}),
+        key=lambda r: (
+            order.get(str(r.get("key") or ""), len(order)),
+            str(r.get("name") or r.get("key") or "").casefold(),
+        ),
+    )
     return jsonify({
         "ok": True,
         "roles": [_serialize_role(r, users_by_role) for r in roles],

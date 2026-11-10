@@ -144,12 +144,20 @@ def create_app():
     # до всего остального, чтобы ловить в том числе ошибки старта.
     if app.config.get("SENTRY_DSN"):
         import sentry_sdk
+        from sentry_sdk.scrubber import DEFAULT_DENYLIST, EventScrubber
         sentry_sdk.init(
             dsn=app.config["SENTRY_DSN"],
             environment=app.config.get("SENTRY_ENVIRONMENT", "production"),
             traces_sample_rate=app.config.get("SENTRY_TRACES_SAMPLE_RATE", 0),
             # Не отправляем PII (email/IP пользователей) в третью сторону.
             send_default_pii=False,
+            # Секреты не уходят в Sentry и во вложенных словарях (тело запроса,
+            # локальные переменные): стандартный denylist сравнивает ключи
+            # целиком, поэтому пароль портала вендора добавлен явно.
+            event_scrubber=EventScrubber(
+                denylist=[*DEFAULT_DENYLIST, "portal_password", "portal_password_enc", "plaintext"],
+                recursive=True,
+            ),
         )
 
     # We sit behind Cloudflare → nginx → gunicorn (unix socket). Trust the

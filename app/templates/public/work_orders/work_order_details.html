@@ -199,7 +199,7 @@
     <script type="application/json" id="coreChargeDefaultData">{{ {"enabled": charge_for_cores_default}|tojson }}</script>
     <script type="application/json" id="workOrderInitialData">{{ (initial_labors or [])|tojson }}</script>
     <script type="application/json" id="workOrderInitialTotalsData">{{ (initial_totals or {})|tojson }}</script>
-    <script type="application/json" id="workOrderCreatedData">{{ {"created": work_order_created, "id": created_work_order_id, "status": work_order_status, "mechanic_done": mechanic_done, "updated_at": wo_updated_at}|tojson }}</script>
+    <script type="application/json" id="workOrderCreatedData">{{ {"created": work_order_created, "id": created_work_order_id, "status": work_order_status, "mechanic_done": mechanic_done, "updated_at": wo_updated_at, "view_id": edit_view_id, "labors_rev": labors_rev}|tojson }}</script>
     <script type="application/json" id="workOrderAuthorizationsData">{{ (initial_authorizations or [])|tojson }}</script>
     <script type="application/json" id="woTimeSummary">{{ (time_summary or {})|tojson }}</script>
     <script type="application/json" id="woPermissionsData">{{ {"manage_email_contacts": "work_orders.manage_email_contacts" in user_permissions, "edit_time_logs": "work_orders.edit_time_logs" in user_permissions, "edit": "work_orders.edit" in user_permissions, "create": "work_orders.create" in user_permissions, "change_status": "work_orders.change_status" in user_permissions, "delete": "work_orders.delete" in user_permissions, "manage_payments": "work_orders.manage_payments" in user_permissions, "send_to_customer": "work_orders.send_to_customer" in user_permissions, "export_pdf": "work_orders.export_pdf" in user_permissions}|tojson }}</script>

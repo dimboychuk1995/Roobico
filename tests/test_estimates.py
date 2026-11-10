@@ -5,6 +5,8 @@ Estimates: сохранение WO как сметы (без списания с
 """
 from __future__ import annotations
 
+import json
+import re
 from datetime import datetime, timezone
 
 import pytest
@@ -75,8 +77,9 @@ def _create_estimate(client, env):
     return wo
 
 
-def _flat_labor(parts=None):
+def _flat_labor(parts=None, labor_id=""):
     return {
+        "labor_id": labor_id,
         "labor_description": "Estimate job", "labor_hours": 0, "labor_rate_code": "",
         "labor_full_total": 100, "assigned_mechanics": [], "issue_description": "",
         "parts": parts if parts is not None else [{
@@ -87,13 +90,30 @@ def _flat_labor(parts=None):
     }
 
 
-def _update(client, wo_id, save_status, totals=None):
+def _open_page(client, wo_id):
+    """Как браузер: страница деталей отдаёт view_id (база merge её Save) и
+    id строк, которые форма шлёт обратно."""
+    html = client.get(f"/work_orders/details?work_order_id={wo_id}").get_data(as_text=True)
+    created = json.loads(re.search(r'id="workOrderCreatedData">(.*?)</script>', html, re.S).group(1))
+    labors = json.loads(re.search(r'id="workOrderInitialData">(.*?)</script>', html, re.S).group(1))
+    return created["view_id"], [b["labor_id"] for b in labors]
+
+
+def _page_save(client, wo_id, labor, save_status, totals=None):
+    """Открыть WO и сохранить форму: строка уходит со своим labor_id."""
+    view_id, ids = _open_page(client, wo_id)
+    labor = dict(labor, labor_id=ids[0])
     token = get_csrf_token(client)
     return client.post(
         f"/work_orders/api/work_orders/{wo_id}/update",
-        json={"labors": [_flat_labor()], "totals": totals or {}, "save_status": save_status},
+        json={"labors": [labor], "totals": totals or {}, "save_status": save_status,
+              "merge_protocol": 1, "view_id": view_id},
         headers={"X-CSRFToken": token},
     )
+
+
+def _update(client, wo_id, save_status, totals=None):
+    return _page_save(client, wo_id, _flat_labor(), save_status, totals=totals)
 
 
 def test_create_estimate_no_deduction(logged_in, env):
@@ -159,6 +179,54 @@ def test_wo_converts_back_to_estimate_and_restores_stock(logged_in, env):
     assert _stock(env) == 8
 
 
+def _delete_wo(client, wo_id):
+    resp = client.post(f"/work_orders/api/work_orders/{wo_id}/delete", json={},
+                       headers={"X-CSRFToken": get_csrf_token(client)})
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    data = resp.get_json()
+    assert data["ok"] is True, data
+    return data
+
+
+def test_delete_estimate_returns_nothing_to_stock_or_cores(logged_in, env):
+    """Смета склад не списывала и коры не заводила — её удаление ничего не
+    возвращает (раньше склад рос на детали, не уходившие с полки, а учёт
+    коров других WO уменьшался). Удаление рабочего WO по-прежнему
+    возвращает и склад, и коры."""
+    db, part_id = env["db"], env["part"]["_id"]
+    # Деталь с кором (строка без core_charge → кор ждём от клиента); 3 кора
+    # уже числятся за другими WO.
+    db.parts.update_one({"_id": part_id}, {"$set": {"core_has_charge": True, "core_cost": 12.5}})
+    db.cores.insert_one({"shop_id": env["shop_id"], "part_id": part_id, "quantity": 3, "is_active": True})
+
+    def cores():
+        doc = db.cores.find_one({"shop_id": env["shop_id"], "part_id": part_id})
+        return int((doc or {}).get("quantity") or 0)
+
+    estimate = _create_estimate(logged_in, env)
+    assert _stock(env) == 10 and cores() == 3
+    data = _delete_wo(logged_in, estimate["_id"])
+    assert data["inventory_changes"] == [] and data["core_changes"] == []
+    assert _stock(env) == 10, "смета ничего не списывала — возвращать нечего"
+    assert cores() == 3, "коры сметы не заводились — снимать нечего"
+
+    # Рабочий WO: создание списало 2 шт. и завело 2 кора, удаление вернуло всё.
+    resp = logged_in.post("/work_orders/create", data={
+        "csrf_token": get_csrf_token(logged_in),
+        "customer_id": str(env["customer_id"]), "unit_id": str(env["unit_id"]),
+        "labors[0][labor_description]": "Real job", "labors[0][labor_full_total]": "100",
+        "labors[0][parts][0][part_number]": env["part"]["part_number"],
+        "labors[0][parts][0][part_id]": str(part_id),
+        "labors[0][parts][0][qty]": "2", "labors[0][parts][0][price]": "5",
+    })
+    assert resp.status_code in (200, 302)
+    wo = db.work_orders.find_one({"customer_id": env["customer_id"], "is_active": True})
+    assert wo["status"] == "open" and _stock(env) == 8 and cores() == 5
+    data = _delete_wo(logged_in, wo["_id"])
+    assert data["inventory_restored"] is True
+    assert _stock(env) == 10 and cores() == 3
+
+
 def test_wo_with_payments_cannot_become_estimate(logged_in, env):
     wo = _create_estimate(logged_in, env)
     # Реальные totals, чтобы платёж $10 был частичным и WO не стал paid.
@@ -221,12 +289,7 @@ def test_estimate_pdf_says_estimate_and_shows_issue(logged_in, env, monkeypatch)
 
     labor = _flat_labor()
     labor["issue_description"] = "Grinding noise when braking"
-    token = get_csrf_token(logged_in)
-    resp = logged_in.post(
-        f"/work_orders/api/work_orders/{wo['_id']}/update",
-        json={"labors": [labor], "totals": {}, "save_status": "estimate"},
-        headers={"X-CSRFToken": token},
-    )
+    resp = _page_save(logged_in, wo["_id"], labor, "estimate")
     assert resp.get_json()["ok"] is True
 
     resp, html = _download_pdf_html(logged_in, wo["_id"], monkeypatch)
@@ -243,12 +306,7 @@ def test_wo_pdf_says_work_order_and_shows_issue(logged_in, env, monkeypatch):
 
     labor = _flat_labor()
     labor["issue_description"] = "Check engine light on"
-    token = get_csrf_token(logged_in)
-    resp = logged_in.post(
-        f"/work_orders/api/work_orders/{wo['_id']}/update",
-        json={"labors": [labor], "totals": {}, "save_status": "open"},
-        headers={"X-CSRFToken": token},
-    )
+    resp = _page_save(logged_in, wo["_id"], labor, "open")
     assert resp.get_json()["ok"] is True
 
     resp, html = _download_pdf_html(logged_in, wo["_id"], monkeypatch)

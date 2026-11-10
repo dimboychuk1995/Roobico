@@ -83,7 +83,11 @@ What a mechanic sees and can do:
   **"Done — ready for review"**: it does NOT change the WO status — it shows
   managers a green **"Mechanic done"** badge (WO list web + mobile, WO
   details) meaning the mechanic finished and the job awaits review. Any new
-  change or a restarted job timer clears the Done badge.
+  change or a restarted job timer clears the Done badge. Things that change
+  nothing are not counted: tapping **Add labor** and leaving the new job
+  empty, typing something and undoing it before the autosave, or
+  confirming the odometer reading the work order already has keeps your
+  Done.
 - **Several mechanics on one WO — Done is per mechanic.** Everyone who
   worked on the WO (started a job timer on it, or is assigned to one of its
   jobs) has to press Done themselves. Until the last one does, the WO stays
@@ -106,7 +110,10 @@ What a mechanic sees and can do:
   job) and moves the unit's odometer forward; a smaller number is kept on
   the WO only and never rolls the unit back. The **Unit mileage** field on
   the form (and the mileage box in the web header) stays editable to
-  correct it later.
+  correct it later. When the app sends you into a work order that is
+  already in progress for this unit ("Work order #… is already in progress
+  for this unit. Opening it…"), the odometer you just confirmed is saved to
+  that work order automatically — no other change needed.
 - **The work order date follows the mechanic's last real save.** Every
   save a mechanic makes that changes something — the Save button in web
   mechanic mode, and in the app every autosave that changed jobs, parts or
@@ -116,7 +123,10 @@ What a mechanic sees and can do:
   anything does not move the date; office (manager) saves keep the date as
   it was set.
 - Prices/hours/rates that the office already entered are preserved when a
-  mechanic edits; mechanics cannot delete existing jobs (manager-only).
+  mechanic edits. On the web mechanic page a mechanic can remove only a job
+  that has not been saved yet; in the app the trash icon on a job removes it
+  for everyone — except a job somebody is working on right now (see
+  "Working on one work order together" below).
 - Jobs a mechanic adds without a preset automatically get the shop's
   **"standard" labor rate** (or the first active rate) on the server — so
   the office never sees a $0 labor line; the office can change the rate
@@ -145,9 +155,138 @@ Stop button. Rules:
 - Starting a timer immediately sets the WO to In Progress (no save needed)
   and clears the "Mechanic done" badge if it was set. Tracked time appears
   for the office in the WO timeline and in Reports → Mechanic Hours
-  ("Tracked Hours" vs billed hours).
+  ("Tracked Hours" vs billed hours). It does not feed pay: Timecard /
+  Salary uses salaries and uAttend punches.
+- **No timers on estimates.** Start job on an estimate answers *"This work
+  order is an estimate. Time can be tracked after the office converts it
+  to a work order."* — nothing starts, and a timer you have running on
+  another work order keeps running. Ask the office to convert the estimate
+  first. (A manager or owner may time work on an estimate; it stays an
+  estimate.)
+- **When Start job says no**, the message tells you why:
+  - *"This job is no longer on the work order. Refresh the work order and
+    try again."* — somebody removed the job at that very moment. If your
+    timer on another job was running, the message ends with *"Your timer
+    on WO #… was stopped."* — that time is saved.
+  - *"This work order was confirmed by a manager and is locked."* — ask the
+    manager to cancel the confirmation.
+  - *"This work order is locked. Time can't be tracked on it."* — the
+    office has closed this work order; nothing starts. Ask the office if
+    you still need to log time on it.
+  - *"This work order is being updated by someone else right now. Please
+    try again."* — press Start job again in a moment.
+  - Stop with nothing running says *"No timer is running."*
 - Managers see who is working right now on the Work Orders list: a green
   "● <names>" line under the status badge (web and mobile).
+
+### Working on one work order together
+
+Several mechanics, the office and managers on the phone can work on the
+same work order at the same time — everybody's work is kept. Each save is
+merged on the server with what is already saved, so a colleague's new job,
+part or quantity is never wiped out by your save, even if your screen was
+not refreshed yet.
+
+- **The screen refreshes itself.** In the app the work order checks for
+  changes every 20 seconds, whenever you come back to the screen, when you
+  return to the app and right after you press Start job / Stop job; the
+  web mechanic page checks every 20 seconds while its tab is on screen,
+  and Start job / Stop job refresh it at once when you have no unsaved
+  changes. Jobs and parts added by colleagues or the office simply appear
+  (the app says "Updated with changes from other people."). While the
+  **Add part** picker or a job's **Send for approval** window is open, the
+  app does not refresh the jobs — it catches up as soon as you close it,
+  so the list never moves under your finger. If the web page cannot
+  refresh (for example the connection dropped), one small notice appears
+  and the page keeps retrying by itself, less often the longer it fails
+  (at most every 5 minutes) — no pop-ups every 20 seconds. A mileage you
+  are typing in the web page's header is never overwritten by the
+  refresh.
+- **What you are typing is never overwritten.** The app first saves your
+  own changes and then shows the combined result. The web mechanic page
+  keeps your unsaved changes and shows *"Someone else just updated this
+  work order. When you save, their changes will be merged with yours."* —
+  just press Save. Stop in the bottom timer bar does not throw away
+  unsaved changes either. Setting a value back after the app showed
+  somebody else's change (they made it 3, you set your 2 again) saves your
+  value.
+- **Your part, text or approval goes to the job you picked.** Even when
+  colleagues' jobs shift the list, a part you add, the polished text from
+  **AI edit** and a job's **Send for approval** always go to the job you
+  tapped. If somebody removed that job in the meantime, nothing goes to
+  another job and the app tells you: *"That job was removed by someone
+  else — the part was not added."*, *"That job was removed by someone else
+  — the polished text was not applied."* or *"This job is no longer on the
+  work order — the approval request was not sent."* One exception for
+  **Send for approval**: if a manager confirmed the work order while you
+  had it open, the app can no longer read the job list. If the work order
+  has not changed since your screen last updated, the request goes out as
+  usual. If it has (jobs added, removed or changed), the app does not send
+  it, so the customer never gets a request for the wrong job, and says
+  *"A manager locked this work order, and it changed since you opened it —
+  the approval request was not sent. Ask a manager to send it."* Tap
+  Cancel to close the window.
+- **Merge notes.** When your save was combined with somebody else's
+  changes, the app shows a **"Merged with changes from others"** box above
+  the jobs (the web page shows the list right after Save), for example
+  *Kept job "Brakes" added by another user.* Close it with ×; there is
+  nothing else to do.
+- **Removing a job.** In the app the trash icon removes the job for
+  everyone — unless a colleague's timer is running on it or somebody
+  changed it after you opened the work order; then the job stays and the
+  note says why. Ask the colleague to press Stop job first if the job
+  really has to go.
+- **Bad connection.** The app saves your changes one after another, in
+  order. If a save fails — or the server does not answer within 30
+  seconds — the line under the jobs says *"Autosave failed — … It will
+  retry automatically"* (after a timeout: *"Autosave failed — The server
+  did not answer in time. Check the connection and try again. It will
+  retry automatically."*) and the app tries again by itself; going back to
+  the list or switching to another app saves what you typed first. A new
+  job or part is never created twice, even when a save is repeated. After
+  a failed or unanswered save, your next change is always sent — even one
+  that only puts a value back (for example fixing a mistyped mileage) —
+  because the failed save may still have reached the server. That save
+  counts as a change, so it clears your Done mark. If a mistyped higher
+  odometer reading did reach the server, the work order gets your
+  correction, but the unit's odometer keeps the higher number (it never
+  moves back): ask the office to fix the unit's mileage.
+- **Locked by the manager.** If the manager confirms the work order (or it
+  becomes an estimate) while you have it open, the app shows the reason at
+  the top and stops saving ("Changes can't be saved while the work order
+  is locked."). A paid work order switches to view only. On the web
+  mechanic page a yellow bar at the top gives the reason and **Save** is
+  greyed out: *"A manager locked this work order — changes can't be saved
+  right now."* (with unsaved changes: *"A manager locked this work order —
+  your unsaved changes can't be saved."*); an estimate shows *"This work
+  order is an estimate — only the office can change it."* Opening a work
+  order that is already confirmed shows *"This work order was confirmed by
+  a manager and is locked."* once, then the bar. The page keeps checking
+  every 20 seconds: when the manager cancels the confirmation, the bar
+  disappears — a page without unsaved changes refreshes by itself, and
+  unsaved changes stay on the page with Save working again. Ask the
+  manager to cancel the confirmation if you still need to change
+  something.
+- **Part quantities stay as they are.** A part line with quantity 0 (for
+  example a placeholder the office added) stays 0 on the web mechanic page
+  until you change it yourself.
+- **Keep the app updated.** Live refresh, merge notes and automatic retries
+  need the latest app version. Older versions still save safely — the
+  server removes a job only if that phone had the job on screen, so their
+  saves never delete jobs a colleague added, and an edit screen left open
+  under a newer one cannot remove jobs added after it was opened either
+  (unless you went back to the work order screen more than once — pull to
+  refresh, another notification — before saving the older screen; on an
+  older version keep only one edit screen of a work order open) — but they
+  do not refresh by themselves: go back and open the work order again to
+  see what others changed. Because the server is extra careful with them,
+  a job you delete in an older version can come back after the save
+  (typically a job added on another device after you opened the work
+  order); delete it once more, or better, update the app. If the office
+  removes a job you just added while you are still typing in an older
+  version, your next saves keep it removed; to add it again, go back, open
+  the work order again, then add it. Older versions also show no merge
+  notes.
 
 ### Mechanic extras in the mobile WO editable view
 
@@ -156,9 +295,12 @@ Stop button. Rules:
   block is separate. Mechanics can view and upload, deleting needs the
   "Delete attachments" permission.
 - **Send for approval**: a mechanic can email the customer an
-  Approve/Decline request for a single job ("Send job for approval" on the
-  job card) or for the whole WO ("Send work order for approval" at the
-  bottom). Same customer-authorization flow managers use from the web.
+  Approve/Decline request for a single job ("Send for approval" on the job
+  card opens the "Send job for approval" window) or for the whole WO
+  ("Send work order for approval" at the bottom). Same
+  customer-authorization flow managers use from the web. The request is
+  always for the job you tapped, even if colleagues' jobs moved it in the
+  list meanwhile.
 - Managers reviewing a WO see **"Tracked"** per job — the summed clocked
   time of ALL mechanics who worked on that job (with a per-person breakdown
   when there was more than one) — on the mobile WO details and on the web
@@ -193,6 +335,17 @@ checks each request itself and answers 403 if the key is missing.
   whole-WO "Send for approval". **AI scan** (managers only — hidden for
   mechanics) — photograph a paper work order and AI fills jobs/parts;
   "AI edit" polishes the issue description.
+- **Editing a work order on the phone (managers)** is merged with what the
+  mechanics do meanwhile, like on the web: their new jobs, parts, mechanic
+  assignments and timer hours stay when you press Save. While nothing is
+  changed in your form it refreshes itself when the work order changes;
+  once you have started editing it shows *"Someone else just updated this
+  work order. When you save, their changes will be merged with yours."*
+  and keeps your changes. If the save was combined with somebody else's
+  changes, a "Work order saved" message lists what happened. With an older
+  app version the server is extra careful: a job you delete there can come
+  back after Save (typically one added on another device after you opened
+  the work order) — delete it once more, or update the app.
 - A floating **hide-keyboard button** appears above the keyboard on every
   screen while typing.
 - **Calendar**: the shop schedule in a Google-Calendar-style layout — see

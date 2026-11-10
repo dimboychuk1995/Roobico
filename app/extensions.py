@@ -342,6 +342,49 @@ def ensure_shop_collections_indexes(shop_db):
     # Timezone / location lookup
     _safe_create_index(shop_db.timezone_location, [("shop_id", ASCENDING)], name="idx_timezone_location_shop")
 
+    # Edit views WO (база трёхстороннего merge сохранений)
+    ensure_wo_edit_views_indexes(shop_db)
+
+
+# Edit views WO (services/edit_views.py) живут 14 дней.
+# ВАЖНО: TTL не менять пересозданием индекса с другим expireAfterSeconds —
+# create_index упадёт с IndexOptionsConflict (code 85), _safe_create_index
+# пробросит ошибку, приложение не стартует и деплой откатится. Менять через
+# collMod: db.runCommand({collMod: "wo_edit_views", index: {name:
+# "ttl_wo_edit_views_created", expireAfterSeconds: <секунды>}}) на каждой
+# shop-базе, потом поправить константу.
+WO_EDIT_VIEWS_TTL_SECONDS = 14 * 24 * 3600
+
+
+def ensure_wo_edit_views_indexes(shop_db):
+    """
+    Индексы wo_edit_views: легаси-поиск base (магазин, WO, пользователь,
+    сессия устройства, канал — от новых к старым) и TTL по created_at.
+    Зовётся и на старте (ensure_shop_collections_indexes), и при создании
+    нового магазина (tenant/routes.py) — иначе у нового магазина TTL
+    появился бы только после рестарта.
+    """
+    if shop_db is None:
+        return
+    _safe_create_index(
+        shop_db.wo_edit_views,
+        [
+            ("shop_id", ASCENDING),
+            ("work_order_id", ASCENDING),
+            ("user_id", ASCENDING),
+            ("sid", ASCENDING),
+            ("channel", ASCENDING),
+            ("created_at", DESCENDING),
+        ],
+        name="idx_wo_edit_views_lookup",
+    )
+    _safe_create_index(
+        shop_db.wo_edit_views,
+        [("created_at", ASCENDING)],
+        expireAfterSeconds=WO_EDIT_VIEWS_TTL_SECONDS,
+        name="ttl_wo_edit_views_created",
+    )
+
 
 def ensure_all_shop_databases_indexes(client, master_db):
     shops_cursor = master_db.shops.find(

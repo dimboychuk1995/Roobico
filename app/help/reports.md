@@ -54,7 +54,8 @@ only Mechanic Hours (a mechanic has no Reports section at all).
   Supply, Tools, Utilities, Pmt to Svc, totals, paid and balance.
 - **Mechanic Hours** — per mechanic: **Billed Hours** (labor hours from WOs
   allocated by the assignment percentages) vs **Tracked Hours** (real job
-  timer time), plus WO and labor-entry counts. If the uAttend integration is
+  timer time — including time on jobs that were later removed from a work
+  order), plus WO and labor-entry counts. If the uAttend integration is
   connected, a **uAttend Hours** column is added — attendance hours from the
   time clock for the same period. uAttend employees are matched to app users
   automatically (same matching as the Dashboard hours chart): hours of an
@@ -62,7 +63,12 @@ only Mechanic Hours (a mechanic has no Reports section at all).
   matched to non-mechanics (managers, owner) are excluded; unmatched
   employees appear as their own rows. This means a mechanic who never
   presses the job timer still shows attendance hours here — use it to see
-  who was at work even when Tracked Hours is empty.
+  who was at work even when Tracked Hours is empty. Every row is one person
+  under their **current** name from Settings → Users: hours on work orders
+  saved before a rename count under the new name, a deactivated user keeps
+  their row with "(inactive)" after the name, and two people who share a
+  name get separate rows and separate chart lines (see "People's names
+  after a rename" below).
 - **General Revenue** — see below.
 
 ## General Revenue report
@@ -85,7 +91,8 @@ Mechanic Hours.
 Notes: Total Revenue includes collected sales tax. If a customer filter is
 applied, payroll and parts orders are counted as $0 (they can't be tied to
 specific customers) — a banner explains this. If payroll isn't configured,
-salaries count as $0.
+salaries count as $0. The Mechanic Hours rows use each mechanic's current
+name, like the Mechanic Hours tab ("(inactive)" for deactivated users).
 
 ## Timecard / Salary Report
 
@@ -98,11 +105,16 @@ bookkeeper role in Settings → Roles. Payroll per employee for a period
   (days ÷ 7; a shorter range prorates fractionally).
 - **Hourly** employees: uAttend punches in the period × their hourly rate
   (set in Settings → Integrations; only employees ticked there appear).
+- **Job timers are not used for pay.** The hours mechanics track with Start
+  job / Stop job (Tracked Hours in Mechanic Hours) never appear here and
+  never change anybody's pay — editing or deleting a timer session, or
+  removing a job that has tracked time, leaves this report as it was.
 - uAttend people are auto-matched to Roobico users (AI) so nobody is counted
   twice — an employee matched to a **salary** user is folded into that salary
   row with a "↔ uAttend" badge. An employee matched to an **hourly** user
   (e.g. a mechanic) keeps their own hourly row — with the internal user's
   role and a "↔ Internal" badge — whether or not that user ever logs in.
+  The badge shows the user's current name from Settings → Users.
 - Banners explain when the uAttend integration is missing/disabled/erroring.
   The same payroll numbers feed the General Revenue report.
 
@@ -111,14 +123,19 @@ bookkeeper role in Settings → Roles. Payroll per employee for a period
 Reports → **Activity Journal** (permission "View audit journal") — the
 complete history of who did what in the shop. Every change made through
 the web app, the mobile app, the customer portal or the e-mail inbox lands
-here; reads/views are not logged.
+here. Reads/views are not logged, with one exception: every reveal of a
+vendor's portal password (Show, or Copy while the password is hidden, on
+the Portal logins tab or in the mobile app) is recorded as Action
+**Viewed** — "Viewed portal password of <vendor>" (never the password
+itself). To see who looked at vendor passwords: Object type **Vendor** +
+Action **Viewed**.
 
 Each row shows **When** (shop time), **Who** (user name and role, or
 "Customer" for portal actions and "System" for automatic ones), **Action**
 (Created, Updated, Deleted, Status changed, Payment, Sent, Received,
 Returned, Activated/Deactivated, Signed in/out, Timer, Marked done,
 Confirmed, Transferred, Imported, Uploaded, Permissions changed, Settings
-changed, Access denied, Failed request), **Object** (the work order, unit,
+changed, Viewed, Access denied, Failed request), **Object** (the work order, unit,
 customer, part, parts order, vendor, user, role, appointment, … — a link
 opens it) and **What happened** — a plain sentence such as
 "WO #1042: status open → paid" or "Payment $250.00 (card) recorded for
@@ -155,8 +172,10 @@ name, any changed value), period presets or a custom range, user, object
 type, action, source (web / mobile / portal / system), location (for
 multi-location tenants) and "Show": everything, business events only or
 technical requests only. The **History** button on a work order or
-customer page opens the journal filtered to that one object. Passwords and
-tokens are masked everywhere.
+customer page opens the journal filtered to that one object. Passwords,
+tokens and vendor portal logins are masked everywhere: a change of a
+vendor's portal login or password shows only as set / changed / removed,
+so the journal is safe to open for a Viewer who may not see vendor logins.
 
 ## Dashboard
 
@@ -194,6 +213,11 @@ Widgets:
   per-mechanic table: Actual / Invoiced / uAttend hours side by side ("—"
   means no data of that kind). Hours with no assigned mechanic show as the
   "Unassigned labor" row, so the table always adds up to the chart totals.
+  Each row is one person under their current name from Settings → Users —
+  renaming a mechanic renames their row on the next load, hours on old
+  work orders included. A deactivated mechanic's billed hours stay on a row
+  marked "(inactive)"; their timer hours no longer count in Actual, which
+  counts current mechanics only.
   uAttend employees are merged into a mechanic's row using the same
   AI matching as the Timecard / Salary report. Matching refreshes itself
   whenever the roster changes on either side (a user or uAttend employee is
@@ -253,7 +277,10 @@ is empty the customer's name is shown instead — then the customer (when
 it differs from the title) and the unit. In Week view every mechanic of
 the appointment has a small chip with their initials in the top-right
 corner, in that mechanic's colour (the same colour marks their column in
-By mechanic). A linked appointment carries a **WO #123** badge. A
+By mechanic). Mechanic names on blocks, chips, tooltips, in the dialog
+and on the **Scheduled** card of a work order are always the person's
+current name from Settings → Users, also on appointments booked before a
+rename. A linked appointment carries a **WO #123** badge. A
 **Cancelled** appointment stays on the grid, faded and with the title
 struck through, so you can still see what fell out of the day. Hover a
 block for the full text. Two appointments at the same time in one
@@ -393,3 +420,52 @@ within half a minute — see Mechanic app → Calendar on the phone.
   Save (it stays visible, faded); Delete only if it was a mistake.
 - *Who actually worked on what* — that is tracked time, not the
   calendar: Reports → **Mechanic Hours**, or the work order's time logs.
+
+## People's names after a rename
+
+Renaming a user (Settings → Users → Edit → First / Last name) changes the
+name in these places right away, for old records too — they look the person
+up by account, so there is no need to re-save old work orders or
+appointments:
+
+- Reports → **Mechanic Hours** (table, chart and PDF), the Mechanic Hours
+  rows of **General Revenue** and the "↔ Internal" badge of
+  **Timecard / Salary**;
+- the Dashboard's per-mechanic hours table;
+- the **Work Orders** list and its In Work group (the mechanics of a job,
+  the green "working now" dot, the Done check mark) — on the web and in
+  the mobile app;
+- the **Calendar** (chips, tooltips, the appointment dialog, the
+  **Scheduled** card on a work order and the crew prefilled by
+  **Schedule**).
+
+Reports and the dashboard are calculated each time they are opened, so the
+new name shows on the next load. Deactivated users keep their history:
+their rows stay in reports and on the dashboard with "(inactive)" after the
+name. When a user account no longer exists at all, the name saved on the
+work order at the time is shown, or "Former user".
+
+**What keeps the old name on purpose**
+
+- The **Activity Journal** is a log: the **Who** column and the event text
+  show the name the person had when it happened. To see all of one
+  person's actions, pick them in the **User** filter (it follows the
+  account, not the name) instead of typing the new name into the search.
+- Annual inspection (AVIR) reports keep the inspector name printed on them.
+- A uAttend employee who is not matched to a user shows the name from
+  uAttend — rename them in uAttend too, or give them the same name or
+  e-mail in both systems so their hours merge into the user's row.
+
+**How to…**
+
+- *Fix a misspelled mechanic name* — Settings → Users → Edit → correct
+  First / Last name → Save. Reports, the dashboard, the Work Orders list
+  and the calendar show the new spelling the next time they load.
+- *One person shows on two rows* — the hours were recorded under two
+  different user accounts (for example an old login that was deactivated
+  and replaced with a new one). The old account's row shows that
+  account's own name with "(inactive)"; hours are not moved between
+  accounts automatically.
+- *A row still shows an old name* — reload the page. If that row has only
+  uAttend hours, it is a uAttend employee who was not matched to the user,
+  and the name comes from uAttend: see the uAttend point above.

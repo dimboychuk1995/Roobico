@@ -5,7 +5,7 @@ import json
 import secrets
 from datetime import datetime, timedelta, timezone
 from bson import ObjectId
-from flask import g, request, session, redirect, url_for, flash, jsonify, render_template, make_response
+from flask import current_app, g, request, session, redirect, url_for, flash, jsonify, render_template, make_response
 
 from app.utils import audit_log
 from app.blueprints.work_orders import work_orders_bp
@@ -42,7 +42,6 @@ from app.blueprints.work_orders.services.listing import (
 )
 from app.blueprints.work_orders.services.lookups import (
     _tenant_variants_from_shop,
-    apply_assignments_to_labors,
     customer_label,
     get_assignable_mechanics,
     get_core_charge_default,
@@ -58,7 +57,6 @@ from app.blueprints.work_orders.services.inventory import (
     _collect_inventory_qty_by_part,
     _resolve_part_for_core_tracking,
     _resolve_part_for_inventory,
-    adjust_inventory_for_part_changes,
     apply_core_delta,
     build_core_delta,
     collect_unpaid_core_requirements,
@@ -114,6 +112,12 @@ from app.blueprints.work_orders.services.common import (
     round2,
     utcnow,
 )
+# Офисные записи WO: merge-сохранение, describe issue, transfer (CAS по labors_rev).
+from app.blueprints.work_orders.services import edit_views as ev
+from app.blueprints.work_orders.services import office_merge
+from app.blueprints.work_orders.services.lookups import locked_shop_supply_pct
+from app.blueprints.work_orders.services.mechanic_view import ensure_wo_labor_ids
+from app.blueprints.work_orders.services.transfer import transfer_work_order
 from app.utils.permissions import (
     enforce_mechanic_status,
     has_permission,
@@ -334,19 +338,14 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
 
     # Lock shop-supply percentage to whatever was applied when this WO was
     # saved, so editing an existing WO doesn't silently re-rate it with the
-    # current shop configuration.
-    shop_supply_pct = get_shop_supply_percentage(shop_db, shop["_id"])
+    # current shop configuration (тот же процент лежит в load-вьюхе офиса —
+    # по нему сервер пересчитывает supply, если в Save влились чужие правки).
     if (form_state or {}).get("work_order_created"):
-        try:
-            supply_total = float((initial_totals_state or {}).get("shop_supply_total") or 0)
-            labor_base = float((initial_totals_state or {}).get("labor") or 0)
-            if labor_base > 0:
-                shop_supply_pct = round((supply_total / labor_base) * 100, 4)
-            elif supply_total <= 0:
-                # Saved WO had no shop supply — keep it at zero on edit.
-                shop_supply_pct = 0.0
-        except Exception:
-            pass
+        shop_supply_pct = (form_state or {}).get("shop_supply_pct")
+        if shop_supply_pct is None:
+            shop_supply_pct = locked_shop_supply_pct(shop_db, shop["_id"], initial_totals_state)
+    else:
+        shop_supply_pct = get_shop_supply_percentage(shop_db, shop["_id"])
 
     # Справочники для общей модалки парт-ордера (components/parts_order_modal):
     # те же, что на странице Parts. Только для ролей с ценами — механик модалку
@@ -422,6 +421,10 @@ def render_details(shop_db, shop, customer_id, unit_id, form_state=None):
         "work_order_status": (form_state or {}).get("work_order_status") or "open",
         "mechanic_done": bool((form_state or {}).get("mechanic_done")),
         "wo_updated_at": (form_state or {}).get("wo_updated_at") or "",
+        # Edit view этой вкладки (база трёхстороннего merge её Save) и
+        # ревизия, с которой она начала — JS шлёт view_id обратно.
+        "edit_view_id": (form_state or {}).get("view_id") or "",
+        "labors_rev": (form_state or {}).get("labors_rev") or 0,
         "pending_attachment_id": pending_attachment_id,
         "calendar_event_id": (form_state or {}).get("calendar_event_id") or "",
         "linked_appointments": linked_appointments,
@@ -603,6 +606,11 @@ def work_order_details_page():
             flash("Work order not found.", "error")
             return redirect(url_for("work_orders.work_orders_page"))
 
+        # Легаси-строки без labor_id получают постоянный id (CAS-запись), и
+        # страница, и load-вьюха строятся из документа, который лежит в базе:
+        # случайные id на каждый рендер плодили бы дубли строк при Save.
+        wo = ensure_wo_labor_ids(shop_db, wo)
+
         customer_id = wo.get("customer_id")
         unit_id = wo.get("unit_id")
         work_order_status = (wo.get("status") or "open").strip().lower()
@@ -612,6 +620,52 @@ def work_order_details_page():
         from app.blueprints.work_orders.services.time_tracking import _fmt_iso, summarize_wo_time
 
         time_summary = summarize_wo_time(shop_db, shop["_id"], wo["_id"])
+        initial_totals = wo.get("totals") or {
+            "labor": wo.get("labor_total") or 0,
+            "labor_total": wo.get("labor_total") or 0,
+            "parts": wo.get("parts_total") or 0,
+            "parts_total": wo.get("parts_total") or 0,
+            "core_total": 0,
+            "misc_total": 0,
+            "shop_supply_total": 0,
+            "parts_taxable_total": wo.get("parts_total") or 0,
+            "sales_tax_rate": 0,
+            "sales_tax_total": wo.get("sales_tax_total") or 0,
+            "is_taxable": False,
+            "cost_total": wo.get("parts_total") or 0,
+            "grand_total": wo.get("grand_total") or 0,
+            "labors": [],
+        }
+        shop_supply_pct = locked_shop_supply_pct(shop_db, shop["_id"], initial_totals)
+
+        # Имена механиков в назначениях строк — живые по user_id: снимок в WO
+        # устаревает после переименования пользователя (он — лишь запас для
+        # удалённых аккаунтов). На Save не влияет: имена сервер берёт из
+        # списка механиков / сохранённой строки, не из формы.
+        from app.utils.user_names import load_user_names, relabel_people, tenant_values_for_shop
+
+        initial_labors = normalize_saved_labors(wo.get("labors") or wo.get("blocks") or [], shop_db=shop_db)
+        assigned_people = [
+            person
+            for block in initial_labors
+            for person in (block.get("labor") or {}).get("assigned_mechanics") or []
+        ]
+        relabel_people(assigned_people, load_user_names(
+            [person.get("user_id") for person in assigned_people], tenant_values=tenant_values_for_shop(shop),
+        ))
+
+        # Load-вьюха — что показала эта вкладка (строки + поля уровня WO):
+        # её id JS шлёт в Save, и сервер сливает правки вкладки с чужими.
+        # Пишется только тому, кто может сохранить WO (work_orders.edit), —
+        # и для оплаченного WO (allow_paid): после Unpaid / удаления платежа
+        # страница не перезагружается, и без базы её Save ничего бы не
+        # удалял. Пока WO paid, сохранения отклоняют guard'ы и CAS-фильтр.
+        view_id = ev.record_view(
+            shop_db, shop["_id"], wo,
+            user_id=current_user_id(), sid=ev.edit_session_id(), channel=office_merge.CHANNEL,
+            kind="load", protocol=1, can_edit=has_permission("work_orders.edit"), allow_paid=True,
+            wo_fields=office_merge.office_view_wo_fields(shop_db, shop, wo, supply_pct=shop_supply_pct),
+        )
 
         return render_details(
             shop_db,
@@ -624,24 +678,11 @@ def work_order_details_page():
                 "wo_number": wo.get("wo_number"),
                 "work_order_date": shop_date_input_value(wo.get("work_order_date") or wo.get("created_at"), default_today=True),
                 "mileage": wo.get("mileage"),
-                "initial_labors": normalize_saved_labors(wo.get("labors") or wo.get("blocks") or [], shop_db=shop_db),
-                "initial_totals": wo.get("totals")
-                or {
-                    "labor": wo.get("labor_total") or 0,
-                    "labor_total": wo.get("labor_total") or 0,
-                    "parts": wo.get("parts_total") or 0,
-                    "parts_total": wo.get("parts_total") or 0,
-                    "core_total": 0,
-                    "misc_total": 0,
-                    "shop_supply_total": 0,
-                    "parts_taxable_total": wo.get("parts_total") or 0,
-                    "sales_tax_rate": 0,
-                    "sales_tax_total": wo.get("sales_tax_total") or 0,
-                    "is_taxable": False,
-                    "cost_total": wo.get("parts_total") or 0,
-                    "grand_total": wo.get("grand_total") or 0,
-                    "labors": [],
-                },
+                "initial_labors": initial_labors,
+                "initial_totals": initial_totals,
+                "shop_supply_pct": shop_supply_pct,
+                "view_id": view_id,
+                "labors_rev": ev.labors_rev(wo),
                 "work_order_status": work_order_status,
                 # Механик нажал done — менеджер открывает WO сразу в режиме
                 # правки с кнопкой Confirm вместо Edit→Save.
@@ -703,7 +744,8 @@ def api_work_order_live_state(work_order_id):
 
     wo = shop_db.work_orders.find_one(
         {"_id": wo_id, "shop_id": shop["_id"], "is_active": True},
-        {"status": 1, "mechanic_done": 1, "updated_at": 1, "updated_by": 1},
+        # labors_rev обязан быть в проекции: без него ревизия читалась бы как 0.
+        with_rev({"status": 1, "mechanic_done": 1, "updated_at": 1, "updated_by": 1}),
     )
     if not wo:
         return jsonify({"ok": False, "error": "work_order_not_found"}), 404
@@ -961,6 +1003,8 @@ def create_work_order():
         "unit_id": unit_id,
         "status": create_status,
         "labors": labors,
+        # Ревизия редактируемого состояния (CAS сохранений, см. edit_views).
+        "labors_rev": 1,
         "work_order_date": work_order_date,
         "mileage": unit_mileage,
 
@@ -1605,10 +1649,14 @@ def api_download_annual_inspection_pdf(inspection_id):
 @login_required
 @permission_required_any("work_orders.edit", "work_orders.create")
 def api_work_order_update(work_order_id):
+    # До всего остального: base для merge выбирается по вьюхам, записанным
+    # раньше начала этого запроса.
+    request_started_at = utcnow()
     # Правка существующего WO — work_orders.edit. Исключение — механик-режим:
     # у механика есть только create, его сохранение форсится в in_progress и
     # не трогает цены (enforce_mechanic_status / автоцены сервером).
-    if not has_permission("work_orders.edit") and not is_mechanic_mode():
+    mechanic_mode = is_mechanic_mode()
+    if not has_permission("work_orders.edit") and not mechanic_mode:
         return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.edit"}), 403
 
     shop_db, shop = get_shop_db()
@@ -1623,290 +1671,45 @@ def api_work_order_update(work_order_id):
     if not wo:
         return jsonify({"ok": False, "error": "work_order_not_found"}), 200
 
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
     labors = data.get("labors", data.get("blocks"))
-    raw_totals = data.get("totals") or {}
-    totals = normalize_totals_payload(raw_totals)
-    unit_mileage = parse_mileage(data.get("unit_mileage"))
-    work_order_date = shop_local_date_to_utc(data.get("work_order_date"), default_today=True)
-
-    # Allow changing customer/unit on existing WO
-    new_customer_id = oid(data.get("customer_id")) if data.get("customer_id") else None
-    new_unit_id = oid(data.get("unit_id")) if data.get("unit_id") else None
-    if new_customer_id:
-        cust = shop_db.customers.find_one(
-            {"_id": new_customer_id, "shop_id": shop["_id"], "is_active": True},
-            {"_id": 1},
-        )
-        if not cust:
-            return jsonify({"ok": False, "error": "customer_not_found"}), 200
-    if new_unit_id:
-        unit_doc = shop_db.units.find_one(
-            {"_id": new_unit_id, "shop_id": shop["_id"], "is_active": True},
-            {"_id": 1, "customer_id": 1},
-        )
-        if not unit_doc:
-            return jsonify({"ok": False, "error": "unit_not_found"}), 200
-        if new_customer_id and unit_doc.get("customer_id") != new_customer_id:
-            return jsonify({"ok": False, "error": "unit_customer_mismatch"}), 200
-
     if not isinstance(labors, list):
         return jsonify({"ok": False, "error": "labors_required"}), 200
 
-    mechanics_by_id = {m["id"]: m for m in get_assignable_mechanics(shop)}
-    labors = apply_assignments_to_labors(labors, mechanics_by_id)
-
-    # Мерж с сохранённым WO по labor_id. Веб-форма (serializeBlocks) не знает
-    # про hours_source и могла устареть, пока механики трекали время:
-    #   - новые строки приходят с пустым labor_id — без стабильного id на них
-    #     нельзя запустить таймер;
-    #   - маркер hours_source ("tracked"/"preset") живёт только в базе — его
-    #     потеря замораживала бы трекнутые часы;
-    #   - если менеджер часы НЕ трогал (нет hours_edited), для tracked-строк
-    #     авторитетны часы из базы, а не устаревший снапшот формы.
-    stored_blocks = {
-        str(b.get("labor_id") or ""): (i, b)
-        for i, b in enumerate(wo.get("labors") or [])
-        if isinstance(b, dict)
-    }
-    stored_totals_blocks = (wo.get("totals") or {}).get("labors")
-    if not isinstance(stored_totals_blocks, list):
-        stored_totals_blocks = []
-    client_totals_blocks = totals.get("labors") if isinstance(totals.get("labors"), list) else []
-
-    def _hours_eq(a, b):
-        try:
-            return abs(float(a or 0) - float(b or 0)) < 1e-9
-        except (TypeError, ValueError):
-            return False
-
-    for new_idx, block in enumerate(labors):
-        block["labor_id"] = ensure_labor_id(block.get("labor_id"))
-        hours_edited = bool(block.pop("hours_edited", False))
-        block.pop("hours_source", None)  # клиентское значение не авторитетно
-        labor_doc = block.get("labor") if isinstance(block.get("labor"), dict) else None
-        if labor_doc is None:
-            continue
-        labor_doc.pop("hours_edited", None)
-        stored_idx, stored = stored_blocks.get(str(block["labor_id"]), (None, None))
-        stored_labor = (stored or {}).get("labor") if isinstance((stored or {}).get("labor"), dict) else {}
-        stored_source = str(stored_labor.get("hours_source") or "").strip()
-        if hours_edited:
-            # Менеджер сам задал часы — дальше трекинг их не перетирает.
-            labor_doc["hours_source"] = ""
-            continue
-        if stored_source:
-            labor_doc["hours_source"] = stored_source
-        if stored_source == "tracked":
-            stored_hours = str(stored_labor.get("hours") or "").strip()
-            if stored_hours and not _hours_eq(labor_doc.get("hours"), stored_hours):
-                labor_doc["hours"] = stored_hours
-                # Labor base формы посчитана из устаревших часов — берём
-                # согласованную пару часы+база из сохранённого WO.
-                if (
-                    stored_idx is not None
-                    and stored_idx < len(stored_totals_blocks)
-                    and isinstance(stored_totals_blocks[stored_idx], dict)
-                    and new_idx < len(client_totals_blocks)
-                    and isinstance(client_totals_blocks[new_idx], dict)
-                ):
-                    client_totals_blocks[new_idx]["labor"] = round2(
-                        stored_totals_blocks[stored_idx].get("labor") or 0
-                    )
-
-    totals = align_totals_with_labors(totals, labors)
-
-    # Use the rate that was locked-in when the WO was originally created.
-    # We never re-quote tax for an existing WO if the shop address changed.
-    existing_totals = wo.get("totals") or {}
-    locked_tax_rate = existing_totals.get("sales_tax_rate")
-    if locked_tax_rate is None:
-        # Legacy WOs without a stored rate: fall back to the current shop rate.
-        locked_tax_rate = (_get_shop_sales_tax_context(shop, shop_db).get("rate") or 0)
-
-    # Honor an explicit per-WO taxable override coming from the UI; fall back to
-    # whatever the WO already had stored, then to the customer's flag.
-    if isinstance(raw_totals, dict) and "is_taxable" in raw_totals:
-        is_taxable_override = bool(raw_totals.get("is_taxable"))
-    elif "is_taxable" in existing_totals:
-        is_taxable_override = bool(existing_totals.get("is_taxable"))
-    else:
-        is_taxable_override = _is_customer_taxable(shop_db, wo.get("customer_id"))
-
-    totals = _apply_sales_tax_to_totals(
-        totals,
-        locked_tax_rate,
-        is_taxable_override,
-    )
-
-    # (опционально) можно запретить редактирование, если paid
-    if (wo.get("status") or "open") == "paid":
-        return jsonify({"ok": False, "error": "paid_cannot_edit"}), 200
-    # Сметы — офисный документ: механик их не редактирует (его автосейв
-    # форсит in_progress и молча конвертировал бы смету в рабочий WO).
-    if (wo.get("status") or "open") == "estimate" and is_mechanic_mode():
-        return jsonify({"ok": False, "error": "estimate_locked_for_mechanics"}), 200
-
-    now = utcnow()
-    user_id = current_user_id()
-
-    # Статусный контекст: estimate живёт без движения склада. Смета остаётся
-    # сметой, пока явно не конвертирована (save_status open/in_progress).
-    # Обратная конверсия WO → estimate возвращает парты на склад и снимает
-    # ожидающие коры; возможна только пока по WO нет платежей.
-    was_estimate = (wo.get("status") or "open") == "estimate"
-    save_status = enforce_mechanic_status((data.get("save_status") or "").strip().lower())
-    converting_to_estimate = save_status == "estimate" and not was_estimate
-    if converting_to_estimate and _sum_active_work_order_payments(shop_db, wo_id) > 0:
-        return jsonify({
-            "ok": False,
-            "error": "wo_has_payments_cannot_become_estimate",
-            "message": "This work order has recorded payments — an estimate cannot have payments. Delete the payments first.",
-        }), 200
-    converting_estimate = was_estimate and save_status in ("open", "in_progress")
-    stays_estimate = was_estimate and not converting_estimate
-
-    # ✅ Adjust inventory for part changes
-    # Treat inventory issues (e.g. unknown part numbers, missing inventory rows)
-    # as non-fatal warnings: stock is already allowed to go negative, and
-    # blocking the save here prevents users from editing WOs that contain
-    # one-off / legacy / preset parts not present in the inventory catalog.
-    old_labors = wo.get("labors") or []
-    if converting_to_estimate:
-        # WO → смета: возвращаем на склад всё, что было в WO; дальше склад
-        # не трогается, пока смету не конвертируют обратно.
-        restore = restore_parts_to_inventory(
-            shop_db, old_labors, user_id,
-            ref={"kind": "work_order", "id": wo["_id"], "label": str(wo.get("wo_number") or "")},
+    if mechanic_mode:
+        # Механик и здесь сохраняет как на своей странице: деньги, часы и
+        # назначения из формы не принимаются, подтверждённый менеджером WO
+        # закрыт, тоталы считает сервер (services/concurrent_save.py).
+        mechanic_data = {k: v for k, v in data.items() if k not in ("labors", "blocks", "totals")}
+        mechanic_data["labors"] = office_merge.office_rows_as_mechanic_rows(labors)
+        payload, code = concurrent_save.save_mechanic_edit(
+            shop_db, shop, wo_id, mechanic_data,
+            user_id=current_user_id(),
+            sid=edit_session_id(),
+            request_started_at=request_started_at,
+            channel=office_merge.CHANNEL,
+            mechanic_mode=True,
+            guard=office_merge.office_mechanic_guard(),
+            cas_filter=concurrent_save.MECHANIC_CAS_FILTER,
+            status="in_progress",
+            taxable_from_request=False,
+            audit_suffix="by mechanic",
+            initial_wo=wo,
         )
-        inventory_adjustment = {
-            "adjusted": restore.get("restored") or [],
-            "errors": restore.get("errors") or [],
-        }
-    elif stays_estimate:
-        # Смета: склад не трогался и не трогается.
-        inventory_adjustment = {"adjusted": [], "errors": []}
-    elif converting_estimate:
-        # Конверсия сметы в рабочий WO: списываем ВСЕ парты (раньше ничего
-        # не списывалось), как при создании обычного WO.
-        inventory_adjustment = deduct_parts_from_inventory(
-            shop_db, labors, user_id,
-            ref={"kind": "work_order", "label": str(wo.get("wo_number") or "")},
-        )
-        inventory_adjustment = {
-            "adjusted": inventory_adjustment.get("deducted") or [],
-            "errors": inventory_adjustment.get("errors") or [],
-            "deducted": inventory_adjustment.get("deducted") or [],
-        }
-    else:
-        inventory_adjustment = adjust_inventory_for_part_changes(
-            shop_db, old_labors, labors, user_id,
-            ref={"kind": "work_order", "id": wo["_id"], "label": str(wo.get("wo_number") or "")},
-        )
-    inventory_warnings = list(inventory_adjustment.get("errors") or [])
+        return jsonify(payload), code
 
-    # ✅ Пробег: на WO хранится то, что ввели (снимок на момент работы — его
-    # показывает страница и PDF старого WO). Одометр юнита двигаем только
-    # вперёд и только если значение изменили относительно снимка: открыли
-    # старый WO и просто нажали Save — пробег юнита не откатываем.
-    if unit_mileage is not None:
-        unit_id = new_unit_id or wo.get("unit_id")
-        if unit_id and unit_mileage != wo.get("mileage"):
-            unit_doc = shop_db.units.find_one({"_id": unit_id, "shop_id": shop["_id"]}, {"mileage": 1}) or {}
-            current_unit_mileage = parse_mileage(unit_doc.get("mileage"))
-            if current_unit_mileage is None or unit_mileage >= current_unit_mileage:
-                shop_db.units.update_one(
-                    {"_id": unit_id, "shop_id": shop["_id"], "is_active": True},
-                    {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
-                )
-
-    if converting_to_estimate:
-        # У сметы нет коров — снимаем всё, что числилось за WO.
-        core_sync = sync_work_order_cores(shop_db, shop, old_labors, [], user_id)
-    elif stays_estimate:
-        core_sync = {"changes": []}
-    elif converting_estimate:
-        core_sync = sync_work_order_cores(shop_db, shop, [], labors, user_id)
-    else:
-        core_sync = sync_work_order_cores(shop_db, shop, old_labors, labors, user_id)
-
-    set_fields = {
-        "labors": labors,
-        "work_order_date": work_order_date,
-        "totals": totals,  # ✅ сохраняем totals от фронта
-        # ✅ update inventory tracking
-        "inventory_adjusted_at": now,
-        "inventory_adjustment_count": (wo.get("inventory_adjustment_count", 0) or 0) + len(inventory_adjustment["adjusted"]),
-        "updated_at": now,
-        "updated_by": user_id,
-    }
-    if unit_mileage is not None:
-        set_fields["mileage"] = unit_mileage
-    if new_customer_id:
-        set_fields["customer_id"] = new_customer_id
-    if new_unit_id:
-        set_fields["unit_id"] = new_unit_id
-    if converting_estimate:
-        set_fields["inventory_deducted"] = len(inventory_adjustment.get("deducted") or []) > 0
-        set_fields["inventory_deductions"] = inventory_adjustment.get("deducted") or []
-    elif converting_to_estimate:
-        set_fields["inventory_deducted"] = False
-        set_fields["inventory_deductions"] = []
-
-    # ✅ Optional explicit status transition: "open" (completed) / "in_progress" /
-    # "estimate" (смета остаётся сметой, либо WO → estimate без платежей).
-    # В механик-режиме статус форсится в in_progress независимо от клиента.
-    if save_status in ("open", "in_progress"):
-        set_fields["status"] = save_status
-    elif converting_to_estimate:
-        set_fields["status"] = "estimate"
-    # Менеджерское «Save In Progress» возвращает WO в работу: отметки Done
-    # всех механиков снимаются, WO снова в группе In Work.
-    if save_status == "in_progress" and not is_mechanic_mode():
-        set_fields.update(clear_mechanic_done_fields())
-
-    shop_db.work_orders.update_one(
-        {"_id": wo_id},
-        {
-            "$set": set_fields,
-            "$unset": {
-                "blocks": "",
-                "labor_total": "",
-                "parts_total": "",
-                "grand_total": "",
-                # Юнит сменили, новый пробег не ввели — старый снимок чужого
-                # юнита не оставляем (страница покажет одометр нового).
-                **({"mileage": ""} if (new_unit_id and new_unit_id != wo.get("unit_id") and unit_mileage is None) else {}),
-            },
-        }
+    # Merge с тем, что видела эта вкладка, CAS по labors_rev, 3-way полей
+    # уровня WO, побочные эффекты после записи — services/office_merge.py.
+    payload, code = office_merge.save_office_edit(
+        shop_db, shop, wo_id, data,
+        user_id=current_user_id(),
+        sid=edit_session_id(),
+        request_started_at=request_started_at,
+        initial_wo=wo,
     )
-
-    # Строки с затреканным временем: assigned = кто фактически работал,
-    # пропорционально времени — ручной ввод их не перетирает.
-    audit_log.log_event("update", "work_order", wo_id, label=audit_log.wo_label(wo),
-                        changes=audit_log.wo_changes(wo, set_fields),
-                        details={"saved_status": set_fields.get("status") or wo.get("status")})
-    time_tracking.sync_labor_assignments_from_time(
-        shop_db, shop, wo_id, mechanics_by_id=mechanics_by_id
-    )
-    # Привязанные записи календаря: статус по сохранённому WO, клиент/юнит —
-    # если их поменяли.
-    _sync_calendar_with_wo(shop_db, shop, wo_id, identity=bool(new_customer_id or new_unit_id))
-
-    return jsonify({
-        "ok": True,
-        "status": set_fields.get("status") or (wo.get("status") or "open"),
-        # Порядок соответствует присланным блокам: веб-форма подхватывает
-        # id, выданные сервером новым лейборам, чтобы повторный Save не
-        # плодил новые id (и не осиротил тайм-логи).
-        "labor_ids": [str(b.get("labor_id") or "") for b in labors],
-        "inventory_adjusted": len(inventory_adjustment["adjusted"]) > 0,
-        "inventory_changes": inventory_adjustment["adjusted"],
-        "inventory_warnings": inventory_warnings,
-        "cores_synced": len(core_sync.get("changes") or []) > 0,
-        "core_changes": core_sync.get("changes") or [],
-        "core_sync_errors": core_sync.get("errors") or [],
-    }), 200
+    return jsonify(payload), code
 
 
 
@@ -2005,6 +1808,13 @@ def api_work_order_payment(work_order_id):
         return new_payment_id, summary
 
     payment_id, payment_summary = run_atomically(get_mongo_client(), _apply_payment)
+    # Остаток и сумма оплат — по тому документу WO, по которому записан
+    # статус: тоталы могли поменяться после первого чтения (пересчёт часов
+    # таймера, сохранение) — см. _sync_work_order_payment_state.
+    if payment_summary.get("remaining_balance") is not None:
+        remaining_balance = round2(payment_summary["remaining_balance"])
+    if payment_summary.get("paid_amount") is not None:
+        new_paid_amount = round2(payment_summary["paid_amount"])
     # Статус WO мог стать paid — привязанные записи календаря следом (после транзакции).
     _sync_calendar_with_wo(shop_db, shop, wo_id)
     audit_log.log_event("payment", "work_order", wo_id, label=audit_log.wo_label(wo),
@@ -2471,10 +2281,24 @@ def api_work_order_set_status(work_order_id):
         shop_db.work_order_payments.delete_many({"work_order_id": wo_id})
 
     status_fields = {"status": status, "updated_at": now, "updated_by": user_id}
-    # Менеджер вернул WO в работу — отметки Done механиков снимаются.
+    wo_filter = {"_id": wo_id, "shop_id": shop["_id"]}
     if status == "in_progress" and not is_mechanic_mode():
-        status_fields.update(clear_mechanic_done_fields())
-    shop_db.work_orders.update_one({"_id": wo_id}, {"$set": status_fields})
+        # Менеджер вернул WO в работу — отметки Done механиков снимаются.
+        # Отметки — часть редактируемого состояния (сохранения механиков
+        # пересобирают их из своего чтения), поэтому сброс двигает
+        # labors_rev: устаревший «Done» не вернёт снятую отметку (CAS). Есть
+        # ли что снимать, решает фильтр самой записи, а не чтение выше:
+        # «Done», успевший между чтением и записью, снимается вместе с $inc.
+        res = shop_db.work_orders.update_one(
+            {**wo_filter, "$or": [{"mechanic_done": True}, {"mechanic_done_marks.0": {"$exists": True}}]},
+            {"$set": {**status_fields, **clear_mechanic_done_fields()}, "$inc": {"labors_rev": 1}},
+        )
+        if not res.matched_count:
+            # Снимать нечего — только статус, ревизия не двигается. «Done»,
+            # пришедший уже после этой проверки, — новая отметка, её не трогаем.
+            shop_db.work_orders.update_one(wo_filter, {"$set": status_fields})
+    else:
+        shop_db.work_orders.update_one(wo_filter, {"$set": status_fields})
     # Привязанные записи календаря: paid → completed, in_progress → in_progress,
     # open (не начат) → обратно в scheduled.
     _sync_calendar_with_wo(shop_db, shop, wo_id)
@@ -2482,7 +2306,7 @@ def api_work_order_set_status(work_order_id):
     audit_log.log_event("status", "work_order", wo_id, label=audit_log.wo_label(wo),
                         summary=f"{audit_log.wo_label(wo)}: status {wo.get('status') or 'open'} -> {status}",
                         changes=[audit_log.change("status", wo.get("status"), status)])
-    return jsonify({"ok": True, "status": status}), 200
+    return jsonify({"ok": True, "status": status, "labors_rev": wo_labors_rev(shop_db, shop["_id"], wo_id)}), 200
 
 
 @work_orders_bp.post("/work_orders/api/work_orders/<work_order_id>/confirm")
@@ -2586,48 +2410,18 @@ def api_work_order_delete(work_order_id):
     if not wo_id:
         return jsonify({"ok": False, "error": "invalid_work_order_id"}), 200
 
-    wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True})
-    if not wo:
-        return jsonify({"ok": False, "error": "work_order_not_found"}), 200
-
     now = utcnow()
     user_id = current_user_id()
 
-    # ✅ Restore parts to inventory before deleting
-    labors = wo.get("labors") or []
-    restore_result = restore_parts_to_inventory(
-        shop_db, labors, user_id,
-        ref={"kind": "work_order", "id": wo["_id"], "label": str(wo.get("wo_number") or "")},
-    )
+    # Soft delete — одной атомарной записью, а склад/коры/платежи/вложения —
+    # от документа, каким он был в момент удаления (ReturnDocument.BEFORE):
+    # сохранение, успевшее между чтением и удалением, иначе двигало бы склад
+    # мимо возврата. $inc labors_rev — устаревший CAS-Save на удалённый WO
+    # не пройдёт.
+    from pymongo import ReturnDocument
 
-    # Remove cores generated by this work order unpaid-core logic.
-    core_sync = sync_work_order_cores(shop_db, shop, labors, [], user_id)
-
-    # Delete all payments associated with this work order
-    payments_deleted = shop_db.work_order_payments.delete_many({"work_order_id": wo_id}).deleted_count
-
-    # Delete all attachments associated with this work order:
-    #   - attachments on the WO itself        (entity_type="work_order",         entity_id=wo_id)
-    #   - attachments on labor blocks         (entity_type="work_order_labor",   parent_id=wo_id)
-    #   - attachments on payments             (entity_type="work_order_payment", parent_id=wo_id)
-    attachments_deleted = shop_db.attachments.delete_many({
-        "$or": [
-            {"entity_type": "work_order", "entity_id": wo_id},
-            {"entity_type": {"$in": ["work_order_labor", "work_order_payment"]}, "parent_id": wo_id},
-        ]
-    }).deleted_count
-
-    # Записи календаря, привязанные к этому WO, остаются обычными записями.
-    from app.blueprints.calendar.services.work_orders import unlink_work_order_events
-
-    unlink_work_order_events(shop_db, shop, wo_id)
-    audit_log.log_event("delete", "work_order", wo_id, label=audit_log.wo_label(wo),
-                        details={"payments_deleted": payments_deleted, "attachments_deleted": attachments_deleted,
-                                 "jobs": audit_log.labor_summary(wo)})
-
-    # Mark work order as inactive (soft delete)
-    shop_db.work_orders.update_one(
-        {"_id": wo_id},
+    wo = shop_db.work_orders.find_one_and_update(
+        {"_id": wo_id, "shop_id": shop["_id"], "is_active": True},
         {
             "$set": {
                 "is_active": False,
@@ -2635,19 +2429,82 @@ def api_work_order_delete(work_order_id):
                 "deleted_by": user_id,
                 "updated_at": now,
                 "updated_by": user_id,
-            }
-        }
+            },
+            "$inc": {"labors_rev": 1},
+        },
+        return_document=ReturnDocument.BEFORE,
     )
+    if not wo:
+        return jsonify({"ok": False, "error": "work_order_not_found"}), 200
+
+    warnings = []
+    labors = wo.get("labors") or []
+    # Смета склад не списывала и коры не заводила (создание, Save сметы,
+    # WO → смета возвращает всё): её удалению возвращать нечего — иначе
+    # склад и учёт коров росли бы на детали, которые не уходили с полки.
+    is_estimate = (wo.get("status") or "open").strip().lower() in ("estimate", "estimated", "quote", "quoted")
+    restore_result = {"restored": [], "errors": []}
+    if not is_estimate:
+        try:
+            # ✅ Restore parts to inventory
+            restore_result = restore_parts_to_inventory(
+                shop_db, labors, user_id,
+                ref={"kind": "work_order", "id": wo["_id"], "label": str(wo.get("wo_number") or "")},
+            )
+        except Exception:
+            current_app.logger.exception("WO %s deleted, but restoring its parts to inventory failed", wo_id)
+            warnings.append("Deleted, but stock levels could not be restored. Please check the parts in inventory.")
+
+    core_sync = {"changes": [], "errors": []}
+    if not is_estimate:
+        try:
+            # Remove cores generated by this work order unpaid-core logic.
+            core_sync = sync_work_order_cores(shop_db, shop, labors, [], user_id)
+        except Exception:
+            current_app.logger.exception("WO %s deleted, but the core sync failed", wo_id)
+            warnings.append("Deleted, but core charges could not be synced. Please check cores.")
+
+    payments_deleted = attachments_deleted = 0
+    try:
+        # Delete all payments associated with this work order
+        payments_deleted = shop_db.work_order_payments.delete_many({"work_order_id": wo_id}).deleted_count
+
+        # Delete all attachments associated with this work order:
+        #   - attachments on the WO itself        (entity_type="work_order",         entity_id=wo_id)
+        #   - attachments on labor blocks         (entity_type="work_order_labor",   parent_id=wo_id)
+        #   - attachments on payments             (entity_type="work_order_payment", parent_id=wo_id)
+        attachments_deleted = shop_db.attachments.delete_many({
+            "$or": [
+                {"entity_type": "work_order", "entity_id": wo_id},
+                {"entity_type": {"$in": ["work_order_labor", "work_order_payment"]}, "parent_id": wo_id},
+            ]
+        }).deleted_count
+    except Exception:
+        current_app.logger.exception("WO %s deleted, but its payments/attachments cleanup failed", wo_id)
+        warnings.append("Deleted, but payments or attachments could not be cleaned up.")
+
+    try:
+        # Записи календаря, привязанные к этому WO, остаются обычными записями.
+        from app.blueprints.calendar.services.work_orders import unlink_work_order_events
+
+        unlink_work_order_events(shop_db, shop, wo_id)
+    except Exception:
+        current_app.logger.exception("WO %s deleted, but unlinking calendar events failed", wo_id)
+        warnings.append("Deleted, but linked calendar events could not be updated.")
+    audit_log.log_event("delete", "work_order", wo_id, label=audit_log.wo_label(wo),
+                        details={"payments_deleted": payments_deleted, "attachments_deleted": attachments_deleted,
+                                 "jobs": audit_log.labor_summary(wo)})
 
     return jsonify({
         "ok": True,
-        "inventory_restored": len(restore_result["restored"]) > 0,
-        "inventory_changes": restore_result["restored"],
+        "inventory_restored": len(restore_result.get("restored") or []) > 0,
+        "inventory_changes": restore_result.get("restored") or [],
         "cores_synced": len(core_sync.get("changes") or []) > 0,
         "core_changes": core_sync.get("changes") or [],
         "core_sync_errors": core_sync.get("errors") or [],
         "payments_deleted": payments_deleted,
         "attachments_deleted": attachments_deleted,
+        "warnings": warnings,
     }), 200
 
 
@@ -3227,39 +3084,14 @@ def api_save_labor_issue_description(work_order_id, labor_index):
     if not wo_id:
         return jsonify({"ok": False, "error": "Invalid work order ID"}), 400
 
-    wo = shop_db.work_orders.find_one(
-        {"_id": wo_id, "shop_id": shop["_id"], "is_active": True},
-        {"labors": 1},
+    # Новый JS шлёт labor_id строки (запись по id, а не по позиции), старый —
+    # только индекс в URL (CAS по ревизии). См. office_merge.save_labor_issue_description.
+    data = request.get_json(silent=True)
+    payload, code = office_merge.save_labor_issue_description(
+        shop_db, shop, wo_id, labor_index, data if isinstance(data, dict) else {},
+        user_id=current_user_id(),
     )
-    if not wo:
-        return jsonify({"ok": False, "error": "Work order not found"}), 404
-
-    labors_count = len(wo.get("labors") or [])
-    if labor_index < 0 or labor_index >= labors_count:
-        return jsonify({"ok": False, "error": "labor_index out of range"}), 400
-
-    data = request.get_json(silent=True) or {}
-    text = str(data.get("text") or "").strip()
-    if len(text) > 4000:
-        text = text[:4000]
-
-    update_res = shop_db.work_orders.update_one(
-        {"_id": wo_id, "shop_id": shop["_id"], "is_active": True},
-        {
-            "$set": {
-                f"labors.{labor_index}.labor.issue_description": text,
-                f"labors.{labor_index}.issue_description": text,
-                "updated_at": utcnow(),
-                "updated_by": current_user_id(),
-            }
-        },
-    )
-    if update_res.matched_count == 0:
-        return jsonify({"ok": False, "error": "Failed to save."}), 500
-    audit_log.log_event("update", "work_order", wo_id, label=audit_log.wo_label(wo),
-                        summary=f"{audit_log.wo_label(wo)}: issue description saved for job #{labor_index + 1}",
-                        details={"labor_index": labor_index})
-    return jsonify({"ok": True, "issue_description": text}), 200
+    return jsonify(payload), code
 
 
 
@@ -3540,17 +3372,16 @@ def api_preset_detail(preset_id):
 from app.blueprints.work_orders.services.mechanic_view import (
     active_unit_work_order_message,
     find_active_unit_work_order,
+    mechanic_rev_payload,
     mechanic_unit_history,
     mechanic_wo_payload,
     strip_part_search_item,
     strip_wo_list_item,
+    wo_labors_rev,
 )
 from app.blueprints.work_orders.services.mechanic_editor import (
-    MILEAGE_REQUIRED_ERROR,
     odometer_moves_forward,
-    mechanic_save_date_fields,
     build_mechanic_labors_payload,
-    merge_mechanic_edit,
     parse_mileage,
 )
 from app.blueprints.work_orders.services.mechanic_done import (
@@ -3558,7 +3389,9 @@ from app.blueprints.work_orders.services.mechanic_done import (
     mechanic_done_fields,
     personalize_wo_list_item,
 )
+from app.blueprints.work_orders.services import concurrent_save
 from app.blueprints.work_orders.services import time_tracking
+from app.blueprints.work_orders.services.edit_views import edit_session_id, with_rev
 
 
 def _server_now_iso() -> str:
@@ -3642,12 +3475,45 @@ def api_mechanic_work_order_details(work_order_id):
             "message": "This work order was confirmed by a manager and is locked.",
         }), 403
 
-    payload = mechanic_wo_payload(shop_db, shop, wo, current_user_id())
+    # Детали строятся из документа после ensure_wo_labor_ids, и из него же —
+    # load-вьюха (база трёхстороннего merge следующего Save этой страницы).
+    # Вьюху пишем только тому, кто этим каналом может сохранить WO.
+    mechanic_mode = is_mechanic_mode()
+    payload = mechanic_wo_payload(shop_db, shop, wo, current_user_id(), view={
+        "channel": "mechanic_web",
+        "sid": edit_session_id(),
+        "protocol": 1 if request.args.get("mp") == "1" else 0,
+        "can_edit": has_permission("work_orders.create") and (mechanic_mode or has_permission("work_orders.edit")),
+    })
     # Механик обязан подтвердить пробег до работы с WO (менеджера на этой
     # странице не спрашиваем).
-    payload["mileage_required"] = bool(wo.get("unit_id")) and is_mechanic_mode()
+    payload["mileage_required"] = bool(wo.get("unit_id")) and mechanic_mode
     payload["server_now"] = _server_now_iso()
     return jsonify(payload), 200
+
+
+@work_orders_bp.get("/work_orders/api/mechanic/work_orders/<work_order_id>/rev")
+@login_required
+@permission_required("work_orders.view")
+def api_mechanic_work_order_rev(work_order_id):
+    """Дешёвый опрос страницы механика: сдвинулась ли ревизия WO (labors_rev).
+    Вьюх не пишет. Механику статус не отдаётся (paid — никогда): только
+    locked и его Done."""
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
+
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return jsonify({"ok": False, "error": "invalid_work_order_id"}), 400
+
+    wo = shop_db.work_orders.find_one(
+        {"_id": wo_id, "shop_id": shop["_id"], "is_active": True},
+        with_rev({"status": 1, "manager_confirmed": 1, "mechanic_done": 1, "mechanic_done_marks": 1}),
+    )
+    if not wo:
+        return jsonify({"ok": False, "error": "work_order_not_found"}), 404
+    return jsonify(mechanic_rev_payload(wo, current_user_id(), mechanic=is_mechanic_mode())), 200
 
 
 @work_orders_bp.get("/work_orders/api/mechanic/units/<unit_id>/history")
@@ -3827,6 +3693,8 @@ def api_mechanic_work_order_create():
         "updated_at": now,
         "created_by": user_id,
         "updated_by": user_id,
+        # Ревизия редактируемого состояния (CAS сохранений, edit_views.py).
+        "labors_rev": 1,
         **mechanic_done_fields(shop_db, shop, None, data, user_id, now),
     }
     # Пробег: снимок на WO; одометр юнита — только вперёд.
@@ -3863,6 +3731,11 @@ def api_mechanic_work_order_create():
         "status": "in_progress",
         "inventory_warnings": inventory_result.get("errors") or [],
         "core_sync_errors": core_sync.get("errors") or [],
+        "labors_rev": doc["labors_rev"],
+        # Новые строки с client_key клиента → их labor_id.
+        "client_keys": {
+            b["client_key"]: b["labor_id"] for b in labors if isinstance(b, dict) and b.get("client_key")
+        },
     }), 200
 
 
@@ -3870,11 +3743,14 @@ def api_mechanic_work_order_create():
 @login_required
 @permission_required("work_orders.create")
 def api_mechanic_work_order_update(work_order_id):
-    from app.blueprints.work_orders.services.mobile_editor import compute_labors_and_totals
+    # До всего остального: base для merge выбирается по вьюхам, записанным
+    # раньше начала этого запроса.
+    request_started_at = utcnow()
+    mechanic_mode = is_mechanic_mode()
 
     # Эндпоинт механик-режима, но доступен и менеджерам: для них правка
     # существующего WO — work_orders.edit, как на обычном апдейте.
-    if not is_mechanic_mode() and not has_permission("work_orders.edit"):
+    if not mechanic_mode and not has_permission("work_orders.edit"):
         return jsonify({"ok": False, "error": "forbidden", "required": "work_orders.edit"}), 403
 
     shop_db, shop = get_shop_db()
@@ -3888,99 +3764,75 @@ def api_mechanic_work_order_update(work_order_id):
     wo = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop["_id"], "is_active": True})
     if not wo:
         return jsonify({"ok": False, "error": "work_order_not_found"}), 404
-    if (wo.get("status") or "open") == "paid":
-        return jsonify({"ok": False, "error": "paid_cannot_edit"}), 400
-    # Сметы механик не редактирует.
-    if (wo.get("status") or "open") == "estimate" and is_mechanic_mode():
-        return jsonify({"ok": False, "error": "estimate_locked_for_mechanics"}), 400
-    # Подтверждённый менеджером WO механик редактировать не может.
-    if wo.get("manager_confirmed") and is_mechanic_mode():
-        return jsonify({
-            "ok": False,
-            "error": "wo_confirmed",
-            "message": "This work order was confirmed by a manager and is locked.",
-        }), 403
 
-    data = request.get_json(silent=True) or {}
-    labors_payload = data.get("labors")
-    if not isinstance(labors_payload, list) or not labors_payload:
-        return jsonify({"ok": False, "error": "labors_required"}), 400
-    # Пробег обязателен для механика — до любых побочных эффектов (склад, коры).
-    if is_mechanic_mode() and wo.get("unit_id") and "unit_mileage" in data and parse_mileage(data.get("unit_mileage")) is None:
-        return jsonify(MILEAGE_REQUIRED_ERROR), 400
-
-    merged = merge_mechanic_edit(shop_db, shop, wo, labors_payload)
-    labors, totals_raw = compute_labors_and_totals(shop_db, shop, merged)
-    totals = align_totals_with_labors(normalize_totals_payload(totals_raw), labors)
-
-    existing_totals = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
-    locked_tax_rate = existing_totals.get("sales_tax_rate")
-    if locked_tax_rate is None:
-        locked_tax_rate = _get_shop_sales_tax_context(shop, shop_db).get("rate") or 0
-    is_taxable = existing_totals.get("is_taxable")
-    if is_taxable is None:
-        is_taxable = _is_customer_taxable(shop_db, wo.get("customer_id"))
-    totals = _apply_sales_tax_to_totals(totals, locked_tax_rate, bool(is_taxable))
-
-    now = utcnow()
-    user_id = current_user_id()
-    old_labors = wo.get("labors") or []
-
-    inventory_adjustment = adjust_inventory_for_part_changes(
-        shop_db, old_labors, labors, user_id,
-        ref={"kind": "work_order", "id": wo["_id"], "label": str(wo.get("wo_number") or "")},
+    # Merge с тем, что клиент видел, CAS по labors_rev, побочные эффекты после
+    # записи — services/concurrent_save.py. Деньги клиента игнорируются.
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
+    payload, code = concurrent_save.save_mechanic_edit(
+        shop_db, shop, wo_id, data,
+        user_id=current_user_id(),
+        sid=edit_session_id(),
+        request_started_at=request_started_at,
+        channel="mechanic_web",
+        mechanic_mode=mechanic_mode,
+        guard=concurrent_save.mechanic_web_guard(data, mechanic_mode=mechanic_mode),
+        cas_filter=(
+            concurrent_save.MECHANIC_CAS_FILTER if mechanic_mode else concurrent_save.NON_MECHANIC_CAS_FILTER
+        ),
+        status="in_progress",
+        taxable_from_request=False,
+        audit_suffix="by mechanic",
+        initial_wo=wo,
     )
-    core_sync = sync_work_order_cores(shop_db, shop, old_labors, labors, user_id)
+    return jsonify(payload), code
 
-    set_fields = {
-        "labors": labors,
-        "totals": totals,
-        "status": "in_progress",
-        "inventory_adjusted_at": now,
-        "updated_at": now,
-        "updated_by": user_id,
-        **mechanic_done_fields(shop_db, shop, wo, data, user_id, now),
-    }
 
-    unit_mileage = parse_mileage(data.get("unit_mileage"))
-    prior_unit_mileage = None
-    if unit_mileage is not None:
-        unit_doc = shop_db.units.find_one({"_id": wo.get("unit_id"), "shop_id": shop["_id"]}, {"mileage": 1})
-        prior_unit_mileage = (unit_doc or {}).get("mileage")
-        set_fields["mileage"] = unit_mileage
-        if odometer_moves_forward(prior_unit_mileage, unit_mileage):
-            shop_db.units.update_one(
-                {"_id": wo.get("unit_id"), "shop_id": shop["_id"], "is_active": True},
-                {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
-            )
+# HTTP-статусы отказов таймера; тело — time_tracking.timer_error_payload
+# (код + message: старые сборки приложения показывают message в тосте;
+# текст механику — без статуса paid).
+_TIMER_ERROR_HTTP_STATUS = {
+    "work_order_not_found": 404,
+    "labor_not_found": 404,
+    "wo_confirmed": 403,
+    "concurrent_update": 409,
+}
 
-    if is_mechanic_mode():
-        # Дата WO (дата инвойса) = день последнего реального сохранения
-        # механиком — см. mechanic_save_date_fields.
-        set_fields.update(mechanic_save_date_fields(wo, labors, data, set_fields, user_id, now, unit_mileage=prior_unit_mileage))
 
-    shop_db.work_orders.update_one({"_id": wo_id}, {"$set": set_fields})
-    _done_now = bool(set_fields.get("mechanic_done")) and not bool(wo.get("mechanic_done"))
-    audit_log.log_event("done" if _done_now else "update", "work_order", wo_id, label=audit_log.wo_label(wo),
-                        summary=f"{audit_log.wo_label(wo)} {'marked Done' if _done_now else 'saved'} by mechanic",
-                        changes=audit_log.wo_changes(wo, set_fields))
+def _refresh_wos_after_timer_stop(shop_db, shop, logs):
+    """
+    Закрытые сессии (стоп, auto_switch) поменяли время своих WO: assigned =
+    кто фактически работал, часы работы = суммарное время механиков (кроме
+    пресетных/ручных), totals пересчитаны; статус привязанных записей
+    календаря — по факту работы. Бригаду по таймерам не двигаем: план
+    остаётся планом, переезжает он только когда офис переназначил механика.
+    Логов может быть несколько (фантомы после гонки start) — все их WO.
+    """
+    from app.blueprints.work_orders.services.mechanic_editor import refresh_time_derived_fields
 
-    from app.blueprints.work_orders.services.push_events import notify_after_mechanic_save
+    mechanics_by_id = {m["id"]: m for m in get_assignable_mechanics(shop)}
+    for stopped_wo_id in {l.get("work_order_id") for l in logs if l.get("work_order_id")}:
+        refresh_time_derived_fields(
+            shop_db, shop, stopped_wo_id, mechanics_by_id=mechanics_by_id,
+        )
+        _sync_calendar_with_wo(shop_db, shop, stopped_wo_id)
 
-    notify_after_mechanic_save(shop, wo, set_fields, wo_id, wo.get("wo_number"), user_id)
 
-    # Записи календаря, привязанные к WO, следуют за работой (In Progress / Completed).
-    from app.blueprints.calendar.services.work_orders import sync_linked_appointments_status
-
-    sync_linked_appointments_status(shop_db, shop, wo_id)
-
-    return jsonify({
-        "ok": True,
-        "id": str(wo_id),
-        "status": "in_progress",
-        "inventory_warnings": inventory_adjustment.get("errors") or [],
-        "core_sync_errors": core_sync.get("errors") or [],
-    }), 200
+def _timer_start_error_response(error: str, stopped_prev_logs, *, mechanic_mode: bool):
+    """Отказ старта. Если до отказа auto_switch уже остановил прежний таймер
+    (старт сорвался гонкой после переключения) — сказать и об этом:
+    пользователь иначе считал бы, что прежний таймер всё ещё идёт."""
+    body = time_tracking.timer_error_payload(error, mechanic_mode=mechanic_mode)
+    if stopped_prev_logs:
+        prev = stopped_prev_logs[-1]
+        body["stopped_previous"] = time_tracking._log_payload(prev)
+        number = prev.get("wo_number")
+        body["message"] += (
+            f" Your timer on WO #{number} was stopped." if number not in (None, "")
+            else " Your previous timer was stopped."
+        )
+    return jsonify(body), _TIMER_ERROR_HTTP_STATUS.get(error, 400)
 
 
 @work_orders_bp.post("/work_orders/api/mechanic/timers/start")
@@ -3993,41 +3845,26 @@ def api_mechanic_timer_start():
 
     data = request.get_json(silent=True) or {}
     user_id = current_user_id()
+    mechanic_mode = is_mechanic_mode()
 
-    # По подтверждённому менеджером WO механик время не трекает.
-    if is_mechanic_mode():
-        timer_wo_id = oid(data.get("work_order_id"))
-        timer_wo = (
-            shop_db.work_orders.find_one({"_id": timer_wo_id, "shop_id": shop["_id"], "is_active": True})
-            if timer_wo_id else None
-        )
-        if timer_wo and timer_wo.get("manager_confirmed"):
-            return jsonify({
-                "ok": False,
-                "error": "wo_confirmed",
-                "message": "This work order was confirmed by a manager and is locked.",
-            }), 403
-
+    # Проверки — в start_timer: до переключения таймера и ещё раз атомарно с
+    # фиксацией старта (после вставки лога, +labors_rev). Механику закрыты
+    # подтверждённый менеджером WO и смета; менеджер трекает время и на
+    # смете, не конвертируя её.
     log, stopped_prev_logs, error = time_tracking.start_timer(
         shop_db, shop, user_id, _current_user_display_name(),
         data.get("work_order_id"), data.get("labor_id"),
+        mechanic_mode=mechanic_mode,
     )
-    if error:
-        code = 404 if error in ("work_order_not_found", "labor_not_found") else 400
-        return jsonify({"ok": False, "error": error}), code
 
     # auto_switch закрыл предыдущие сессии (после гонки их может быть
     # несколько на разных WO) — у тех WO обновились время, назначения и
-    # биллинговые часы.
+    # биллинговые часы. Пересчёт и тогда, когда сам старт после
+    # переключения сорвался.
     if stopped_prev_logs:
-        from app.blueprints.work_orders.services.mechanic_editor import refresh_time_derived_fields
-
-        mechanics_by_id = {m["id"]: m for m in get_assignable_mechanics(shop)}
-        for prev_wo_id in {l.get("work_order_id") for l in stopped_prev_logs if l.get("work_order_id")}:
-            refresh_time_derived_fields(
-                shop_db, shop, prev_wo_id, mechanics_by_id=mechanics_by_id,
-            )
-            _sync_calendar_with_wo(shop_db, shop, prev_wo_id)
+        _refresh_wos_after_timer_stop(shop_db, shop, stopped_prev_logs)
+    if error:
+        return _timer_start_error_response(error, stopped_prev_logs, mechanic_mode=mechanic_mode)
 
     stopped_prev = stopped_prev_logs[-1] if stopped_prev_logs else None
     audit_log.log_event("timer", "time_log", log.get("_id"), label=f"WO #{log.get('wo_number')}",
@@ -4041,6 +3878,9 @@ def api_mechanic_timer_start():
         "time_summary": time_tracking.summarize_wo_time(
             shop_db, shop["_id"], log.get("work_order_id"), user_id=user_id
         ),
+        # Ревизия WO после всех записей старта (снятие Done, пересчёт
+        # предыдущих WO) — клиент не примет свой старт за чужую правку.
+        "labors_rev": wo_labors_rev(shop_db, shop["_id"], log.get("work_order_id")),
         "server_now": _server_now_iso(),
     }), 200
 
@@ -4056,28 +3896,16 @@ def api_mechanic_timer_stop():
     user_id = current_user_id()
     logs, error = time_tracking.stop_timer(shop_db, shop, user_id)
     if error:
-        return jsonify({"ok": False, "error": error}), 400
+        return jsonify(time_tracking.timer_error_payload(error, mechanic_mode=is_mechanic_mode())), 400
 
-    # После каждой сессии: assigned = кто фактически работал, часы работы =
-    # суммарное время механиков (кроме пресетных/ручных), totals пересчитаны.
-    # Логов может быть несколько (фантомы после гонки start) — обновляем все
-    # затронутые WO; в ответ идёт последняя (актуальная) сессия.
-    from app.blueprints.work_orders.services.mechanic_editor import refresh_time_derived_fields
-
+    # Пересчёт всех затронутых WO (логов может быть несколько — фантомы
+    # после гонки start); в ответ идёт последняя (актуальная) сессия.
     log = logs[-1]
     audit_log.log_event("timer", "time_log", log.get("_id"), label=f"WO #{log.get('wo_number')}",
                         summary=f"Timer stopped on WO #{log.get('wo_number')} - {int(log.get('seconds') or 0) // 60} min",
                         details={"work_order_id": str(log.get("work_order_id")), "labor_id": log.get("labor_id"), "seconds": log.get("seconds")},
                         url=f"/work_orders/details?work_order_id={log.get('work_order_id')}")
-    mechanics_by_id = {m["id"]: m for m in get_assignable_mechanics(shop)}
-    for stopped_wo_id in {l.get("work_order_id") for l in logs if l.get("work_order_id")}:
-        refresh_time_derived_fields(
-            shop_db, shop, stopped_wo_id, mechanics_by_id=mechanics_by_id,
-        )
-        # Статус привязанных записей — по факту работы. Бригаду по таймерам
-        # не двигаем: план остаётся планом, переезжает он только когда офис
-        # переназначил механика на WO.
-        _sync_calendar_with_wo(shop_db, shop, stopped_wo_id)
+    _refresh_wos_after_timer_stop(shop_db, shop, logs)
 
     return jsonify({
         "ok": True,
@@ -4085,6 +3913,8 @@ def api_mechanic_timer_stop():
         "time_summary": time_tracking.summarize_wo_time(
             shop_db, shop["_id"], log.get("work_order_id"), user_id=user_id
         ),
+        # Ревизия WO после пересчёта часов/назначений этим стопом.
+        "labors_rev": wo_labors_rev(shop_db, shop["_id"], log.get("work_order_id")),
         "server_now": _server_now_iso(),
     }), 200
 
@@ -4109,7 +3939,8 @@ def api_work_order_transfer(work_order_id):
     ставки работ, цены запчастей по его прайс-матрице и флаг налога —
     иначе WO, заведённый под "NEW Customer", уехал бы с чужими ценами.
     Механик может продолжать работать: его сохранения читают WO заново и
-    подхватывают новые ставки/цены.
+    подхватывают новые ставки/цены. Запись — CAS по labors_rev с повтором
+    всего тела (services/transfer.py); попытки кончились — 409.
     """
     if is_mechanic_mode():
         return jsonify({"ok": False, "error": "forbidden"}), 403
@@ -4121,124 +3952,12 @@ def api_work_order_transfer(work_order_id):
     wo_id = oid(work_order_id)
     if not wo_id:
         return jsonify({"ok": False, "error": "invalid_work_order_id"}), 400
-    wo = shop_db.work_orders.find_one(
-        {"_id": wo_id, "shop_id": shop["_id"], "is_active": True}
+
+    data = request.get_json(silent=True)
+    payload, code = transfer_work_order(
+        shop_db, shop, wo_id, data if isinstance(data, dict) else {}, user_id=current_user_id(),
     )
-    if not wo:
-        return jsonify({"ok": False, "error": "work_order_not_found"}), 404
-    if (wo.get("status") or "open") == "paid":
-        return jsonify({"ok": False, "error": "paid_cannot_edit"}), 400
-
-    data = request.get_json(silent=True) or {}
-    target_id = oid(data.get("customer_id"))
-    if not target_id:
-        return jsonify({"ok": False, "error": "customer_required"}), 400
-    target = shop_db.customers.find_one(
-        {"_id": target_id, "shop_id": shop["_id"], "is_active": True}, {"_id": 1}
-    )
-    if not target:
-        return jsonify({"ok": False, "error": "customer_not_found"}), 400
-    if wo.get("customer_id") == target_id:
-        return jsonify({"ok": False, "error": "same_customer"}), 400
-
-    unit = None
-    if wo.get("unit_id"):
-        unit = shop_db.units.find_one(
-            {"_id": wo["unit_id"], "shop_id": shop["_id"]}
-        )
-
-    from app.blueprints.work_orders.services.mechanic_editor import reprice_wo_for_customer
-
-    now = utcnow()
-    user_id = current_user_id()
-    wo_set = {
-        "customer_id": target_id,
-        "updated_at": now,
-        "updated_by": user_id,
-        **reprice_wo_for_customer(shop_db, shop, wo, target_id),
-    }
-    unit_action = "none"
-
-    if unit is None:
-        # WO без юнита (или юнит потерян) — просто меняем клиента.
-        run_atomically(
-            get_mongo_client(),
-            lambda session: shop_db.work_orders.update_one(
-                {"_id": wo_id}, {"$set": wo_set}, session=session
-            ),
-        )
-        _sync_calendar_with_wo(shop_db, shop, wo_id, identity=True)
-        audit_log.log_event("transfer", "work_order", wo_id, label=audit_log.wo_label(wo),
-                            summary=f"{audit_log.wo_label(wo)} transferred to {audit_log.customer_label(target)}",
-                            details={"to_customer_id": str(target_id), "unit_action": unit_action})
-        return jsonify({"ok": True, "unit_action": unit_action}), 200
-
-    vin = str(unit.get("vin") or "").strip()
-    existing = find_duplicate_unit(shop_db, shop["_id"], target_id, vin) if vin else None
-
-    if existing is not None:
-        # У целевого клиента этот юнит уже есть — перевешиваем WO на него.
-        wo_set["unit_id"] = existing["_id"]
-        unit_action = "linked_existing"
-        reactivate = existing.get("is_active") is False
-
-        def _tx(session):
-            if reactivate:
-                unit_set = {"is_active": True, "updated_at": now, "updated_by": user_id}
-                # Реактивированному дублю подтягиваем пробег из переносимого
-                # юнита — он свежее (WO только что откатали).
-                if unit.get("mileage"):
-                    unit_set["mileage"] = unit.get("mileage")
-                shop_db.units.update_one(
-                    {"_id": existing["_id"]}, {"$set": unit_set}, session=session
-                )
-            shop_db.work_orders.update_one({"_id": wo_id}, {"$set": wo_set}, session=session)
-
-        run_atomically(get_mongo_client(), _tx)
-        if reactivate:
-            unit_action = "reactivated_existing"
-    else:
-        # Юнит «переезжает»: копия у целевого клиента, исходник деактивируется.
-        new_unit = {
-            k: v for k, v in unit.items()
-            if k not in ("_id", "customer_id", "search_terms",
-                         "created_at", "created_by", "updated_at", "updated_by")
-        }
-        new_unit.update({
-            "_id": ObjectId(),
-            "customer_id": target_id,
-            "is_active": True,
-            "created_at": now,
-            "created_by": user_id,
-            "updated_at": now,
-            "updated_by": user_id,
-        })
-        new_unit["search_terms"] = build_unit_search_terms(new_unit)
-        wo_set["unit_id"] = new_unit["_id"]
-        unit_action = "moved"
-
-        def _tx(session):
-            shop_db.units.update_one(
-                {"_id": unit["_id"]},
-                {"$set": {"is_active": False, "updated_at": now, "updated_by": user_id}},
-                session=session,
-            )
-            shop_db.units.insert_one(new_unit, session=session)
-            shop_db.work_orders.update_one({"_id": wo_id}, {"$set": wo_set}, session=session)
-
-        run_atomically(get_mongo_client(), _tx)
-
-    # Привязанные записи календаря переезжают к новому клиенту/юниту вместе с WO.
-    _sync_calendar_with_wo(shop_db, shop, wo_id, identity=True)
-    audit_log.log_event("transfer", "work_order", wo_id, label=audit_log.wo_label(wo),
-                        summary=f"{audit_log.wo_label(wo)} transferred to {audit_log.customer_label(target)} (unit: {unit_action})",
-                        details={"to_customer_id": str(target_id), "unit_action": unit_action, "unit_id": str(wo_set.get("unit_id") or "")})
-    return jsonify({
-        "ok": True,
-        "unit_action": unit_action,
-        "customer_id": str(target_id),
-        "unit_id": str(wo_set.get("unit_id") or ""),
-    }), 200
+    return jsonify(payload), code
 
 
 # ─── Правка фактических часов механиков (менеджерская, отдельное право) ─────
@@ -4247,9 +3966,21 @@ def api_work_order_transfer(work_order_id):
 # После каждой правки пересчитываются производные поля WO (назначения,
 # tracked-часы, totals). Оплаченные WO не трогаем.
 
-def _refresh_after_time_log_change(shop_db, shop, work_order_id):
+def _refresh_after_time_log_change(shop_db, shop, log: dict, data: dict) -> str:
+    """Пересчёт полей WO после правки/удаления сессии лога log. data — тело
+    запроса: view_id в нём — база вкладки офиса; из неё выводится новая
+    вьюха со свежими часами строки (office_merge.derive_view_after_time_log),
+    иначе следующий Save вкладки принял бы их за чужую правку. Возвращает
+    id производной вьюхи ("" — не просили / вьюха не нашлась)."""
     from app.blueprints.work_orders.services.mechanic_editor import refresh_time_derived_fields
 
+    work_order_id = log.get("work_order_id")
+    view_id = (data or {}).get("view_id")
+    before_wo = None
+    if view_id:
+        before_wo = shop_db.work_orders.find_one(
+            {"_id": work_order_id, "shop_id": shop["_id"]}, ev.with_rev(office_merge.TIME_LOG_ROW_PROJECTION),
+        )
     refresh_time_derived_fields(
         shop_db, shop, work_order_id,
         mechanics_by_id={m["id"]: m for m in get_assignable_mechanics(shop)},
@@ -4257,6 +3988,12 @@ def _refresh_after_time_log_change(shop_db, shop, work_order_id):
     # Правка/удаление сессии меняет факт работы — статус записей календаря следом
     # (бригаду будущих записей двигает только явное переназначение офисом).
     _sync_calendar_with_wo(shop_db, shop, work_order_id)
+    if not view_id:
+        return ""
+    return office_merge.derive_view_after_time_log(
+        shop_db, shop["_id"], work_order_id, view_id,
+        user_id=current_user_id(), labor_id=log.get("labor_id"), before_wo=before_wo,
+    )
 
 
 def _load_time_log_for_edit(shop_db, shop, log_id):
@@ -4326,13 +4063,16 @@ def api_time_log_update(log_id):
                         summary=f"Mechanic hours edited on WO #{log.get('wo_number')}: {log.get('user_name')} -> {int(log.get('seconds') or 0) // 60} min",
                         details={"seconds": log.get("seconds"), "mechanic": log.get("user_name")},
                         url=f"/work_orders/details?work_order_id={log.get('work_order_id')}")
-    _refresh_after_time_log_change(shop_db, shop, log.get("work_order_id"))
+    view_id = _refresh_after_time_log_change(shop_db, shop, log, data)
     return jsonify({
         "ok": True,
         "log": time_tracking._log_payload(log),
         "time_summary": time_tracking.summarize_wo_time(
             shop_db, shop["_id"], log.get("work_order_id"), user_id=current_user_id()
         ),
+        "labors_rev": wo_labors_rev(shop_db, shop["_id"], log.get("work_order_id")),
+        # Производная вьюха вкладки (body.view_id) — "" если не просили / не нашлась.
+        "view_id": view_id,
     }), 200
 
 
@@ -4348,6 +4088,10 @@ def api_time_log_delete(log_id):
     if error:
         return jsonify({"ok": False, "error": error}), 400
 
+    # Тело необязательное (старый JS шлёт пустой POST): view_id — база вкладки.
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
     log, error = time_tracking.delete_time_log(shop_db, shop["_id"], log_id)
     if error:
         return jsonify({"ok": False, "error": error}), 400
@@ -4356,12 +4100,15 @@ def api_time_log_delete(log_id):
                         summary=f"Mechanic timer session deleted on WO #{log.get('wo_number')}: {log.get('user_name')} ({int(log.get('seconds') or 0) // 60} min)",
                         details={"seconds": log.get("seconds"), "mechanic": log.get("user_name")},
                         url=f"/work_orders/details?work_order_id={log.get('work_order_id')}")
-    _refresh_after_time_log_change(shop_db, shop, log.get("work_order_id"))
+    view_id = _refresh_after_time_log_change(shop_db, shop, log, data)
     return jsonify({
         "ok": True,
         "time_summary": time_tracking.summarize_wo_time(
             shop_db, shop["_id"], log.get("work_order_id"), user_id=current_user_id()
         ),
+        "labors_rev": wo_labors_rev(shop_db, shop["_id"], log.get("work_order_id")),
+        # Производная вьюха вкладки (body.view_id) — "" если не просили / не нашлась.
+        "view_id": view_id,
     }), 200
 
 

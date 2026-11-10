@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from zoneinfo import available_timezones
 
 from bson import ObjectId, Binary
-from flask import render_template, request, redirect, url_for, flash, session, jsonify, make_response
+from flask import render_template, request, redirect, url_for, flash, session, jsonify, make_response, current_app
 
 from app.utils import audit_log
 from app.blueprints.settings import settings_bp
@@ -433,6 +433,19 @@ def init_shop_database(shop_db_name: str, tenant_doc: dict, shop_doc: dict, acto
         seed_core_charge_rules(sdb, shop_oid, created_by=actor_user_id, updated_by=actor_user_id)
     except Exception:
         pass
+
+    # -----------------------------
+    # indexes — сразу, той же функцией, что на старте приложения
+    # (ensure_all_shop_databases_indexes). Раньше новая локация жила без
+    # индексов до ближайшего рестарта: списки шли сканом, у wo_edit_views
+    # (база merge сохранений WO) не было TTL. Последним шагом — после сидов,
+    # чтобы их собственные unique-индексы создались первыми.
+    # -----------------------------
+    try:
+        from app.extensions import ensure_shop_collections_indexes
+        ensure_shop_collections_indexes(sdb)
+    except Exception:
+        current_app.logger.exception("init_shop_database: index creation failed for %s", shop_db_name)
 
 
 def _grant_shop_to_owners(master, tenant_id, new_shop_id):

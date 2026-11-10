@@ -38,10 +38,12 @@ from app.blueprints.calendar.services.events import (
     event_mechanics,
     identity_from_snapshot,
     naive_iso,
+    refresh_mechanic_names,
     unit_label,
 )
 from app.blueprints.calendar.services.statuses import status_keys
 from app.utils.tenant import oid
+from app.utils.user_names import load_user_names, relabel_people, tenant_values_for_shop
 
 ESTIMATE_STATUSES = ("estimate", "estimated", "quote", "quoted")
 
@@ -157,6 +159,11 @@ def work_order_snapshot_for_event(shop_db, shop: dict, work_order_id) -> dict | 
         customer = shop_db.customers.find_one({"_id": wo["customer_id"], "shop_id": shop["_id"]}, CUSTOMER_PROJECTION)
     if wo.get("unit_id"):
         unit = shop_db.units.find_one({"_id": wo["unit_id"], "shop_id": shop["_id"]}, UNIT_PROJECTION)
+    # Имена бригады — живые по id (в назначениях WO — снимок на момент сохранения).
+    mechanics = wo_assigned_mechanics(wo)
+    if mechanics:
+        names = load_user_names([m["id"] for m in mechanics], tenant_values=tenant_values_for_shop(shop))
+        relabel_people(mechanics, names, id_keys=("id",))
     return {
         "work_order_id": wo_id,
         "wo_number": wo.get("wo_number"),
@@ -164,7 +171,7 @@ def work_order_snapshot_for_event(shop_db, shop: dict, work_order_id) -> dict | 
         "customer_label": customer_label(customer) if customer else "",
         "unit_id": wo.get("unit_id"),
         "unit_label": unit_label(unit) if unit else "",
-        "mechanics": wo_assigned_mechanics(wo),
+        "mechanics": mechanics,
         "title": ", ".join(wo_labor_summary(wo, limit=3)),
         "hours": wo_labor_hours(wo),
         "wo": {key: wo.get(key) for key in WO_STATE_FIELDS},
@@ -342,9 +349,10 @@ def linked_appointments_for_wo(shop_db, shop: dict, work_order_id) -> list[dict]
         wo_id = oid(work_order_id)
         if shop_db is None or not wo_id:
             return []
-        rows = shop_db.calendar_events.find(
+        rows = list(shop_db.calendar_events.find(
             {"shop_id": shop["_id"], "work_order_id": wo_id, "status": {"$ne": "cancelled"}}
-        ).sort("start_time", 1)
+        ).sort("start_time", 1))
+        refresh_mechanic_names(shop, rows)
         return [
             {
                 "id": str(row["_id"]),

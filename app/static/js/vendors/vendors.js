@@ -34,10 +34,158 @@
       activeGroup: document.getElementById("vendorActiveGroup"),
       nameInput: document.getElementById("vendorName"),
       websiteInput: document.getElementById("vendorWebsite"),
+      websiteError: document.getElementById("vendorWebsiteError"),
       addressInput: document.getElementById("vendorAddress"),
       notesInput: document.getElementById("vendorNotes"),
       isActiveInput: document.getElementById("vendorIsActive"),
+      // Секция «Portal login» рендерится только с vendors.view_credentials.
+      credentialsGroup: document.getElementById("vendorCredentialsGroup"),
+      portalLoginInput: document.getElementById("vendorPortalLogin"),
+      portalPasswordInput: document.getElementById("vendorPortalPassword"),
+      portalPasswordToggle: document.getElementById("vendorPortalPasswordToggle"),
+      portalPasswordHelp: document.getElementById("vendorPortalPasswordHelp"),
+      portalPasswordClearGroup: document.getElementById("vendorPortalPasswordClearGroup"),
+      portalPasswordClear: document.getElementById("vendorPortalPasswordClear"),
     };
+  }
+
+  function notifyError(message) {
+    if (typeof window.appAlert === "function") window.appAlert(message, "error");
+    else window.alert(message);
+  }
+
+  function apiErrorMessage(data, fallback) {
+    return (data && (data.message || data.error)) || fallback;
+  }
+
+  /* ── Сайт: проверка до отправки по ТЕМ ЖЕ правилам, что у сервера
+     (app/utils/urls.py normalize_website — менять вместе). Обычная форма
+     создания при отказе сервера уходит редиректом и теряет всё введённое
+     (включая пароль), поэтому клиент не пропускает то, что сервер отвергнет;
+     источник истины всё равно сервер. https:// дописывает сервер. ── */
+  var WEBSITE_ERROR = "Enter a valid website, e.g. fleetpride.com";
+  var WEBSITE_MAX_CHARS = 2048;
+  // Пробельные символы ровно как str.isspace() в Python (strip и пробел в хосте).
+  var PY_SPACE = "\\t\\n\\x0b\\x0c\\r\\x1c-\\x1f \\x85\\xa0\\u1680\\u2000-\\u200a\\u2028\\u2029\\u202f\\u205f\\u3000";
+  var PY_STRIP_RE = new RegExp("^[" + PY_SPACE + "]+|[" + PY_SPACE + "]+$", "g");
+  var PY_SPACE_RE = new RegExp("[" + PY_SPACE + "]");
+  var WEBSITE_CONTROL_RE = /[\x00-\x1f\x7f]/;
+  var WEBSITE_SCHEME_RE = /^([A-Za-z][A-Za-z0-9+.\-]*):/;
+  var WEBSITE_PORT_TAIL_RE = /^[0-9]{1,5}(?:[\/?#]|$)/;
+  var WEBSITE_HOST_PORT_RE = /^([\s\S]*):([0-9]{1,5})$/;
+  // Метка домена: буквы (в т. ч. IDN), цифры, «_», дефис не по краям — как \w в Python.
+  var WEBSITE_LABEL_RE = (function () {
+    try {
+      return new RegExp("^[\\p{L}\\p{N}_](?:[\\p{L}\\p{N}_-]*[\\p{L}\\p{N}_])?$", "u");
+    } catch (e) {
+      // Браузер без \p{…}: проверка мягче, окончательно решит сервер.
+      return /^[^\s.@\\:\/?#-](?:[^\s.@\\:\/?#]*[^\s.@\\:\/?#-])?$/;
+    }
+  })();
+
+  function codePointLength(text) {
+    return Array.from(text).length;
+  }
+
+  function validWebsiteHost(host) {
+    if (!host || codePointLength(host) > 253) return false;
+    if (host === "localhost") return true;
+    var labels = host.split(".");
+    if (labels.length < 2) return false;
+    return labels.every(function (label) {
+      var len = codePointLength(label);
+      return len > 0 && len <= 63 && WEBSITE_LABEL_RE.test(label);
+    });
+  }
+
+  // Нормализованный URL или null — зеркало normalize_website (Python).
+  function normalizeWebsite(raw) {
+    var text = String(raw == null ? "" : raw).replace(PY_STRIP_RE, "");
+    if (!text || codePointLength(text) > WEBSITE_MAX_CHARS || WEBSITE_CONTROL_RE.test(text)) return null;
+    var scheme = "https";
+    var rest = text;
+    var match = WEBSITE_SCHEME_RE.exec(text);
+    if (match && !WEBSITE_PORT_TAIL_RE.test(text.slice(match[0].length))) {
+      // Только http(s) и только с «//»: «http:x.com» — не адрес сайта.
+      scheme = match[1].toLowerCase();
+      rest = text.slice(match[0].length);
+      if ((scheme !== "http" && scheme !== "https") || rest.slice(0, 2) !== "//") return null;
+      rest = rest.slice(2);
+    } else if (text.slice(0, 2) === "//") {
+      rest = text.slice(2);
+    }
+    var parts = /^([^\/?#]*)([\s\S]*)$/.exec(rest);
+    var authority = parts[1];
+    var tail = parts[2];
+    // «user:pass@host», «\» и пробелы в адресе не принимаем (как сервер).
+    if (/[@\\]/.test(authority) || PY_SPACE_RE.test(authority)) return null;
+    var host = authority;
+    var port = "";
+    var portMatch = WEBSITE_HOST_PORT_RE.exec(authority);
+    if (portMatch) {
+      host = portMatch[1];
+      port = portMatch[2];
+      var portNum = parseInt(port, 10);
+      if (!(portNum > 0 && portNum <= 65535)) return null;
+    } else if (authority.indexOf(":") >= 0) {
+      return null;
+    }
+    host = host.toLowerCase();
+    if (host.slice(-1) === ".") host = host.slice(0, -1);
+    if (!validWebsiteHost(host)) return null;
+    if (tail === "/") tail = "";
+    return scheme + "://" + host + (port ? ":" + port : "") + tail;
+  }
+
+  function websiteError(raw) {
+    if (!String(raw == null ? "" : raw).replace(PY_STRIP_RE, "")) return "";
+    return normalizeWebsite(raw) ? "" : WEBSITE_ERROR;
+  }
+
+  function validateWebsiteInput(els) {
+    if (!els.websiteInput) return true;
+    var message = websiteError(els.websiteInput.value);
+    els.websiteInput.classList.toggle("is-invalid", !!message);
+    if (els.websiteError && message) els.websiteError.textContent = message;
+    if (message) els.websiteInput.focus();
+    return !message;
+  }
+
+  /* ── Учётка портала в форме: пароль никогда не подставляется в поле —
+     пусто = оставить сохранённый, галочка Remove = удалить. ── */
+  function setPasswordVisible(els, visible) {
+    if (!els.portalPasswordInput) return;
+    els.portalPasswordInput.type = visible ? "text" : "password";
+    if (els.portalPasswordToggle) {
+      els.portalPasswordToggle.textContent = visible ? "Hide" : "Show";
+      els.portalPasswordToggle.setAttribute("aria-pressed", visible ? "true" : "false");
+    }
+  }
+
+  function resetCredentialFields(els, vendor) {
+    if (!els.credentialsGroup) return;
+    var hasPassword = !!(vendor && vendor.has_portal_password);
+    if (els.portalLoginInput) els.portalLoginInput.value = (vendor && vendor.portal_login) || "";
+    if (els.portalPasswordInput) {
+      els.portalPasswordInput.value = "";
+      els.portalPasswordInput.disabled = false;
+      els.portalPasswordInput.placeholder = hasPassword ? "•••••••• saved — leave blank to keep" : "Optional";
+    }
+    setPasswordVisible(els, false);
+    if (els.portalPasswordHelp) els.portalPasswordHelp.hidden = !hasPassword;
+    if (els.portalPasswordClearGroup) els.portalPasswordClearGroup.hidden = !hasPassword;
+    if (els.portalPasswordClear) els.portalPasswordClear.checked = false;
+  }
+
+  function credentialPayload(els) {
+    if (!els.credentialsGroup) return {};
+    var payload = {
+      portal_login: ((els.portalLoginInput && els.portalLoginInput.value) || "").trim(),
+    };
+    var password = (els.portalPasswordInput && els.portalPasswordInput.value) || "";
+    if (password.trim()) payload.portal_password = password;
+    if (els.portalPasswordClear && els.portalPasswordClear.checked) payload.portal_password_clear = true;
+    return payload;
   }
 
   function getOrdersEls() {
@@ -333,7 +481,7 @@
       var data = await res.json();
 
       if (!res.ok || !data.ok) {
-        appAlert((data && data.error) || "Failed to load vendor data", 'error');
+        notifyError(apiErrorMessage(data, "Failed to load vendor data"));
         return;
       }
 
@@ -345,7 +493,11 @@
       if (els.activeGroup) els.activeGroup.style.display = "block";
 
       if (els.nameInput) els.nameInput.value = vendor.name || "";
-      if (els.websiteInput) els.websiteInput.value = vendor.website || "";
+      if (els.websiteInput) {
+        els.websiteInput.value = vendor.website || "";
+        els.websiteInput.classList.remove("is-invalid");
+      }
+      resetCredentialFields(els, vendor);
       if (els.addressInput) els.addressInput.value = vendor.address || "";
       if (els.notesInput) els.notesInput.value = vendor.notes || "";
       if (els.isActiveInput) els.isActiveInput.checked = vendor.is_active !== false;
@@ -371,7 +523,7 @@
         }
       }
     } catch (err) {
-      appAlert("Network error while loading vendor data", 'error');
+      notifyError("Network error while loading vendor data");
     }
   }
 
@@ -421,6 +573,8 @@
         current.submitBtn.textContent = "Create Vendor";
         if (current.activeGroup) current.activeGroup.style.display = "none";
         current.form.reset();
+        if (current.websiteInput) current.websiteInput.classList.remove("is-invalid");
+        resetCredentialFields(current, null);
         if (current.contactsForm && window.RoobicoContacts) {
           window.RoobicoContacts.setContacts(current.contactsForm, []);
         }
@@ -513,6 +667,13 @@
         var current = getVendorEls();
         if (!current.form || !current.editingVendorId) return;
 
+        // Неверный сайт ловим до отправки: обычная форма создания иначе
+        // потеряла бы всё введённое на редиректе с ошибкой.
+        if (!validateWebsiteInput(current)) {
+          e.preventDefault();
+          return;
+        }
+
         var vendorId = current.editingVendorId.value;
         if (!vendorId) {
           return;
@@ -520,7 +681,7 @@
 
         e.preventDefault();
 
-        var formData = {
+        var formData = Object.assign({
           name: (current.nameInput && current.nameInput.value || "").trim(),
           website: (current.websiteInput && current.websiteInput.value || "").trim(),
           contacts: current.contactsForm && window.RoobicoContacts
@@ -529,7 +690,7 @@
           address: (current.addressInput && current.addressInput.value || "").trim(),
           notes: (current.notesInput && current.notesInput.value || "").trim(),
           is_active: !!(current.isActiveInput && current.isActiveInput.checked),
-        };
+        }, credentialPayload(current));
 
         try {
           if (current.submitBtn) {
@@ -549,7 +710,11 @@
           var data = await res.json();
 
           if (!res.ok || !data.ok) {
-            appAlert((data && data.error) || "Failed to update vendor", 'error');
+            if (data && data.error === "invalid_website" && current.websiteInput) {
+              current.websiteInput.classList.add("is-invalid");
+              if (current.websiteError) current.websiteError.textContent = apiErrorMessage(data, WEBSITE_ERROR);
+            }
+            notifyError(apiErrorMessage(data, "Failed to update vendor"));
             if (current.submitBtn) {
               current.submitBtn.disabled = false;
               current.submitBtn.textContent = "Update Vendor";
@@ -559,7 +724,7 @@
 
           window.location.reload();
         } catch (err) {
-          appAlert("Network error while updating vendor", 'error');
+          notifyError("Network error while updating vendor");
           if (current.submitBtn) {
             current.submitBtn.disabled = false;
             current.submitBtn.textContent = "Update Vendor";
@@ -567,6 +732,186 @@
         }
       });
     }
+
+    if (vendorEls.websiteInput && vendorEls.websiteInput.dataset.bound !== "1") {
+      vendorEls.websiteInput.dataset.bound = "1";
+      vendorEls.websiteInput.addEventListener("input", function () {
+        vendorEls.websiteInput.classList.remove("is-invalid");
+      });
+    }
+
+    // Show / Hide — только то, что пользователь набрал в поле (сохранённый
+    // пароль в форму не подставляется никогда).
+    if (vendorEls.portalPasswordToggle && vendorEls.portalPasswordToggle.dataset.bound !== "1") {
+      vendorEls.portalPasswordToggle.dataset.bound = "1";
+      vendorEls.portalPasswordToggle.addEventListener("click", function () {
+        var els = getVendorEls();
+        setPasswordVisible(els, !!(els.portalPasswordInput && els.portalPasswordInput.type === "password"));
+      });
+    }
+
+    if (vendorEls.portalPasswordClear && vendorEls.portalPasswordClear.dataset.bound !== "1") {
+      vendorEls.portalPasswordClear.dataset.bound = "1";
+      vendorEls.portalPasswordClear.addEventListener("change", function () {
+        var els = getVendorEls();
+        if (!els.portalPasswordInput) return;
+        var removing = !!els.portalPasswordClear.checked;
+        if (removing) els.portalPasswordInput.value = "";
+        els.portalPasswordInput.disabled = removing;
+      });
+    }
+  }
+
+  /* ── Portal logins: показ / копирование учёток ─────────────────────── */
+
+  var PASSWORD_MASK = "••••••••";
+  var PASSWORD_VISIBLE_MS = 30000;
+
+  async function fetchCredentials(vendorId) {
+    var res = await fetch("/vendors/api/" + encodeURIComponent(vendorId) + "/credentials", {
+      method: "GET",
+      headers: { Accept: "application/json" },
+      cache: "no-store",
+    });
+    var data = null;
+    try {
+      data = await res.json();
+    } catch (e) {
+      data = null;
+    }
+    if (!res.ok || !data || !data.ok) {
+      var fallback = res.status === 403
+        ? "You don't have permission to view vendor passwords."
+        : res.status === 429
+          ? "Too many password requests — please wait a few minutes and try again."
+          : "Could not load the password.";
+      // 403 от декоратора прав приходит без message (только код) — тогда
+      // показываем понятный текст по статусу.
+      throw new Error((data && data.message) || fallback);
+    }
+    return data;
+  }
+
+  // Копирование без потери user activation: Safari разрешает запись в буфер
+  // только синхронно из клика, поэтому текст передаём промисом внутри
+  // ClipboardItem; где это не работает — writeText / execCommand.
+  function execCopy(text) {
+    var area = document.createElement("textarea");
+    area.value = text;
+    area.setAttribute("readonly", "");
+    area.style.position = "fixed";
+    area.style.top = "-1000px";
+    area.style.opacity = "0";
+    document.body.appendChild(area);
+    area.select();
+    var ok = false;
+    try {
+      ok = document.execCommand("copy");
+    } catch (e) {
+      ok = false;
+    }
+    document.body.removeChild(area);
+    if (!ok) throw new Error("Copy failed — your browser blocked clipboard access.");
+  }
+
+  function writeTextFallback(text) {
+    if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).catch(function () { execCopy(text); });
+    }
+    execCopy(text);
+    return Promise.resolve();
+  }
+
+  function copyToClipboard(textPromise) {
+    var canWriteItem = window.isSecureContext && typeof window.ClipboardItem === "function" &&
+      navigator.clipboard && typeof navigator.clipboard.write === "function";
+    if (canWriteItem) {
+      var item = null;
+      try {
+        item = new window.ClipboardItem({
+          "text/plain": textPromise.then(function (text) { return new Blob([text], { type: "text/plain" }); }),
+        });
+      } catch (e) {
+        item = null;
+      }
+      if (item) {
+        // Ошибка сервера важнее ошибки буфера: если textPromise отклонён,
+        // наружу уйдёт именно его сообщение.
+        return navigator.clipboard.write([item]).catch(function () {
+          return textPromise.then(writeTextFallback);
+        });
+      }
+    }
+    return textPromise.then(writeTextFallback);
+  }
+
+  // Показанный пароль держим только в JS-свойстве узла (не в data-атрибуте)
+  // и стираем при скрытии.
+  function shownPassword(box) {
+    return box && box.dataset.revealed === "1" ? box._revealedValue || "" : null;
+  }
+
+  function hidePassword(box) {
+    if (!box) return;
+    if (box._hideTimer) {
+      clearTimeout(box._hideTimer);
+      box._hideTimer = null;
+    }
+    var valueEl = box.querySelector(".js-portal-password-value");
+    var btn = box.querySelector(".js-show-password");
+    if (valueEl) valueEl.textContent = PASSWORD_MASK;
+    if (btn) btn.textContent = "Show";
+    box.dataset.revealed = "";
+    box._revealedValue = null;
+  }
+
+  async function togglePassword(btn) {
+    var box = btn.closest(".js-portal-password");
+    if (!box) return;
+    if (box.dataset.revealed === "1") {
+      hidePassword(box);
+      return;
+    }
+    btn.disabled = true;
+    try {
+      var data = await fetchCredentials(box.getAttribute("data-vendor-id") || "");
+      var valueEl = box.querySelector(".js-portal-password-value");
+      if (valueEl) valueEl.textContent = data.password || "";
+      box.dataset.revealed = "1";
+      box._revealedValue = data.password || "";
+      btn.textContent = "Hide";
+      box._hideTimer = setTimeout(function () { hidePassword(box); }, PASSWORD_VISIBLE_MS);
+    } catch (err) {
+      notifyError(err && err.message ? err.message : "Could not load the password.");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  function copyPassword(btn) {
+    var box = btn.closest(".js-portal-password");
+    if (!box) return;
+    var visible = shownPassword(box);
+    var textPromise = visible !== null
+      ? Promise.resolve(visible)
+      : fetchCredentials(box.getAttribute("data-vendor-id") || "").then(function (data) { return data.password || ""; });
+    copyToClipboard(textPromise)
+      .then(function () {
+        if (typeof window.appAlert === "function") window.appAlert("Password copied", "success");
+      })
+      .catch(function (err) {
+        notifyError(err && err.message ? err.message : "Could not copy the password.");
+      });
+  }
+
+  function copyLogin(btn) {
+    copyToClipboard(Promise.resolve(btn.getAttribute("data-copy-value") || ""))
+      .then(function () {
+        if (typeof window.appAlert === "function") window.appAlert("Login copied", "success");
+      })
+      .catch(function (err) {
+        notifyError(err && err.message ? err.message : "Could not copy the login.");
+      });
   }
 
   function bindGlobalDelegationOnce() {
@@ -576,6 +921,16 @@
     document.body.dataset.vendorsDocBound = "1";
 
     document.addEventListener("click", function (e) {
+      var credBtn = e.target && e.target.closest
+        ? e.target.closest(".js-show-password, .js-copy-password, .js-copy-login")
+        : null;
+      if (credBtn) {
+        if (credBtn.classList.contains("js-show-password")) togglePassword(credBtn);
+        else if (credBtn.classList.contains("js-copy-password")) copyPassword(credBtn);
+        else copyLogin(credBtn);
+        return;
+      }
+
       var editBtn = e.target && e.target.closest ? e.target.closest(".editVendorBtn") : null;
       if (editBtn) {
         var vendorId = editBtn.getAttribute("data-vendor-id") || "";

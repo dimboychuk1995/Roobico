@@ -1,8 +1,10 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -17,18 +19,69 @@ import {
   VendorFull,
   VendorOrderRow,
   VendorOrdersSummary,
+  fetchVendorCredentials,
   fetchVendorFull,
   fetchVendorOrders,
   money,
 } from "@/lib/api";
 import { useHasPermission } from "@/context/auth";
+import { useToast } from "@/context/toast";
 import { useTheme } from "@/lib/theme";
+import { websiteHref, websiteLabel } from "@/lib/website";
+
+const PASSWORD_MASK = "••••••••";
+// Показанный пароль прячется сам через 30 секунд (и сразу — при уходе с экрана).
+const PASSWORD_VISIBLE_MS = 30000;
 
 export default function VendorDetailsScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const theme = useTheme();
   const router = useRouter();
+  const toast = useToast();
   const canEditVendor = useHasPermission("vendors.edit");
+  const canViewCredentials = useHasPermission("vendors.view_credentials");
+
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const [revealing, setRevealing] = useState(false);
+  const hideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const hidePassword = useCallback(() => {
+    if (hideTimer.current) {
+      clearTimeout(hideTimer.current);
+      hideTimer.current = null;
+    }
+    setRevealed(null);
+  }, []);
+
+  useFocusEffect(useCallback(() => () => hidePassword(), [hidePassword]));
+  useEffect(
+    () => () => {
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+    },
+    []
+  );
+
+  const togglePassword = async () => {
+    if (revealed !== null) {
+      hidePassword();
+      return;
+    }
+    if (!id || revealing) return;
+    setRevealing(true);
+    try {
+      const creds = await fetchVendorCredentials(id);
+      setRevealed(creds.password || "");
+      if (hideTimer.current) clearTimeout(hideTimer.current);
+      hideTimer.current = setTimeout(() => {
+        hideTimer.current = null;
+        setRevealed(null);
+      }, PASSWORD_VISIBLE_MS);
+    } catch (e) {
+      toast.show(e instanceof ApiError ? e.message : "Could not load the password.", "error");
+    } finally {
+      setRevealing(false);
+    }
+  };
 
   const [vendor, setVendor] = useState<VendorFull | null>(null);
   const [orders, setOrders] = useState<VendorOrderRow[]>([]);
@@ -103,6 +156,15 @@ export default function VendorDetailsScreen() {
   }
 
   const mainContact = (vendor.contacts || []).find((c) => c.is_main) || (vendor.contacts || [])[0];
+  // Сервер отдаёт готовую ссылку; у старого сервера — считаем сами.
+  const siteHref = vendor.website_href ?? websiteHref(vendor.website);
+  const siteLabel = vendor.website_label || websiteLabel(vendor.website);
+  const openWebsite = siteHref
+    ? () => {
+        Linking.openURL(siteHref).catch(() => toast.show("Can't open this website.", "error"));
+      }
+    : undefined;
+  const hasCredentials = !!(vendor.portal_login || vendor.has_portal_password);
 
   return (
     <ScrollView
@@ -150,10 +212,64 @@ export default function VendorDetailsScreen() {
         ) : null}
         <KV label="Phone" value={mainContact?.phone || ""} />
         <KV label="Email" value={mainContact?.email || ""} />
-        <KV label="Website" value={vendor.website || ""} />
+        <KV label="Website" value={siteLabel} onPress={openWebsite} />
         <KV label="Address" value={vendor.address || ""} />
         {vendor.notes ? <KV label="Notes" value={vendor.notes} /> : null}
       </RowCard>
+
+      {canViewCredentials ? (
+        <>
+          <Text style={[styles.sectionTitle, { color: theme.muted }]}>PORTAL LOGIN</Text>
+          <RowCard>
+            {hasCredentials ? (
+              <>
+                <KV label="Website" value={siteLabel} onPress={openWebsite} />
+                <KV label="Login" value={vendor.portal_login || ""} selectable />
+                {vendor.has_portal_password ? (
+                  <View style={styles.secretRow}>
+                    <Text style={[styles.secretLabel, { color: theme.muted }]}>Password</Text>
+                    <View style={styles.secretValueWrap}>
+                      <Text
+                        selectable={revealed !== null}
+                        style={[styles.secretValue, { color: theme.text }]}
+                        numberOfLines={1}
+                      >
+                        {revealed ?? PASSWORD_MASK}
+                      </Text>
+                      <Pressable
+                        onPress={togglePassword}
+                        disabled={revealing}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel={revealed !== null ? "Hide password" : "Show password"}
+                      >
+                        {revealing ? (
+                          <ActivityIndicator size="small" color={theme.primary} />
+                        ) : (
+                          <Text style={[styles.secretAction, { color: theme.primary }]}>
+                            {revealed !== null ? "Hide" : "Show"}
+                          </Text>
+                        )}
+                      </Pressable>
+                    </View>
+                  </View>
+                ) : null}
+                {revealed !== null || vendor.portal_login ? (
+                  <Text style={[styles.hint, { color: theme.muted }]}>
+                    {revealed !== null
+                      ? "Long-press to copy. Hides again in 30 seconds."
+                      : "Long-press the login to copy it."}
+                  </Text>
+                ) : null}
+              </>
+            ) : (
+              <Text style={{ color: theme.muted, fontSize: 13 }}>
+                No portal login saved.{canEditVendor ? " Tap the edit button to add one." : ""}
+              </Text>
+            )}
+          </RowCard>
+        </>
+      ) : null}
 
       {summary ? (
         <>
@@ -224,6 +340,17 @@ const styles = StyleSheet.create({
   headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 8 },
   title: { fontSize: 17, fontWeight: "800", flexShrink: 1 },
   sectionTitle: { fontSize: 11, fontWeight: "700", letterSpacing: 1, marginTop: 14, marginBottom: 2 },
+  secretRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", gap: 12 },
+  secretLabel: { fontSize: 13 },
+  secretValueWrap: { flexDirection: "row", alignItems: "center", gap: 12, flexShrink: 1 },
+  secretValue: {
+    fontSize: 13,
+    fontWeight: "500",
+    flexShrink: 1,
+    fontFamily: Platform.select({ ios: "Menlo", default: "monospace" }),
+  },
+  secretAction: { fontSize: 13, fontWeight: "700" },
+  hint: { fontSize: 12, marginTop: 2 },
   moreBtn: {
     borderWidth: 1,
     borderRadius: 12,

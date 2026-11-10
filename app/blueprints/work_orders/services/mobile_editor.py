@@ -10,7 +10,7 @@ normalize/align/_apply_sales_tax, что и веб-сохранение.
 """
 from __future__ import annotations
 
-from app.blueprints.work_orders.services.common import ensure_labor_id, f64, i32, round2
+from app.blueprints.work_orders.services.common import catalog_part_unit, ensure_labor_id, f64, i32, oid, round2
 from app.blueprints.work_orders.services.lookups import (
     get_labor_rates,
     get_shop_supply_percentage,
@@ -70,7 +70,7 @@ def compute_labors_and_totals(shop_db, shop, labors_payload):
       [{description, hours, rate_code, labor_total (опц. ручной),
         issue_description, parts: [{part_id, part_number, description, qty,
         cost, price, core_charge, misc_charge, misc_charge_description,
-        one_time_part}]}]
+        one_time_part}], client_key (опц.), minted (опц.)}]
 
     Возвращает (labors_nested, totals_raw): канонические labors для
     документа WO и сырые totals для normalize_totals_payload/align.
@@ -139,7 +139,7 @@ def compute_labors_and_totals(shop_db, shop, labors_payload):
         block_full = round2(labor_base + shop_supply + parts_sum + core_sum + misc_sum)
 
         assigned = raw.get("assigned_mechanics")
-        labors_nested.append({
+        stored_block = {
             "labor_id": ensure_labor_id(raw.get("labor_id")),
             "labor": {
                 "description": description,
@@ -153,7 +153,17 @@ def compute_labors_and_totals(shop_db, shop, labors_payload):
                 "hours_source": str(raw.get("hours_source") or "").strip(),
             },
             "parts": parts_clean,
-        })
+        }
+        # Метки merge (labor_merge.py) живут на уровне блока рядом с labor_id:
+        # client_key — ключ новой строки от клиента (ретрай не дублирует её),
+        # minted — «создана таким-то запросом такого-то устройства» (привязка
+        # id-less строк старых клиентов). Каждая перезапись блока их переносит.
+        client_key = str(raw.get("client_key") or "").strip()
+        if client_key:
+            stored_block["client_key"] = client_key
+        if isinstance(raw.get("minted"), dict):
+            stored_block["minted"] = dict(raw["minted"])
+        labors_nested.append(stored_block)
 
         blocks.append({
             "labor": labor_base,
@@ -184,3 +194,50 @@ def compute_labors_and_totals(shop_db, shop, labors_payload):
         "cost_total": g_cost,
     }
     return labors_nested, totals_raw
+
+
+def merge_mobile_manager_edit(shop_db, shop, existing_wo: dict, payload_labors, *, base=None, **ctx):
+    """
+    Правка WO менеджером в мобильном редакторе: трёхсторонний merge
+    base × current × mine по MOBILE_MANAGER_SPEC (labor_merge.merge_labors).
+    Возвращает MergeResult; .rows — payload для compute_labors_and_totals.
+
+    Форма менеджера шлёт тексты, денежную группу (hours, rate_code,
+    labor_total) и деньги запчастей, но не шлёт назначения механиков,
+    hours_source и единицу измерения — они берутся из текущего WO (раньше
+    каждый Save с телефона стирал назначения и метку tracked). Новая
+    запчасть с part_id без unit получает единицу каталога. Затреканные часы
+    (hours_source="tracked") остаются, пока менеджер их явно не поменял;
+    при смене одной ставки база пересчитывается из этих часов.
+
+    base — BaseChoice.rows или None; ctx — поля MergeContext.
+    """
+    from app.blueprints.work_orders.services import edit_views as ev
+    from app.blueprints.work_orders.services.labor_merge import MOBILE_MANAGER_SPEC, MergeContext, merge_labors
+
+    shop_id = shop["_id"]
+    unit_cache: dict = {}
+
+    def _with_catalog_unit(part):
+        if not isinstance(part, dict):
+            return part
+        part = dict(part)
+        if part.get("unit") is None and part.get("unit_of_measure") is None:
+            pid = oid(part.get("part_id"))
+            if pid:
+                if pid not in unit_cache:
+                    doc = shop_db.parts.find_one({"_id": pid, "shop_id": shop_id}, {"unit_of_measure": 1})
+                    unit_cache[pid] = catalog_part_unit(doc) if doc else None
+                if unit_cache[pid]:
+                    part["unit"] = unit_cache[pid]
+        return part
+
+    def new_block(raw: dict) -> dict:
+        row = dict(raw)
+        row["parts"] = [_with_catalog_unit(p) for p in (raw.get("parts") or []) if isinstance(p, dict)]
+        return row
+
+    rates = {r["code"]: r["hourly_rate"] for r in get_labor_rates(shop_db, shop_id)}
+    merge_ctx = MergeContext(**{"rates": rates, "new_block": new_block, "new_part": _with_catalog_unit, **ctx})
+    current = ev.work_rows_from_wo(existing_wo)
+    return merge_labors(base, current, list(payload_labors or []), MOBILE_MANAGER_SPEC, ctx=merge_ctx)

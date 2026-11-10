@@ -124,6 +124,9 @@ def release_mechanic_done_mark(shop_db, shop, wo_id, user_id, now):
     """
     Механик снова взялся за работу (старт таймера): снять его отметку Done;
     WO-уровневый флаг сбрасывается — появился незакончивший работник.
+    Отметки — часть редактируемого состояния WO (сохранения механиков
+    пересобирают их из своего чтения), поэтому запись двигает labors_rev:
+    устаревшее сохранение «Done» не вернёт снятую отметку (CAS).
     Возвращает True, если документ изменился.
     """
     res = shop_db.work_orders.update_one(
@@ -135,18 +138,10 @@ def release_mechanic_done_mark(shop_db, shop, wo_id, user_id, now):
         {
             "$set": {"mechanic_done": False, "mechanic_done_at": None, "mechanic_done_by": None, "updated_at": now},
             "$pull": {"mechanic_done_marks": {"user_id": user_id}},
+            "$inc": {"labors_rev": 1},
         },
     )
     return res.modified_count > 0
-
-
-def done_mechanic_names(wo: dict | None) -> list[str]:
-    names: list[str] = []
-    for m in done_marks(wo):
-        nm = str(m.get("name") or "").strip()
-        if nm and nm not in names:
-            names.append(nm)
-    return names
 
 
 def personalize_wo_list_item(item: dict, user_id) -> dict:

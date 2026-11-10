@@ -45,7 +45,10 @@ To go back to automatic pricing, clear the Price field and click away.
 
 **Edit a paid work order.** Paid WOs are locked. Click "Unpaid" to unlock —
 **warning: this deletes its payment records**; re-record the payment after
-editing.
+editing. No reload is needed after Unpaid: click Edit, make the changes,
+Save — jobs and parts you delete are removed. (Once in a while the page
+reloads by itself right after Unpaid and shows "Marked as unpaid." — that
+is normal, just continue.)
 
 **Overpayment / deposit.** Recording more than the balance is blocked, on
 work orders and vendor orders alike. There is no deposit/credit feature.
@@ -57,7 +60,10 @@ email + PDF, titled Estimate). When the job is approved, open it and use
 Save dropdown → "Convert to Work Order" (parts are deducted at that
 moment). The reverse works too: on an unpaid WO, Save dropdown → "Save as
 Estimate" returns its parts to inventory and turns it back into a quote;
-WOs with recorded payments must have the payments deleted first.
+WOs with recorded payments must have the payments deleted first. Deleting
+an estimate never touches stock or cores. Mechanics cannot start job
+timers on an estimate — convert it first; a manager may time work on an
+estimate and it stays an estimate.
 
 ## Parts & inventory
 
@@ -217,6 +223,33 @@ Cores Returns.
 **Return** → quantities + RMA note. Creates a credit document R-…, stock is
 deducted; deleting the return puts stock back.
 
+**Save a vendor's website login (portal login / password).** Vendors → the
+vendor's **Edit** (or **Add Vendor** for a new one) → **Website**: type it
+plainly, e.g. `fleetpride.com` — no `https://` needed → **Portal login**
+section: Login and Password (**Show** checks what you typed) → Update
+Vendor. The password is stored encrypted. Later: leave Password empty to keep
+it, type a new one to replace it, tick **Remove saved password** to delete
+it. You need "View vendor portal logins & passwords" (Owner, General
+manager, Manager, Parts manager by default) plus Edit/Create vendors — if
+the section is missing, ask the owner to tick that permission in Settings →
+Roles. On the phone: vendor → edit (pencil) → Portal login / Portal
+password.
+
+**Quickly look up a vendor password.** Vendors → tab **Portal logins** →
+search the vendor → **Show** (hides itself after 30 seconds) or the copy
+button next to the password ("Password copied") / next to the login; the
+website link opens the portal in a new tab. On the phone: vendor → Portal
+login card → Show, long-press to copy. Each password Show — and Copy while
+the password is hidden — is logged in Reports → Activity Journal ("Viewed
+portal password of …", Action **Viewed**); copying the login is not.
+**Who looked at a vendor's password?** Reports → Activity Journal → Object
+type **Vendor**, Action **Viewed** (or click a "Viewed portal password of …"
+row). No Portal logins tab? You
+don't have the "View vendor portal logins & passwords" permission. Want
+someone to look passwords up without editing vendors? Give their role
+"View vendors" + that permission only — they open Vendors straight on
+Portal logins.
+
 ## Reports & numbers
 
 **How much did I earn?** Reports → General Revenue: left block = Revenue −
@@ -353,6 +386,99 @@ then the WO list shows "✓ Name" for those already finished. Sent it back
 to the floor? Open the WO and click **Save In Progress** — all Done marks
 are cleared and the WO is back in In Work.
 
+**Two mechanics on one work order — do they overwrite each other?** No.
+Both can add jobs, parts and quantities to the same work order at the
+same time — two phones, a phone and the web mechanic page, with the office
+editing too. Every save is merged on the server: a colleague's new job or
+part is never deleted by your save, even if your screen was not refreshed.
+The app refreshes the work order by itself (every 20 seconds and whenever
+you come back to it), so each mechanic sees the other's jobs. When a save
+was combined with someone else's changes, a **"Merged with changes from
+others"** box (app) or a short list after Save (web) says what happened —
+just read it. To remove a colleague's job: make sure nobody's timer is
+running on it (such a job is never removed), then delete it. Keep the app
+updated — older versions still save safely but do not refresh by
+themselves, and a job deleted in an older version can come back after the
+save (delete it once more); on an older version keep only one edit screen
+of a work order open. Details: Work Orders help → "Several people editing
+one work order".
+
+**A job disappeared — where did it go?** 1) Open the work order →
+**History** (or Reports → **Activity Journal** and search the WO number).
+Every save shows the **Jobs** list before and after it and who saved, so
+you see exactly which save removed the job and who made it; a save that
+was merged with other people's changes also shows its **Merge notes**.
+2) The mechanic's time is not lost: under the jobs the work order shows
+**"Tracked on removed labor lines: Xh Ym"**, and the hours still count in
+Reports → Mechanic Hours ("Tracked") and the Dashboard's Actual hours.
+Pay is not affected at all — Timecard / Salary comes from salaries and
+uAttend punches, never from job timers. 3) To bring the job back, add it
+again (a preset is quickest) and type its hours. Good to know: a save
+removes a job only when the person saving had that job on screen and
+deleted it — never a job somebody added after they opened the work order,
+and never a job whose timer is running. If someone deleted the job while
+you still had it open and you then changed it, your save brings it back.
+
+**Save says "This page was opened before Roobico was updated".** The work
+order page was opened before an update of Roobico, and the work order now
+has a job or part that this page does not show (you removed it, or
+somebody else added it). Nothing was saved and stock did not move. Press
+F5 to reload, make the change again, click Save.
+
+**Save says I changed the work order while it was being saved.** Something
+on the page changed while the save was on its way (for example a price
+filled in by itself). The first save went through, and the newer changes
+are still on the page in Edit mode — just click Save again.
+
+**Jobs I deleted came back with "Couldn't confirm what you started
+from".** The page could not tell Roobico what it showed when you started
+editing (usually it had been open for more than two weeks), so the save
+kept everything to be safe. Reload the page, delete them again, Save.
+
+**Start job says the job is no longer on the work order.** Somebody
+removed that job at that same moment. Reopen the work order (reload the
+page on the web) to see the current jobs; the work order's **History**
+(Activity Journal) shows who removed it. If your timer on another job was
+running, the message says it was stopped — that time is saved.
+
+**Mechanic can't start a timer on an estimate.** By design: Start job says
+"This work order is an estimate. Time can be tracked after the office
+converts it to a work order." Open it in the office → Save dropdown →
+**Convert to Work Order**; then the mechanic can start the timer.
+
+**Save is greyed out on the mechanic web page.** Read the yellow bar at
+the top: the work order was confirmed by a manager, is an estimate, or is
+already paid. Ask the manager to cancel the confirmation (or convert the
+estimate); the page notices within about 20 seconds, the bar disappears
+and your unsaved changes are still there — then Save.
+
+**The app says "That job was removed by someone else…" or "This job is no
+longer on the work order…".** You added a part, applied an AI edit or sent
+a job for approval while a colleague removed that job. Nothing was put on
+another job. Check the work order and redo it on the right job.
+
+**See who has which role / list my mechanics.** Settings → **Users &
+Roles**: the list is grouped by role — Owner, General manager, Manager,
+Parts manager, Senior mechanic, Mechanic, Viewer, then your custom roles
+A→Z — and every section header shows how many people have that role and
+how many of their invitations are still pending ("Mechanic · 4 · 1
+invited"). Your mechanics are the **Senior mechanic** and **Mechanic**
+sections: exactly these people can be assigned to jobs and are billed per
+mechanic. To see only them, type "mechanic" in the search box (a role name
+works too — "parts manager" or the name of a custom role). Former staff:
+switch the status filter to **All users** — deactivated people are
+collected in the **Inactive** section at the bottom, each with the role
+they had. A section with an orange **Role not found** badge means those
+people's role was deleted: click **Edit** and give them an existing role —
+until then they have no permissions from a role.
+
+**Give someone a custom role.** Create the role first in Settings → **Roles
+& Permissions** (New role, or Clone a similar one and adjust the ticks).
+Then Users & Roles → **Edit** on the person (or **+ New user**) → **Role**
+→ pick it under "Custom roles" → Save. The person moves to that role's
+section of the list. You can assign only a role whose permissions you have
+yourself (the owner can assign any).
+
 **Give one user an extra right (or take one away).** Users → Permissions →
 Allow/Deny overrides. Deny always wins. For many users — create/clone a
 role in Roles & Permissions.
@@ -384,7 +510,19 @@ has no pay fields for them and the server ignores any pay values they
 send. They can only assign roles that are no wider than their own.
 
 **Employee left.** Users → Deactivate (login blocked, history kept). You
-cannot deactivate yourself.
+cannot deactivate yourself. The person leaves the default list; with the
+status filter on **All users** / **Inactive users** they are in the
+**Inactive** section, where **Activate** brings them back.
+
+**Renamed a mechanic but an old name still shows?** Reload the page:
+reports, the dashboard, the Work Orders list and the calendar look the
+person up by account and show the current name. A few places keep the old
+name on purpose — the Activity Journal (it is a log of what happened),
+printed annual inspection reports, and uAttend-only rows (the name comes
+from uAttend). The AI assistant can still use an old name only for a
+rename made before this feature existed, until the Roobico administrator's
+one-time cleanup has run. The full list and fixes are in Reports help →
+**"People's names after a rename"**.
 
 **Track employee hours.** Settings → Integrations → uAttend: API key,
 enable, tick employees, set $/hr. Hours appear in Timecard / Salary, in
@@ -408,8 +546,13 @@ can't be transferred — "Unpaid" first.
 **Mechanic forgot to stop the timer / hours look wrong.** On the work order,
 next to the "Mechanics: Xh Ym" line on the job, click the pencil (needs the
 "Edit mechanics' actual tracked hours" permission — owner and managers have
-it). Fix the session's duration or delete an accidental session. Tracked
-hours, the mechanics' split and payroll reports recalculate instantly.
+it). Fix the session's duration (then Save in that window) or delete an
+accidental session. The job's tracked hours, the mechanics' split, the
+work order totals and Reports → Mechanic Hours recalculate at once; pay
+(Timecard / Salary) is based on salaries and uAttend punches, so it does
+not change. Outside Edit mode the page reloads to show the new hours; in
+Edit mode they appear after you click Save on the work order (your other
+unsaved edits stay).
 
 **See what mechanics are doing right now.** Open the work order — the
 details page is live: a red "● working" marker with the mechanic's name

@@ -2,21 +2,22 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from bson import ObjectId
 from flask import request, redirect, url_for, flash, session, jsonify
 
 from app.utils import audit_log
 from app.blueprints.vendors import vendors_bp
 from app.blueprints.main.routes import _render_app_page
-from app.extensions import get_master_db, get_mongo_client
+from app.extensions import get_master_db
 from app.utils.auth import (
     login_required,
     SESSION_TENANT_ID,
     SESSION_USER_ID,
 )
 from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
-from app.utils.permissions import permission_required
+from app.utils.permissions import has_permission, permission_required
 from app.utils.mongo_search import build_regex_search_filter
+from app.utils.rate_limit import hit_rate_limit
+from app.blueprints.vendors import services as vendor_services
 from app.utils.duplicates import duplicate_message, find_duplicate_vendor
 from app.utils.display_datetime import format_date_mmddyyyy
 from app.utils.date_filters import build_date_range_filters
@@ -42,8 +43,6 @@ def _fmt_dt_label(dt):
 
 from app.utils.tenant import (
     oid as _oid,
-    tenant_id_variants as _tenant_id_variants,
-    get_active_shop as _get_active_shop,
     get_shop_db as _get_shop_db,
 )
 
@@ -63,14 +62,86 @@ def _vendors_collection():
     return db.vendors, shop, master
 
 
-def _decorate_vendor(vendor: dict) -> dict:
+def _can_view_credentials() -> bool:
+    return has_permission(vendor_services.CREDENTIALS_PERMISSION)
+
+
+def _json_error(code: str, message: str, status: int = 400):
+    """JSON-ошибка: error — код (или исторически текст), message — для UI."""
+    return jsonify({"ok": False, "error": code, "message": message}), status
+
+
+def _decorate_vendor(vendor: dict, *, can_view_credentials: bool = False) -> dict:
     contacts = get_contacts(vendor, entity_type="vendor")
     main_contact = get_main_contact(vendor, entity_type="vendor") or {}
     vendor["contacts"] = contacts
     vendor["main_contact_name"] = contact_full_name(main_contact) or ""
     vendor["main_contact_phone"] = get_main_contact_phone(vendor, entity_type="vendor")
     vendor["main_contact_email"] = get_main_contact_email(vendor, entity_type="vendor")
+    vendor.update(vendor_services.website_fields(vendor.get("website")))
+    # Токен пароля не уходит дальше роута никогда; логин — только с правом.
+    has_password = vendor_services.has_portal_password(vendor)
+    for key in vendor_services.SECRET_FIELDS:
+        vendor.pop(key, None)
+    if can_view_credentials:
+        vendor["portal_login"] = str(vendor.get("portal_login") or "")
+        vendor["has_portal_password"] = has_password
+    else:
+        vendor.pop("portal_login", None)
     return vendor
+
+
+def _resolve_view(raw, can_view_credentials: bool) -> str:
+    """vendors (полный список) | logins (Portal logins). Без права — только vendors.
+    Кто видит учётки, но не создаёт и не правит вендоров, по умолчанию
+    попадает сразу в Portal logins."""
+    if not can_view_credentials:
+        return "vendors"
+    view = str(raw or "").strip().lower()
+    if view in ("vendors", "logins"):
+        return view
+    if not has_permission("vendors.create") and not has_permission("vendors.edit"):
+        return "logins"
+    return "vendors"
+
+
+def _vendors_logins_page(coll, shop, q: str):
+    """Упрощённый вид «Portal logins»: активные вендоры — сайт, логин, пароль
+    (пароль только по кнопке Show/Copy через /api/<id>/credentials)."""
+    page, per_page = get_pagination_params(request.args, default_per_page=50, max_per_page=200)
+    shop_id = shop["_id"]
+    query = {"shop_id": {"$in": [shop_id, str(shop_id), None]}, "is_active": {"$ne": False}}
+    search_filter = build_regex_search_filter(q, text_fields=["name", "website", "portal_login"])
+    if search_filter:
+        query = {"$and": [query, search_filter]}
+    vendors, pagination = paginate_find(
+        coll,
+        query,
+        [("name", 1), ("_id", 1)],
+        page,
+        per_page,
+        projection={"name": 1, "website": 1, "portal_login": 1, "portal_password_enc": 1},
+    )
+    rows = []
+    for vendor in vendors:
+        rows.append({
+            "id": str(vendor["_id"]),
+            "name": vendor.get("name") or "—",
+            **vendor_services.website_fields(vendor.get("website")),
+            **vendor_services.credential_fields(vendor),
+        })
+    return _render_app_page(
+        "public/vendors.html",
+        active_page="vendors",
+        view="logins",
+        login_rows=rows,
+        vendors=[],
+        pagination=pagination,
+        q=q,
+        status="active",
+        sort_by="",
+        sort_dir="",
+    )
 
 
 @vendors_bp.get("/")
@@ -83,6 +154,10 @@ def vendors_page():
         return redirect(url_for("dashboard.dashboard"))
 
     q = (request.args.get("q") or "").strip()
+    can_view_credentials = _can_view_credentials()
+    if _resolve_view(request.args.get("view"), can_view_credentials) == "logins":
+        return _vendors_logins_page(coll, shop, q)
+
     page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
 
     # Общий фильтр статуса: active (по умолчанию) / inactive / all.
@@ -122,14 +197,19 @@ def vendors_page():
         get_sort_params(request.args, [("is_active", -1), ("name", 1), ("created_at", -1)], ["name", "is_active", "created_at"]),
         page,
         per_page,
+        # Без права токен даже не читаем; с правом он нужен только для флага
+        # has_portal_password и вырезается в _decorate_vendor.
+        projection=None if can_view_credentials else {key: 0 for key in vendor_services.SECRET_FIELDS},
     )
 
     for vendor in vendors:
-        _decorate_vendor(vendor)
+        _decorate_vendor(vendor, can_view_credentials=can_view_credentials)
 
     return _render_app_page(
         "public/vendors.html",
         active_page="vendors",
+        view="vendors",
+        login_rows=[],
         vendors=vendors,
         pagination=pagination,
         q=q,
@@ -202,24 +282,36 @@ def vendors_create():
     name = (request.form.get("name") or "").strip()
     address = (request.form.get("address") or "").strip()
     notes = (request.form.get("notes") or "").strip()
-    website = (request.form.get("website") or "").strip()
     contacts = build_contacts_from_form(request.form)
+    # Форма открыта из «Portal logins» — туда же и возвращаемся.
+    back_url = url_for("vendors.vendors_page", view="logins") if request.form.get("return_view") == "logins" \
+        else url_for("vendors.vendors_page")
 
     if not name:
         flash("Vendor name is required.", "error")
-        return redirect(url_for("vendors.vendors_page"))
+        return redirect(back_url)
 
     existing = find_duplicate_vendor(coll.database, shop["_id"], name)
     if existing:
         flash(duplicate_message("Vendor", existing.get("name"), existing), "error")
-        return redirect(url_for("vendors.vendors_page"))
+        return redirect(back_url)
 
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
 
+    try:
+        website = vendor_services.clean_website(request.form.get("website"))
+        cred_fields, cred_changes = (
+            vendor_services.build_credential_update(request.form, None, user_id=user_oid, now=now)
+            if _can_view_credentials() else ({}, [])
+        )
+    except vendor_services.VendorInputError as exc:
+        flash(exc.message, "error")
+        return redirect(back_url)
+
     doc = {
         "name": name,
-        "website": website or None,
+        "website": website,
         "address": address or None,
         "contacts": contacts,
         "notes": notes or None,
@@ -237,12 +329,14 @@ def vendors_create():
         "tenant_id": tenant_oid,
     }
     doc.update(build_vendor_legacy_contact_fields(contacts))
+    doc.update(cred_fields)
 
     coll.insert_one(doc)
 
-    audit_log.log_event("create", "vendor", doc.get("_id"), label=audit_log.vendor_label(doc))
+    audit_log.log_event("create", "vendor", doc.get("_id"), label=audit_log.vendor_label(doc),
+                        changes=cred_changes)
     flash("Vendor created successfully.", "success")
-    return redirect(url_for("vendors.vendors_page"))
+    return redirect(back_url)
 
 
 @vendors_bp.post("/api/create")
@@ -251,30 +345,29 @@ def vendors_create():
 def vendors_api_create():
     """
     AJAX create vendor with full fields.
-    Accepts JSON: { name, website, address, notes, contacts: [{first_name, last_name, phone, email, is_main}] }
+    Accepts JSON: { name, website, address, notes, contacts: [{first_name, last_name, phone, email, is_main}],
+                    portal_login, portal_password }  (учётка — только с vendors.view_credentials)
     Returns: { ok: true, vendor_id: "<oid>", vendor_name: "..." }
     """
     coll, shop, master = _vendors_collection()
     if coll is None or shop is None:
-        return jsonify(ok=False, error="Shop database not configured."), 400
+        return _json_error("Shop database not configured.", "Shop database not configured.")
 
     tenant_oid = _oid(session.get(SESSION_TENANT_ID))
     if not tenant_oid:
-        return jsonify(ok=False, error="Tenant session missing."), 401
+        return _json_error("Tenant session missing.", "Tenant session missing. Please log in again.", 401)
 
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    data = data if isinstance(data, dict) else {}
     name = str(data.get("name") or "").strip()
     if not name:
-        return jsonify(ok=False, error="Vendor name is required."), 400
+        return _json_error("Vendor name is required.", "Vendor name is required.")
 
     existing = find_duplicate_vendor(coll.database, shop["_id"], name)
     if existing:
-        return jsonify(
-            ok=False,
-            error=duplicate_message("Vendor", existing.get("name"), existing),
-        ), 409
+        msg = duplicate_message("Vendor", existing.get("name"), existing)
+        return _json_error(msg, msg, 409)
 
-    website = str(data.get("website") or "").strip()
     address = str(data.get("address") or "").strip()
     notes = str(data.get("notes") or "").strip()
     contacts = build_contacts_from_payload({"contacts": data.get("contacts") or []})
@@ -282,9 +375,18 @@ def vendors_api_create():
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
 
+    try:
+        website = vendor_services.clean_website(data.get("website"))
+        cred_fields, cred_changes = (
+            vendor_services.build_credential_update(data, None, user_id=user_oid, now=now)
+            if _can_view_credentials() else ({}, [])
+        )
+    except vendor_services.VendorInputError as exc:
+        return jsonify(exc.payload()), exc.status
+
     doc = {
         "name": name,
-        "website": website or None,
+        "website": website,
         "address": address or None,
         "contacts": contacts,
         "notes": notes or None,
@@ -299,9 +401,10 @@ def vendors_api_create():
         "tenant_id": tenant_oid,
     }
     doc.update(build_vendor_legacy_contact_fields(contacts))
+    doc.update(cred_fields)
 
     res = coll.insert_one(doc)
-    audit_log.log_event("create", "vendor", res.inserted_id, label=name)
+    audit_log.log_event("create", "vendor", res.inserted_id, label=name, changes=cred_changes)
     return jsonify(ok=True, vendor_id=str(res.inserted_id), vendor_name=name)
 
 
@@ -393,44 +496,122 @@ def vendors_restore(vendor_id):
     return redirect(url_for("vendors.vendors_page"))
 
 
+@vendors_bp.get("/<vendor_id>")
+@login_required
+@permission_required("vendors.view")
+def vendor_open(vendor_id):
+    """
+    Ссылка на вендора из глобального поиска (/vendors/<id>; мобилка разбирает
+    этот же URL сама). Отдельной страницы вендора на вебе нет — ведём на
+    список, отфильтрованный по его имени (раньше здесь был 404).
+    """
+    coll, shop, master = _vendors_collection()
+    if coll is None or shop is None:
+        flash("Shop database not configured for this shop.", "error")
+        return redirect(url_for("dashboard.dashboard"))
+
+    vid = _oid(vendor_id)
+    vendor = coll.find_one(vendor_services.shop_vendor_filter(vid, shop), {"name": 1, "is_active": 1}) if vid else None
+    if not vendor:
+        flash("Vendor not found.", "error")
+        return redirect(url_for("vendors.vendors_page"))
+
+    params = {"q": vendor.get("name") or ""}
+    if vendor.get("is_active") is False:
+        params["status"] = "all"
+    if _can_view_credentials():
+        params["view"] = "vendors"
+    return redirect(url_for("vendors.vendors_page", **params))
+
+
 @vendors_bp.get("/api/<vendor_id>")
 @login_required
 @permission_required("vendors.view")
 def vendors_api_get(vendor_id):
     """
-    AJAX get vendor data for edit modal.
-    Returns JSON with full vendor info.
+    AJAX get vendor data for edit modal (веб) и карточки вендора (мобилка).
+    website_href/website_label — рабочая ссылка и подпись; portal_login и
+    has_portal_password — только с vendors.view_credentials. Пароля нет никогда.
     """
     coll, shop, master = _vendors_collection()
     if coll is None or shop is None:
-        return jsonify({"ok": False, "error": "Shop not configured"}), 400
+        return _json_error("Shop not configured", "Shop database not configured.")
 
     vid = _oid(vendor_id)
     if not vid:
-        return jsonify({"ok": False, "error": "Invalid vendor id"}), 400
+        return _json_error("Invalid vendor id", "Invalid vendor id.")
 
-    vendor = coll.find_one({"_id": vid})
+    vendor = coll.find_one(vendor_services.shop_vendor_filter(vid, shop))
     if not vendor:
-        return jsonify({"ok": False, "error": "Vendor not found"}), 404
+        return _json_error("Vendor not found", "Vendor not found.", 404)
 
-    vendor = _decorate_vendor(vendor)
+    can_view_credentials = _can_view_credentials()
+    vendor = _decorate_vendor(vendor, can_view_credentials=can_view_credentials)
 
-    return jsonify({
-        "ok": True,
-        "item": {
-            "_id": str(vendor["_id"]),
-            "name": vendor.get("name") or "",
-            "phone": vendor.get("main_contact_phone") or "",
-            "email": vendor.get("main_contact_email") or "",
-            "website": vendor.get("website") or "",
-            "primary_contact_first_name": (main_contact := (get_main_contact(vendor, entity_type="vendor") or {})).get("first_name") or "",
-            "primary_contact_last_name": main_contact.get("last_name") or "",
-            "contacts": vendor.get("contacts") or [],
-            "address": vendor.get("address") or "",
-            "notes": vendor.get("notes") or "",
-            "is_active": vendor.get("is_active", True),
-        }
-    })
+    item = {
+        "_id": str(vendor["_id"]),
+        "name": vendor.get("name") or "",
+        "phone": vendor.get("main_contact_phone") or "",
+        "email": vendor.get("main_contact_email") or "",
+        "website": vendor.get("website") or "",
+        "website_href": vendor.get("website_href") or "",
+        "website_label": vendor.get("website_label") or "",
+        "primary_contact_first_name": (main_contact := (get_main_contact(vendor, entity_type="vendor") or {})).get("first_name") or "",
+        "primary_contact_last_name": main_contact.get("last_name") or "",
+        "contacts": vendor.get("contacts") or [],
+        "address": vendor.get("address") or "",
+        "notes": vendor.get("notes") or "",
+        "is_active": vendor.get("is_active", True),
+    }
+    if can_view_credentials:
+        item["portal_login"] = vendor.get("portal_login") or ""
+        item["has_portal_password"] = bool(vendor.get("has_portal_password"))
+    return jsonify({"ok": True, "item": item})
+
+
+@vendors_bp.get("/api/<vendor_id>/credentials")
+@login_required
+@permission_required("vendors.view_credentials")
+def vendors_api_credentials(vendor_id):
+    """
+    Показ учётки портала вендора: сайт, логин и РАСШИФРОВАННЫЙ пароль.
+    Только по праву vendors.view_credentials, с rate limit на пользователя;
+    каждый показ сохранённого пароля пишется в Activity Journal (без значения).
+    Ответ не кэшируется (Cache-Control: no-store).
+    """
+    def _no_store(response, status=200):
+        response.status_code = status
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        return response
+
+    coll, shop, master = _vendors_collection()
+    if coll is None or shop is None:
+        return _no_store(jsonify({"ok": False, "error": "shop_not_configured",
+                                  "message": "Shop database not configured."}), 400)
+
+    user_key = str(session.get(SESSION_USER_ID) or "") or request.remote_addr
+    if hit_rate_limit("vendor_credentials", user_key,
+                      max_attempts=vendor_services.REVEAL_RATE_LIMIT,
+                      window_seconds=vendor_services.REVEAL_RATE_WINDOW_SECONDS):
+        return _no_store(jsonify({"ok": False, "error": "rate_limited",
+                                  "message": vendor_services.REVEAL_RATE_LIMIT_MESSAGE}), 429)
+
+    vid = _oid(vendor_id)
+    vendor = coll.find_one(vendor_services.shop_vendor_filter(vid, shop)) if vid else None
+    if not vendor:
+        return _no_store(jsonify({"ok": False, "error": "not_found", "message": "Vendor not found."}), 404)
+
+    try:
+        creds = vendor_services.reveal_credentials(vendor)
+    except vendor_services.VendorInputError as exc:
+        return _no_store(jsonify(exc.payload()), exc.status)
+
+    if creds["password"]:
+        label = audit_log.vendor_label(vendor)
+        audit_log.log_event("view", "vendor", vid, label=label,
+                            summary=f"Viewed portal password of {label}")
+    return _no_store(jsonify({"ok": True, **creds}))
 
 
 def _calc_order_total(order_doc: dict) -> float:
@@ -585,47 +766,57 @@ def vendors_api_part_orders(vendor_id):
 @permission_required("vendors.edit")
 def vendors_api_update(vendor_id):
     """
-    AJAX update vendor.
-    Accepts JSON with vendor data.
+    AJAX update vendor (веб-модалка и мобилка).
+    Accepts JSON with vendor data; с vendors.view_credentials ещё
+    portal_login (нет ключа — логин не меняется), portal_password (пусто —
+    сохранённый остаётся) и portal_password_clear: true (удалить пароль).
+    Без права поля учётки молча игнорируются.
     Returns JSON { ok: true/false, ... }
     """
     coll, shop, master = _vendors_collection()
     if coll is None or shop is None:
-        return jsonify({"ok": False, "error": "Shop not configured"}), 400
+        return _json_error("Shop not configured", "Shop database not configured.")
 
     vid = _oid(vendor_id)
     if not vid:
-        return jsonify({"ok": False, "error": "Invalid vendor id"}), 400
+        return _json_error("Invalid vendor id", "Invalid vendor id.")
 
-    vendor = coll.find_one({"_id": vid})
+    vendor = coll.find_one(vendor_services.shop_vendor_filter(vid, shop))
     if not vendor:
-        return jsonify({"ok": False, "error": "Vendor not found"}), 404
+        return _json_error("Vendor not found", "Vendor not found.", 404)
 
-    data = request.get_json(silent=True) or {}
+    data = request.get_json(silent=True)
+    data = data if isinstance(data, dict) else {}
 
-    name = (data.get("name") or "").strip()
+    name = str(data.get("name") or "").strip()
     if not name:
-        return jsonify({"ok": False, "error": "Vendor name is required"}), 400
+        return _json_error("Vendor name is required", "Vendor name is required.")
 
     existing = find_duplicate_vendor(coll.database, shop["_id"], name, exclude_id=vid)
     if existing:
-        return jsonify({
-            "ok": False,
-            "error": duplicate_message("Vendor", existing.get("name"), existing),
-        }), 409
+        msg = duplicate_message("Vendor", existing.get("name"), existing)
+        return _json_error(msg, msg, 409)
 
-    website = (data.get("website") or "").strip()
-    address = (data.get("address") or "").strip()
-    notes = (data.get("notes") or "").strip()
+    address = str(data.get("address") or "").strip()
+    notes = str(data.get("notes") or "").strip()
     contacts = build_contacts_from_payload(data)
     is_active = data.get("is_active", True)
 
     now = utcnow()
     user_oid = _oid(session.get(SESSION_USER_ID))
 
+    try:
+        website = vendor_services.clean_website(data.get("website"))
+        cred_fields, cred_changes = (
+            vendor_services.build_credential_update(data, vendor, user_id=user_oid, now=now)
+            if _can_view_credentials() else ({}, [])
+        )
+    except vendor_services.VendorInputError as exc:
+        return jsonify(exc.payload()), exc.status
+
     update_data = {
         "name": name,
-        "website": website or None,
+        "website": website,
         "address": address or None,
         "notes": notes or None,
         "contacts": contacts,
@@ -644,11 +835,13 @@ def vendors_api_update(vendor_id):
         update_data["deactivated_at"] = None
         update_data["deactivated_by"] = None
 
+    changes = audit_log.diff_fields(vendor, update_data, audit_log.VENDOR_FIELDS) + cred_changes
+    update_data.update(cred_fields)
+
     coll.update_one(
         {"_id": vid},
         {"$set": update_data}
     )
 
-    audit_log.log_event("update", "vendor", vid, label=audit_log.vendor_label(vendor),
-                        changes=audit_log.diff_fields(vendor, update_data, audit_log.VENDOR_FIELDS))
+    audit_log.log_event("update", "vendor", vid, label=audit_log.vendor_label(vendor), changes=changes)
     return jsonify({"ok": True, "message": "Vendor updated successfully"})

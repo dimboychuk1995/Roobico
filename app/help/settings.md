@@ -8,11 +8,56 @@ Templates, PDF Design · Parts & Pricing · Integrations. ("Notifications" and
 ## Users
 
 **Users & Roles** page → **"+ New user"**: First/Last name, Email (globally
-unique), Phone, **Role** (Manager, Parts manager, Senior mechanic, Mechanic,
-Viewer, General manager — Owner is not assignable), Active flag, **Pay
-type** (Salary (fixed) + weekly "Salary amount", or Hourly — hourly rates
-are set per employee inside the uAttend integration, not here), **Shop
-access** checkboxes.
+unique), Phone, **Role**, Active flag, **Pay type** (Salary (fixed) + weekly
+"Salary amount", or Hourly — hourly rates are set per employee inside the
+uAttend integration, not here), **Shop access** checkboxes.
+
+**What the Role list offers.** First the system roles from the top of the
+hierarchy down — General manager, Manager, Parts manager, Senior mechanic,
+Mechanic, Viewer (plus **Owner** at the top, which only an owner sees and
+can assign) — then, under "Custom roles", every custom role created in
+**Roles & Permissions**, A→Z, so custom roles are assigned right here. A
+new user has no role preselected ("Select a role…"): you always pick one
+deliberately, nobody becomes an owner or a manager by accident. If you
+renamed a role in Roles & Permissions, the list and the whole page show the
+new name.
+
+**The list is grouped by role.** Each role is its own section with a header
+row such as **"Mechanic · 4 · 1 invited"**: the role name, how many people
+have it, and how many of them have not accepted their invitation yet. The
+sections always come in the same order:
+
+1. the system roles, top of the hierarchy first — Owner, General manager,
+   Manager, Parts manager, Senior mechanic, Mechanic, Viewer;
+2. your custom roles, A→Z (the header says "custom role");
+3. sections marked **Role not found** (see below);
+4. **Inactive** — only when the status filter includes deactivated users.
+
+A role nobody has gets no section. Inside a section people are sorted by
+name (people without a name go last, by email). Clicking the **Name** or
+**Email** column header sorts by that column inside every section — the
+sections themselves stay in place. The **Role** column shows the role's
+name, the **Status** column Invited / Active / Inactive.
+
+- **Search** covers name, email, phone, ID and the role — by key or by
+  name, so "mechanic", "parts manager" or the name of a custom role all
+  work. The section counts then show only the matching people.
+- **Inactive users are not split by role**: with the status filter on
+  **All users** they are collected in one **Inactive** section at the very
+  bottom; with **Inactive users** it is the only section. Their Role column
+  still shows the role they had — that is the role they get back on
+  **Activate**.
+- **Role not found** (orange badge on a section header): the role these
+  people have no longer exists in Roles & Permissions — typically a custom
+  role that was deleted while the person was deactivated, and the person
+  was activated again later. They get **no permissions from a role** (only
+  their per-user Allow overrides) until you click **Edit** and pick an
+  existing role — the Role field shows "Select a role…" for them.
+- **Your mechanics** are the Senior mechanic and Mechanic sections: exactly
+  these people can be assigned to jobs, count in the mechanic-hours numbers
+  and are billed at the per-mechanic price. Everyone in the other active
+  sections (invited people too) counts as a "full user" for billing — the
+  first one is free; deactivated users are free.
 
 **Invitations — the only way to create a user.** The new user gets an email
 with an **Accept Invitation** link (valid 7 days) where they create their own
@@ -28,9 +73,10 @@ cleared).
 - **Deactivate** blocks login but keeps history; you cannot deactivate
   yourself. Deactivated users disappear from the default list — switch the
   status filter next to the search box to **Inactive users** / **All
-  users** to see them; each inactive row has an **Activate** button (same as
-  the "Active user" checkbox in the edit form) that lets the person log in
-  again with their existing password.
+  users** to see them (they are in the **Inactive** section at the bottom);
+  each inactive row has an **Activate** button (same as the "Active user"
+  checkbox in the edit form) that lets the person log in again with their
+  existing password.
 - **Re-hiring**: creating a user with the email of a *deactivated* user of
   your company reactivates that user with the data you enter in the form (a
   fresh profile — name, role, shops, password are overwritten). If the email
@@ -54,6 +100,30 @@ cleared).
 - **Shop access applies immediately.** When you change a user's shops, the
   change takes effect on their very next request — no re-login needed; if
   their current shop was removed they are switched to the first allowed one.
+- **Renaming a user** (Edit → First / Last name → Save) shows the new name
+  everywhere at once, on old records too — nothing has to be re-saved:
+  the mechanics of the jobs on old work orders (the "Mechanics:" line of
+  a job and the work order cost breakdown), the "working now" names and
+  the **Edit mechanic hours** list of timer sessions, the running-timer
+  cards and the "already in progress for this unit" message on the
+  mechanic page and in the mobile app, the tracked time of a job in the
+  app, the Work Orders list, the Calendar, the Dashboard and Reports. For a
+  rename made with this feature in place, the copies of the name saved
+  inside old work orders, timer sessions and appointments are rewritten in
+  the same step, so the AI assistant answers with the new name as well.
+  Renames made before this feature existed are cleaned up by a one-time
+  run of the Roobico administrator; until it has run, the AI assistant
+  (and older app versions) may still show the old name on records saved
+  before the rename — the screens listed above already show the new one.
+  On purpose, the **Activity Journal** keeps the name the person had when
+  each event happened, and AVIR inspection reports keep the inspector name
+  printed on them. A page or app screen
+  that was already open shows the new name after its next refresh. More
+  detail: "People's names after a rename" in the Reports help.
+  *How to fix a misspelled mechanic name*: Settings → Users & Roles → find
+  the person (mechanics are in the Mechanic and Senior mechanic sections)
+  → **Edit** → correct First / Last name → **Save**. Their old work
+  orders, timers and reports follow.
 
 ## Roles & Permissions
 
@@ -70,7 +140,10 @@ the real checks on each action, so unticking a key really blocks it:
 
 - *Customers*: view / create / edit / deactivate / manage units / manage
   portal links (the "Send portal link" button on a customer profile).
-- *Vendors*: view / create / edit / deactivate.
+- *Vendors*: view / create / edit / deactivate / **view portal logins &
+  passwords** (the vendors' website logins: the Portal logins tab, Show /
+  Copy of passwords — every reveal is in the Activity Journal; by default
+  only Owner, General manager, Manager and Parts manager).
 - *Parts*: view / create / edit / delete (deactivate) / adjust stock
   (location transfers, stocktakes) / **edit on-hand quantity directly**
   (the "In stock" field when editing a part and "Set" by location; by
@@ -347,6 +420,10 @@ and every skipped row is listed with the reason.
   import one file per customer — rows whose Customer Name differs from the
   chosen customer are skipped and reported, never silently re-assigned.
 - Vendors: Vendor Name (+contact, phone, email, website, address, notes).
+  Websites are stored as working links (`fleetpride.com` →
+  `https://fleetpride.com`); a value that is not a web address is dropped
+  with a warning and the vendor is imported without it. Vendor portal
+  logins / passwords are never exported and cannot be imported.
 - Parts: Part Number, Description, Reference, In Stock, Average Cost,
   Selling Price, Min Stock, Unit. Starting stock is recorded properly: the
   part gets a location row and an "initial" stock movement, same as manual

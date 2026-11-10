@@ -62,6 +62,8 @@ ACTIONS: dict[str, str] = {
     "upload": "Uploaded",
     "permissions": "Permissions changed",
     "settings": "Settings changed",
+    # Показ секрета (пароль портала вендора) — само значение в журнал не пишется.
+    "view": "Viewed",
     "request": "Technical request",
     "error": "Failed request",
     "denied": "Access denied",

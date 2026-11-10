@@ -23,6 +23,7 @@ from app.blueprints.calendar.services.statuses import status_keys
 from app.utils.contacts import get_main_contact_name
 from app.utils.display_datetime import _safe_tzinfo, get_active_shop_timezone_name
 from app.utils.tenant import oid
+from app.utils.user_names import load_user_names, relabel_people, tenant_values_for_shop
 
 TITLE_MAX_LEN = 500
 
@@ -560,6 +561,32 @@ def refresh_labels(shop_db, shop: dict, rows: list[dict]) -> None:
         label = units.get(r.get("unit_id"))
         if label:
             r["unit_label"] = label
+
+
+def refresh_mechanic_names(shop: dict, rows: list[dict]) -> None:
+    """
+    Имена бригады — из живых пользователей (master.users по id, включая
+    уволенных: переименованный механик виден новым именем и в старых
+    записях); сохранённое имя — запас для удалённых. Один $in на все rows.
+    Мутирует rows: mechanics[].name и legacy mechanic_name (по mechanic_id).
+    """
+    ids: set = set()
+    for r in rows:
+        ids.update(m["id"] for m in event_mechanics(r))
+        if r.get("mechanic_id"):
+            ids.add(r["mechanic_id"])
+    if not ids:
+        return
+    names = load_user_names(ids, tenant_values=tenant_values_for_shop(shop))
+    if not names:
+        return
+    for r in rows:
+        if isinstance(r.get("mechanics"), list):
+            relabel_people(r["mechanics"], names, id_keys=("id",))
+        if r.get("mechanic_id"):
+            legacy = [{"id": r["mechanic_id"], "name": r.get("mechanic_name")}]
+            if relabel_people(legacy, names, id_keys=("id",)):
+                r["mechanic_name"] = legacy[0]["name"]
 
 
 def serialize_event(doc: dict) -> dict:

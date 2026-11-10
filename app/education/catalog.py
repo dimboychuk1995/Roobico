@@ -210,7 +210,7 @@ MODULES: tuple[Module, ...] = (
         "bi-shop",
         [
             ("vendors", "Vendors",
-             "The Vendors list, adding a vendor with contacts, balances and the Vendor Orders popup.", 4),
+             "The Vendors list, adding a vendor with contacts, website portal logins and the Portal logins tab, balances and the Vendor Orders popup.", 5),
             ("create-order", "Creating a parts order",
              "Vendor, date, part lines, last price, core charges, non-inventory amounts and the order total.", 6),
             ("ai-order-reader", "AI Order Reader",

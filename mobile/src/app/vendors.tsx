@@ -7,6 +7,7 @@ import { Badge, KV, RowCard } from "@/components/ui";
 import { VendorRow, fetchVendors } from "@/lib/api";
 import { useHasPermission } from "@/context/auth";
 import { useTheme } from "@/lib/theme";
+import { websiteLabel } from "@/lib/website";
 
 function VendorCard({ item }: { item: VendorRow }) {
   const theme = useTheme();
@@ -21,7 +22,7 @@ function VendorCard({ item }: { item: VendorRow }) {
       <KV label="Contact" value={item.contact_name} />
       <KV label="Phone" value={item.phone} />
       <KV label="Email" value={item.email} />
-      <KV label="Website" value={item.website} />
+      <KV label="Website" value={websiteLabel(item.website)} />
     </RowCard>
   );
 }

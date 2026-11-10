@@ -17,6 +17,11 @@ Usage (run from project root with the venv active):
     python -m app.scripts.backfill_labor_hourly_rate --apply --shop-db roobico_acme
 
 Safe to re-run: only fills in missing values.
+
+Writes are compare-and-swap on work_orders.labors_rev (+1), so a save that
+lands between the read and the write is never reverted: the work order is
+re-read and recomputed (up to MAX_CAS_ATTEMPTS times), otherwise skipped and
+counted in "skipped".
 """
 from __future__ import annotations
 
@@ -27,6 +32,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from app import create_app
+from app.blueprints.work_orders.services import edit_views as ev
 from app.extensions import get_master_db, get_mongo_client
 
 
@@ -53,81 +59,100 @@ def _load_rates_map(shop_db) -> dict[str, float]:
     return out
 
 
+def _fill_blocks(wo: dict, rates_map: dict) -> tuple[list, dict]:
+    """labors WO с заполненными hourly_rate/hours + счётчики этой правки."""
+    counts = {"blocks_rate_filled": 0, "blocks_hours_filled": 0}
+    labors = wo.get("labors") or []
+    totals = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
+    totals_blocks = totals.get("labors") if isinstance(totals.get("labors"), list) else []
+    for i, block in enumerate(labors):
+        if not isinstance(block, dict):
+            continue
+        labor = block.get("labor")
+        if not isinstance(labor, dict):
+            continue
+
+        rate_code = str(labor.get("rate_code") or "").strip()
+        try:
+            snap_rate = float(labor.get("hourly_rate") or 0)
+        except (ValueError, TypeError):
+            snap_rate = 0.0
+
+        # 1) snapshot the current rate if we know it from the rate_code
+        if snap_rate <= 0 and rate_code:
+            current = float(rates_map.get(rate_code) or 0.0)
+            if current > 0:
+                labor["hourly_rate"] = _round2(current)
+                snap_rate = current
+                counts["blocks_rate_filled"] += 1
+
+        # Block amount from totals (if any)
+        amt = 0.0
+        if i < len(totals_blocks) and isinstance(totals_blocks[i], dict):
+            try:
+                amt = float(totals_blocks[i].get("labor") or 0)
+            except (ValueError, TypeError):
+                amt = 0.0
+
+        try:
+            hours = float(labor.get("hours") or 0)
+        except (ValueError, TypeError):
+            hours = 0.0
+
+        # 2) recompute hours if missing and we have rate + amount
+        if hours <= 0 and snap_rate > 0 and amt > 0:
+            hours = _round2(amt / snap_rate)
+            labor["hours"] = hours
+            counts["blocks_hours_filled"] += 1
+
+        # 3) derive snapshot from amount/hours when rate_code is missing
+        # or has been deleted from labor_rates (current = 0).
+        if snap_rate <= 0 and hours > 0 and amt > 0:
+            labor["hourly_rate"] = _round2(amt / hours)
+            counts["blocks_rate_filled"] += 1
+    return labors, counts
+
+
 def _process_shop_db(shop_db, *, apply: bool) -> dict:
     stats = {
         "wo_seen": 0,
         "wo_updated": 0,
+        "wo_skipped": 0,
         "blocks_rate_filled": 0,
         "blocks_hours_filled": 0,
     }
     rates_map = _load_rates_map(shop_db)
+    projection = ev.with_rev({"labors": 1, "totals": 1})
 
     for wo in shop_db.work_orders.find(
         {"labors": {"$exists": True, "$ne": []}},
-        {"labors": 1, "totals": 1},
+        projection,
     ):
         stats["wo_seen"] += 1
-        labors = wo.get("labors") or []
-        totals = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
-        totals_blocks = totals.get("labors") if isinstance(totals.get("labors"), list) else []
-
-        changed = False
-        for i, block in enumerate(labors):
-            if not isinstance(block, dict):
-                continue
-            labor = block.get("labor")
-            if not isinstance(labor, dict):
-                continue
-
-            rate_code = str(labor.get("rate_code") or "").strip()
-            try:
-                snap_rate = float(labor.get("hourly_rate") or 0)
-            except (ValueError, TypeError):
-                snap_rate = 0.0
-
-            # 1) snapshot the current rate if we know it from the rate_code
-            if snap_rate <= 0 and rate_code:
-                current = float(rates_map.get(rate_code) or 0.0)
-                if current > 0:
-                    labor["hourly_rate"] = _round2(current)
-                    snap_rate = current
-                    stats["blocks_rate_filled"] += 1
-                    changed = True
-
-            # Block amount from totals (if any)
-            amt = 0.0
-            if i < len(totals_blocks) and isinstance(totals_blocks[i], dict):
-                try:
-                    amt = float(totals_blocks[i].get("labor") or 0)
-                except (ValueError, TypeError):
-                    amt = 0.0
-
-            try:
-                hours = float(labor.get("hours") or 0)
-            except (ValueError, TypeError):
-                hours = 0.0
-
-            # 2) recompute hours if missing and we have rate + amount
-            if hours <= 0 and snap_rate > 0 and amt > 0:
-                hours = _round2(amt / snap_rate)
-                labor["hours"] = hours
-                stats["blocks_hours_filled"] += 1
-                changed = True
-
-            # 3) derive snapshot from amount/hours when rate_code is missing
-            # or has been deleted from labor_rates (current = 0).
-            if snap_rate <= 0 and hours > 0 and amt > 0:
-                labor["hourly_rate"] = _round2(amt / hours)
-                stats["blocks_rate_filled"] += 1
-                changed = True
-
-        if changed:
-            stats["wo_updated"] += 1
-            if apply:
-                shop_db.work_orders.update_one(
-                    {"_id": wo["_id"]},
-                    {"$set": {"labors": labors}},
-                )
+        for _attempt in range(ev.MAX_CAS_ATTEMPTS):
+            labors, counts = _fill_blocks(wo, rates_map)
+            if not any(counts.values()):
+                break
+            if not apply:
+                stats["wo_updated"] += 1
+                for k, v in counts.items():
+                    stats[k] += v
+                break
+            # CAS: сохранение между чтением и записью не откатывается.
+            res = shop_db.work_orders.update_one(
+                {"_id": wo["_id"], **ev.rev_filter(ev.labors_rev(wo))},
+                ev.bump_rev({"$set": {"labors": labors}}),
+            )
+            if res.matched_count:
+                stats["wo_updated"] += 1
+                for k, v in counts.items():
+                    stats[k] += v
+                break
+            wo = shop_db.work_orders.find_one({"_id": wo["_id"]}, projection)
+            if not wo:
+                break
+        else:
+            stats["wo_skipped"] += 1
 
     return stats
 
@@ -168,7 +193,7 @@ def main() -> int:
 
         mode = "APPLY" if args.apply else "DRY-RUN"
         print(f"[{mode}] processing {len(db_names)} shop db(s)")
-        grand = {"wo_seen": 0, "wo_updated": 0, "blocks_rate_filled": 0, "blocks_hours_filled": 0}
+        grand = {"wo_seen": 0, "wo_updated": 0, "wo_skipped": 0, "blocks_rate_filled": 0, "blocks_hours_filled": 0}
 
         for db_name in db_names:
             print(f"  -> {db_name}")
@@ -177,6 +202,7 @@ def main() -> int:
             print(
                 f"     WO scanned: {s['wo_seen']}, WO to update: {s['wo_updated']}, "
                 f"rates filled: {s['blocks_rate_filled']}, hours filled: {s['blocks_hours_filled']}"
+                + (f", skipped (kept changing): {s['wo_skipped']}" if s["wo_skipped"] else "")
             )
             for k, v in s.items():
                 grand[k] += v
@@ -186,6 +212,7 @@ def main() -> int:
             f"WO updated: {grand['wo_updated']}, "
             f"rates filled: {grand['blocks_rate_filled']}, "
             f"hours filled: {grand['blocks_hours_filled']}"
+            + (f", skipped (kept changing, re-run later): {grand['wo_skipped']}" if grand["wo_skipped"] else "")
         )
         if not args.apply:
             print("Re-run with --apply to write changes.")

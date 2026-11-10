@@ -34,6 +34,8 @@ PERMISSIONS: dict[str, str] = {
     "vendors.create": "Create vendors",
     "vendors.edit": "Edit vendors",
     "vendors.deactivate": "Deactivate vendors",
+    # Логины/пароли порталов вендоров (вид Portal logins, показ пароля).
+    "vendors.view_credentials": "View vendor portal logins & passwords",
 
     # ── Parts (catalog / inventory) ─────────────────────────
     "parts.view": "View parts catalog",
@@ -144,6 +146,7 @@ PERMISSION_GROUPS: list[dict] = [
             "vendors.create",
             "vendors.edit",
             "vendors.deactivate",
+            "vendors.view_credentials",
         ],
     },
     {
@@ -267,6 +270,31 @@ SYSTEM_ROLE_KEYS: set[str] = {
 
 PROTECTED_ROLE_KEYS: set[str] = {"owner"}
 
+# Порядок и подписи системных ролей для UI (список пользователей по ролям,
+# селекты ролей): сверху вниз по иерархии, как в build_default_roles().
+# Только отображение — права ролей задаёт build_default_roles(). Тенант может
+# переименовать системную роль, тогда подпись берётся из документа роли
+# (см. app/utils/user_roles.py).
+SYSTEM_ROLE_ORDER: tuple[str, ...] = (
+    "owner",
+    "general_manager",
+    "manager",
+    "parts_manager",
+    "senior_mechanic",
+    "mechanic",
+    "viewer",
+)
+
+SYSTEM_ROLE_LABELS: dict[str, str] = {
+    "owner": "Owner",
+    "general_manager": "General manager",
+    "manager": "Manager",
+    "parts_manager": "Parts manager",
+    "senior_mechanic": "Senior mechanic",
+    "mechanic": "Mechanic",
+    "viewer": "Viewer",
+}
+
 
 # =========================================================
 # 3) ДЕФОЛТНЫЕ РОЛИ (seed в tenant DB при создании tenant)
@@ -290,6 +318,7 @@ def build_default_roles() -> list[dict]:
         "vendors.view",
         "vendors.create",
         "vendors.edit",
+        "vendors.view_credentials",
         "parts.view",
         "parts.create",
         "parts.edit",

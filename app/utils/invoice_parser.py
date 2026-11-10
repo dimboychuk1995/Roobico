@@ -11,6 +11,8 @@ import logging
 import os
 from typing import Any
 
+from app.utils.urls import normalize_website
+
 logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are an expert at reading parts documents (invoices, order confirmations, packing slips)
@@ -321,7 +323,9 @@ def parse_invoice(file_bytes: bytes, content_type: str, *, max_pages: int | None
         "vendor_address": str(result.get("vendor_address") or "").strip(),
         "vendor_phone": str(result.get("vendor_phone") or "").strip(),
         "vendor_email": str(result.get("vendor_email") or "").strip(),
-        "vendor_website": str(result.get("vendor_website") or "").strip(),
+        # Префилл «Create Vendor» после скана: сразу рабочий адрес (https://
+        # дописан), мусор от AI — пусто, чтобы создание не упёрлось в ошибку.
+        "vendor_website": normalize_website(result.get("vendor_website")) or "",
         "vendor_contact_first_name": str(result.get("vendor_contact_first_name") or "").strip(),
         "vendor_contact_last_name": str(result.get("vendor_contact_last_name") or "").strip(),
         "invoice_number": str(result.get("invoice_number") or "").strip(),

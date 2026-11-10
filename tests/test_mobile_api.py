@@ -398,9 +398,15 @@ def test_mobile_work_order_create_and_edit(client, mobile_seed, app, seed):
     assert wo_doc["totals"]["parts_total"] == 60.0
     assert wo_doc["labors"][0]["labor"]["description"] == "Oil change"
 
-    # Редактирование: qty 3 → 1, лейбор с ручной суммой
+    # Редактирование, как форма приложения: открыть WO (GET деталей — сервер
+    # запоминает, что видел клиент) и сохранить с labor_id из raw_labors:
+    # qty 3 → 1, лейбор с ручной суммой.
+    details = client.get(f"/api/mobile/work_orders/{wo_id}").get_json()
+    labor_id = details["raw_labors"][0]["labor_id"]
+    assert labor_id
     edit_payload = {
         "labors": [{
+            "labor_id": labor_id,
             "description": "Oil change",
             "hours": "",
             "rate_code": "standard",

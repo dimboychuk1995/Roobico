@@ -34,6 +34,18 @@ def _get_fernet() -> Fernet:
         ) from exc
 
 
+def secret_key_configured() -> bool:
+    """Задан ли валидный INTEGRATIONS_SECRET_KEY (без шифрования чего-либо).
+
+    Нужен, чтобы отличить «ключа нет / он битый» от «токен не расшифровался
+    (ключ сменили)» — пользователю это разные сообщения."""
+    try:
+        _get_fernet()
+    except IntegrationsCryptoError:
+        return False
+    return True
+
+
 def encrypt_secret(plaintext: str) -> str:
     """Encrypt a secret string. Returns the Fernet token as a UTF-8 string."""
     if plaintext is None:

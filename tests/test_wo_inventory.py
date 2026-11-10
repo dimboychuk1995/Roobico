@@ -4,6 +4,8 @@
 Репро бага: «удаляю лейбор с запчастями или запчасть, WO остаётся —
 запчасти в инвентори не возвращаются».
 """
+import json
+import re
 from datetime import datetime, timezone
 
 import pytest
@@ -72,9 +74,10 @@ def _find_wo(app, inv):
         return inv["db"].work_orders.find_one({"customer_id": inv["customer_id"], "is_active": True})
 
 
-def _flat_labor(description, total, parts=None):
+def _flat_labor(description, total, parts=None, labor_id=""):
     """Форма, которую шлёт фронт (serializeBlocks в work_order_details.js)."""
     return {
+        "labor_id": labor_id,
         "labor_description": description,
         "labor_hours": 0,
         "labor_rate_code": "",
@@ -85,11 +88,22 @@ def _flat_labor(description, total, parts=None):
     }
 
 
-def _update_wo(client, wo_id, labors):
+def _open_page(client, wo_id):
+    """Как браузер: страница деталей отдаёт id строк и view_id — базу
+    трёхстороннего merge её Save (по отсутствию в payload удаляются только
+    строки/запчасти, которые эта страница видела)."""
+    html = client.get(f"/work_orders/details?work_order_id={wo_id}").get_data(as_text=True)
+    created = json.loads(re.search(r'id="workOrderCreatedData">(.*?)</script>', html, re.S).group(1))
+    labors = json.loads(re.search(r'id="workOrderInitialData">(.*?)</script>', html, re.S).group(1))
+    assert created["view_id"], "page did not record an edit view"
+    return created["view_id"], [b["labor_id"] for b in labors]
+
+
+def _update_wo(client, wo_id, labors, view_id):
     token = get_csrf_token(client)
     return client.post(
         f"/work_orders/api/work_orders/{wo_id}/update",
-        json={"labors": labors, "totals": {}},
+        json={"labors": labors, "totals": {}, "merge_protocol": 1, "view_id": view_id},
         headers={"X-CSRFToken": token},
     )
 
@@ -104,8 +118,9 @@ def test_removing_part_row_restores_stock(logged_in, inv, app):
     _create_wo(logged_in, inv)
     assert _stock(app, inv) == 8
     wo = _find_wo(app, inv)
+    view_id, ids = _open_page(logged_in, wo["_id"])
 
-    resp = _update_wo(logged_in, wo["_id"], [_flat_labor("Job with part", 100, parts=[])])
+    resp = _update_wo(logged_in, wo["_id"], [_flat_labor("Job with part", 100, parts=[], labor_id=ids[0])], view_id)
     data = resp.get_json()
     assert data["ok"] is True, data
     assert _stock(app, inv) == 10, f"expected stock restored to 10, got {_stock(app, inv)}; resp={data}"
@@ -116,12 +131,14 @@ def test_removing_labor_with_parts_restores_stock(logged_in, inv, app):
     _create_wo(logged_in, inv, with_second_labor=True)
     assert _stock(app, inv) == 8
     wo = _find_wo(app, inv)
+    view_id, ids = _open_page(logged_in, wo["_id"])
 
     # Остался только лейбор без запчастей
-    resp = _update_wo(logged_in, wo["_id"], [_flat_labor("Job without parts", 50)])
+    resp = _update_wo(logged_in, wo["_id"], [_flat_labor("Job without parts", 50, labor_id=ids[1])], view_id)
     data = resp.get_json()
     assert data["ok"] is True, data
     assert _stock(app, inv) == 10, f"expected stock restored to 10, got {_stock(app, inv)}; resp={data}"
+    assert [b["labor"]["description"] for b in _find_wo(app, inv)["labors"]] == ["Job without parts"]
 
 
 def test_qty_decrease_restores_difference(logged_in, inv, app):
@@ -129,6 +146,7 @@ def test_qty_decrease_restores_difference(logged_in, inv, app):
     _create_wo(logged_in, inv)
     assert _stock(app, inv) == 8
     wo = _find_wo(app, inv)
+    view_id, ids = _open_page(logged_in, wo["_id"])
 
     part_payload = {
         "part_id": str(inv["part"]["_id"]),
@@ -142,7 +160,8 @@ def test_qty_decrease_restores_difference(logged_in, inv, app):
         "misc_charge": 0,
         "misc_charge_description": "",
     }
-    resp = _update_wo(logged_in, wo["_id"], [_flat_labor("Job with part", 100, parts=[part_payload])])
+    resp = _update_wo(logged_in, wo["_id"], [_flat_labor("Job with part", 100, parts=[part_payload], labor_id=ids[0])],
+                      view_id)
     data = resp.get_json()
     assert data["ok"] is True, data
     assert _stock(app, inv) == 9, f"expected 9, got {_stock(app, inv)}; resp={data}"

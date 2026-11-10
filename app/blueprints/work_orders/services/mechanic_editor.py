@@ -4,18 +4,23 @@
 Механик присылает только описание работ и парты (part_id/part_number + qty);
 клиентские цены/часы/ставки/статусы игнорируются. Цены проставляет сервер:
 cost = average_cost из каталога, price = suggest_part_price (те же
-прайсинг-правила, что в веб-автозаполнении). При редактировании существующего
-WO блоки матчатся по стабильному labor_id, чтобы не затереть менеджерские
-поля (hours, rate, назначения, подправленные цены).
+прайсинг-правила, что в веб-автозаполнении). Сохранение существующего WO —
+трёхсторонний merge (labor_merge.py, merge_mechanic_edit) по стабильному
+labor_id: менеджерские поля (hours, rate, назначения, подправленные цены) и
+правки коллег, которых клиент не видел, не затираются. Все записи labors
+здесь — CAS по labors_rev (edit_views.py).
 """
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 
 from app.constants.part_units import DEFAULT_PART_UNIT
 from app.blueprints.work_orders.services.common import catalog_part_unit, f64, i32, round2
 from app.blueprints.work_orders.services.mobile_editor import suggest_part_price
+
+_log = logging.getLogger(__name__)
 
 
 def parse_mileage(value):
@@ -231,10 +236,16 @@ def _stored_part_key(p: dict) -> str:
 
 
 def _stored_block_to_payload(block: dict, block_totals: dict) -> dict:
-    """Существующий блок WO -> payload-форма compute_labors_and_totals."""
+    """Существующий блок WO -> payload-форма compute_labors_and_totals.
+
+    Метки merge блока (client_key, minted — см. labor_merge.py) переносятся:
+    без них пересчёт WO (таймеры, transfer) стирал бы их, и id-less строка
+    старого клиента после стопа таймера превращалась бы в дубль.
+    """
     labor_src = block.get("labor") if isinstance(block.get("labor"), dict) else {}
     labor_base = round2((block_totals or {}).get("labor") or 0)
-    return {
+    stored_parts = block.get("parts") if isinstance(block.get("parts"), list) else []
+    out = {
         "labor_id": str(block.get("labor_id") or ""),
         "description": str(labor_src.get("description") or "").strip(),
         "hours": str(labor_src.get("hours") or "").strip(),
@@ -245,8 +256,14 @@ def _stored_block_to_payload(block: dict, block_totals: dict) -> dict:
         "issue_description": str(labor_src.get("issue_description") or "").strip(),
         "hours_source": str(labor_src.get("hours_source") or "").strip(),
         "assigned_mechanics": labor_src.get("assigned_mechanics") or [],
-        "parts": [dict(p) for p in (block.get("parts") or []) if isinstance(p, dict)],
+        "parts": [dict(p) for p in stored_parts if isinstance(p, dict)],
     }
+    client_key = str(block.get("client_key") or "").strip()
+    if client_key:
+        out["client_key"] = client_key
+    if isinstance(block.get("minted"), dict):
+        out["minted"] = dict(block["minted"])
+    return out
 
 
 def _preset_defaults(shop_db, shop_id, preset_id_raw) -> dict:
@@ -322,9 +339,10 @@ def build_mechanic_labors_payload(shop_db, shop, customer_id, payload_labors) ->
         # магазина, чтобы затреканные часы биллинговались, а не давали $0.
         preset = _preset_defaults(shop_db, shop["_id"], raw.get("preset_id"))
         pinned_prices = preset.get("pinned_prices")
+        raw_parts = raw.get("parts") if isinstance(raw.get("parts"), list) else []
         parts = [
             _autofill_part(shop_db, shop["_id"], customer_id, p, pinned_prices)
-            for p in (raw.get("parts") or [])
+            for p in raw_parts
             if isinstance(p, dict) and (
                 str(p.get("part_id") or "").strip()
                 or str(p.get("part_number") or "").strip()
@@ -332,7 +350,7 @@ def build_mechanic_labors_payload(shop_db, shop, customer_id, payload_labors) ->
             )
         ]
         _attach_catalog_misc_items(parts)
-        out.append({
+        row = {
             "labor_id": str(raw.get("labor_id") or ""),
             "description": str(raw.get("description") or "").strip(),
             "hours": preset.get("hours", ""),
@@ -342,82 +360,61 @@ def build_mechanic_labors_payload(shop_db, shop, customer_id, payload_labors) ->
             "hours_source": preset.get("hours_source", ""),
             "assigned_mechanics": [],
             "parts": parts,
-        })
+        }
+        # Ключ новой строки от клиента (merge_protocol 1) — на сохранённый блок.
+        client_key = str(raw.get("client_key") or "").strip()
+        if client_key:
+            row["client_key"] = client_key
+        out.append(row)
     return out
 
 
-def merge_mechanic_edit(shop_db, shop, existing_wo: dict, payload_labors) -> list[dict]:
-    """
-    Редактирование WO механиком: вернуть payload для compute_labors_and_totals.
+def _is_blank_part(p: dict) -> bool:
+    return not (
+        str(p.get("part_id") or "").strip()
+        or str(p.get("part_number") or "").strip()
+        or str(p.get("description") or "").strip()
+    )
 
-    Правила: блоки матчатся по labor_id; у совпавших сохраняются hours/rate/
-    назначения/менеджерские цены партов (qty и описание обновляются), новые
-    парты автоценятся; блоки без labor_id — новые строки; блоки, отсутствующие
-    в payload, удаляются (клиент всегда шлёт полный список работ, инвентарь
-    возвращает adjust_inventory_for_part_changes, тайм-логи остаются и видны
-    менеджеру как «время на удалённых строках»).
+
+def merge_mechanic_edit(shop_db, shop, existing_wo: dict, payload_labors, *, base=None, **ctx):
     """
+    Сохранение механика (веб-страница механика, приложение механика):
+    трёхсторонний merge base × current × mine по MECHANIC_SPEC
+    (labor_merge.merge_labors). Возвращает MergeResult; .rows — payload для
+    compute_labors_and_totals.
+
+    Механик правит только тексты работ и состав/qty/описания запчастей:
+    hours/ставка/назначения/цены остаются из текущего WO (клиентские деньги
+    игнорируются). Новая строка — build_mechanic_labors_payload (дефолтная
+    ставка, пресет), новая запчасть — _autofill_part (цены сервера, misc
+    каталога становится auto-позициями блока). Строка, которой нет в
+    payload, удаляется, только если клиент её видел (она есть в base) и её
+    никто не менял и не ведёт таймер; без base (старый клиент без своей
+    вьюхи) по отсутствию ничего не удаляется.
+
+    base — BaseChoice.rows (компактные строки edit view) или None;
+    ctx — поля MergeContext (user_id, sid, now, legacy, running_labor_ids,
+    is_mechanic_web, base_minted, extra_notes, force_foreign, ...).
+    Вызывать на каждой попытке CAS с документом этой попытки.
+    """
+    from app.blueprints.work_orders.services import edit_views as ev
+    from app.blueprints.work_orders.services.labor_merge import MECHANIC_SPEC, MergeContext, merge_labors
+
     customer_id = existing_wo.get("customer_id")
-    totals_doc = existing_wo.get("totals") if isinstance(existing_wo.get("totals"), dict) else {}
-    totals_blocks = totals_doc.get("labors") if isinstance(totals_doc.get("labors"), list) else []
 
-    existing_by_id: dict[str, dict] = {}
-    for i, block in enumerate(existing_wo.get("labors") or []):
-        if not isinstance(block, dict):
-            continue
-        labor_id = str(block.get("labor_id") or "").strip()
-        block_totals = totals_blocks[i] if i < len(totals_blocks) and isinstance(totals_blocks[i], dict) else {}
-        if labor_id:
-            existing_by_id[labor_id] = _stored_block_to_payload(block, block_totals)
+    def new_block(raw: dict) -> dict:
+        return build_mechanic_labors_payload(shop_db, shop, customer_id, [raw])[0]
 
-    out: list[dict] = []
+    def new_part(raw: dict):
+        # Пустую строку запчасти (ни id, ни номера, ни описания) не создаём.
+        if _is_blank_part(raw):
+            return None
+        return _autofill_part(shop_db, shop["_id"], customer_id, raw)
 
-    for raw in payload_labors or []:
-        if not isinstance(raw, dict):
-            continue
-        labor_id = str(raw.get("labor_id") or "").strip()
-        base = existing_by_id.get(labor_id)
-
-        if base is None:
-            # Новая строка от механика.
-            out.append(build_mechanic_labors_payload(shop_db, shop, customer_id, [raw])[0])
-            continue
-
-        existing_parts_by_key = {_stored_part_key(p): p for p in base["parts"]}
-
-        merged_parts = []
-        for p in raw.get("parts") or []:
-            if not isinstance(p, dict):
-                continue
-            if not (
-                str(p.get("part_id") or "").strip()
-                or str(p.get("part_number") or "").strip()
-                or str(p.get("description") or "").strip()
-            ):
-                continue
-            key = _stored_part_key(p)
-            existing_part = existing_parts_by_key.get(key)
-            if existing_part is not None:
-                merged = dict(existing_part)
-                merged["qty"] = i32(p.get("qty")) or 0
-                incoming_desc = str(p.get("description") or "").strip()
-                if incoming_desc:
-                    merged["description"] = incoming_desc
-                merged_parts.append(merged)
-            else:
-                merged_parts.append(_autofill_part(shop_db, shop["_id"], customer_id, p))
-
-        # Misc-чарджи каталога с новых строк — в JSON первой строки блока.
-        _attach_catalog_misc_items(merged_parts)
-
-        out.append({
-            **base,
-            "description": str(raw.get("description") or "").strip(),
-            "issue_description": str(raw.get("issue_description") or "").strip(),
-            "parts": merged_parts,
-        })
-
-    return out
+    merge_ctx = MergeContext(**{"new_block": new_block, "new_part": new_part, **ctx})
+    current = ev.work_rows_from_wo(existing_wo)
+    return merge_labors(base, current, list(payload_labors or []), MECHANIC_SPEC, ctx=merge_ctx)
 
 
 def mechanic_work_fingerprint(labors) -> list[tuple]:
@@ -502,10 +499,46 @@ def refresh_time_derived_fields(shop_db, shop, work_order_id, mechanics_by_id=No
         Исключения: работы из пресета (часы фиксированы пресетом) и часы,
         введённые менеджером вручную (нет метки hours_source="tracked");
       - totals — пересчитываются с зафиксированной налоговой ставкой WO.
-    Возвращает True, если WO обновлён.
+    Запись — CAS по labors_rev (+ status != paid в фильтре): сохранение,
+    успевшее между чтением и записью, не откатывается — цикл перечитывает
+    WO и считает заново (≤ MAX_CAS_ATTEMPTS). Возвращает True, если WO
+    обновлён; при исчерпании попыток — warning в лог и False (эндпоинты
+    таймеров из-за этого не падают).
     """
+    from flask import current_app, has_app_context
+
+    from app.blueprints.work_orders.services import edit_views as ev
+    from app.blueprints.work_orders.services.common import oid
+
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return False
+    try:
+        for _attempt in range(ev.MAX_CAS_ATTEMPTS):
+            outcome = _refresh_time_derived_attempt(shop_db, shop, wo_id, mechanics_by_id)
+            if outcome is not None:
+                return outcome
+    except Exception:
+        # Таймер уже остановлен/сессия поправлена — эндпоинт не должен падать.
+        if has_app_context():
+            current_app.logger.exception("refresh_time_derived_fields failed (wo %s)", wo_id)
+        else:
+            _log.exception("refresh_time_derived_fields failed (wo %s)", wo_id)
+        return False
+    if has_app_context():
+        current_app.logger.warning(
+            "refresh_time_derived_fields: labors_rev kept changing (wo %s), refresh skipped", wo_id,
+        )
+    else:
+        _log.warning("refresh_time_derived_fields: labors_rev kept changing (wo %s), refresh skipped", wo_id)
+    return False
+
+
+def _refresh_time_derived_attempt(shop_db, shop, wo_id, mechanics_by_id):
+    """Одна попытка refresh_time_derived_fields: True/False — готово, None — CAS не прошёл."""
+    from app.blueprints.work_orders.services import edit_views as ev
     from app.blueprints.work_orders.services import time_tracking
-    from app.blueprints.work_orders.services.common import oid, utcnow
+    from app.blueprints.work_orders.services.common import utcnow
     from app.blueprints.work_orders.services.mobile_editor import compute_labors_and_totals
     from app.blueprints.work_orders.services.totals import (
         _apply_sales_tax_to_totals,
@@ -515,9 +548,6 @@ def refresh_time_derived_fields(shop_db, shop, work_order_id, mechanics_by_id=No
         normalize_totals_payload,
     )
 
-    wo_id = oid(work_order_id)
-    if not wo_id:
-        return False
     wo = shop_db.work_orders.find_one(
         {"_id": wo_id, "shop_id": shop["_id"], "is_active": True}
     )
@@ -589,11 +619,14 @@ def refresh_time_derived_fields(shop_db, shop, work_order_id, mechanics_by_id=No
         is_taxable = _is_customer_taxable(shop_db, wo.get("customer_id"))
     totals = _apply_sales_tax_to_totals(totals, locked_tax_rate, bool(is_taxable))
 
-    shop_db.work_orders.update_one(
-        {"_id": wo_id, "shop_id": shop["_id"]},
-        {"$set": {"labors": labors, "totals": totals, "updated_at": utcnow()}},
+    res = shop_db.work_orders.update_one(
+        {
+            "_id": wo_id, "shop_id": shop["_id"], "status": {"$ne": "paid"},
+            **ev.rev_filter(ev.labors_rev(wo)),
+        },
+        ev.bump_rev({"$set": {"labors": labors, "totals": totals, "updated_at": utcnow()}}),
     )
-    return True
+    return True if res.matched_count else None
 
 
 def reprice_wo_for_customer(shop_db, shop, wo: dict, customer_id) -> dict:
@@ -693,6 +726,7 @@ def assign_crew_from_appointment(shop_db, shop, work_order_id, mechanic_ids, pre
     Доли — поровну (crew_assignments), неизвестные/неактивные механики
     отбрасываются. Возвращает True, если WO обновлён (updated_at сдвинут).
     """
+    from app.blueprints.work_orders.services import edit_views as ev
     from app.blueprints.work_orders.services.appointment_prefill import crew_assignments
     from app.blueprints.work_orders.services.common import oid, utcnow
 
@@ -702,7 +736,7 @@ def assign_crew_from_appointment(shop_db, shop, work_order_id, mechanic_ids, pre
         return False
     wo = shop_db.work_orders.find_one(
         {"_id": wo_id, "shop_id": shop["_id"], "is_active": True},
-        {"labors": 1, "status": 1},
+        ev.with_rev({"labors": 1, "status": 1}),
     )
     if not wo or (wo.get("status") or "open").strip().lower() not in ("open", "in_progress"):
         return False
@@ -746,17 +780,21 @@ def assign_crew_from_appointment(shop_db, shop, work_order_id, mechanic_ids, pre
             continue
         assigned = [dict(a) for a in assignments]
         labor_id = str(block.get("labor_id") or "").strip()
+        # Любая запись labors двигает labors_rev (сохранения клиентов — CAS по ней).
         if labor_id:
             res = shop_db.work_orders.update_one(
                 {"_id": wo_id, "shop_id": shop["_id"], "labors.labor_id": labor_id},
-                {"$set": {"labors.$[b].labor.assigned_mechanics": assigned, "updated_at": now}},
+                ev.bump_rev({"$set": {"labors.$[b].labor.assigned_mechanics": assigned, "updated_at": now}}),
                 array_filters=[{"b.labor_id": labor_id}],
             )
         else:
-            # Легаси-строка без labor_id — по позиции.
+            # Легаси-строка без labor_id — по позиции, только если массив с
+            # момента чтения не менялся (иначе позиция могла указать на чужую строку).
             res = shop_db.work_orders.update_one(
-                {"_id": wo_id, "shop_id": shop["_id"]},
-                {"$set": {f"labors.{idx}.labor.assigned_mechanics": assigned, "updated_at": now}},
+                {"_id": wo_id, "shop_id": shop["_id"], **ev.rev_filter(ev.labors_rev(wo))},
+                ev.bump_rev({"$set": {f"labors.{idx}.labor.assigned_mechanics": assigned, "updated_at": now}}),
             )
+        if res.modified_count:
+            wo["labors_rev"] = ev.labors_rev(wo) + 1
         changed = changed or res.modified_count > 0
     return changed

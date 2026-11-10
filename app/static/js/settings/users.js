@@ -1,10 +1,4 @@
 (function () {
-  var root = document.body;
-  if (!root || root.dataset.settingsUsersClickBound === "1") {
-    return;
-  }
-  root.dataset.settingsUsersClickBound = "1";
-
   // ── Pay-type toggle (works for any modal containing the data-pay-type-select) ──
   function applyPayType(scope) {
     var sel = scope.querySelector("[data-pay-type-select]");
@@ -22,10 +16,24 @@
       }
     }
   }
+  // Начальное состояние — при каждом выполнении скрипта: живой поиск
+  // подменяет контент страницы вместе с модалками и перевыполняет скрипт.
   document.querySelectorAll("[data-pay-type-select]").forEach(function (sel) {
-    var modal = sel.closest(".modal") || document;
-    sel.addEventListener("change", function () { applyPayType(modal); });
-    applyPayType(modal);
+    applyPayType(sel.closest(".modal") || document);
+  });
+
+  // Обработчики на document вешаем один раз за жизнь страницы: делегирование
+  // работает и для модалок, пришедших после подмены контента.
+  var root = document.body;
+  if (!root || root.dataset.settingsUsersClickBound === "1") {
+    return;
+  }
+  root.dataset.settingsUsersClickBound = "1";
+
+  document.addEventListener("change", function (event) {
+    var sel = event.target && event.target.closest ? event.target.closest("[data-pay-type-select]") : null;
+    if (!sel) return;
+    applyPayType(sel.closest(".modal") || document);
   });
 
   document.addEventListener("click", function (event) {
@@ -57,7 +65,14 @@
     lastNameInput.value = btn.getAttribute("data-last-name") || "";
     emailInput.value = btn.getAttribute("data-email") || "";
     phoneInput.value = btn.getAttribute("data-phone") || "";
-    roleInput.value = btn.getAttribute("data-role") || "viewer";
+    // Ключ роли — как его читает сервер (strip + lower, пусто = viewer).
+    var role = (btn.getAttribute("data-role") || "").trim().toLowerCase() || "viewer";
+    roleInput.value = role;
+    if (roleInput.value !== role) {
+      // Роли нет в списке (удалена — «Role not found»): показываем
+      // плейсхолдер, required не даст сохранить без выбора новой роли.
+      roleInput.value = "";
+    }
     isActiveInput.checked = (btn.getAttribute("data-is-active") || "1") === "1";
 
     if (payTypeInput) {

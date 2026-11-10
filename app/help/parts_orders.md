@@ -14,16 +14,91 @@ from the location's **email inbox** (orders marked **Not confirmed** — see
 
 - Vendors list: columns Name, Phone, Email, Website, Primary contact,
   Address, **Balance** (unpaid total across the vendor's orders), Status.
-  Search box searches every field including contacts.
+  Search box searches every field including contacts. The website is a short
+  clickable link (e.g. `fleetpride.com/login`) that opens in a new tab.
 - **Add Vendor** button → form: Name (required), Website, Address
   (autocomplete), Notes, and a **Contacts** block — several contacts, one is
   always marked **"Main contact"** and used by default.
+- **Website — no need to type https://.** Type it the way you say it:
+  `fleetpride.com`, `www.napaonline.com/login`, `portal.vendor.com:8443`.
+  Roobico stores a working link (`https://fleetpride.com`) and shows it
+  without the `https://`. Only real web addresses are accepted — text like
+  "N/A", an address with spaces or a `javascript:` / `ftp:` link is refused
+  with "Enter a valid website, e.g. fleetpride.com". Leaving it empty is
+  fine. Websites saved before this rule (without https) already work as
+  links. The same rule applies when a vendor is created from the AI Order
+  Reader, from an email order, from the mobile app or by import.
 - **Delete = deactivate**, never a hard delete: the vendor is hidden from
   pickers but history stays; **Restore** brings it back. Inactive vendors
   cannot be selected on new orders or parts.
 - Clicking a vendor name opens **Vendor Orders** — their orders with a date
   filter and totals: Orders, Total Amount, Paid, Unpaid, Received,
   Not Received. There is no separate vendor page — this popup is it.
+
+### Vendor portal logins & passwords
+
+Most parts vendors have a website where the shop orders parts, checks
+prices or downloads invoices. Roobico keeps the **login and password for
+that website** on the vendor, so the whole team can find them in one place
+instead of a sticky note.
+
+- **Who can see them:** only users whose role (or personal permissions)
+  has **"View vendor portal logins & passwords"** (Settings → Roles →
+  Vendors). By default: Owner, General manager, Manager and Parts manager.
+  Senior mechanics, mechanics and viewers do NOT see them unless the owner
+  ticks the permission for their role or for one person. Without the
+  permission the Portal login section of the vendor form and the Portal
+  logins tab are simply not there, and neither the login nor anything about
+  the password is sent to that user's browser or phone. The Activity
+  Journal (which a Viewer can open) never shows them either — only that a
+  login or password was set, changed or removed.
+- **Saving:** Add Vendor or Edit → **Portal login** section → Login and
+  Password. **Show** next to the password field shows what you just typed.
+  Editing needs "Edit vendors" (creating — "Create vendors") plus the
+  portal-logins permission.
+  - The saved password is never put back into the form. The field says
+    "saved — leave blank to keep": leave it empty to keep the password,
+    type a new one to replace it.
+  - **Remove saved password** (checkbox, only when one is saved) deletes it.
+    Clearing the Login field and saving removes the login.
+  - Up to 256 characters each.
+- **Encrypted:** the password is stored encrypted (the same server-side
+  encryption Roobico uses for integration keys). It is never written to logs,
+  exports, the Activity Journal or the AI assistant (the assistant can't
+  read portal logins at all and points you to the Portal logins tab). If the server's
+  encryption is not set up, saving or showing a password fails with
+  "Password encryption is not configured on the server — contact support"
+  (everything else about vendors keeps working).
+- **Portal logins view (the quick look-up):** Vendors page → tab **Portal
+  logins** (next to "Vendors"). A compact table of active vendors: Vendor,
+  Website (link), Login with a **copy** button, Password as `••••••••` with
+  **Show** and **copy** buttons. Search finds a vendor by name, website or
+  login. Rows without a saved login/password show "—". Users who can see
+  logins but cannot create or edit vendors land on this view right away;
+  editors get an **Edit** button in each row.
+  - **Show** reveals the password in the row; it **hides again by itself
+    after 30 seconds** (or click Hide). **Copy** puts it on the clipboard
+    without showing it ("Password copied").
+  - **Every time a password is fetched from the server it is recorded** in
+    Reports → Activity Journal as "Viewed portal password of <vendor>"
+    (Action **Viewed**; who, when, from where — never the password itself):
+    each **Show**, and each **Copy** while the password is hidden. Copying a
+    password that is already shown on screen adds no new entry, and copying
+    the login is not recorded. Saving shows up there too: "Portal login" and
+    "Portal password" as set / changed / removed — never the values.
+  - Too many password requests in a short time (60 in 10 minutes per user)
+    are blocked for a few minutes as a safety measure.
+- **Mobile app:** vendor screen → **Portal login** card (same permission):
+  Website (tap to open), Login (long-press to copy), Password hidden —
+  **Show** reveals it (long-press to copy), it hides again after 30 seconds
+  or when you leave the screen. Each Show is recorded in the Activity Journal
+  the same way as on the web. Vendor edit on the phone has Portal login and
+  Portal password fields, a "Show password" switch, a "Remove saved password"
+  switch and the same "leave blank to keep" rule; a new vendor gets the same
+  fields when you can also edit vendors (the login is saved right after the
+  vendor is created). (Needs the app update that ships with this feature.)
+- Import / Export never carries portal logins or passwords: the export file
+  has no such columns, and import ignores them.
 
 ## Creating a parts order
 
@@ -305,3 +380,14 @@ deleting payments). Buttons that need a key you don't have are not
 rendered — an order you may only view opens with a "View" button instead
 of "Edit". Vendors have their own view / create / edit / deactivate
 permissions; the vendor Balance column needs "View parts orders".
+
+**"View vendor portal logins & passwords"** (Vendors group) controls the
+vendors' website logins: the Portal logins tab, the Portal login section of
+the vendor form, Show / Copy of passwords and the Portal login card in the
+mobile app. It is on by default for Owner, General manager, Manager and
+Parts manager only. Saving a login still needs Create / Edit vendors on top
+of it. Without this permission, login / password fields in a save request
+are ignored (the rest of the vendor is saved as usual). A user who
+has this permission but cannot create or edit vendors (for example a
+counter person you only want to look passwords up) opens Vendors straight on
+the Portal logins tab.

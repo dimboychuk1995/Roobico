@@ -26,6 +26,8 @@ export function WoAuthorizationModal({
   defaultEmail,
   scope = "work_order",
   laborIndex,
+  laborId,
+  resolveLaborIndex,
   jobLabel,
 }: {
   visible: boolean;
@@ -34,6 +36,14 @@ export function WoAuthorizationModal({
   defaultEmail: string;
   scope?: "work_order" | "labor";
   laborIndex?: number;
+  /** labor_id работы — уходит вместе с номером (сервер, который его знает, ищет по нему). */
+  laborId?: string;
+  /**
+   * Номер работы на сервере в момент отправки (форма правки: строки могли
+   * переставиться, пока окно открыто). null — работы на WO уже нет. Без
+   * него уходит laborIndex как есть.
+   */
+  resolveLaborIndex?: () => Promise<number | null>;
   jobLabel?: string;
 }) {
   const theme = useTheme();
@@ -53,7 +63,17 @@ export function WoAuthorizationModal({
     }
     setBusy(true);
     try {
-      await sendWoAuthorization(woId, target, scope, laborIndex);
+      let index = laborIndex;
+      if (scope === "labor" && resolveLaborIndex) {
+        const resolved = await resolveLaborIndex();
+        if (resolved === null) {
+          toast.show("This job is no longer on the work order — the approval request was not sent.", "error");
+          onClose();
+          return;
+        }
+        index = resolved;
+      }
+      await sendWoAuthorization(woId, target, scope, index, laborId);
       toast.show("Approval request sent.", "success");
       onClose();
     } catch (e) {

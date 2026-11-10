@@ -26,6 +26,7 @@ from app.blueprints.calendar.services.events import (
     prepare_event_updates,
     prepare_new_event,
     refresh_labels,
+    refresh_mechanic_names,
     serialize_event,
     unit_label,
 )
@@ -67,8 +68,9 @@ def _json_body() -> dict:
 
 
 def _present(shop_db, shop, rows: list[dict]) -> list[dict]:
-    """Документы → payload API с живыми лейблами и данными WO."""
+    """Документы → payload API с живыми лейблами, именами бригады и данными WO."""
     refresh_labels(shop_db, shop, rows)
+    refresh_mechanic_names(shop, rows)
     items = [serialize_event(r) for r in rows]
     enrich_linked_appointments(shop_db, shop, items, rows, is_mechanic_mode())
     return items
@@ -291,6 +293,10 @@ def api_update_event(event_id):
     existing = shop_db.calendar_events.find_one({"_id": eid, "shop_id": shop["_id"]})
     if not existing:
         return _not_found()
+    # Имена бригады в «было» — живые: иначе после переименования механика
+    # любое сохранение записи (бригада всегда в теле) писало бы в журнал
+    # «Mechanic: старое → новое», хотя бригада не менялась.
+    refresh_mechanic_names(shop, [existing])
 
     try:
         updates = prepare_event_updates(shop_db, shop, existing, _json_body(), user_id=session.get(SESSION_USER_ID))

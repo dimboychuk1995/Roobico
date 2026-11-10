@@ -293,6 +293,13 @@ def mobile_work_order_details(work_order_id):
     if not wo:
         return jsonify({"ok": False, "error": "work_order_not_found"}), 404
 
+    from app.blueprints.work_orders.services import edit_views as ev
+
+    # Каждое открытие формы/деталей — load-вьюха устройства (edit view): по
+    # ним сервер понимает, что видел клиент, и не удаляет чужие работы при
+    # сохранении. ?mp=1 — клиент нового протокола (шлёт view_id сам).
+    view_protocol = 1 if request.args.get("mp") == "1" else 0
+
     # Механик-режим: безденежная форма деталей (та же, что на веб-странице
     # механика) — без цен, тоталов, часов и ставок, с таймерами по строкам.
     if not has_permission("work_orders.view_costs"):
@@ -309,11 +316,22 @@ def mobile_work_order_details(work_order_id):
                 "message": "This work order was confirmed by a manager and is locked.",
             }), 403
 
-        payload = mechanic_wo_payload(shop_db, shop, wo, oid(session.get("user_id")))
+        payload = mechanic_wo_payload(shop_db, shop, wo, oid(session.get("user_id")), view={
+            "channel": "mobile",
+            "sid": ev.edit_session_id(),
+            "protocol": view_protocol,
+            "can_edit": has_permission("work_orders.create"),
+        })
         # Механик обязан подтвердить пробег до работы с WO.
         payload["mileage_required"] = bool(wo.get("unit_id"))
         payload["server_now"] = utcnow().astimezone(_tz.utc).isoformat().replace("+00:00", "Z")
         return jsonify(payload), 200
+
+    # Легаси-строки без labor_id получают id ДО того, как их увидит клиент и
+    # вьюха (CAS); всё ниже строится из документа, который лежит в базе.
+    from app.blueprints.work_orders.services.mechanic_view import ensure_wo_labor_ids
+
+    wo = ensure_wo_labor_ids(shop_db, wo)
 
     # Полный контекст WO уже собирается для PDF — переиспользуем его,
     # убрав PDF-специфику (конфиг дизайна, логотип-base64).
@@ -384,6 +402,16 @@ def mobile_work_order_details(work_order_id):
     # в механик-ветке выше они приходят внутри mechanic_wo_payload.
     from app.blueprints.calendar.services.work_orders import linked_appointments_for_wo
 
+    # Тот же GET открывает и экран деталей, и форму правки — вьюху пишем
+    # всем, кто может сохранить WO (выбор base у старых сборок — консенсус
+    # вьюх, см. edit_views.consensus_base).
+    view_id = ev.record_view(
+        shop_db, shop["_id"], wo,
+        user_id=str(session.get("user_id") or ""), sid=ev.edit_session_id(), channel="mobile",
+        kind="load", protocol=view_protocol,
+        can_edit=has_permission("work_orders.create") and has_permission("work_orders.edit"),
+    )
+
     return jsonify({
         "ok": True,
         "id": str(wo["_id"]),
@@ -395,6 +423,8 @@ def mobile_work_order_details(work_order_id):
         "raw_labors": raw_labors,
         **ctx,
         "appointments": linked_appointments_for_wo(shop_db, shop, wo["_id"]),
+        "labors_rev": ev.labors_rev(wo),
+        "view_id": view_id,
     }), 200
 
 
@@ -684,6 +714,8 @@ def mobile_work_order_create():
         "updated_at": now,
         "created_by": user_id,
         "updated_by": user_id,
+        # Ревизия редактируемого состояния (CAS сохранений, edit_views.py).
+        "labors_rev": 1,
     }
     if is_mechanic:
         from app.blueprints.work_orders.services.mechanic_done import mechanic_done_fields
@@ -728,6 +760,11 @@ def mobile_work_order_create():
         "grand_total": None if is_mechanic else totals.get("grand_total"),
         "inventory_warnings": inventory_result.get("errors") or [],
         "core_sync_errors": core_sync.get("errors") or [],
+        "labors_rev": doc["labors_rev"],
+        # Новые строки с client_key клиента → их labor_id.
+        "client_keys": {
+            b["client_key"]: b["labor_id"] for b in labors if isinstance(b, dict) and b.get("client_key")
+        },
     }), 200
 
 
@@ -735,18 +772,13 @@ def mobile_work_order_create():
 @api_login_required
 @permission_required("work_orders.create")
 def mobile_work_order_edit(work_order_id):
+    from app.blueprints.work_orders.services import concurrent_save
+    from app.blueprints.work_orders.services import edit_views as ev
     from app.blueprints.work_orders.services.common import utcnow
-    from app.blueprints.work_orders.services.inventory import (
-        adjust_inventory_for_part_changes,
-        sync_work_order_cores,
-    )
-    from app.blueprints.work_orders.services.mobile_editor import compute_labors_and_totals
-    from app.blueprints.work_orders.services.totals import (
-        _apply_sales_tax_to_totals,
-        _get_shop_sales_tax_context,
-        align_totals_with_labors,
-        normalize_totals_payload,
-    )
+
+    # До всего остального: base для merge выбирается по вьюхам, записанным
+    # раньше начала этого запроса.
+    request_started_at = utcnow()
 
     shop_db, shop = get_shop_db()
     if shop_db is None:
@@ -764,130 +796,71 @@ def mobile_work_order_edit(work_order_id):
     # форсится в in_progress и не трогает деньги.
     if has_permission("work_orders.view_costs") and not has_permission("work_orders.edit"):
         return forbidden_response("work_orders.edit")
-    if (wo.get("status") or "open") == "paid":
-        return jsonify({"ok": False, "error": "paid_cannot_edit",
-                        "message": "Paid work orders cannot be edited."}), 400
-    # Сметы редактируются в веб-интерфейсе: мобильный save форсит
-    # open/in_progress и молча конвертировал бы смету со списанием склада.
-    if (wo.get("status") or "open") == "estimate":
-        return jsonify({"ok": False, "error": "estimate_web_only",
-                        "message": "Estimates are edited in the web interface."}), 400
-    # Подтверждённый менеджером WO механик редактировать не может
-    # (менеджер может снять подтверждение — тогда правка снова доступна).
-    if wo.get("manager_confirmed") and not has_permission("work_orders.view_costs"):
-        return jsonify({"ok": False, "error": "wo_confirmed",
-                        "message": "This work order was confirmed by a manager and is locked."}), 403
 
-    data = request.get_json(silent=True) or {}
-    labors_payload = data.get("labors")
-    if not isinstance(labors_payload, list) or not labors_payload:
-        return jsonify({"ok": False, "error": "labors_required",
-                        "message": "At least one labor is required."}), 400
-
-    # Механик-режим: merge по labor_id — менеджерские hours/rate/цены
-    # сохраняются, клиентские деньги игнорируются.
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
     is_mechanic = not has_permission("work_orders.view_costs")
-    if is_mechanic:
-        from app.blueprints.work_orders.services.mechanic_editor import MILEAGE_REQUIRED_ERROR, merge_mechanic_edit
-
-        # Пробег обязателен — проверяем до любых побочных эффектов (склад, коры).
-        # Старые сборки приложения поле не шлют вовсе (ключа нет) — их не
-        # ломаем; новые шлют всегда, пустое/мусор отклоняем.
-        if wo.get("unit_id") and "unit_mileage" in data and _i32_or_none(data.get("unit_mileage")) is None:
-            return jsonify(MILEAGE_REQUIRED_ERROR), 400
-        labors_payload = merge_mechanic_edit(shop_db, shop, wo, labors_payload)
-
-    labors, totals_raw = compute_labors_and_totals(shop_db, shop, labors_payload)
-    totals = align_totals_with_labors(normalize_totals_payload(totals_raw), labors)
-
-    # Ставка налога зафиксирована при создании WO (как в веб-редакторе).
-    existing_totals = wo.get("totals") if isinstance(wo.get("totals"), dict) else {}
-    locked_tax_rate = existing_totals.get("sales_tax_rate")
-    if locked_tax_rate is None:
-        locked_tax_rate = _get_shop_sales_tax_context(shop, shop_db).get("rate") or 0
-
-    totals = _apply_sales_tax_to_totals(
-        totals,
-        locked_tax_rate,
-        _mobile_wo_taxable(shop_db, data, existing_totals, wo.get("customer_id")),
-    )
-
-    now = utcnow()
-    user_id = oid(session.get("user_id"))
-    old_labors = wo.get("labors") or []
-
-    inventory_adjustment = adjust_inventory_for_part_changes(
-        shop_db, old_labors, labors, user_id,
-        ref={"kind": "work_order", "id": wo["_id"], "label": str(wo.get("wo_number") or "")},
-    )
-    core_sync = sync_work_order_cores(shop_db, shop, old_labors, labors, user_id)
-
-    set_fields = {
-        "labors": labors,
-        "totals": totals,
-        "inventory_adjusted_at": now,
-        "updated_at": now,
-        "updated_by": user_id,
-    }
     save_status = enforce_mechanic_status(str(data.get("status") or "").strip().lower())
-    if save_status in ("open", "in_progress"):
-        set_fields["status"] = save_status
+    common = {
+        "user_id": oid(session.get("user_id")),
+        "sid": ev.edit_session_id(),
+        "request_started_at": request_started_at,
+        "guard": concurrent_save.mobile_edit_guard(data, is_mechanic=is_mechanic),
+        "initial_wo": wo,
+    }
+    # Merge с тем, что приложение видело (edit views), CAS по labors_rev,
+    # побочные эффекты после записи — services/concurrent_save.py.
     if is_mechanic:
-        from app.blueprints.work_orders.services.mechanic_done import mechanic_done_fields
+        # Механик-режим: менеджерские hours/rate/цены сохраняются, клиентские
+        # деньги игнорируются.
+        payload, code = concurrent_save.save_mechanic_edit(
+            shop_db, shop, wo_id, data,
+            channel="mobile",
+            mechanic_mode=True,
+            cas_filter=concurrent_save.MECHANIC_CAS_FILTER,
+            status=save_status if save_status in ("open", "in_progress") else None,
+            taxable_from_request=True,
+            audit_suffix="(mobile)",
+            include_grand_total=True,
+            **common,
+        )
+    else:
+        # Менеджер: назначения механиков, hours_source и единицы запчастей
+        # остаются из WO (форма их не шлёт).
+        payload, code = concurrent_save.save_mobile_manager_edit(
+            shop_db, shop, wo_id, data, status=save_status, **common,
+        )
+    return jsonify(payload), code
 
-        set_fields.update(mechanic_done_fields(shop_db, shop, wo, data, user_id, now))
-    elif save_status == "in_progress":
-        # Менеджерское «Save In Progress»: отметки Done механиков снимаются,
-        # WO снова в группе In Work (как в веб-редакторе).
-        from app.blueprints.work_orders.services.mechanic_done import clear_mechanic_done_fields
 
-        set_fields.update(clear_mechanic_done_fields())
+@mobile_api_bp.get("/api/mobile/work_orders/<work_order_id>/rev")
+@api_login_required
+@permission_required("work_orders.view")
+def mobile_work_order_rev(work_order_id):
+    """Дешёвый опрос формы/деталей: сдвинулась ли ревизия WO (labors_rev).
+    Вьюх не пишет. Механику (нет view_costs) статус не отдаётся — paid ему
+    не показывается нигде: только locked и его Done."""
+    from app.blueprints.work_orders.services.edit_views import with_rev
+    from app.blueprints.work_orders.services.mechanic_view import mechanic_rev_payload
 
-    # Обновление пробега юнита из формы WO (как в веб-редакторе).
-    unit_mileage = _i32_or_none(data.get("unit_mileage"))
-    prior_unit_mileage = None
-    if unit_mileage is not None:
-        from app.blueprints.work_orders.services.mechanic_editor import odometer_moves_forward
+    shop_db, shop = get_shop_db()
+    if shop_db is None:
+        return jsonify({"ok": False, "error": "shop_db_missing"}), 200
 
-        unit_doc = shop_db.units.find_one({"_id": wo.get("unit_id"), "shop_id": shop["_id"]}, {"mileage": 1})
-        prior_unit_mileage = (unit_doc or {}).get("mileage")
-        set_fields["mileage"] = unit_mileage
-        if odometer_moves_forward(prior_unit_mileage, unit_mileage):
-            shop_db.units.update_one(
-                {"_id": wo.get("unit_id"), "shop_id": shop["_id"], "is_active": True},
-                {"$set": {"mileage": unit_mileage, "updated_at": now, "updated_by": user_id}},
-            )
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return jsonify({"ok": False, "error": "invalid_work_order_id"}), 400
 
-    if is_mechanic:
-        # Дата WO (дата инвойса) = день последнего реального сохранения
-        # механиком — см. mechanic_save_date_fields.
-        from app.blueprints.work_orders.services.mechanic_editor import mechanic_save_date_fields
-
-        set_fields.update(mechanic_save_date_fields(wo, labors, data, set_fields, user_id, now, unit_mileage=prior_unit_mileage))
-
-    shop_db.work_orders.update_one({"_id": wo_id}, {"$set": set_fields})
-    _done_now = bool(set_fields.get("mechanic_done")) and not bool(wo.get("mechanic_done"))
-    audit_log.log_event("done" if _done_now else "update", "work_order", wo_id, label=audit_log.wo_label(wo),
-                        summary=f"{audit_log.wo_label(wo)} {'marked Done' if _done_now else 'saved'} (mobile)",
-                        changes=audit_log.wo_changes(wo, set_fields))
-
-    from app.blueprints.work_orders.services.push_events import notify_after_mechanic_save
-
-    notify_after_mechanic_save(shop, wo, set_fields, wo_id, wo.get("wo_number"), user_id)
-
-    # Записи календаря, привязанные к WO, следуют за работой (In Progress / Completed).
-    from app.blueprints.calendar.services.work_orders import sync_linked_appointments_status
-
-    sync_linked_appointments_status(shop_db, shop, wo_id)
-
-    return jsonify({
-        "ok": True,
-        "id": str(wo_id),
-        "status": set_fields.get("status") or (wo.get("status") or "open"),
-        "grand_total": totals.get("grand_total"),
-        "inventory_warnings": inventory_adjustment.get("errors") or [],
-        "core_sync_errors": core_sync.get("errors") or [],
-    }), 200
+    wo = shop_db.work_orders.find_one(
+        {"_id": wo_id, "shop_id": shop["_id"], "is_active": True},
+        with_rev({"status": 1, "manager_confirmed": 1, "mechanic_done": 1, "mechanic_done_marks": 1}),
+    )
+    if not wo:
+        return jsonify({"ok": False, "error": "work_order_not_found"}), 404
+    return jsonify(mechanic_rev_payload(
+        wo, oid(session.get("user_id")), mechanic=not has_permission("work_orders.view_costs"),
+    )), 200
 
 
 @mobile_api_bp.get("/api/mobile/customers")
@@ -942,7 +915,7 @@ def mobile_customers():
 
 @mobile_api_bp.get("/api/mobile/customers/<customer_id>")
 @api_login_required
-@permission_required("customers.view")
+@permission_required_any("customers.view", "work_orders.create")
 def mobile_customer_details(customer_id):
     shop_db, shop = get_shop_db()
     if shop_db is None:
@@ -957,6 +930,26 @@ def mobile_customer_details(customer_id):
         return jsonify({"ok": False, "error": "customer_not_found"}), 404
 
     from app.blueprints.work_orders.services.lookups import customer_label, unit_label
+
+    # Без customers.view (механик) — только то, что нужно для создания WO:
+    # имя клиента и его юниты. Сборки приложения до 1.0.3 при «+» из поиска
+    # юнита грузят эту карточку и ловили 403 forbidden; контакты, адрес и
+    # налоговый флаг механику не отдаём (тот же объём, что /work_orders/api/units).
+    if not has_permission("customers.view"):
+        brief_units = [
+            {"id": str(u["_id"]), "label": unit_label(u), "mileage": u.get("mileage")}
+            for u in shop_db.units.find(
+                {"customer_id": cust_id, "shop_id": shop["_id"], "is_active": True}
+            ).sort("unit_number", 1)
+        ]
+        return jsonify({
+            "ok": True,
+            "id": str(c["_id"]),
+            "label": customer_label(c),
+            "is_active": c.get("is_active", True) is not False,
+            "contacts": [],
+            "units": brief_units,
+        }), 200
 
     contacts = []
     for x in (c.get("contacts") or []):
@@ -1322,6 +1315,7 @@ def mobile_vendor_create():
         build_contacts_from_payload,
         build_vendor_legacy_contact_fields,
     )
+    from app.blueprints.vendors.services import VendorInputError, clean_website
     from app.blueprints.work_orders.services.common import utcnow
 
     shop_db, shop = get_shop_db()
@@ -1338,13 +1332,20 @@ def mobile_vendor_create():
         msg = duplicate_message("Vendor", existing.get("name"), existing)
         return jsonify({"ok": False, "error": msg, "message": msg}), 409
 
+    # Сайт храним нормализованным (https:// подставляется сам), мусор
+    # вроде javascript: — 400 с понятным текстом, как на вебе.
+    try:
+        website = clean_website(data.get("website"))
+    except VendorInputError as exc:
+        return jsonify(exc.payload()), exc.status
+
     contacts = build_contacts_from_payload(data)
     now = utcnow()
     user_id = oid(session.get("user_id"))
     doc = {
         "name": name,
         "contacts": contacts,
-        "website": str(data.get("website") or "").strip() or None,
+        "website": website,
         "address": str(data.get("address") or "").strip() or None,
         "notes": str(data.get("notes") or "").strip() or None,
         "is_active": True,

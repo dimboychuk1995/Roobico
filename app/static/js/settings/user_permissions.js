@@ -105,8 +105,8 @@
         rows.push(`
           <tr data-perm="${escapeHtml(pk)}">
             <td>
-              <div style="font-weight:500;color:#1e293b;">${escapeHtml(state.labels[pk] || pk)}</div>
-              <div class="text-muted" style="font-size:.72rem;font-family:ui-monospace,Menlo,monospace;">${escapeHtml(pk)}</div>
+              <div class="rp-perm-label">${escapeHtml(state.labels[pk] || pk)}</div>
+              <div class="rp-perm-key">${escapeHtml(pk)}</div>
             </td>
             <td class="text-center">
               ${fromRole ? '<span class="rp-pill-yes">Yes</span>' : '<span class="rp-pill-no">No</span>'}

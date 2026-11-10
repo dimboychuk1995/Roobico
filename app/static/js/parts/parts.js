@@ -2132,7 +2132,7 @@
 						scanVendorSubmitBtn.disabled = false;
 						scanVendorSubmitBtn.textContent = "Create Vendor";
 						if (scanVendorAlert) {
-							scanVendorAlert.textContent = result.error || "Failed to create vendor.";
+							scanVendorAlert.textContent = result.message || result.error || "Failed to create vendor.";
 							scanVendorAlert.classList.remove("d-none");
 						}
 					}

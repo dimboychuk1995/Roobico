@@ -652,9 +652,9 @@ S("parts-stocktake-complete-confirm", "Complete & apply: the confirmation with S
   lambda: f"/parts/stocktakes/{state.get('stocktake', '')}", prep=seq(wait(600), click("#stCompleteBtn"), wait(700)), element=".swal2-popup, .modal.show .modal-dialog", optional=True)
 
 # Vendors
-S("vendors-list", "Vendors list: Name, Phone, Email, Website, Primary contact, Address, Balance (unpaid orders) and Status; Add Vendor; click a name for Vendor Orders.",
+S("vendors-list", "Vendors list: Name, Phone, Email, Website (short link), Primary contact, Address, Balance (unpaid orders) and Status; the Vendors / Portal logins tabs; Add Vendor; click a name for Vendor Orders.",
   "/vendors/", hl=["button[data-bs-target='#createVendorModal']"])
-S("vendors-add-modal", "Create new vendor: name (required), website, address with autocomplete, notes and the contacts block with a main contact.",
+S("vendors-add-modal", "Create new vendor: name (required), website (no https:// needed), the Portal login section (login and encrypted password, with Show), address with autocomplete, notes and the contacts block with a main contact.",
   "/vendors/", prep=modal("createVendorModal", "button[data-bs-target='#createVendorModal']"), element="#createVendorModal .modal-dialog")
 S("vendors-orders-modal", "Vendor Orders popup: the vendor's orders with a date filter and totals — Orders, Total Amount, Paid, Unpaid, Received, Not Received.",
   "/vendors/", prep=seq(wait(1000), jsclick(".openVendorOrdersBtn"), wait_for("#vendorOrdersModal.show"), wait(1500)), element="#vendorOrdersModal .modal-dialog")
@@ -696,7 +696,7 @@ S("settings-shops", "Shops: your locations with Edit and Inactive, + Add shop, a
   "/settings/locations")
 S("settings-shop-add-modal", "Add Shop: name, address, phone and email of a new location — it gets its own settings and data.",
   "/settings/locations", prep=modal("createShopModal", "button[data-bs-target='#createShopModal']"), element="#createShopModal .modal-dialog")
-S("settings-users", "Users & Roles: every user with role, shops, pay type and status (Invited / Active / Inactive); Edit, Permissions and Deactivate per row; + New user and Manage roles.",
+S("settings-users", "Users & Roles: people grouped by role in sections (Owner, managers, mechanics, Viewer, custom roles), each header showing the role and how many people have it; per row email, role, status (Invited / Active / Inactive) and Edit, Permissions, Deactivate; + New user and Manage roles.",
   "/settings/users", hl=["button[data-bs-target='#createUserModal']"])
 S("settings-user-create-modal", "Create new user: first and last name, email (the invitation goes there), phone, Role, Active, Pay type with salary amount and Shop access checkboxes.",
   "/settings/users", prep=modal("createUserModal", "button[data-bs-target='#createUserModal']"), element="#createUserModal .modal-dialog")

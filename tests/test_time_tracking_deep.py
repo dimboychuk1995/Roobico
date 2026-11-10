@@ -152,9 +152,20 @@ def _cleanup_wo(shop_db, wo_id):
 
 
 def _echo_web_save(owner_client, shop_db, wo_id, hours_override=None, drop_labor_ids=None,
-                   hours_edited_ids=None):
+                   hours_edited_ids=None, page_view=False):
     """Сохранение менеджером из веб-редактора: клиент шлёт ровно то, что
-    отрисовано в форме (см. serializeBlocks в work_order_details.js)."""
+    отрисовано в форме (см. serializeBlocks в work_order_details.js).
+
+    page_view — как новый JS: страница сначала открыта (рендер записал edit
+    view), Save шлёт её view_id; только тогда строка, которую страница видела,
+    удаляется по отсутствию. Без него — старая вкладка (консервативный merge)."""
+    view_id = None
+    if page_view:
+        import json
+        import re
+
+        html = owner_client.get(f"/work_orders/details?work_order_id={wo_id}").get_data(as_text=True)
+        view_id = json.loads(re.search(r'id="workOrderCreatedData">(.*?)</script>', html, re.S).group(1))["view_id"]
     wo = _wo(shop_db, wo_id)
     labors = []
     for b in wo["labors"]:
@@ -179,8 +190,10 @@ def _echo_web_save(owner_client, shop_db, wo_id, hours_override=None, drop_labor
             "issue_description": lab.get("issue_description") or "",
             "parts": [],
         })
-    resp = _post_json(owner_client, f"/work_orders/api/work_orders/{wo_id}/update",
-                      {"labors": labors, "totals": {}, "save_status": "in_progress"})
+    payload = {"labors": labors, "totals": {}, "save_status": "in_progress"}
+    if view_id is not None:
+        payload.update({"merge_protocol": 1, "view_id": view_id})
+    resp = _post_json(owner_client, f"/work_orders/api/work_orders/{wo_id}/update", payload)
     assert resp.status_code == 200, resp.get_data(as_text=True)
     body = resp.get_json()
     assert body["ok"] is True, body
@@ -573,8 +586,8 @@ def test_orphan_logs_after_labor_removed_from_web(app, deep_seed, mongo):
     _backdate_open_timer(shop_db, m1["_id"], 3600)
     _stop(c1)
 
-    # Менеджер сохраняет WO без этого лейбора.
-    _echo_web_save(owner, shop_db, data["id"], drop_labor_ids={l_del})
+    # Менеджер открывает WO и сохраняет его без этого лейбора.
+    _echo_web_save(owner, shop_db, data["id"], drop_labor_ids={l_del}, page_view=True)
     wo = _wo(shop_db, data["id"])
     assert len(wo["labors"]) == 1
 

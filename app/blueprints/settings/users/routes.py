@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 from bson import ObjectId
-from flask import render_template, request, redirect, url_for, flash, session
+from flask import current_app, render_template, request, redirect, url_for, flash, session
 
 from app.utils import audit_log
 from app.blueprints.settings import settings_bp
@@ -26,6 +26,8 @@ from app.blueprints.main.routes import NAV_ITEMS
 from app.utils.layout import build_app_layout_context
 from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
 from app.utils.mongo_search import build_regex_search_filter
+from app.utils.user_roles import group_users_by_role, load_role_catalog, role_keys_matching
+from app.utils.user_names import refresh_user_name_snapshots, user_display_name
 
 
 # -----------------------------
@@ -183,6 +185,13 @@ def _load_shops_for_tenant(master, tenant_id):
     return shops
 
 
+# Список пользователей сгруппирован по ролям, поэтому показывается одной
+# страницей (группа не должна рваться между страницами); пагинация остаётся
+# только предохранителем. Сортировка — лишь по полям внутри группы.
+USERS_PAGE_SIZE = 500
+USERS_SORT_FIELDS = ["name", "email", "created_at"]
+
+
 def _parse_status_filter(raw) -> str:
     """Общий фильтр списков: active (по умолчанию) / inactive / all."""
     status = (raw or "active").strip().lower()
@@ -205,6 +214,27 @@ def _redirect_users_index():
     if per_page:
         params["per_page"] = per_page
     return redirect(url_for("settings.users_index", **params))
+
+
+def _refresh_name_snapshots_after_rename(master, target: dict, update_doc: dict) -> None:
+    """
+    Пользователь переименован (сменилось отображаемое имя) — переписать
+    снимки его имени в shop-базах тенанта: назначения на WO, отметки Done,
+    тайм-логи, бригады календаря (app/utils/user_names). Экраны и так берут
+    живое имя по id; снимки нужны «сырым» читателям — AI-ассистенту и старым
+    сборкам приложения. Best effort: правка пользователя уже сохранена, сбой
+    рефреша — только в лог. labors_rev не двигается (это не правка WO):
+    Save, прочитавший WO до переименования, может вернуть в снимок старое
+    имя — косметика, экраны его не показывают.
+    """
+    old_name = user_display_name(target)
+    new_name = user_display_name({**target, **update_doc})
+    if not new_name or new_name == old_name:
+        return
+    try:
+        refresh_user_name_snapshots(master, target.get("tenant_id"), target["_id"], new_name)
+    except Exception:
+        current_app.logger.exception("Users: failed to refresh name snapshots of user %s", target.get("_id"))
 
 
 # -----------------------------
@@ -240,8 +270,15 @@ def users_index():
 
     q = (request.args.get("q") or "").strip()
     status = _parse_status_filter(request.args.get("status"))
+    sort_by = (request.args.get("sort_by") or "").strip()
 
-    page, per_page = get_pagination_params(request.args, default_per_page=20, max_per_page=100)
+    # Роли тенанта (системные + кастомные): подписи групп и селекты ролей.
+    role_catalog = load_role_catalog(_get_tenant_db())
+
+    # per_page из URL не слушаем: группы по ролям не должны рваться между
+    # страницами (старые ссылки и редиректы несли per_page=20).
+    page, _ = get_pagination_params(request.args, default_per_page=USERS_PAGE_SIZE, max_per_page=USERS_PAGE_SIZE)
+    per_page = USERS_PAGE_SIZE
     query_filter = {"tenant_id": {"$in": tenant_values}}
     if status == "active":
         query_filter["is_active"] = {"$ne": False}
@@ -253,12 +290,17 @@ def users_index():
         object_id_fields=["_id"],
     )
     if search_filter:
+        # В users.role лежит ключ, а список показывает название роли —
+        # «Parts manager» или новое имя переименованной роли тоже ищутся.
+        role_keys = role_keys_matching(role_catalog, q)
+        if role_keys:
+            search_filter["$or"].append({"role": {"$in": role_keys}})
         query_filter = {"$and": [query_filter, search_filter]}
 
     users, pagination = paginate_find(
         master.users,
         query_filter,
-        get_sort_params(request.args, [("created_at", -1)], ["name", "email", "role", "is_active", "created_at"]),
+        get_sort_params(request.args, [("created_at", -1)], USERS_SORT_FIELDS),
         page,
         per_page,
     )
@@ -268,20 +310,31 @@ def users_index():
         raw_shop_ids = u.get("shop_ids") if isinstance(u.get("shop_ids"), list) else []
         u["shop_ids_str"] = [str(x) for x in raw_shop_ids if x is not None]
 
+    # Группы по ролям; явная сортировка из URL (клик по Name/Email)
+    # действует внутри каждой группы, без неё — по имени.
+    user_groups = group_users_by_role(users, role_catalog, keep_order=sort_by in USERS_SORT_FIELDS)
+
+    actor_is_owner = _actor_is_owner(current_user)
+    # Селекты ролей в формах — роли тенанта в том же порядке, кастомные тоже;
+    # Owner — только владельцу. Эскалацию сервер проверяет при сохранении.
+    role_options = [r for r in role_catalog if actor_is_owner or not _is_protected_role(r["key"])]
+
     # ✅ шапы для чекбоксов (только текущий tenant)
     shops_for_form = _load_shops_for_tenant(master, tenant_oid)
 
     return _render_settings_page(
         "public/settings/users.html",
         users=users,
+        user_groups=user_groups,
+        role_options=role_options,
         pagination=pagination,
         q=q,
         status=status,
         shops_for_form=shops_for_form,
         active_shop_id=str(session.get(SESSION_SHOP_ID) or ""),
-        sort_by=(request.args.get("sort_by") or "").strip(),
+        sort_by=sort_by,
         sort_dir=(request.args.get("sort_dir") or "").strip(),
-        actor_is_owner=_actor_is_owner(current_user),
+        actor_is_owner=actor_is_owner,
         can_manage_pay=_can_manage_pay(),
         protected_role_keys=sorted(PROTECTED_ROLE_KEYS),
     )
@@ -419,6 +472,8 @@ def users_edit(user_id):
                         changes=audit_log.diff_fields(target, update_doc, {"first_name": "First name", "last_name": "Last name", "email": "Email",
                                                                        "phone": "Phone", "role": "Role", "is_active": "Active",
                                                                        "shop_ids": "Locations", "pay_type": "Pay type", "salary_amount": "Salary"}))
+    # Новое имя — и в снимках старых WO / тайм-логов / календаря.
+    _refresh_name_snapshots_after_rename(master, target, update_doc)
     flash("User updated successfully.", "success")
     return _redirect_users_index()
 

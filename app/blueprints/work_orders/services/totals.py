@@ -20,7 +20,6 @@ from app.blueprints.work_orders.services.common import (
     oid,
     part_unit_key,
     round2,
-    utcnow,
 )
 
 
@@ -350,6 +349,24 @@ def _calc_misc_total_from_parts(parts: list) -> tuple:
             taxable_total += amount  # legacy items default to taxable
 
     return round2(total), round2(taxable_total)
+
+
+def misc_taxable_total_for_labors(labors) -> float:
+    """
+    Облагаемая налогом часть misc-позиций всех блоков — так же, как её
+    считает align_totals_with_labors по каждому блоку.
+
+    Передавать в totals ЯВНО, когда тоталы собирает сервер: align и
+    normalize_totals_payload превращают отсутствующий misc_taxable_total в 0,
+    и облагаемый misc молча выпал бы из налога.
+    """
+    total = 0.0
+    for block in labors if isinstance(labors, list) else []:
+        if not isinstance(block, dict):
+            continue
+        parts = normalize_parts_payload(block.get("parts") or [])
+        total += round2(_calc_misc_total_from_parts(parts)[1])
+    return round2(total)
 
 
 def align_totals_with_labors(totals: dict, labors: list) -> dict:

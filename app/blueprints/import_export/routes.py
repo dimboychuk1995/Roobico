@@ -49,6 +49,7 @@ from app.utils.entity_search import build_customer_search_terms, build_unit_sear
 from app.utils.mongo_tx import run_atomically
 from app.utils.parts_search import build_parts_search_terms
 from app.utils.permissions import permission_required
+from app.utils.urls import normalize_website
 
 
 def _oid(value):
@@ -362,7 +363,11 @@ def _build_unit_doc(mapped_row, customer_id, shop, now, user_id):
     return doc, None
 
 
-def _build_vendor_doc(mapped_row, shop, now, user_id):
+def _build_vendor_doc(mapped_row, shop, now, user_id, warn=None):
+    """Учётки порталов (логин/пароль) импорт не принимает никогда — их нет в
+    полях маппинга, а лишние ключи здесь не читаются. Сайт нормализуется как
+    в форме (https:// дописывается); невалидный — строка импортируется без
+    сайта, с оговоркой через warn(reason)."""
     name = _safe_str(mapped_row.get("name"))
     if not name:
         return None, "vendor name is empty"
@@ -371,6 +376,10 @@ def _build_vendor_doc(mapped_row, shop, now, user_id):
     last_name = _safe_str(mapped_row.get("last_name"))
     phone = _safe_str(mapped_row.get("phone"))
     email = _safe_str(mapped_row.get("email"))
+    raw_website = _safe_str(mapped_row.get("website"))
+    website = normalize_website(raw_website)
+    if raw_website and not website and warn:
+        warn(f'website "{raw_website[:80]}" is not a valid address — the vendor was imported without it')
 
     contacts = []
     if first_name or last_name or phone or email:
@@ -384,7 +393,7 @@ def _build_vendor_doc(mapped_row, shop, now, user_id):
 
     doc = {
         "name": name,
-        "website": _safe_str(mapped_row.get("website")),
+        "website": website,
         "address": _safe_str(mapped_row.get("address")),
         "notes": _safe_str(mapped_row.get("notes")),
         "contacts": contacts,
@@ -584,6 +593,8 @@ def _import_work_order(shop_db, shop, mapped_row, ctx, now, user_id):
         "mechanic_done": False,
         "manager_confirmed": False,
         "imported": True,
+        # Ревизия редактируемого состояния (CAS сохранений WO, edit_views.py).
+        "labors_rev": 1,
     }
 
     if status != "paid":
@@ -828,7 +839,8 @@ def run_import():
                 imported += 1
 
             elif entity_type == "vendors":
-                doc, reason = _build_vendor_doc(mapped_row, shop, now, user_id)
+                vendor_notes: list[str] = []
+                doc, reason = _build_vendor_doc(mapped_row, shop, now, user_id, warn=vendor_notes.append)
                 if doc is None:
                     _err(i, reason)
                     continue
@@ -840,6 +852,8 @@ def run_import():
                 seen_in_file.add(_dup_norm(doc.get("name")))
                 shop_db.vendors.insert_one(doc)
                 imported += 1
+                for vendor_note in vendor_notes:
+                    _warn(i, vendor_note)
 
             elif entity_type == "parts":
                 row_index = i
@@ -959,10 +973,13 @@ def _export_units(shop_db, shop_id):
 
 
 def _export_vendors(shop_db, shop_id):
+    # Учётки порталов (portal_login / токен пароля) не экспортируются никогда:
+    # их даже не читаем из базы.
     headers = ["Vendor Name", "Contact First Name", "Contact Last Name", "Phone",
                "Email", "Website", "Address", "Notes", "Active"]
     rows = []
-    for v in shop_db.vendors.find({"shop_id": shop_id}).sort("name", 1):
+    no_credentials = {"portal_login": 0, "portal_password_enc": 0}
+    for v in shop_db.vendors.find({"shop_id": shop_id}, no_credentials).sort("name", 1):
         main = _main_contact(v)
         rows.append([
             v.get("name") or "",

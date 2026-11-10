@@ -12,9 +12,14 @@
   Active / Inactive / All. status — текущее значение ("active" по умолчанию),
   status_labels — подписи опций, напр. {"active": "Active customers", ...}.
   Один и тот же фильтр на всех списках сущностей с деактивацией.
+  hidden — доп. GET-параметры вида страницы ({"view": "logins"}): уходят
+  скрытыми полями и сохраняются кнопкой Reset.
 #}
-{% macro search_bar(q, placeholder="Search...", status=None, status_labels=None, status_title=None) %}
+{% macro search_bar(q, placeholder="Search...", status=None, status_labels=None, status_title=None, hidden=None) %}
 <form method="get" class="row g-2 align-items-center mb-3">
+  {% for hidden_name, hidden_value in (hidden or {}).items() %}
+  <input type="hidden" name="{{ hidden_name }}" value="{{ hidden_value }}" />
+  {% endfor %}
   <div class="col-12 col-md-8 col-lg-6">
     <input
       type="text"
@@ -39,11 +44,25 @@
   {% if q or (status is not none and status != 'active') %}
     <div class="col-auto">
       <a class="btn btn-sm btn-outline-secondary"
-         href="{{ url_for(request.endpoint, **request.view_args) }}">Reset</a>
+         href="{{ url_for(request.endpoint, **dict(request.view_args, **(hidden or {}))) }}">Reset</a>
     </div>
   {% endif %}
 </form>
 {% endmacro %}
+
+{# Ссылка на внешний сайт (сайт вендора и т. п.): href — нормализованный URL
+   (app/utils/urls.website_href), label — короткая подпись без https://.
+   Нет ссылки (старое значение-мусор) — показываем текст как есть, пусто — «—».
+   Открывается в новой вкладке без доступа к window.opener. #}
+{% macro website_link(href, label, raw=None) -%}
+  {%- if href -%}
+    <a href="{{ href }}" target="_blank" rel="noopener noreferrer">{{ label or href }}</a>
+  {%- elif raw -%}
+    {{ raw }}
+  {%- else -%}
+    —
+  {%- endif -%}
+{%- endmacro %}
 
 {# Пагинация Prev/Next. Сохраняет ВСЕ текущие query-параметры страницы
    (поиск, сортировку, фильтры), меняя только page. #}

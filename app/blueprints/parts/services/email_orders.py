@@ -40,6 +40,7 @@ from app.utils.integrations.email_inbox import (
 )
 from app.utils.push_notifications import office_user_ids_for_shop, send_push_to_users
 from app.utils.tenant import shop_db_name
+from app.utils.urls import normalize_website
 
 from . import email_orders_ai as ai
 from .activation import ORDERABLE_PART_FILTER, reactivate_parts_for_order
@@ -387,7 +388,9 @@ def create_vendor_from_email(vendors_coll, shop: dict, extracted: dict, *, sende
     }]})
     doc = {
         "name": name,
-        "website": (extracted.get("vendor_website") or "").strip() or None,
+        # Сайт из письма — как у ручного ввода (https:// дописывается); мусор
+        # от AI («N/A», чужие схемы) просто не сохраняем.
+        "website": normalize_website(extracted.get("vendor_website")),
         "address": (extracted.get("vendor_address") or "").strip() or None,
         "contacts": contacts,
         "notes": "Created automatically from an email in the parts orders inbox.",

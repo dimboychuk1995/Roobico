@@ -5,6 +5,8 @@ None на standalone.
 """
 from __future__ import annotations
 
+from flask import current_app
+
 from app.blueprints.work_orders.services.common import round2
 from app.blueprints.work_orders.services.totals import _work_order_grand_total
 
@@ -33,7 +35,35 @@ def _build_work_order_payment_summary(wo: dict, paid_amount: float) -> dict:
     }
 
 
+def _payment_status_summary(shop_db, wo: dict, session=None) -> dict:
+    """Сводка оплаты по прочитанному документу WO и сумме активных платежей;
+    status — что записать в WO."""
+    summary = _build_work_order_payment_summary(
+        wo, _sum_active_work_order_payments(shop_db, wo.get("_id"), session=session)
+    )
+    # Preserve "in_progress" status when there's no payment yet (computed status would be "open")
+    new_status = summary["status"]
+    current_status = (wo.get("status") or "open").strip().lower()
+    if new_status == "open" and current_status == "in_progress" and (summary.get("paid_amount") or 0) <= 0.01:
+        new_status = "in_progress"
+    summary["status"] = new_status
+    summary["is_in_progress"] = new_status == "in_progress"
+    return summary
+
+
 def _sync_work_order_payment_state(shop_db, wo: dict, user_id, now, session=None):
+    """
+    Статус оплаты WO (paid / open / in_progress) по сумме активных платежей.
+
+    Статус решается по grand_total прочитанного документа wo, поэтому запись
+    — compare-and-swap по его labors_rev (без $inc: строки не меняются).
+    Всё, что меняет тоталы WO (сохранения, пересчёт часов таймеров,
+    transfer), двигает labors_rev: если такая запись успела между чтением и
+    записью статуса, WO перечитывается и статус считается заново — иначе WO
+    стал бы «paid» с неоплаченным остатком (и выпал бы из списков неоплаченных).
+    Попытки (MAX_CAS_ATTEMPTS) кончились — пишем по последнему чтению, warning
+    в лог. Возвращает сводку того, что записано.
+    """
     if shop_db is None or not isinstance(wo, dict):
         return None
 
@@ -41,25 +71,42 @@ def _sync_work_order_payment_state(shop_db, wo: dict, user_id, now, session=None
     if not wo_id:
         return None
 
-    summary = _build_work_order_payment_summary(
-        wo, _sum_active_work_order_payments(shop_db, wo_id, session=session)
+    # Ленивый импорт: edit_views → mechanic_editor → mobile_editor →
+    # pdf_contexts → payments (цикл на уровне модулей).
+    from app.blueprints.work_orders.services import edit_views as ev
+
+    shop_filter = {"shop_id": wo["shop_id"]} if wo.get("shop_id") is not None else {}
+
+    def _write(doc: dict, summary: dict, *, cas: bool):
+        wo_filter = {"_id": wo_id, **shop_filter}
+        if cas:
+            wo_filter.update(ev.rev_filter(ev.labors_rev(doc)))
+        return shop_db.work_orders.update_one(
+            wo_filter,
+            {
+                "$set": {
+                    "status": summary["status"],
+                    "updated_at": now,
+                    "updated_by": user_id,
+                }
+            },
+            session=session,
+        )
+
+    for _attempt in range(ev.MAX_CAS_ATTEMPTS):
+        summary = _payment_status_summary(shop_db, wo, session=session)
+        if _write(wo, summary, cas=True).matched_count:
+            return summary
+        # Тоталы WO поменялись после нашего чтения — перечитать и решить заново.
+        fresh = shop_db.work_orders.find_one({"_id": wo_id, **shop_filter}, session=session)
+        if not fresh:
+            return summary
+        wo = fresh
+
+    current_app.logger.warning(
+        "WO %s: labors_rev kept changing while the payment status was written; status taken from the last read",
+        wo_id,
     )
-    # Preserve "in_progress" status when there's no payment yet (computed status would be "open")
-    new_status = summary["status"]
-    current_status = (wo.get("status") or "open").strip().lower()
-    if new_status == "open" and current_status == "in_progress" and (summary.get("paid_amount") or 0) <= 0.01:
-        new_status = "in_progress"
-    shop_db.work_orders.update_one(
-        {"_id": wo_id},
-        {
-            "$set": {
-                "status": new_status,
-                "updated_at": now,
-                "updated_by": user_id,
-            }
-        },
-        session=session,
-    )
-    summary["status"] = new_status
-    summary["is_in_progress"] = new_status == "in_progress"
+    summary = _payment_status_summary(shop_db, wo, session=session)
+    _write(wo, summary, cas=False)
     return summary

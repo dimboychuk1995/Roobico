@@ -467,16 +467,23 @@ def _compute_mechanic_hours_metrics(shop_db, shop, created_from, created_to_excl
                     continue
                 share_hours = hours_value * (share / 100.0)
 
+                # Имя в назначении — снимок на момент сохранения WO; строка
+                # пользователя получает живое имя в конце (_label_people).
                 mechanic_id = str(item.get("user_id") or "").strip()
-                mechanic_name = str(item.get("name") or "").strip() or str(item.get("email") or "").strip()
-                if not mechanic_name:
-                    mechanic_name = "Unknown mechanic"
+                snapshot = str(item.get("name") or "").strip() or str(item.get("email") or "").strip()
 
-                mechanic_key = mechanic_id or mechanic_name.lower()
+                # Легаси-назначение без user_id — строка по снимку имени.
+                mechanic_key = mechanic_id or (snapshot or "Unknown mechanic").lower()
                 row = assigned_hours_map.get(mechanic_key)
                 if row is None:
-                    row = {"user_id": mechanic_id, "name": mechanic_name, "hours": 0.0}
+                    row = {
+                        "user_id": mechanic_id,
+                        "name": snapshot or ("" if mechanic_id else "Unknown mechanic"),
+                        "hours": 0.0,
+                    }
                     assigned_hours_map[mechanic_key] = row
+                elif not row["name"] and snapshot:
+                    row["name"] = snapshot
 
                 row["hours"] = _round2(row["hours"] + share_hours)
                 assigned_hours_sum += share_hours
@@ -522,10 +529,7 @@ def _compute_mechanic_hours_metrics(shop_db, shop, created_from, created_to_excl
             actual_by_bucket[log_day] = actual_by_bucket.get(log_day, 0.0) + hours_value
 
         uid = str(log.get("user_id") or "")
-        user_row = actual_by_user.setdefault(
-            uid,
-            {"name": mechanic_names.get(uid) or log.get("user_name") or "", "hours": 0.0},
-        )
+        user_row = actual_by_user.setdefault(uid, {"name": log.get("user_name") or "", "hours": 0.0})
         user_row["hours"] += hours_value
         if not user_row["name"] and log.get("user_name"):
             user_row["name"] = log["user_name"]
@@ -587,24 +591,36 @@ def _compute_mechanic_hours_metrics(shop_db, shop, created_from, created_to_excl
         uattend_series = [_round2(uattend_by_bucket.get(d, 0.0)) for d in bucket_keys]
 
     # ── Summary по механикам: actual / invoiced / uAttend в одной строке ─
+    # Строка пользователя (ключ — его id) получает ЖИВОЕ имя из master.users
+    # в конце (_label_people), а не имя первого встреченного снимка: WO,
+    # сохранённый до переименования, иначе навсегда держал бы старое имя.
+    # Снимок — лишь запас для удалённых пользователей.
     summary_rows_map = {}
+    summary_user_ids = {}  # ключ строки -> user_id
 
-    def _summary_row(key, name):
+    def _summary_row(key, name, user_id=""):
         row = summary_rows_map.get(key)
         if row is None:
             row = {"name": name, "actual": None, "invoiced": None, "uattend": None}
             summary_rows_map[key] = row
         elif name and (row["name"] in ("", "Unknown mechanic")):
             row["name"] = name
+        if user_id:
+            summary_user_ids.setdefault(key, user_id)
         return row
 
     for uid, data in actual_by_user.items():
-        row = _summary_row(uid or data["name"].lower(), data["name"] or "Unknown mechanic")
+        if uid:
+            row = _summary_row(uid, data["name"], user_id=uid)
+        else:
+            row = _summary_row(data["name"].lower(), data["name"] or "Unknown mechanic")
         row["actual"] = _round2((row["actual"] or 0.0) + data["hours"])
 
     for mech in mechanic_hours_rows:
-        key = mech.get("user_id") or str(mech.get("name") or "").lower()
-        row = _summary_row(key, mech.get("name") or "Unknown mechanic")
+        if mech.get("user_id"):
+            row = _summary_row(mech["user_id"], mech.get("name") or "", user_id=mech["user_id"])
+        else:
+            row = _summary_row(str(mech.get("name") or "").lower(), mech.get("name") or "Unknown mechanic")
         row["invoiced"] = _round2((row["invoiced"] or 0.0) + _to_float(mech.get("hours")))
 
     if uattend_connected and uattend.get("by_uid"):
@@ -617,7 +633,9 @@ def _compute_mechanic_hours_metrics(shop_db, shop, created_from, created_to_excl
                 continue
             match = match_map.get(uatt_uid)
             if match and match.get("internal_id"):
-                row = _summary_row(str(match["internal_id"]), str(match.get("internal_name") or ""))
+                # Имя — по internal_id (живое), закэшированное internal_name — запас.
+                internal_id = str(match["internal_id"])
+                row = _summary_row(internal_id, str(match.get("internal_name") or ""), user_id=internal_id)
             else:
                 row = _summary_row(f"uattend:{uatt_uid}", emp_names.get(uatt_uid) or f"uAttend #{uatt_uid}")
             row["uattend"] = _round2((row["uattend"] or 0.0) + hours_value)
@@ -626,6 +644,8 @@ def _compute_mechanic_hours_metrics(shop_db, shop, created_from, created_to_excl
     if unassigned_hours > 0.01:
         row = _summary_row("__unassigned__", "Unassigned labor")
         row["invoiced"] = unassigned_hours
+
+    _label_people(shop, summary_rows_map, summary_user_ids, mechanic_hours_rows)
 
     summary_rows = sorted(
         summary_rows_map.values(),
@@ -672,6 +692,23 @@ def _compute_mechanic_hours_metrics(shop_db, shop, created_from, created_to_excl
             "rows": summary_rows,
         },
     }
+
+
+def _label_people(shop, summary_rows_map, summary_user_ids, mechanic_hours_rows):
+    """Живые имена строк пользователей (summary + легаси mechanic_hours_rows):
+    один запрос к master.users, включая неактивных — у таких « (inactive)».
+    Снимок из WO / тайм-лога / кэша uAttend — только если пользователя нет
+    (удалён), иначе «Former user». Какие часы считаются — не меняется."""
+    from app.utils.user_names import display_name_for, load_user_names, tenant_values_for_shop
+
+    user_ids = list(summary_user_ids.values()) + [m["user_id"] for m in mechanic_hours_rows if m.get("user_id")]
+    people = load_user_names(user_ids, tenant_values=tenant_values_for_shop(shop))
+    for key, user_id in summary_user_ids.items():
+        row = summary_rows_map[key]
+        row["name"] = display_name_for(people, user_id, row["name"], mark_inactive=True)
+    for mech in mechanic_hours_rows:
+        if mech.get("user_id"):
+            mech["name"] = display_name_for(people, mech["user_id"], mech.get("name"), mark_inactive=True)
 
 
 def _uattend_employee_names(shop_db, shop_id):

@@ -303,6 +303,8 @@ def main() -> int:
                 "mechanic_done_at": wo_date if mechanic_done else None,
                 "mechanic_done_by": mech3 if mechanic_done else None,
                 "manager_confirmed": False,
+                # Ревизия редактируемого состояния (CAS сохранений WO).
+                "labors_rev": 1,
             }
             wo_id = sdb.work_orders.insert_one(doc).inserted_id
             if paid:

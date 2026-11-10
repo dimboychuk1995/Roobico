@@ -14,6 +14,7 @@ from app.utils.layout import render_internal_page
 from app.utils.pagination import get_sort_params
 from app.utils.pdf_utils import render_chart_to_base64, render_html_to_pdf
 from app.utils.permissions import filter_nav_items, has_permission, permission_required
+from app.utils.user_names import display_name_for, load_user_names, tenant_values_for_shop, user_display_name
 
 
 STANDARD_REPORT_TABS = {
@@ -1258,6 +1259,23 @@ def _compute_payroll_totals(shop_db, shop_id, date_from: str, date_to: str) -> d
     return out
 
 
+def _apply_live_mechanic_names(buckets: dict, name_key: str, shop: dict | None = None) -> None:
+    """
+    Подписи строк «по механикам» (ключ buckets — user_id): живое имя из
+    master.users одним запросом, включая неактивных (« (inactive)»), — имя в
+    назначениях WO / тайм-логах / кэше uAttend лишь снимок на момент записи.
+    Снимок — запас для удалённого пользователя, иначе «Former user». Ключи
+    uAttend-сотрудников без аккаунта («uattend:<uid>») — их имя из uAttend
+    (пусто — «-»). Какие часы считаются, не меняется.
+    """
+    people = load_user_names(list(buckets), tenant_values=tenant_values_for_shop(shop))
+    for key, bucket in buckets.items():
+        if str(key).startswith("uattend:"):
+            bucket[name_key] = str(bucket.get(name_key) or "").strip() or "-"
+            continue
+        bucket[name_key] = display_name_for(people, key, bucket.get(name_key), mark_inactive=True)
+
+
 def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=None, exclude_customer_ids=None, chart_bucket="month"):
     # --- Sales (Work Orders) ---
     wo_query = {
@@ -1349,9 +1367,11 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=Non
                 if allocated <= 0:
                     continue
                 bucket = mechanics.setdefault(uid, {
-                    "name": str(mech.get("name") or "").strip() or uid,
+                    "name": str(mech.get("name") or "").strip(),
                     "hours": 0.0,
                 })
+                if not bucket["name"]:
+                    bucket["name"] = str(mech.get("name") or "").strip()
                 bucket["hours"] = _round2(bucket["hours"] + allocated)
                 wo_mech_hours += allocated
 
@@ -1367,6 +1387,9 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=Non
     sales_tax = _round2(sales_tax)
     sales_revenue = _round2(sales_revenue)
     invoiced_hours = _round2(invoiced_hours)
+
+    # Имена — живые по user_id (снимок из WO устаревает после переименования).
+    _apply_live_mechanic_names(mechanics, "name")
 
     # Sort mechanics by hours desc
     mech_sorted = sorted(mechanics.values(), key=lambda m: m["hours"], reverse=True)
@@ -1711,13 +1734,16 @@ def _report_mechanic_hours(shop_db, shop, date_ctx, chart_bucket="month"):
                 if allocated <= 0:
                     continue
 
+                # Имя — снимок из WO; живое подставляется в конце по user_id.
                 bucket = mechanics.setdefault(uid, {
                     "mechanic_id": uid,
-                    "mechanic_name": str(mech.get("name") or "").strip() or "-",
+                    "mechanic_name": str(mech.get("name") or "").strip(),
                     "total_hours": 0.0,
                     "wo_count": 0,
                     "labor_entries": 0,
                 })
+                if not bucket["mechanic_name"]:
+                    bucket["mechanic_name"] = str(mech.get("name") or "").strip()
 
                 bucket["total_hours"] = _round2(bucket["total_hours"] + allocated)
                 bucket["labor_entries"] += 1
@@ -1727,12 +1753,12 @@ def _report_mechanic_hours(shop_db, shop, date_ctx, chart_bucket="month"):
                     wo_set.add(wo_id)
                     bucket["wo_count"] += 1
 
-                # Chart time bucket per mechanic
+                # Chart time bucket per mechanic — по id, не по имени: тёзки не
+                # сливаются в одну линию, переименование не рвёт линию надвое.
                 tk = _time_bucket_key(wo_dt, chart_bucket)
                 if tk:
                     tb = time_buckets.setdefault(tk, {})
-                    mech_name = bucket["mechanic_name"]
-                    tb[mech_name] = _round2(tb.get(mech_name, 0) + allocated)
+                    tb[uid] = _round2(tb.get(uid, 0) + allocated)
 
     # Фактические часы из таймеров механиков (wo_time_logs) — рядом с billed.
     from app.blueprints.work_orders.services.time_tracking import summarize_mechanic_hours
@@ -1746,11 +1772,13 @@ def _report_mechanic_hours(shop_db, shop, date_ctx, chart_bucket="month"):
     for uid, info in tracked.items():
         bucket = mechanics.setdefault(uid, {
             "mechanic_id": uid,
-            "mechanic_name": str(info.get("user_name") or "").strip() or "-",
+            "mechanic_name": str(info.get("user_name") or "").strip(),
             "total_hours": 0.0,
             "wo_count": 0,
             "labor_entries": 0,
         })
+        if not bucket["mechanic_name"]:
+            bucket["mechanic_name"] = str(info.get("user_name") or "").strip()
         bucket["tracked_hours"] = _round2((info.get("seconds") or 0) / 3600.0)
     for bucket in mechanics.values():
         bucket.setdefault("tracked_hours", 0.0)
@@ -1802,6 +1830,8 @@ def _report_mechanic_hours(shop_db, shop, date_ctx, chart_bucket="month"):
                     continue
                 match = match_map.get(uatt_uid)
                 if match and match.get("internal_id"):
+                    # Строка внутреннего пользователя: имя — по internal_id в
+                    # конце, закэшированное internal_name — лишь запас.
                     key = str(match["internal_id"])
                     name = str(match.get("internal_name") or "").strip()
                 else:
@@ -1809,19 +1839,23 @@ def _report_mechanic_hours(shop_db, shop, date_ctx, chart_bucket="month"):
                     name = emp_names.get(uatt_uid) or f"uAttend #{uatt_uid}"
                 bucket = mechanics.setdefault(key, {
                     "mechanic_id": key,
-                    "mechanic_name": name or "-",
+                    "mechanic_name": name,
                     "total_hours": 0.0,
                     "wo_count": 0,
                     "labor_entries": 0,
                     "tracked_hours": 0.0,
                 })
-                if name and bucket.get("mechanic_name") in ("", "-"):
+                if name and not bucket.get("mechanic_name"):
                     bucket["mechanic_name"] = name
                 bucket["uattend_hours"] = _round2(float(bucket.get("uattend_hours") or 0.0) + uatt_hours)
                 total_uattend_hours += uatt_hours
         if uattend_connected:
             for bucket in mechanics.values():
                 bucket.setdefault("uattend_hours", 0.0)
+
+    # Подписи — живые имена по id (одним запросом, включая неактивных);
+    # строки uAttend без внутреннего аккаунта — имя из uAttend.
+    _apply_live_mechanic_names(mechanics, "mechanic_name", shop)
 
     rows = sorted(
         mechanics.values(),
@@ -1838,14 +1872,16 @@ def _report_mechanic_hours(shop_db, shop, date_ctx, chart_bucket="month"):
     total_wo = sum(int(r.get("wo_count") or 0) for r in rows)
     total_entries = sum(int(r.get("labor_entries") or 0) for r in rows)
 
-    # Build chart data: one dataset per mechanic
+    # Build chart data: one dataset per mechanic (данные — по id строки)
     labels = _fill_bucket_gaps(time_buckets, chart_bucket)
-    mech_names = [r["mechanic_name"] for r in rows]
     chart_data = {
         "labels": labels,
         "datasets": [
-            {"label": name, "data": [_round2(time_buckets.get(l, {}).get(name, 0)) for l in labels]}
-            for name in mech_names
+            {
+                "label": r["mechanic_name"],
+                "data": [_round2(time_buckets.get(l, {}).get(r["mechanic_id"], 0)) for l in labels],
+            }
+            for r in rows
         ],
         "is_hours": True,
     }
@@ -2484,6 +2520,10 @@ def timecard_salary_page():
         hours = hours_by_uid.get(uid) if uid is not None else None
         matched = ai_match_map.get(uid) if uid is not None else None
         internal_u = internal_by_id.get(matched_iid) if matched_iid else None
+        # Бейдж «↔ Internal: …» — живое имя пользователя по internal_id;
+        # internal_name из кэша матчинга — лишь запас (кэш мог пережить
+        # переименование, например при смене только регистра букв).
+        internal_name = user_display_name(internal_u) if internal_u else ""
         row = {
             "name": full_name,
             "email": (emp.get("email") or "") or (internal_u or {}).get("email") or "",
@@ -2494,8 +2534,8 @@ def timecard_salary_page():
             "hours": hours,
             "total": None,
             "note": "",
-            "matched_internal_name": (matched or {}).get("internal_name") or "",
-            "matched_internal_email": (matched or {}).get("internal_email") or "",
+            "matched_internal_name": internal_name or (matched or {}).get("internal_name") or "",
+            "matched_internal_email": (internal_u or {}).get("email") or (matched or {}).get("internal_email") or "",
             "matched_confidence": (matched or {}).get("confidence") or 0,
         }
         if rate is None and hours is None:

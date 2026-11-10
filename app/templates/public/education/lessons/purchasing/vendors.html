@@ -3,7 +3,8 @@
 {% call summary_box() %}
 <ul>
   <li>The Vendors list and its Balance column.</li>
-  <li>Adding a vendor with contacts.</li>
+  <li>Adding a vendor with contacts — the website without typing https://.</li>
+  <li>Vendor portal logins and passwords, and the Portal logins tab for quick look-ups.</li>
   <li>The Vendor Orders popup and deactivation.</li>
 </ul>
 {% endcall %}
@@ -13,7 +14,8 @@
 
 <h2>Columns</h2>
 <p>
-  Name, Phone, Email, Website, Primary contact, Address, <strong>Balance</strong> (unpaid total across the vendor's orders — needs
+  Name, Phone, Email, Website (a short link such as <code>fleetpride.com/login</code> that opens in a new tab), Primary contact, Address,
+  <strong>Balance</strong> (unpaid total across the vendor's orders — needs
   {{ perm("parts_orders.view", "View parts orders") }}) and Status. The search box searches every field including contacts; the status filter
   shows active, inactive or all vendors.
 </p>
@@ -23,8 +25,34 @@
 <p>{{ ui("Add Vendor") }} (needs {{ perm("vendors.create", "Create vendors") }}): Name (required), Website, Address with autocomplete, Notes and a <strong>Contacts</strong> block — several contacts, one always marked <strong>Main contact</strong> and used by default.</p>
 {{ shot("vendors-add-modal", "Create new vendor.", "md") }}
 {% endcall %}
-{% call step(2, "Save") %}
+{% call step(2, "Website — just the address") %}
+<p>Type the website the way you say it: <code>fleetpride.com</code> or <code>www.napaonline.com/login</code> — <code>https://</code> is added automatically and the list shows it without it. Text that is not a web address ("N/A", spaces, <code>javascript:</code>) is refused with "Enter a valid website, e.g. fleetpride.com"; an empty website is fine.</p>
+{% endcall %}
+{% call step(3, "Portal login (optional)") %}
+<p>If you order on the vendor's website, fill the <strong>Portal login</strong> section: Login and Password (<strong>Show</strong> checks what you typed). The password is stored encrypted. When editing later, the field says the password is saved — leave it blank to keep it, type a new one to replace it, or tick <strong>Remove saved password</strong>. The section is visible only with {{ perm("vendors.view_credentials", "View vendor portal logins & passwords") }}.</p>
+{% endcall %}
+{% call step(4, "Save") %}
 <p>The vendor is available in the order dialog and the part form right away.</p>
+{% endcall %}
+
+<h2>Portal logins — find a password in seconds</h2>
+<p>
+  Vendors → tab {{ ui("Portal logins") }} (next to "Vendors", needs {{ perm("vendors.view_credentials", "View vendor portal logins & passwords") }}):
+  a compact table of active vendors with the Website link, the Login with a copy button and the Password as <code>••••••••</code> with
+  {{ ui("Show") }} and copy buttons. A shown password hides again after 30 seconds; copy puts it on the clipboard without showing it.
+  Search finds a vendor by name, website or login; rows without a saved login show "—".
+</p>
+<p>
+  By default Owner, General manager, Manager and Parts manager have the permission; mechanics and viewers don't. A person who has it but
+  cannot create or edit vendors opens Vendors straight on Portal logins — handy for a counter person who only needs to look passwords up.
+</p>
+
+{% call note("Every reveal is recorded") %}
+Each password Show — and Copy while the password is hidden — appears in Reports → Activity Journal as "Viewed portal password of …"
+(Action <strong>Viewed</strong>) — who, when, from where, never the password itself; copying the login is not recorded. Saving shows the
+login and the password only as set / changed / removed, never their values, so a Viewer who opens the journal does not see them.
+Logins and passwords never go into exports, the AI assistant or logs. In the mobile app the vendor screen has the same Portal login
+card: Show, long-press to copy.
 {% endcall %}
 
 <h2>Vendor Orders</h2>

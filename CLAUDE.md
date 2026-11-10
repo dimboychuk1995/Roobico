@@ -67,6 +67,10 @@ Roobico — мультитенантный SaaS для автосервисов 
 - Ночная очистка системного клиента «NEW Customer» (юниты без WO, записей
   календаря, инспекций и вложений удаляются; cron root'а 08:30 UTC,
   `app.scripts.cleanup_system_customer`) — `deploy/system_customer_cleanup.md`.
+- Пароли порталов вендоров и ключи uAttend шифруются Fernet-ключом
+  `INTEGRATIONS_SECRET_KEY` из `.env` сервера: без него пароли не сохраняются
+  и не показываются. Ключ не менять и не терять — уже сохранённые пароли станут
+  нечитаемыми.
 - Включение транзакций Mongo на сервере: `deploy/enable_replica_set.md`.
   Gunicorn-конфиг: `deploy/gunicorn.conf.py` (systemd-юнит должен запускать с `-c`).
 - Мобильное приложение (TestFlight): из `mobile/` —
@@ -146,8 +150,18 @@ Roobico — мультитенантный SaaS для автосервисов 
   «часов механиков» считают только эти роли. Всё, что отдаётся через
   `/work_orders/api/mechanic/*` и механикские мобильные эндпоинты, вычищается
   от цен/ставок/тоталов (`work_orders/services/mechanic_view.py`); статус
-  `paid` механику не отдаём (в истории юнита маскируется как `completed`),
+  `paid` механику не отдаём (в истории юнита и в AI-ассистенте маскируется
+  как `completed` — `_MASK_PAID_STAGE` в `assistant/services/data_tools.py`),
   оплаченные WO для механика заблокированы.
+- **WO при одновременной правке**: `work_orders.labors` пишется только
+  compare-and-swap по `labors_rev` с `$inc` (`work_orders/services/concurrent_save.py`
+  `cas_update`; `rev_filter`/`bump_rev` из `edit_views.py`) + трёхсторонний merge
+  строк (`labor_merge.py`, офис — `office_merge.py`). Base для merge — вьюха из
+  `wo_edit_views` (`edit_views.find_base`, TTL 14 дней). Прямой `$set` по `labors`
+  без `labors_rev` молча откатывает чужие правки — так пропадала работа второго
+  механика. Побочные эффекты (склад, коры, пуши, журнал) — только после успешной
+  записи. Старые сборки мобилки (1.0.0–1.0.3, OTA нет) при любой ошибке молча
+  теряют правки — им новых отказов не отдавать, только консервативный merge.
 
 ## Справка пользователя
 

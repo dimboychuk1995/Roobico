@@ -1,12 +1,26 @@
 {% extends "layouts/app_base.html" %}
 {% from "components/attachments.html" import attachments_block, attachments_btn, attachments_modal with context %}
-{% from "components/ui.html" import search_bar, pagination_controls, empty_state %}
+{% from "components/ui.html" import search_bar, pagination_controls, empty_state, website_link %}
 
 {% block page_title %}Vendors{% endblock %}
 
 {% block app_content %}
+{# Учётки порталов вендоров (логин/пароль) — только с этим правом: вкладка
+   Portal logins, секция в форме. Пароль в HTML не попадает никогда — его
+   отдаёт /vendors/api/<id>/credentials по кнопке Show / Copy. #}
+{% set can_view_credentials = "vendors.view_credentials" in user_permissions %}
 <div class="page-header">
   <h1 class="page-header__title">Vendors</h1>
+  {% if can_view_credentials %}
+  <ul class="nav page-header__tabs" role="tablist">
+    <li class="nav-item" role="presentation">
+      <a class="nav-link {% if view != 'logins' %}active{% endif %}" id="tab-vendors" href="{{ url_for('vendors.vendors_page', view='vendors') }}" role="tab" aria-selected="{{ 'true' if view != 'logins' else 'false' }}">Vendors</a>
+    </li>
+    <li class="nav-item" role="presentation">
+      <a class="nav-link {% if view == 'logins' %}active{% endif %}" id="tab-portal-logins" href="{{ url_for('vendors.vendors_page', view='logins') }}" role="tab" aria-selected="{{ 'true' if view == 'logins' else 'false' }}">Portal logins</a>
+    </li>
+  </ul>
+  {% endif %}
   {% if "vendors.create" in user_permissions %}
   <div class="page-header__actions">
     <button class="btn btn-primary btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#createVendorModal">
@@ -16,11 +30,94 @@
   {% endif %}
 </div>
 
+{% if view == 'logins' %}
 <div class="card">
   <div class="card-body">
+    {{ search_bar(q, placeholder="Search by vendor, website or login...", hidden={"view": "logins"}) }}
+
+    {% if login_rows %}
+      <div class="table-responsive">
+        <table class="table table-sm align-middle mb-0" id="vendorLoginsTable">
+          <thead>
+            <tr class="text-muted">
+              <th style="width: 24%;">Vendor</th>
+              <th style="width: 24%;">Website</th>
+              <th style="width: 24%;">Login</th>
+              <th style="width: 22%;">Password</th>
+              {% if "vendors.edit" in user_permissions %}
+              <th style="width: 6%;" class="text-end">Actions</th>
+              {% endif %}
+            </tr>
+          </thead>
+          <tbody>
+            {% for r in login_rows %}
+            <tr data-vendor-id="{{ r.id }}">
+              <td class="fw-semibold">{{ r.name }}</td>
+              <td>{{ website_link(r.website_href, r.website_label, r.website) }}</td>
+              {# Логин и пароль не переносим по символам: на узком экране
+                 таблица прокручивается внутри .table-responsive. #}
+              <td class="text-nowrap">
+                {% if r.portal_login %}
+                  <div class="d-flex align-items-center gap-2">
+                    <span class="font-monospace">{{ r.portal_login }}</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary js-copy-login"
+                            data-copy-value="{{ r.portal_login }}" title="Copy login" aria-label="Copy login for {{ r.name }}">
+                      <i class="bi bi-clipboard" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+              <td class="text-nowrap">
+                {% if r.has_portal_password %}
+                  <div class="d-flex align-items-center gap-2 js-portal-password" data-vendor-id="{{ r.id }}">
+                    <span class="font-monospace js-portal-password-value">••••••••</span>
+                    <button type="button" class="btn btn-sm btn-outline-secondary js-show-password"
+                            aria-label="Show password for {{ r.name }}">Show</button>
+                    <button type="button" class="btn btn-sm btn-outline-secondary js-copy-password"
+                            title="Copy password" aria-label="Copy password for {{ r.name }}">
+                      <i class="bi bi-clipboard" aria-hidden="true"></i>
+                    </button>
+                  </div>
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+              {% if "vendors.edit" in user_permissions %}
+              <td class="text-end">
+                <button type="button" class="btn btn-sm btn-outline-primary editVendorBtn"
+                        data-vendor-id="{{ r.id }}"
+                        data-bs-toggle="modal" data-bs-target="#createVendorModal">
+                  Edit
+                </button>
+              </td>
+              {% endif %}
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <p class="text-muted small mt-2 mb-0">
+        Active vendors only. A shown password hides again after 30 seconds; each password Show (or Copy while it is hidden) is recorded in the Activity Journal.
+      </p>
+
+      {{ pagination_controls(pagination, label="Portal logins pagination") }}
+    {% else %}
+      {{ empty_state("No vendors found", "Active vendors appear here with their website, portal login and password.") }}
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="card">
+  <div class="card-body">
+    {# view=vendors держим явно: без него поиск / фильтр / Reset у того, кто
+       видит учётки, но не правит вендоров, увели бы на Portal logins. #}
     {{ search_bar(q, placeholder="Search vendors by any field...", status=status,
                   status_labels={"active": "Active vendors", "inactive": "Inactive vendors", "all": "All vendors"},
-                  status_title="Inactive vendors are hidden from parts orders; use Restore to bring one back") }}
+                  status_title="Inactive vendors are hidden from parts orders; use Restore to bring one back",
+                  hidden=({"view": "vendors"} if can_view_credentials else none)) }}
 
     {% if vendors and vendors|length > 0 %}
       <div class="table-responsive">
@@ -58,14 +155,7 @@
               <td>{{ v.get('main_contact_phone') or '—' }}</td>
               <td>{{ v.get('main_contact_email') or '—' }}</td>
 
-              <td>
-                {% set site = v.get('website') %}
-                {% if site %}
-                  <a href="{{ site }}" target="_blank" rel="noopener noreferrer">{{ site }}</a>
-                {% else %}
-                  —
-                {% endif %}
-              </td>
+              <td>{{ website_link(v.get('website_href'), v.get('website_label'), v.get('website')) }}</td>
 
               <td>
                 {{ v.get('main_contact_name') or '—' }}
@@ -130,6 +220,7 @@
     {% endif %}
   </div>
 </div>
+{% endif %}
 
 <!-- Create/Edit Vendor Modal -->
 <div class="modal fade" id="createVendorModal" tabindex="-1" aria-labelledby="createVendorModalLabel" aria-hidden="true">
@@ -137,6 +228,7 @@
     <div class="modal-content">
       <form method="POST" action="{{ url_for('vendors.vendors_create') }}" id="vendorForm">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="return_view" value="{{ view }}">
         <input type="hidden" id="editingVendorId" value="">
         <div class="modal-header">
           <h5 class="modal-title" id="createVendorModalLabel">Create new vendor</h5>
@@ -150,9 +242,45 @@
               <input type="text" name="name" id="vendorName" class="form-control" required autocomplete="off" />
             </div>
             <div class="col-md-6">
-              <label class="form-label">Website</label>
-              <input type="text" name="website" id="vendorWebsite" class="form-control" placeholder="https://..." autocomplete="off" />
+              <label class="form-label" for="vendorWebsite">Website</label>
+              <input type="text" name="website" id="vendorWebsite" class="form-control" placeholder="fleetpride.com"
+                     autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url" aria-describedby="vendorWebsiteHelp" />
+              <div class="invalid-feedback" id="vendorWebsiteError">Enter a valid website, e.g. fleetpride.com</div>
+              <div class="form-text" id="vendorWebsiteHelp">https:// is added automatically.</div>
             </div>
+
+            {% if can_view_credentials %}
+            <div class="col-12" id="vendorCredentialsGroup">
+              <div class="border rounded p-3">
+                <div class="mb-3">
+                  <div class="fw-semibold">Portal login</div>
+                  <div class="small text-muted">Your account on the vendor's website. The password is stored encrypted and is shown only to users allowed to view vendor portal logins.</div>
+                </div>
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <label class="form-label" for="vendorPortalLogin">Login</label>
+                    <input type="text" name="portal_login" id="vendorPortalLogin" class="form-control" maxlength="256"
+                           autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore />
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label" for="vendorPortalPassword">Password</label>
+                    <div class="input-group">
+                      <input type="password" name="portal_password" id="vendorPortalPassword" class="form-control" maxlength="256"
+                             autocomplete="new-password" placeholder="Optional" data-lpignore="true" data-1p-ignore aria-describedby="vendorPortalPasswordHelp" />
+                      <button class="btn btn-outline-secondary" type="button" id="vendorPortalPasswordToggle" tabindex="-1" aria-controls="vendorPortalPassword">Show</button>
+                    </div>
+                    <div class="form-text" id="vendorPortalPasswordHelp" hidden>A password is saved. Leave blank to keep it.</div>
+                  </div>
+                  <div class="col-12" id="vendorPortalPasswordClearGroup" hidden>
+                    <div class="form-check">
+                      <input class="form-check-input" type="checkbox" id="vendorPortalPasswordClear" value="1">
+                      <label class="form-check-label" for="vendorPortalPasswordClear">Remove saved password</label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            {% endif %}
 
             <div class="col-md-8">
               <label class="form-label">Address</label>

@@ -11,6 +11,9 @@ Work orders & estimates. `wo_number: int` (human number, starts 1000),
 `customer_id` → customers, `unit_id` → units, `status` (active: "open",
 "in_progress", "paid"; estimates: "estimate"/"estimated"/"quote"/"quoted"),
 `work_order_date: datetime`, `authorizations: array` (customer approvals).
+For users without `work_orders.view_costs` (mechanics) the tools return a
+paid work order with status "completed" — "paid" is never shown to them and
+a filter on "paid" finds nothing; describe such a work order as completed.
 `labors: array` of blocks: `{labor_id, labor: {description, hours (string),
 hours_source ("preset" = hours taken from the service preset, "tracked" =
 from mechanic timers, "" = typed by hand), rate_code,
@@ -24,6 +27,21 @@ when it was added, e.g. "gallon"; absent = "each")}]}`.
 misc_total, cost_total, shop_supply_total, sales_tax_rate, sales_tax_total,
 grand_total, is_taxable}`. Unpaid balance = grand_total minus sum of active
 work_order_payments for the WO.
+Mechanic progress: `mechanic_done: bool` (every mechanic who worked on the
+WO pressed Done — the "Mechanic done" badge), `mechanic_done_marks:
+[{user_id, name, at}]` (who already pressed Done), `manager_confirmed:
+bool` (confirmed by a manager, locked for mechanics).
+Internal bookkeeping (never needed for answers): `labors_rev: int` is an
+edit counter for the `labors` array and the Done marks — every write that
+changes them adds 1 (any save from the office page, the app or the
+mechanic page, Describe Issue, a timer start, hours recalculated after a
+timer stop or a time-session edit, Done / Save In Progress, Transfer,
+delete); missing = 0. It only stops two people from overwriting each
+other and says nothing about money or progress. A labor block may also
+carry `client_key` (the key a page or the app gave a new job before it
+had a `labor_id`, so a repeated save does not create the job twice) and
+`minted: {by, sid, at, ck}` (marks a job the server created during a
+combined save: user id, device session, UTC time, that client_key).
 
 ### customers
 `company_name`, `contacts: [{first_name, last_name, phone, email, is_main}]`
@@ -83,7 +101,14 @@ core_charge}]`, `non_inventory_amounts: [{type, description, amount}]`,
 
 ### vendors
 `name`, `website`, `address`, `contacts: [{first_name, last_name, phone, email,
-is_main}]`, `notes`.
+is_main}]`, `notes`. `website` is stored as a full link
+("https://fleetpride.com"); older records may hold it as typed
+("fleetpride.com"), so match a site with a case-insensitive regex on the
+domain. Vendor portal logins and passwords (the vendor's website
+account) are NOT available to you: those fields are removed from results and
+any query that references them is rejected. If the user asks for a vendor's
+login or password, tell them to open Vendors → **Portal logins** (needs the
+"View vendor portal logins & passwords" permission).
 
 ### labor_rates
 `code` ("standard", ...), `name`, `hourly_rate: float`.
@@ -154,7 +179,30 @@ start_hour, end_hour}` (visible grid hours, default 6–20).
 ### wo_time_logs
 Mechanic timers: `work_order_id` → work_orders, `wo_number: int`, `labor_id`,
 `user_id`, `user_name`, `started_at`, `stopped_at` (null = running),
-`seconds: int` (elapsed, set on stop).
+`seconds: int` (elapsed, set on stop). A log whose `labor_id` is no longer
+on the WO is time tracked on a removed job — it still counts as the
+mechanic's tracked time. To find one person's timers (or jobs via
+`assigned_mechanics.user_id`), filter by `user_id`: names stored here are
+copies and can be outdated for people renamed before name copies were
+kept in sync.
+
+### wo_edit_views
+Internal — not readable by you. Technical snapshots used only to merge
+simultaneous edits of a work order safely: what one screen (office page,
+mechanic page, app) showed when its user started editing, sent with a
+save, or got back from it. Fields:
+`work_order_id`, `user_id`, `sid` (device session), `channel` ("office",
+"mechanic_web", "mobile"), `kind` ("load", "sent", "merged"), `protocol`,
+`labors` (copies of the job rows), `minted` (sent: ids of jobs that save
+created), `labors_rev`, `created_at`, `derived_from` (set when the view was
+re-derived after the same user's Describe Issue or time-session edit);
+office views also have `wo_fields: {customer_id, unit_id,
+work_order_date, work_order_date_input (the page's date field,
+shop-local), is_taxable, mileage, shop_supply_pct}`. Documents expire
+automatically after 14 days. This collection is not in your list of
+readable collections and is never needed to answer a user — use
+work_orders and wo_time_logs, and for "who changed what" point the user
+to the work order's **History** (Reports → Activity Journal).
 
 ### recall_notifications
 Sent NHTSA recall notices: `customer_id`, `unit_id`, `campaign_number`,

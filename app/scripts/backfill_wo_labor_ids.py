@@ -7,7 +7,12 @@
 К labor_id привязываются логи времени механиков (wo_time_logs), поэтому
 каждому блоку без id проставляется новый ObjectId-строкой. Идемпотентен:
 блоки с уже заданным labor_id не трогаются. Есть и ленивая генерация при
-открытии WO механиком, так что скрипт лишь ускоряет полное покрытие.
+открытии WO (детали механика и мобильного менеджера), так что скрипт лишь
+ускоряет полное покрытие.
+
+Запись — compare-and-swap по labors_rev (+1): сохранение, успевшее между
+чтением и записью, не откатывается — WO перечитывается (до MAX_CAS_ATTEMPTS
+раз), иначе пропускается и попадает в счётчик skipped.
 """
 from __future__ import annotations
 
@@ -20,6 +25,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 from app import create_app  # noqa: E402
+from app.blueprints.work_orders.services import edit_views as ev  # noqa: E402
 from app.extensions import get_master_db, get_mongo_client  # noqa: E402
 
 
@@ -32,27 +38,47 @@ def _shop_db_names(master_db) -> list[str]:
     return sorted(names)
 
 
+def _with_ids(labors) -> tuple[list, bool]:
+    changed = False
+    for block in labors:
+        if not isinstance(block, dict):
+            continue
+        if not str(block.get("labor_id") or "").strip():
+            block["labor_id"] = str(ObjectId())
+            changed = True
+    return labors, changed
+
+
 def backfill_shop(shop_db) -> tuple[int, int]:
-    scanned = updated = 0
+    """(просмотрено, обновлено); WO, который всё время менялся, — skipped (печать)."""
+    scanned = updated = skipped = 0
     query = {
         "$or": [
             {"labors": {"$elemMatch": {"labor_id": {"$exists": False}}}},
             {"labors": {"$elemMatch": {"labor_id": ""}}},
         ]
     }
-    for wo in shop_db.work_orders.find(query, {"labors": 1}):
+    projection = ev.with_rev({"labors": 1})
+    for wo in shop_db.work_orders.find(query, projection):
         scanned += 1
-        labors = wo.get("labors") or []
-        changed = False
-        for block in labors:
-            if not isinstance(block, dict):
-                continue
-            if not str(block.get("labor_id") or "").strip():
-                block["labor_id"] = str(ObjectId())
-                changed = True
-        if changed:
-            shop_db.work_orders.update_one({"_id": wo["_id"]}, {"$set": {"labors": labors}})
-            updated += 1
+        for _attempt in range(ev.MAX_CAS_ATTEMPTS):
+            labors, changed = _with_ids(wo.get("labors") or [])
+            if not changed:
+                break
+            res = shop_db.work_orders.update_one(
+                {"_id": wo["_id"], **ev.rev_filter(ev.labors_rev(wo))},
+                ev.bump_rev({"$set": {"labors": labors}}),
+            )
+            if res.matched_count:
+                updated += 1
+                break
+            wo = shop_db.work_orders.find_one({"_id": wo["_id"]}, projection)
+            if not wo:
+                break
+        else:
+            skipped += 1
+    if skipped:
+        print(f"  ! {skipped} work order(s) kept changing during the backfill — re-run later")
     return scanned, updated
 
 

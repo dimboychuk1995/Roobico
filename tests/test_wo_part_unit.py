@@ -103,17 +103,24 @@ def _part_line(env, qty=2, **extra):
 
 
 def _update(client, wo_id, parts):
+    """Как браузер: открыть страницу WO (view_id + id строки) и сохранить форму."""
+    html = client.get(f"/work_orders/details?work_order_id={wo_id}").get_data(as_text=True)
+    created = json.loads(re.search(r'id="workOrderCreatedData">(.*?)</script>', html, re.S).group(1))
+    initial = json.loads(re.search(r'id="workOrderInitialData">(.*?)</script>', html, re.S).group(1))
     token = get_csrf_token(client)
     resp = client.post(
         f"/work_orders/api/work_orders/{wo_id}/update",
         json={
             "labors": [{
+                "labor_id": initial[0]["labor_id"],
                 "labor_description": "Oil change", "labor_hours": 0, "labor_rate_code": "",
                 "labor_full_total": 100, "assigned_mechanics": [], "issue_description": "",
                 "parts": parts,
             }],
             "totals": {},
             "save_status": "open",
+            "merge_protocol": 1,
+            "view_id": created["view_id"],
         },
         headers={"X-CSRFToken": token},
     )
@@ -124,6 +131,7 @@ def _update(client, wo_id, parts):
 
 def _saved_part(env, wo_id):
     saved = env["db"].work_orders.find_one({"_id": wo_id})
+    assert len(saved["labors"]) == 1 and len(saved["labors"][0]["parts"]) == 1   # без дублей строк
     return saved["labors"][0]["parts"][0]
 
 

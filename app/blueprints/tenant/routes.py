@@ -338,6 +338,16 @@ def ensure_shop_collections_indexes(shop_db):
     shop_db.parts_locations.create_index([("shop_id", 1), ("is_active", 1), ("name", 1)], name="idx_parts_locations_shop_active_name")
     shop_db.labor_rates.create_index([("shop_id", 1), ("is_active", 1), ("name", 1)], name="idx_labor_rates_shop_active_name")
 
+    # Edit views WO (merge сохранений): индексы и TTL — та же функция, что
+    # на старте приложения, иначе у нового магазина TTL появится только
+    # после рестарта.
+    from app.extensions import ensure_wo_edit_views_indexes
+
+    try:
+        ensure_wo_edit_views_indexes(shop_db)
+    except Exception:
+        current_app.logger.exception("wo_edit_views indexes for a new shop failed")
+
 
 def init_shop_database(shop_db_name: str, tenant_doc: dict, shop_doc: dict, actor_user_id=None):
     """

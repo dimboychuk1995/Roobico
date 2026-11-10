@@ -5,6 +5,8 @@
 """
 from __future__ import annotations
 
+import json
+import re
 from datetime import datetime, timezone
 
 import pytest
@@ -26,14 +28,23 @@ def _post_json(client, url, payload):
     return client.post(url, json=payload, headers={"X-CSRFToken": token})
 
 
-def _update_payload(mileage):
-    return {
-        "labors": [{"labor_description": "Brakes", "labor_hours": 1, "labor_rate_code": "standard",
-                    "labor_full_total": 100, "assigned_mechanics": [], "issue_description": "", "parts": []}],
+def _update_payload(mileage, labor_id="", view_id=None):
+    payload = {
+        "labors": [{"labor_id": labor_id, "labor_description": "Brakes", "labor_hours": 1,
+                    "labor_rate_code": "standard", "labor_full_total": 100, "assigned_mechanics": [],
+                    "issue_description": "", "parts": []}],
         "totals": {},
         "save_status": "open",
         "unit_mileage": mileage,
     }
+    if view_id is not None:
+        payload.update({"merge_protocol": 1, "view_id": view_id})
+    return payload
+
+
+def _page_view(html):
+    """view_id страницы деталей — база merge её Save (JS шлёт его обратно)."""
+    return json.loads(re.search(r'id="workOrderCreatedData">(.*?)</script>', html, re.S).group(1))["view_id"]
 
 
 def test_old_work_order_keeps_its_own_mileage(client, seed, mongo):
@@ -58,6 +69,8 @@ def test_old_work_order_keeps_its_own_mileage(client, seed, mongo):
         # Страница старого WO отдаёт его собственный пробег, а не одометр юнита.
         html = client.get(f"/work_orders/details?work_order_id={wo['_id']}").get_data(as_text=True)
         assert 'data-wo-mileage="100000"' in html
+        labor_id = wo["labors"][0]["labor_id"]
+        view_id = _page_view(html)
 
         def _unit_mileage():
             return shop_db.units.find_one({"_id": unit["_id"]})["mileage"]
@@ -65,20 +78,28 @@ def test_old_work_order_keeps_its_own_mileage(client, seed, mongo):
         def _wo_mileage():
             return shop_db.work_orders.find_one({"_id": wo["_id"]}).get("mileage")
 
+        def _save(mileage):
+            # Как страница: строка со своим labor_id, view_id — из рендера, после
+            # каждого Save — из ответа.
+            nonlocal view_id
+            resp = _post_json(client, f"/work_orders/api/work_orders/{wo['_id']}/update",
+                              _update_payload(mileage, labor_id, view_id))
+            assert resp.status_code == 200, resp.get_data(as_text=True)
+            assert resp.get_json()["ok"] is True, resp.get_json()
+            view_id = resp.get_json()["view_id"]
+
         # Save без изменения пробега — юнит не откатывается на 100000.
-        resp = _post_json(client, f"/work_orders/api/work_orders/{wo['_id']}/update", _update_payload("100000"))
-        assert resp.status_code == 200, resp.get_data(as_text=True)
+        _save("100000")
         assert _unit_mileage() == 120000 and _wo_mileage() == 100000
 
         # Поправили пробег ниже текущего одометра — снимок на WO меняется, юнит нет.
-        resp = _post_json(client, f"/work_orders/api/work_orders/{wo['_id']}/update", _update_payload("110000"))
-        assert resp.status_code == 200
+        _save("110000")
         assert _wo_mileage() == 110000 and _unit_mileage() == 120000
 
         # Пробег выше одометра — двигает и юнит.
-        resp = _post_json(client, f"/work_orders/api/work_orders/{wo['_id']}/update", _update_payload("125000"))
-        assert resp.status_code == 200
+        _save("125000")
         assert _wo_mileage() == 125000 and _unit_mileage() == 125000
+        assert len(shop_db.work_orders.find_one({"_id": wo["_id"]})["labors"]) == 1   # без дублей строк
 
         # Старый WO без снимка: страница отдаёт пустое значение (фронт возьмёт юнит).
         shop_db.work_orders.update_one({"_id": wo["_id"]}, {"$unset": {"mileage": ""}})

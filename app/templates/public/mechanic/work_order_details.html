@@ -26,6 +26,12 @@
     </div>
   </div>
 
+  {# Замок: WO закрыт для правки (оплачен; механику — ещё смета или
+     подтверждён менеджером). Причину и показ задаёт JS (applyLock). #}
+  <div class="alert alert-warning py-2 px-3 small mb-3 d-none" id="mechLockNotice" role="status">
+    <i class="bi bi-lock-fill me-1"></i><span id="mechLockNoticeText"></span>
+  </div>
+
   {# Выбор клиента и юнита — только при создании #}
   <div class="card mech-card" id="mechCustomerCard" {% if work_order_id %}style="display:none"{% endif %}>
     <div class="card-body">

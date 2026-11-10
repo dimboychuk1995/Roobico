@@ -178,9 +178,10 @@ def test_hours_chart_actual_and_invoiced_series(client, hours_seed):
     # 25% часов никому не назначены — отдельная строка, чтобы цифры сходились
     assert rows["Unassigned labor"]["invoiced"] == 1.25
 
-    # Легаси-набор (назначенные часы) остаётся в ответе
+    # Легаси-набор (назначенные часы) остаётся в ответе — тоже с живыми
+    # именами из master.users, а не со снимками «Alice» / «Bob» из WO.
     legacy = {r["name"]: r["hours"] for r in data["mechanic_hours_rows"]}
-    assert legacy == {"Alice": 2.5, "Bob": 1.25}
+    assert legacy == {"Alice Wrench": 2.5, "Bob Spanner": 1.25}
 
 
 def test_hours_chart_uattend_series_when_connected(client, hours_seed, seed, mongo, monkeypatch):
@@ -273,6 +274,135 @@ def test_hours_chart_uattend_series_when_connected(client, hours_seed, seed, mon
     assert rows["Alice Wrench"]["uattend"] == 3.0
     assert rows["Alice Wrench"]["actual"] == 1.0
     assert "Greg Manager" not in rows
+
+
+VITALIY_ID = ObjectId()
+RITA_ID = ObjectId()
+UMA_ID = ObjectId()
+RENAME_WINDOW = "?date_preset=custom&date_from=2019-06-03&date_to=2019-06-09"
+
+
+@pytest.fixture()
+def rename_seed(seed, mongo):
+    """Июнь 2019 — своё окно. Vitaliy без таймеров (строка рождается в
+    Invoiced): первый WO сохранён до переименования (снимок «Vitalii
+    Mechanick», id строкой), второй — после (id ObjectId). Rita уволена:
+    назначенные часы есть, её таймер в Actual не идёт. Uma — механик только
+    с часами uAttend."""
+    master = mongo["roobico_test_master"]
+    shop_db = mongo[SHOP_A_DB]
+    shop_a = seed["shop_a"]
+
+    def _user(_id, email, first, last, is_active=True):
+        return {
+            "_id": _id, "email": email, "first_name": first, "last_name": last,
+            "name": f"{first} {last}", "is_active": is_active, "tenant_id": seed["tenant_a"]["_id"],
+            "shop_ids": [str(shop_a["_id"])], "role": "mechanic", "created_at": _utc(2019, 1, 1),
+        }
+
+    master.users.insert_many([
+        _user(VITALIY_ID, "vitaliy.dash@test.local", "Vitaliy", "Pryyemskyy"),
+        _user(RITA_ID, "rita.dash@test.local", "Rita", "Retired", is_active=False),
+        _user(UMA_ID, "uma.dash@test.local", "Uma", "Attend"),
+    ])
+
+    def _wo(day, labors):
+        return {
+            "_id": ObjectId(), "shop_id": shop_a["_id"], "is_active": True, "status": "open",
+            "work_order_date": _utc(2019, 6, day), "created_at": _utc(2019, 6, day), "labors": labors,
+        }
+
+    old_wo = _wo(4, [{"labor_id": "R1", "labor": {"description": "Brakes", "hours": 2, "assigned_mechanics": [
+        {"user_id": str(VITALIY_ID), "name": "Vitalii Mechanick", "percent": 100}]}}])
+    new_wo = _wo(5, [
+        {"labor_id": "R2", "labor": {"description": "Oil", "hours": 1, "assigned_mechanics": [
+            {"user_id": VITALIY_ID, "name": "Vitaliy Pryyemskyy", "percent": 100}]}},
+        {"labor_id": "R3", "labor": {"description": "Tires", "hours": 3, "assigned_mechanics": [
+            {"user_id": RITA_ID, "name": "Rita Retired", "percent": 100}]}},
+    ])
+    shop_db.work_orders.insert_many([old_wo, new_wo])
+    shop_db.wo_time_logs.insert_one({
+        "shop_id": shop_a["_id"], "work_order_id": new_wo["_id"], "labor_id": "R3",
+        "user_id": RITA_ID, "user_name": "Rita Retired",
+        "started_at": _utc(2019, 6, 5), "stopped_at": _utc(2019, 6, 5, 13), "seconds": 3600,
+    })
+
+    yield {"shop_id": shop_a["_id"], "wo_ids": [old_wo["_id"], new_wo["_id"]]}
+
+    shop_db.work_orders.delete_many({"_id": {"$in": [old_wo["_id"], new_wo["_id"]]}})
+    shop_db.wo_time_logs.delete_many({"work_order_id": {"$in": [old_wo["_id"], new_wo["_id"]]}})
+    master.users.delete_many({"_id": {"$in": [VITALIY_ID, RITA_ID, UMA_ID]}})
+
+
+def test_hours_rows_follow_current_user_name(client, rename_seed, mongo):
+    """Жалоба владельца: строка механика только с Invoiced-часами называлась
+    по снимку первого WO («Vitalii Mechanick»). Теперь — текущее имя из
+    master.users, одна строка на человека (id строкой и ObjectId), уволенный
+    помечен « (inactive)», какие часы считаются — как раньше."""
+    login(client)
+    data = _fetch_block(client, RENAME_WINDOW)
+    chart = data["hours_chart"]
+    rows = {r["name"]: r for r in chart["rows"]}
+
+    assert rows["Vitaliy Pryyemskyy"]["invoiced"] == 3.0
+    assert rows["Vitaliy Pryyemskyy"]["actual"] is None
+    assert "Vitalii Mechanick" not in rows
+    # Таймер уволенного (не назначаемый механик) в Actual не идёт; Invoiced — его.
+    assert rows["Rita Retired (inactive)"]["invoiced"] == 3.0
+    assert rows["Rita Retired (inactive)"]["actual"] is None
+    assert chart["summary"]["invoiced_total"] == 6.0
+    assert chart["summary"]["actual_total"] == 0.0
+    legacy = {r["name"]: r["hours"] for r in data["mechanic_hours_rows"]}
+    assert legacy == {"Vitaliy Pryyemskyy": 3.0, "Rita Retired (inactive)": 3.0}
+
+    # Ещё одно переименование — дашборд сразу показывает новое имя, хотя
+    # ни один WO не пересохранялся.
+    master = mongo["roobico_test_master"]
+    master.users.update_one({"_id": VITALIY_ID}, {"$set": {"first_name": "Vitalik", "name": "Vitalik Pryyemskyy"}})
+    rows = {r["name"]: r for r in _fetch_block(client, RENAME_WINDOW)["hours_chart"]["rows"]}
+    assert rows["Vitalik Pryyemskyy"]["invoiced"] == 3.0
+    assert "Vitaliy Pryyemskyy" not in rows and "Vitalii Mechanick" not in rows
+
+    # Удалённый пользователь — снимок из какого-то из его WO, строка одна.
+    master.users.delete_one({"_id": VITALIY_ID})
+    rows = {r["name"]: r for r in _fetch_block(client, RENAME_WINDOW)["hours_chart"]["rows"]}
+    snapshot_rows = [rows[n] for n in ("Vitalii Mechanick", "Vitaliy Pryyemskyy") if n in rows]
+    assert len(snapshot_rows) == 1 and snapshot_rows[0]["invoiced"] == 3.0
+
+
+def test_matched_uattend_only_row_uses_live_name(client, rename_seed, seed, mongo, monkeypatch):
+    """Строка механика только с часами uAttend (нет Actual и Invoiced)
+    называется по internal_id, а не по закэшированному internal_name."""
+    import app.utils.integrations.uattend_hours as uattend_hours
+    import app.utils.integrations.uattend_match as uattend_match
+
+    shop_db = mongo[SHOP_A_DB]
+    shop_id = rename_seed["shop_id"]
+    shop_db.uattend_employees.insert_one({
+        "shop_id": shop_id, "uattend_user_id": 55, "first_name": "Uma", "last_name": "A.",
+        "email": "", "is_active": True, "selected": True,
+    })
+
+    def fake_match(internal_for_ai, uattend_for_ai):
+        return {55: {"internal_id": str(UMA_ID), "internal_name": "Stale Cache Name",
+                     "internal_email": "", "confidence": 0.99}}
+
+    def fake_load(shop_db, shop_id, date_from, date_to, exclude_uids=None):
+        return {"connected": True, "by_day": {"2019-06-06": 6.0}, "by_uid": {55: 6.0}, "error": None}
+
+    monkeypatch.setattr(uattend_match, "match_employees", fake_match)
+    monkeypatch.setattr(uattend_hours, "load_uattend_period_hours", fake_load)
+
+    login(client)
+    try:
+        rows = {r["name"]: r for r in _fetch_block(client, RENAME_WINDOW)["hours_chart"]["rows"]}
+    finally:
+        shop_db.uattend_match_cache.delete_many({"shop_id": shop_id})
+        shop_db.uattend_employees.delete_many({"shop_id": shop_id})
+
+    assert rows["Uma Attend"]["uattend"] == 6.0
+    assert rows["Uma Attend"]["actual"] is None and rows["Uma Attend"]["invoiced"] is None
+    assert "Stale Cache Name" not in rows
 
 
 def test_hours_chart_daily_buckets_for_long_ranges(client, hours_seed):

@@ -25,8 +25,9 @@ from app.blueprints.work_orders.services.common import (
     round2,
 )
 from app.blueprints.work_orders.services.lookups import customer_label, unit_label
-from app.blueprints.work_orders.services.mechanic_done import done_marks, done_mechanic_names
+from app.blueprints.work_orders.services.mechanic_done import done_marks
 from app.blueprints.work_orders.services.payments import _sum_active_work_order_payments
+from app.utils.user_names import display_name_for, load_user_names
 
 
 def get_work_orders_totals(shop_db, query: dict):
@@ -255,21 +256,40 @@ def get_in_work_orders(
     return _build_work_order_items(shop_db, shop_id, rows)
 
 
-def _wo_mechanic_names(wo_doc: dict) -> list[str]:
-    """Механики WO — из assigned_mechanics всех строк (без дублей)."""
-    names: list[str] = []
+def _wo_assigned_people(wo_doc: dict) -> list[tuple[str, str]]:
+    """(user_id, снимок имени) из assigned_mechanics всех строк WO."""
+    people: list[tuple[str, str]] = []
     for block in wo_doc.get("labors") or []:
         if not isinstance(block, dict):
             continue
         labor = block.get("labor") if isinstance(block.get("labor"), dict) else {}
         assigned = labor.get("assigned_mechanics") or block.get("assigned_mechanics") or []
         for a in assigned:
-            if not isinstance(a, dict):
+            if isinstance(a, dict):
+                people.append((str(a.get("user_id") or "").strip(), str(a.get("name") or "").strip()))
+    return people
+
+
+def _people_labels(people: list[tuple[str, str]], names: dict, fallback: str = "") -> list[str]:
+    """
+    Подписи людей для строки списка: живое имя по user_id (снимок в WO /
+    тайм-логе / отметке Done — лишь запас для удалённых пользователей и
+    легаси-записей без id), иначе fallback; пустые отбрасываются. Дубли
+    снимаются сначала по id (один человек под старым и новым именем — одна
+    подпись), затем по самой подписи — три списка строки (назначенные,
+    работают сейчас, Done) клиенты сравнивают как строки.
+    """
+    labels: list[str] = []
+    seen_ids: set[str] = set()
+    for user_id, snapshot in people:
+        if user_id:
+            if user_id in seen_ids:
                 continue
-            nm = str(a.get("name") or "").strip()
-            if nm and nm not in names:
-                names.append(nm)
-    return names
+            seen_ids.add(user_id)
+        label = display_name_for(names, user_id, snapshot, default=fallback)
+        if label and label not in labels:
+            labels.append(label)
+    return labels
 
 
 def _labor_block_is_job(block: dict) -> bool:
@@ -338,18 +358,35 @@ def _build_work_order_items(shop_db, shop_id: ObjectId, rows: list) -> list:
         for r in shop_db.work_order_payments.aggregate(pay_pipeline):
             paid_map[r.get("_id")] = float(r.get("paid") or 0)
 
-    # Кто прямо сейчас работает над WO (открытые таймеры механиков).
-    working_map: dict = {}
+    # Кто прямо сейчас работает над WO (открытые таймеры механиков):
+    # (user_id, снимок имени) — подписи ниже, живыми именами.
+    working_people: dict = {}
     if wo_ids:
         open_logs = shop_db.wo_time_logs.find(
             {"shop_id": shop_id, "work_order_id": {"$in": wo_ids}, "stopped_at": None},
-            {"work_order_id": 1, "user_name": 1},
+            {"work_order_id": 1, "user_id": 1, "user_name": 1},
         )
         for log in open_logs:
-            name = str(log.get("user_name") or "").strip() or "Mechanic"
-            names = working_map.setdefault(log.get("work_order_id"), [])
-            if name not in names:
-                names.append(name)
+            working_people.setdefault(log.get("work_order_id"), []).append(
+                (str(log.get("user_id") or "").strip(), str(log.get("user_name") or "").strip())
+            )
+
+    # Имена людей строк (назначенные, работают сейчас, отметки Done) — живые
+    # из master.users одним запросом на страницу: снимки в документах
+    # устаревают после переименования пользователя.
+    assigned_people = {x.get("_id"): _wo_assigned_people(x) for x in rows}
+    done_people = {
+        x.get("_id"): [(str(m.get("user_id")), str(m.get("name") or "").strip()) for m in done_marks(x)]
+        for x in rows
+    }
+    people_ids = {
+        user_id
+        for group in (assigned_people, working_people, done_people)
+        for people in group.values()
+        for user_id, _snapshot in people
+        if user_id
+    }
+    names = load_user_names(people_ids)
 
     # Строки с затреканным временем: механик по ним определяется таймером
     # (как на странице WO) — такие строки не считаются «без механика».
@@ -411,16 +448,18 @@ def _build_work_order_items(shop_db, shop_id: ObjectId, rows: list) -> list:
                 "is_paid": status == "paid",
                 "status": status,
                 "is_in_progress": status == "in_progress",
-                "working_now": working_map.get(x.get("_id")) or [],
+                "working_now": _people_labels(working_people.get(x.get("_id")) or [], names, fallback="Mechanic"),
                 "parts_orders": parts_orders_map.get(x.get("_id")) or [],
-                "mechanics": _wo_mechanic_names(x),
+                "mechanics": _people_labels(assigned_people.get(x.get("_id")) or [], names),
                 # Строка работ без механика — пометка в списке, пока WO не оплачен.
                 "has_unassigned_labor": status != "paid" and has_unassigned_labor(x, tracked_map.get(x.get("_id"))),
                 # Флаг «механик закончил» имеет смысл только пока WO в работе.
                 # mechanic_done — все работавшие механики поставили Done;
                 # mechanics_done — кто уже поставил (частичный Done).
                 "mechanic_done": bool(x.get("mechanic_done")) and status == "in_progress",
-                "mechanics_done": done_mechanic_names(x) if status == "in_progress" else [],
+                "mechanics_done": (
+                    _people_labels(done_people.get(x.get("_id")) or [], names) if status == "in_progress" else []
+                ),
                 "mechanic_done_user_ids": (
                     [str(m.get("user_id")) for m in done_marks(x)] if status == "in_progress" else []
                 ),

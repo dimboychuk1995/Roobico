@@ -9,12 +9,18 @@
 """
 from __future__ import annotations
 
-from bson import ObjectId
+import logging
 
+from bson import ObjectId
+from flask import current_app, has_app_context
+
+from app.blueprints.work_orders.services import edit_views as ev
 from app.blueprints.work_orders.services.common import i32, oid, part_unit_payload
 from app.blueprints.work_orders.services.lookups import customer_label, unit_label
 from app.blueprints.work_orders.services.mechanic_done import done_user_ids
 from app.blueprints.work_orders.services.time_tracking import summarize_wo_time
+
+_log = logging.getLogger(__name__)
 
 # Денежные ключи в элементах поиска запчастей (/work_orders/api/parts/search).
 PART_SEARCH_MONEY_KEYS = (
@@ -46,47 +52,110 @@ def strip_wo_list_item(item: dict) -> dict:
     return {k: v for k, v in item.items() if k not in WO_LIST_MONEY_KEYS}
 
 
+def _labors_with_ids(labors) -> tuple[list, bool]:
+    """Копия labors, где у каждого dict-блока свой labor_id: пустой —
+    выдаётся, повтор уже встреченного id (легаси-данные) — перевыдаётся
+    (первое вхождение сохраняет id и тайм-логи). (labors, изменилось ли)."""
+    out = []
+    seen: set[str] = set()
+    changed = False
+    for block in labors or []:
+        if not isinstance(block, dict):
+            out.append(block)
+            continue
+        lid = str(block.get("labor_id") or "").strip()
+        if not lid or lid in seen:
+            block = {**block, "labor_id": str(ObjectId())}
+            lid = block["labor_id"]
+            changed = True
+        seen.add(lid)
+        out.append(block)
+    return out, changed
+
+
 def ensure_wo_labor_ids(shop_db, wo: dict) -> dict:
     """
-    Ленивая генерация labor_id на легаси WO: проставляет отсутствующие id
-    и один раз персистит их, чтобы таймеры работали без прогона бэкфилла.
+    Ленивая генерация labor_id на легаси WO: проставляет отсутствующие id,
+    перевыдаёт повторы одного id внутри WO и персистит это CAS-записью по
+    labors_rev (+1). Возвращает документ, который реально лежит в базе после
+    записи (или свежий, если записать не удалось) — из НЕГО строятся и ответ
+    клиенту, и edit view. Входной dict не мутируется. Никогда не бросает.
     """
-    labors = wo.get("labors") or []
-    changed = False
-    for block in labors:
-        if isinstance(block, dict) and not str(block.get("labor_id") or "").strip():
-            block["labor_id"] = str(ObjectId())
-            changed = True
-    if changed:
-        shop_db.work_orders.update_one(
-            {"_id": wo["_id"], "shop_id": wo.get("shop_id")},
-            {"$set": {"labors": labors}},
-        )
-    return wo
+    if not isinstance(wo, dict) or not wo.get("_id"):
+        return wo
+    current = wo
+    for _attempt in range(ev.MAX_CAS_ATTEMPTS):
+        labors, changed = _labors_with_ids(current.get("labors"))
+        if not changed:
+            return current
+        rev = ev.labors_rev(current)
+        try:
+            res = shop_db.work_orders.update_one(
+                {"_id": current["_id"], "shop_id": current.get("shop_id"), **ev.rev_filter(rev)},
+                ev.bump_rev({"$set": {"labors": labors}}),
+            )
+            if res.matched_count:
+                return {**current, "labors": labors, "labors_rev": rev + 1}
+            fresh = shop_db.work_orders.find_one({"_id": current["_id"], "shop_id": current.get("shop_id")})
+        except Exception:
+            _log_exception("ensure_wo_labor_ids failed (wo %s)", current.get("_id"))
+            return current
+        if not fresh:
+            return current
+        current = fresh
+    _log_warning("ensure_wo_labor_ids: labors_rev kept changing (wo %s), ids not persisted", current.get("_id"))
+    return current
 
 
-def mechanic_wo_payload(shop_db, shop, wo: dict, user_id) -> dict:
+def _log_exception(message: str, *args) -> None:
+    if has_app_context():
+        current_app.logger.exception(message, *args)
+    else:
+        _log.exception(message, *args)
+
+
+def _log_warning(message: str, *args) -> None:
+    if has_app_context():
+        current_app.logger.warning(message, *args)
+    else:
+        _log.warning(message, *args)
+
+
+def wo_labors_rev(shop_db, shop_id, work_order_id) -> int:
+    """Текущая ревизия labors_rev WO (0 — нет WO/поля): ответы таймеров и
+    правок тайм-логов отдают её после всех своих записей, чтобы клиент не
+    принял собственное действие за чужую правку."""
+    wo_id = oid(work_order_id)
+    if not wo_id:
+        return 0
+    doc = shop_db.work_orders.find_one({"_id": wo_id, "shop_id": shop_id}, {"labors_rev": 1})
+    return ev.labors_rev(doc)
+
+
+def mechanic_rev_payload(wo: dict, user_id, *, mechanic: bool) -> dict:
     """
-    Детали WO для механика: без hours/rate/цен/тоталов, с labor_id и
-    сводкой времени по каждой строке.
+    Дешёвый опрос «изменился ли WO» (rev-эндпоинты механика и приложения).
+    Механику — без статуса: paid ему не отдаётся нигде, вместо статуса
+    locked (paid / смета / подтверждён менеджером) и его личный Done;
+    остальным — статус и manager_confirmed.
     """
-    from app.blueprints.work_orders.services.common import format_preferred_date_label
-    from app.utils.contacts import get_main_contact_email
+    status = str(wo.get("status") or "open").strip().lower()
+    out = {"ok": True, "labors_rev": ev.labors_rev(wo)}
+    if mechanic:
+        out["locked"] = status in ("paid", "estimate") or bool(wo.get("manager_confirmed"))
+        out["mechanic_done"] = bool(wo.get("mechanic_done")) or oid(user_id) in done_user_ids(wo)
+    else:
+        out["status"] = status
+        out["manager_confirmed"] = bool(wo.get("manager_confirmed"))
+    return out
 
-    wo = ensure_wo_labor_ids(shop_db, wo)
 
-    # Без фильтра is_active: WO деактивированного клиента должен открываться,
-    # клиент помечается "(inactive)" в лейбле.
-    customer = shop_db.customers.find_one({"_id": wo.get("customer_id")})
-    unit = shop_db.units.find_one({"_id": wo.get("unit_id"), "is_active": True})
-
+def mechanic_labors_payload(shop_db, shop, wo: dict, user_id) -> tuple[list[dict], dict | None]:
+    """Строки WO в безденежной форме механика (labor_id, описания, запчасти,
+    бакеты времени) + идущий таймер пользователя на этом WO. Та же форма —
+    в деталях и в ответе сохранения механика (клиент подхватывает её без
+    перечитывания)."""
     time_summary = summarize_wo_time(shop_db, shop["_id"], wo["_id"], user_id=user_id)
-
-    # Записи календаря, привязанные к WO (план: когда, кто, пресеты, заметка).
-    # Денег в них нет — отдаём механику как есть.
-    from app.blueprints.calendar.services.work_orders import linked_appointments_for_wo
-
-    appointments = linked_appointments_for_wo(shop_db, shop, wo["_id"])
 
     labors_out = []
     my_running_timer = None
@@ -141,6 +210,44 @@ def mechanic_wo_payload(shop_db, shop, wo: dict, user_id) -> dict:
                 "running_users": time_bucket.get("running_users") or [],
             },
         })
+    return labors_out, my_running_timer
+
+
+def mechanic_wo_payload(shop_db, shop, wo: dict, user_id, *, view: dict | None = None) -> dict:
+    """
+    Детали WO для механика: без hours/rate/цен/тоталов, с labor_id и
+    сводкой времени по каждой строке, плюс labors_rev.
+
+    Сначала ensure_wo_labor_ids (CAS) — ответ строится из документа, который
+    лежит в базе. view — записать load-вьюху (edit view) этого же документа:
+    {"channel": "mechanic_web" | "mobile", "sid": ..., "protocol": 0 | 1,
+    "can_edit": bool}; её id уходит в ответ как view_id ("" — не записана).
+    """
+    from app.blueprints.work_orders.services.common import format_preferred_date_label
+    from app.utils.contacts import get_main_contact_email
+
+    wo = ensure_wo_labor_ids(shop_db, wo)
+
+    # Без фильтра is_active: WO деактивированного клиента должен открываться,
+    # клиент помечается "(inactive)" в лейбле.
+    customer = shop_db.customers.find_one({"_id": wo.get("customer_id")})
+    unit = shop_db.units.find_one({"_id": wo.get("unit_id"), "is_active": True})
+
+    # Записи календаря, привязанные к WO (план: когда, кто, пресеты, заметка).
+    # Денег в них нет — отдаём механику как есть.
+    from app.blueprints.calendar.services.work_orders import linked_appointments_for_wo
+
+    appointments = linked_appointments_for_wo(shop_db, shop, wo["_id"])
+
+    labors_out, my_running_timer = mechanic_labors_payload(shop_db, shop, wo, user_id)
+
+    view_id = ""
+    if view is not None:
+        view_id = ev.record_view(
+            shop_db, shop["_id"], wo,
+            user_id=user_id, sid=view.get("sid") or "", channel=view.get("channel") or "",
+            kind="load", protocol=view.get("protocol") or 0, can_edit=bool(view.get("can_edit")),
+        )
 
     return {
         "ok": True,
@@ -173,6 +280,10 @@ def mechanic_wo_payload(shop_db, shop, wo: dict, user_id) -> dict:
         "labors": labors_out,
         "appointments": appointments,
         "my_running_timer": my_running_timer,
+        # Ревизия редактируемого состояния и edit view, с которой клиент
+        # начинает правку (merge_protocol 1 шлёт её обратно как view_id).
+        "labors_rev": ev.labors_rev(wo),
+        "view_id": view_id,
     }
 
 
@@ -213,12 +324,15 @@ def find_active_unit_work_order(shop_db, shop, unit_id) -> dict | None:
             "shop_id": shop["_id"],
             "work_order_id": {"$in": [r["_id"] for r in rows]},
             "stopped_at": None,
-        }
+        },
+        {"work_order_id": 1, "user_id": 1, "user_name": 1},
     ):
-        running.setdefault(log.get("work_order_id"), []).append(str(log.get("user_name") or "").strip())
+        running.setdefault(log.get("work_order_id"), []).append(
+            (str(log.get("user_id") or "").strip(), str(log.get("user_name") or "").strip())
+        )
 
     chosen = next((r for r in rows if running.get(r["_id"])), rows[0])
-    names = [n for n in dict.fromkeys(running.get(chosen["_id"], [])) if n]
+    names = _working_now_labels(running.get(chosen["_id"], []), shop)
     return {
         "id": str(chosen["_id"]),
         "wo_number": chosen.get("wo_number"),
@@ -227,6 +341,29 @@ def find_active_unit_work_order(shop_db, shop, unit_id) -> dict | None:
         "customer_id": str(chosen.get("customer_id") or ""),
         "working_now": names,
     }
+
+
+def _working_now_labels(people: list[tuple[str, str]], shop) -> list[str]:
+    """
+    Подписи «кто сейчас работает» по открытым таймерам [(user_id, снимок)]:
+    живое имя по user_id (снимок user_name в логе устаревает после
+    переименования, он — лишь запас), один человек — одна подпись (дубли
+    открытых логов после гонки start), пустые отбрасываются.
+    """
+    from app.utils.user_names import display_name_for, load_user_names, tenant_values_for_shop
+
+    live = load_user_names([uid for uid, _snapshot in people if uid], tenant_values=tenant_values_for_shop(shop))
+    labels: list[str] = []
+    seen_ids: set[str] = set()
+    for uid, snapshot in people:
+        if uid:
+            if uid in seen_ids:
+                continue
+            seen_ids.add(uid)
+        label = display_name_for(live, uid, snapshot, default="")
+        if label and label not in labels:
+            labels.append(label)
+    return labels
 
 
 def active_unit_work_order_message(payload: dict | None) -> str:

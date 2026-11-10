@@ -1,6 +1,130 @@
 {% extends "layouts/app_base.html" %}
-{% from "components/ui.html" import search_bar, pagination_controls %}
+{% from "components/ui.html" import search_bar, pagination_controls, empty_state %}
 {% block page_title %}Settings — Users & Roles{% endblock %}
+
+{# Строка пользователя — одна разметка для всех групп по ролям. Читает
+   контекст страницы (q, status, pagination, actor_is_owner, can_manage_pay,
+   protected_role_keys), как wo_table_row в work_orders.html. #}
+{% macro user_row(u) %}
+  {% set display_name = (u.get("name") or ((u.get("first_name", "") ~ " " ~ u.get("last_name", "")).strip())) or "—" %}
+  <tr>
+    <td>
+      <div class="fw-semibold">{{ display_name }}</div>
+      <div class="text-muted small">ID: {{ u.get("_id_str") or "—" }}</div>
+    </td>
+    <td class="text-muted">{{ u.get("email") or "—" }}</td>
+    <td>
+      <span class="badge text-bg-secondary">{{ u.get("role_label") or u.get("role") or "viewer" }}</span>
+    </td>
+    <td>
+      {% if not u.get("is_active", True) %}
+        <span class="badge text-bg-secondary">Inactive</span>
+      {% elif u.get("invite_pending") %}
+        <span class="badge text-bg-warning" title="Invitation sent — the user hasn't set a password yet">Invited</span>
+      {% else %}
+        <span class="badge text-bg-success">Active</span>
+      {% endif %}
+    </td>
+    <td class="text-end">
+      {% set row_is_owner = (u.get('role') or '') in (protected_role_keys or []) %}
+      {% if row_is_owner and not actor_is_owner %}
+      <span class="text-muted small" title="Only an owner can edit owner accounts">Owner account</span>
+      {% else %}
+      <div class="d-inline-flex gap-1">
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-primary edit-user-btn"
+          data-bs-toggle="modal"
+          data-bs-target="#editUserModal"
+          data-user-id="{{ u.get('_id_str') }}"
+          data-first-name="{{ u.get('first_name') or '' }}"
+          data-last-name="{{ u.get('last_name') or '' }}"
+          data-email="{{ u.get('email') or '' }}"
+          data-phone="{{ u.get('phone') or '' }}"
+          data-role="{{ u.get('role') or 'viewer' }}"
+          data-is-active="{{ '1' if u.get('is_active', True) else '0' }}"
+          data-shop-ids="{{ (u.get('shop_ids_str') or [])|join(',') }}"
+          {% if can_manage_pay %}
+          data-pay-type="{{ u.get('pay_type') or 'salary' }}"
+          data-salary-amount="{{ '%.2f'|format(u.get('salary_amount')) if u.get('salary_amount') is not none else '' }}"
+          {% endif %}
+        >
+          Edit
+        </button>
+
+        <button
+          type="button"
+          class="btn btn-sm btn-outline-secondary user-perms-btn"
+          data-user-id="{{ u.get('_id_str') }}"
+          data-user-name="{{ display_name|e }}"
+          title="Manage per-user permissions"
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px;"><path d="M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/></svg>
+          Permissions
+        </button>
+
+        {% if u.get('invite_pending') and u.get('is_active', True) %}
+          <form method="post" action="{{ url_for('settings.users_resend_invite', user_id=u.get('_id_str')) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="q" value="{{ q or '' }}">
+            <input type="hidden" name="page" value="{{ pagination.page if pagination else 1 }}">
+            <input type="hidden" name="per_page" value="{{ pagination.per_page if pagination else 20 }}">
+            <button class="btn btn-sm btn-outline-warning" title="Send the invitation email again">
+              Resend invite
+            </button>
+          </form>
+        {% endif %}
+
+        {% if u.get('_id_str') != (session.get('user_id') or '')|string and u.get('is_active', True) %}
+          <form method="post" action="{{ url_for('settings.users_deactivate', user_id=u.get('_id_str')) }}" class="d-inline"
+                onsubmit="return appConfirmSubmit(this, 'Deactivate this user?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="q" value="{{ q or '' }}">
+            <input type="hidden" name="status" value="{{ status or 'active' }}">
+            <input type="hidden" name="page" value="{{ pagination.page if pagination else 1 }}">
+            <input type="hidden" name="per_page" value="{{ pagination.per_page if pagination else 20 }}">
+            <button class="btn btn-sm btn-outline-danger">
+              Deactivate
+            </button>
+          </form>
+        {% endif %}
+        {% if not u.get('is_active', True) %}
+          <form method="post" action="{{ url_for('settings.users_activate', user_id=u.get('_id_str')) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="q" value="{{ q or '' }}">
+            <input type="hidden" name="status" value="{{ status or 'active' }}">
+            <input type="hidden" name="page" value="{{ pagination.page if pagination else 1 }}">
+            <input type="hidden" name="per_page" value="{{ pagination.per_page if pagination else 20 }}">
+            <button class="btn btn-sm btn-outline-success" title="The user can log in again">
+              Activate
+            </button>
+          </form>
+        {% endif %}
+      </div>
+      {% endif %}
+    </td>
+  </tr>
+{% endmacro %}
+
+{# Опции селекта ролей (формы New user / Edit user): системные роли по
+   иерархии, затем кастомные роли тенанта отдельной группой. Owner есть в
+   role_options только у владельца. #}
+{% macro role_select_options(options) %}
+  {% set custom_roles = options|selectattr("kind", "equalto", "custom")|list %}
+  {% set system_roles = options|rejectattr("kind", "equalto", "custom")|list %}
+  {% if custom_roles %}<optgroup label="System roles">{% endif %}
+  {% for r in system_roles %}
+    <option value="{{ r.key }}">{{ r.label }}</option>
+  {% endfor %}
+  {% if custom_roles %}
+  </optgroup>
+  <optgroup label="Custom roles">
+    {% for r in custom_roles %}
+      <option value="{{ r.key }}">{{ r.label }}</option>
+    {% endfor %}
+  </optgroup>
+  {% endif %}
+{% endmacro %}
 
 {% block app_content %}
 <div class="page-header">
@@ -13,148 +137,52 @@
   </div>
 </div>
 
-<div class="alert alert-light border mb-3">
-  <div class="d-flex flex-column flex-md-row gap-2 justify-content-between">
-    <div>
-      <div class="fw-semibold">Tip</div>
-      <div class="text-muted small">Now you can choose which shops the user can access.</div>
-    </div>
-    <div class="text-muted small">
-      Required permission: <span class="badge text-bg-secondary">settings.manage_users</span>
-    </div>
-  </div>
-</div>
-
 <div class="card">
   <div class="card-body">
     {{ search_bar(q, placeholder="Search users by name, email, role, phone or ID...", status=status,
                   status_labels={"active": "Active users", "inactive": "Inactive users", "all": "All users"},
                   status_title="Inactive users cannot log in; use Activate to bring one back") }}
 
-    {% if users %}
+    {% if user_groups %}
       <div class="table-responsive">
         <table class="table table-sm align-middle mb-0 sortable">
           <thead>
             <tr>
               <th data-sort-field="name" style="min-width: 220px;">Name</th>
               <th data-sort-field="email" style="min-width: 230px;">Email</th>
-              <th data-sort-field="role" style="min-width: 160px;">Role</th>
-              <th data-sort-field="is_active" style="min-width: 130px;">Status</th>
+              <th class="no-sort" style="min-width: 160px;">Role</th>
+              <th class="no-sort" style="min-width: 130px;">Status</th>
               <th class="text-end no-sort" style="min-width: 220px;">Actions</th>
             </tr>
           </thead>
-          <tbody>
-            {% for u in users %}
-              {% set display_name = (u.get("name") or ((u.get("first_name", "") ~ " " ~ u.get("last_name", "")).strip())) or "—" %}
-              <tr>
-                <td>
-                  <div class="fw-semibold">{{ display_name }}</div>
-                  <div class="text-muted small">ID: {{ u.get("_id_str") or "—" }}</div>
-                </td>
-                <td class="text-muted">{{ u.get("email") or "—" }}</td>
-                <td>
-                  <span class="badge text-bg-secondary">{{ u.get("role") or "viewer" }}</span>
-                </td>
-                <td>
-                  {% if not u.get("is_active", True) %}
-                    <span class="badge text-bg-secondary">Inactive</span>
-                  {% elif u.get("invite_pending") %}
-                    <span class="badge text-bg-warning" title="Invitation sent — the user hasn't set a password yet">Invited</span>
-                  {% else %}
-                    <span class="badge text-bg-success">Active</span>
-                  {% endif %}
-                </td>
-                <td class="text-end">
-                  {% set row_is_owner = (u.get('role') or '') in (protected_role_keys or []) %}
-                  {% if row_is_owner and not actor_is_owner %}
-                  <span class="text-muted small" title="Only an owner can edit owner accounts">Owner account</span>
-                  {% else %}
-                  <div class="d-inline-flex gap-1">
-                    <button
-                      type="button"
-                      class="btn btn-sm btn-outline-primary edit-user-btn"
-                      data-bs-toggle="modal"
-                      data-bs-target="#editUserModal"
-                      data-user-id="{{ u.get('_id_str') }}"
-                      data-first-name="{{ u.get('first_name') or '' }}"
-                      data-last-name="{{ u.get('last_name') or '' }}"
-                      data-email="{{ u.get('email') or '' }}"
-                      data-phone="{{ u.get('phone') or '' }}"
-                      data-role="{{ u.get('role') or 'viewer' }}"
-                      data-is-active="{{ '1' if u.get('is_active', True) else '0' }}"
-                      data-shop-ids="{{ (u.get('shop_ids_str') or [])|join(',') }}"
-                      {% if can_manage_pay %}
-                      data-pay-type="{{ u.get('pay_type') or 'salary' }}"
-                      data-salary-amount="{{ '%.2f'|format(u.get('salary_amount')) if u.get('salary_amount') is not none else '' }}"
-                      {% endif %}
-                    >
-                      Edit
-                    </button>
-
-                    <button
-                      type="button"
-                      class="btn btn-sm btn-outline-secondary user-perms-btn"
-                      data-user-id="{{ u.get('_id_str') }}"
-                      data-user-name="{{ display_name|e }}"
-                      title="Manage per-user permissions"
-                    >
-                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px;"><path d="M12 2 4 6v6c0 5 3.5 9 8 10 4.5-1 8-5 8-10V6l-8-4z"/></svg>
-                      Permissions
-                    </button>
-
-                    {% if u.get('invite_pending') and u.get('is_active', True) %}
-                      <form method="post" action="{{ url_for('settings.users_resend_invite', user_id=u.get('_id_str')) }}" class="d-inline">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="q" value="{{ q or '' }}">
-                        <input type="hidden" name="page" value="{{ pagination.page if pagination else 1 }}">
-                        <input type="hidden" name="per_page" value="{{ pagination.per_page if pagination else 20 }}">
-                        <button class="btn btn-sm btn-outline-warning" title="Send the invitation email again">
-                          Resend invite
-                        </button>
-                      </form>
-                    {% endif %}
-
-                    {% if u.get('_id_str') != (session.get('user_id') or '')|string and u.get('is_active', True) %}
-                      <form method="post" action="{{ url_for('settings.users_deactivate', user_id=u.get('_id_str')) }}" class="d-inline"
-                            onsubmit="return appConfirmSubmit(this, 'Deactivate this user?');">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="q" value="{{ q or '' }}">
-                        <input type="hidden" name="status" value="{{ status or 'active' }}">
-                        <input type="hidden" name="page" value="{{ pagination.page if pagination else 1 }}">
-                        <input type="hidden" name="per_page" value="{{ pagination.per_page if pagination else 20 }}">
-                        <button class="btn btn-sm btn-outline-danger">
-                          Deactivate
-                        </button>
-                      </form>
-                    {% endif %}
-                    {% if not u.get('is_active', True) %}
-                      <form method="post" action="{{ url_for('settings.users_activate', user_id=u.get('_id_str')) }}" class="d-inline">
-                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                        <input type="hidden" name="q" value="{{ q or '' }}">
-                        <input type="hidden" name="status" value="{{ status or 'active' }}">
-                        <input type="hidden" name="page" value="{{ pagination.page if pagination else 1 }}">
-                        <input type="hidden" name="per_page" value="{{ pagination.per_page if pagination else 20 }}">
-                        <button class="btn btn-sm btn-outline-success" title="The user can log in again">
-                          Activate
-                        </button>
-                      </form>
-                    {% endif %}
-                  </div>
-                  {% endif %}
+          {# Одна tbody на роль: строка-заголовок группы (общий .table-section-row,
+             обе темы) и её пользователи. Порядок групп и людей внутри —
+             app/utils/user_roles.group_users_by_role. Заголовок — одна ячейка
+             с colspan и без кнопок (flex_tables и hover-действия её не трогают). #}
+          {% for g in user_groups %}
+            <tbody data-role-group="{{ g.key }}" data-group-kind="{{ g.kind }}">
+              <tr class="table-section-row">
+                <td colspan="5">
+                  <span class="fw-semibold">{{ g.label }}</span> · {{ g.users|length }}
+                  {%- if g.invited_count %} · {{ g.invited_count }} invited{% endif %}
+                  {%- if g.kind == 'custom' %} · custom role
+                  {%- elif g.kind == 'missing' %}
+                    <span class="badge text-bg-warning ms-1"
+                          title="This role does not exist in Roles &amp; Permissions — these users get no permissions from a role until you assign them an existing one">Role not found</span>
+                  {%- endif %}
                 </td>
               </tr>
-            {% endfor %}
-          </tbody>
+              {% for u in g.users %}
+                {{ user_row(u) }}
+              {% endfor %}
+            </tbody>
+          {% endfor %}
         </table>
       </div>
+    {% elif status == 'inactive' and not q %}
+      {{ empty_state("No inactive users", "Deactivated users show up here, each with an Activate button.") }}
     {% else %}
-      <div class="p-4 text-center">
-        <div class="fw-semibold mb-1">No users found</div>
-        <div class="text-muted mb-3">Try another search or create a new user.</div>
-        <button class="btn btn-primary btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#createUserModal">
-          + New user
-        </button>
-      </div>
+      {{ empty_state("No users found", "Try another search or create a new user.") }}
     {% endif %}
 
     {{ pagination_controls(pagination, label="Users pagination") }}
@@ -200,15 +228,16 @@
             <div class="col-12 col-md-6">
               <label class="form-label" for="role">Role</label>
               <select class="form-select" id="role" name="role" required>
-                {% if actor_is_owner %}<option value="owner">Owner</option>{% endif %}
-                <option value="manager">Manager</option>
-                <option value="parts_manager">Parts manager</option>
-                <option value="senior_mechanic">Senior mechanic</option>
-                <option value="mechanic">Mechanic</option>
-                <option value="viewer">Viewer</option>
-                <option value="general_manager">General manager</option>
+                <option value="" selected disabled>Select a role…</option>
+                {{ role_select_options(role_options or []) }}
               </select>
-              <div class="form-text">Later we will load roles from tenant DB dynamically.</div>
+              <div class="form-text">
+                {% if actor_is_owner %}
+                  Custom roles from Roles &amp; Permissions are listed too.
+                {% else %}
+                  You can assign only roles whose permissions you have yourself.
+                {% endif %}
+              </div>
             </div>
 
             <div class="col-12">
@@ -351,13 +380,9 @@
             <div class="col-12 col-md-6">
               <label class="form-label" for="edit_user_role">Role</label>
               <select class="form-select" id="edit_user_role" name="role" required>
-                {% if actor_is_owner %}<option value="owner">Owner</option>{% endif %}
-                <option value="manager">Manager</option>
-                <option value="parts_manager">Parts manager</option>
-                <option value="senior_mechanic">Senior mechanic</option>
-                <option value="mechanic">Mechanic</option>
-                <option value="viewer">Viewer</option>
-                <option value="general_manager">General manager</option>
+                {# Плейсхолдер: роль пользователя удалена («Role not found») — выбрать явно. #}
+                <option value="" disabled>Select a role…</option>
+                {{ role_select_options(role_options or []) }}
               </select>
             </div>
 
@@ -437,7 +462,8 @@
   </div>
 </div>
 
-<!-- Roles & Permissions -->
+<!-- Roles & Permissions (ссылка — только тем, кому страница ролей открыта) -->
+{% if "settings.manage_roles" in user_permissions %}
 <div class="card mt-4">
   <div class="card-body d-flex justify-content-between align-items-center gap-3">
     <div>
@@ -447,6 +473,7 @@
     <a href="{{ url_for('settings.roles_index') }}" class="btn btn-sm btn-outline-primary">Manage roles</a>
   </div>
 </div>
+{% endif %}
 
 <script src="{{ url_for('static', filename='js/settings/users.js') }}"></script>
 

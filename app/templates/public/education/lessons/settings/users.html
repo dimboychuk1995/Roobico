@@ -3,6 +3,7 @@
 {% call summary_box() %}
 <ul>
   <li>Inviting a user — the only way to create one — and what they receive.</li>
+  <li>How the list is grouped by role, and where deactivated users go.</li>
   <li>Role, pay type, shop access, per-user permission overrides.</li>
   <li>Deactivate, re-hire, and the rules about passwords and roles.</li>
 </ul>
@@ -11,9 +12,22 @@
 <p>Settings → {{ ui("Users & Roles") }} (needs {{ perm("settings.manage_users", "Manage users") }}).</p>
 {{ shot("settings-users", "Users & Roles with + New user highlighted.") }}
 
+<h2>The list, grouped by role</h2>
+<p>
+  Every role is its own section with a header such as <strong>Mechanic · 4 · 1 invited</strong> — the role name, how many people have it
+  and how many invitations are still pending. Sections always come in the same order: Owner, General manager, Manager, Parts manager,
+  Senior mechanic, Mechanic, Viewer, then your custom roles A→Z (marked <em>custom role</em>). Roles nobody has are not shown. Inside a
+  section people are sorted by name; clicking the {{ ui("Name") }} or {{ ui("Email") }} column header sorts inside every section.
+</p>
+<ul>
+  <li>Search finds people by name, email, phone, ID or role — <em>mechanic</em>, <em>parts manager</em> or a custom role's name; the counts follow the search.</li>
+  <li>Your mechanics are the Senior mechanic and Mechanic sections — the people you can assign to jobs and who are billed per mechanic.</li>
+  <li>A section marked <strong>Role not found</strong>: those people's role was deleted in Roles &amp; Permissions, so they have no permissions from a role — open {{ ui("Edit") }} and pick an existing one.</li>
+</ul>
+
 <h2>Invite a user</h2>
 {% call step(1, "+ New user") %}
-<p>First / Last name, Email (globally unique), Phone, <strong>Role</strong> (Manager, Parts manager, Senior mechanic, Mechanic, Viewer, General manager — Owner is not assignable here), Active flag, <strong>Pay type</strong> (Salary with a weekly amount, or Hourly — hourly rates are set per employee in the uAttend integration) and <strong>Shop access</strong> checkboxes.</p>
+<p>First / Last name, Email (globally unique), Phone, <strong>Role</strong> (the system roles from General manager down to Viewer, then your custom roles from Roles &amp; Permissions; only an Owner sees and can assign Owner — nothing is preselected), Active flag, <strong>Pay type</strong> (Salary with a weekly amount, or Hourly — hourly rates are set per employee in the uAttend integration) and <strong>Shop access</strong> checkboxes.</p>
 {{ shot("settings-user-create-modal", "Create new user.", "md") }}
 {% endcall %}
 {% call step(2, "The invitation") %}
@@ -38,7 +52,7 @@ Neither the owner nor managers can set or change another user's password anywher
 
 <h2>Deactivate and re-hire</h2>
 <ul>
-  <li>{{ ui("Deactivate") }} blocks login but keeps history; you cannot deactivate yourself. Deactivated users leave the default list — switch the status filter to <strong>Inactive users</strong> / <strong>All users</strong>; each inactive row has {{ ui("Activate") }}.</li>
+  <li>{{ ui("Deactivate") }} blocks login but keeps history; you cannot deactivate yourself. Deactivated users leave the default list — switch the status filter to <strong>Inactive users</strong> / <strong>All users</strong>: they are collected in one <strong>Inactive</strong> section at the bottom (not split by role; the Role column still shows the role they had), and each row has {{ ui("Activate") }}.</li>
   <li>Creating a user with the email of a deactivated user of your company reactivates that user with the data you enter (a fresh profile). An email of an active user, or of another company, is refused.</li>
 </ul>
 

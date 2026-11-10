@@ -430,7 +430,10 @@ def test_status_mechanics_presets_and_legacy_docs(client, api_seed, mongo):
     _EVENT_IDS.append(legacy_doc["_id"])
     row = next(r for r in _events(client, day) if r["id"] == str(legacy_doc["_id"]))
     assert set(row) == SHAPE
-    assert row["mechanics"] == [{"id": m1, "name": "Old Name"}] and row["mechanic_ids"] == [m1] and row["mechanic_id"] == m1
+    # Имя — живое по mechanic_id (сохранённое «Old Name» — лишь снимок).
+    assert row["mechanics"] == [{"id": m1, "name": "Api Mechanic"}] and row["mechanic_ids"] == [m1] and row["mechanic_id"] == m1
+    assert row["mechanic_name"] == "Api Mechanic"
+    assert shop_db.calendar_events.find_one({"_id": legacy_doc["_id"]})["mechanic_name"] == "Old Name"
     assert row["customer_id"] == "" and row["customer_label"] == "" and row["title"] == "Legacy" and row["note"] == "Legacy"
 
     filtered = {r["id"] for r in _events(client, day, f"&mechanic_id={m1}")}

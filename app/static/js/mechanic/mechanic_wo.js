@@ -5,7 +5,11 @@
 
   var API = {
     list: "/work_orders/api/mechanic/work_orders",
-    details: function (id) { return "/work_orders/api/mechanic/work_orders/" + encodeURIComponent(id); },
+    // mp=1 — страница шлёт view_id сама (протокол слияния): сервер сводит её
+    // Save с тем, что она видела, и с текущим WO.
+    details: function (id) { return "/work_orders/api/mechanic/work_orders/" + encodeURIComponent(id) + "?mp=1"; },
+    // Дешёвый опрос «WO изменился?» (labors_rev), вьюх не пишет.
+    rev: function (id) { return "/work_orders/api/mechanic/work_orders/" + encodeURIComponent(id) + "/rev"; },
     create: "/work_orders/api/mechanic/work_orders",
     update: function (id) { return "/work_orders/api/mechanic/work_orders/" + encodeURIComponent(id); },
     timerStart: "/work_orders/api/mechanic/timers/start",
@@ -40,19 +44,34 @@
     return err;
   }
 
+  // Запрос не дошёл / ответ потерян: status 0, error "network".
+  function networkError() {
+    return requestError({ status: 0 }, { error: "network", message: "Network error — check the connection." });
+  }
+
   async function getJson(url) {
-    var res = await fetch(url, { headers: { "Accept": "application/json" } });
+    var res;
+    try {
+      res = await fetch(url, { headers: { "Accept": "application/json" } });
+    } catch (e) {
+      throw networkError();
+    }
     var data = await res.json().catch(function () { return {}; });
     if (!res.ok || data.ok === false) throw requestError(res, data);
     return data;
   }
 
   async function postJson(url, body) {
-    var res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify(body || {}),
-    });
+    var res;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify(body || {}),
+      });
+    } catch (e) {
+      throw networkError();
+    }
     var data = await res.json().catch(function () { return {}; });
     if (!res.ok || data.ok === false) throw requestError(res, data);
     return data;
@@ -60,6 +79,92 @@
 
   function toast(msg, kind) {
     if (window.appAlert) window.appAlert(msg, kind || "info");
+  }
+
+  // Ответы с одним машинным кодом (без message) — понятным текстом.
+  var ERROR_TEXTS = {
+    estimate_locked_for_mechanics: "This work order is an estimate — only the office can change it.",
+    estimate_cannot_track: "Time can't be tracked on an estimate — ask the office to turn it into a work order.",
+    paid_cannot_edit: "Paid work orders cannot be edited.",
+    paid_cannot_track: "This work order is locked — time can't be tracked on it.",
+    labors_required: "Add at least one job description or part.",
+    work_order_not_found: "This work order was deleted or is no longer available.",
+    labor_not_found: "This job is no longer on the work order. Reload the page.",
+    no_running_timer: "Your timer is already stopped.",
+  };
+
+  function errorText(e, fallback) {
+    var data = (e && e.data) || {};
+    if (data.message) return String(data.message);
+    if (data.error && ERROR_TEXTS[data.error]) return ERROR_TEXTS[data.error];
+    return (e && e.message) || fallback;
+  }
+
+  // Отказ «WO закрыт для правки»: подтверждён менеджером / смета (механику)
+  // или оплачен (всем).
+  var LOCK_ERRORS = {
+    wo_confirmed: true,
+    estimate_locked_for_mechanics: true,
+    estimate_cannot_track: true,
+    paid_cannot_edit: true,
+    paid_cannot_track: true,
+  };
+
+  function isLockError(e) {
+    var code = e && e.data && e.data.error;
+    return !!(code && LOCK_ERRORS[code] === true);
+  }
+
+  // Ключ новой работы (client_key): живёт на строке до получения labor_id.
+  // Повтор Save после потерянного ответа сервер узнаёт по нему и не
+  // создаёт вторую такую же работу.
+  function newClientKey() {
+    try {
+      if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+    } catch (e) { /* небезопасный контекст — ниже запасной вариант */ }
+    return "ck-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 12) +
+      Math.random().toString(36).slice(2, 12);
+  }
+
+  function cleanList(arr) {
+    return (Array.isArray(arr) ? arr : [])
+      .map(function (x) { return String(x || "").trim(); })
+      .filter(Boolean);
+  }
+
+  // Итог сохранения: заметки сервера (какие чужие работы/запчасти сохранены,
+  // что удалил другой человек) и предупреждения — списком в SweetAlert;
+  // без них — короткий тост.
+  function showSaveOutcome(data, okMessage) {
+    var notes = cleanList(data && data.merge_notes);
+    var warnings = cleanList(data && data.warnings);
+    if (!notes.length && !warnings.length) {
+      toast(okMessage, "success");
+      return;
+    }
+    if (typeof window.Swal === "undefined") {
+      window.alert([okMessage].concat(notes, warnings).join("\n"));
+      return;
+    }
+    function list(items) {
+      return '<ul class="mb-2 ps-3">' + items.map(function (n) { return "<li>" + esc(n) + "</li>"; }).join("") + "</ul>";
+    }
+    var intro = data && data.merged_foreign
+      ? "Other people changed this work order at the same time. Both sets of changes were kept:"
+      : "";
+    var noAnim = { popup: "", backdrop: "" };
+    window.Swal.fire({
+      icon: warnings.length ? "warning" : "info",
+      title: esc(okMessage),
+      html: '<div class="text-start small">' +
+        (notes.length ? (intro ? '<p class="mb-2">' + esc(intro) + "</p>" : "") + list(notes) : "") +
+        (warnings.length ? list(warnings) : "") +
+        "</div>",
+      confirmButtonText: "OK",
+      confirmButtonColor: "#1a7a42",
+      showClass: noAnim,
+      hideClass: noAnim,
+    });
   }
 
   // Смещение часов сервера: elapsed считаем от server_now, не от локальных часов.
@@ -331,11 +436,86 @@
     // второй раз не спрашиваем.
     var presetMileage = (new URLSearchParams(window.location.search).get("mileage") || "").trim();
 
-    // labors: [{labor_id, description, issue_description, parts: [{part_id, part_number, description, qty}], time}]
+    // labors: [{labor_id, client_key, description, issue_description, parts: [{part_id, part_number, description, qty, loadedQty}], time}]
     // mileage — текущий пробег юнита; mileageConfirmed — механик подтвердил
     // его в окне (обязательный шаг перед работой с WO, см. showMileageGate).
-    var state = { labors: [], saving: false, mileage: "", mileageConfirmed: false, mileageRequired: mechanicMode };
+    //
+    // Несколько человек на одном WO: Save сливается на сервере трёхсторонне
+    // (base — edit view страницы viewId, current — WO в базе, mine — форма),
+    // чужие работы не удаляются. rev — известная странице ревизия строк WO
+    // (labors_rev); dirty/editSeq — несохранённые правки на странице: поверх
+    // них страница никогда не перечитывает WO.
+    var state = {
+      labors: [], saving: false, mileage: "", mileageConfirmed: false, mileageRequired: mechanicMode,
+      mileageRequiredOpen: mechanicMode,
+      viewId: "", rev: 0, dirty: false, editSeq: 0, loading: false,
+      revPollOff: false, revPollBusy: false, noticeRev: 0, locked: false, paid: false,
+      // Неудачное перечитывание по опросу: {key, count, retryAt} — та же
+      // ревизия повторяется с растущей паузой; refreshErrorShown — последняя
+      // показанная ошибка (одна и та же не повторяется).
+      refreshFail: null, refreshErrorShown: "",
+    };
     var mileageModal = null;
+
+    // Любая правка формы (текст, qty, состав работ/запчастей).
+    function markDirty() {
+      state.dirty = true;
+      state.editSeq += 1;
+    }
+
+    function learnRev(value) {
+      var n = Number(value);
+      if (Number.isFinite(n) && n > state.rev) state.rev = n;
+    }
+
+    // ---------- замок ----------
+    // WO закрыт для правки: оплачен, а механику — ещё смета или подтверждён
+    // менеджером. Save выключен, баннер над работами объясняет почему (не
+    // окно: замок приходит и сам по себе, из опроса). Сняли — всё обратно.
+    var LOCKED_TEXT = "A manager locked this work order — changes can't be saved right now.";
+    var LOCK_NOTICE = "A manager locked this work order — your unsaved changes can't be saved.";
+    var CONFIRMED_TEXT = "This work order was confirmed by a manager and is locked.";
+
+    function syncSaveButton() {
+      var btn = $("mechSaveBtn");
+      if (btn) btn.disabled = state.saving || state.locked;
+    }
+
+    // message — причина для баннера; без неё остаётся уже показанная.
+    function applyLock(locked, message) {
+      state.locked = !!locked;
+      // Не закрыт — значит и не оплачен (locked всегда включает paid): WO
+      // снова в работе — и пробег снова обязателен, как для открытого WO.
+      if (!state.locked && state.paid) {
+        state.paid = false;
+        state.mileageRequired = state.mileageRequiredOpen;
+      }
+      var box = $("mechLockNotice");
+      var textEl = $("mechLockNoticeText") || box;
+      if (box) {
+        if (state.locked) {
+          if (message || !textEl.textContent) textEl.textContent = message || LOCKED_TEXT;
+          box.classList.remove("d-none");
+        } else {
+          box.classList.add("d-none");
+          textEl.textContent = "";
+        }
+      }
+      syncSaveButton();
+    }
+
+    // Причина замка по деталям WO.
+    function detailsLockText(data) {
+      if (data.status === "paid") return ERROR_TEXTS.paid_cannot_edit;
+      if (data.status === "estimate") return ERROR_TEXTS.estimate_locked_for_mechanics;
+      return CONFIRMED_TEXT;
+    }
+
+    // Нижняя граница qty: загруженная строка с qty 0 (отложенная/справочная
+    // позиция) остаётся 0, пока механик сам её не поменяет; новые — от 1.
+    function minQty(part) {
+      return part && part.loadedQty === 0 ? 0 : 1;
+    }
 
     function parsedMileage(value) {
       var s = String(value || "").trim().replace(/,/g, "");
@@ -375,7 +555,7 @@
     var tickHandle = null;
 
     function newLabor() {
-      return { labor_id: "", description: "", issue_description: "", parts: [], time: null };
+      return { labor_id: "", client_key: newClientKey(), description: "", issue_description: "", parts: [], time: null };
     }
 
     function laborHtml(labor, idx) {
@@ -388,7 +568,9 @@
             "</div>" +
             '<div class="mech-qty">' +
               '<button type="button" class="mech-qty-minus" aria-label="Decrease">−</button>' +
-              '<input type="number" class="form-control mech-qty-input" inputmode="numeric" min="1" value="' + esc(p.qty || 1) + '">' +
+              // qty строки — как в WO (без подмены 0 на 1): иначе Save выдал
+              // бы нетронутую строку за правку.
+              '<input type="number" class="form-control mech-qty-input" inputmode="numeric" min="' + minQty(p) + '" value="' + esc(p.qty) + '">' +
               '<button type="button" class="mech-qty-plus" aria-label="Increase">+</button>' +
             "</div>" +
             '<button type="button" class="mech-part-remove" aria-label="Remove part"><i class="bi bi-x-lg"></i></button>' +
@@ -549,24 +731,113 @@
           var part = labor.parts[pIdx];
           if (!part) return;
           var qtyInput = row.querySelector(".mech-qty-input");
-          if (qtyInput) part.qty = Math.max(1, parseInt(qtyInput.value, 10) || 1);
+          if (!qtyInput) return;
+          // Пустое/мусорное поле — qty строки не меняем.
+          var v = parseInt(qtyInput.value, 10);
+          if (Number.isFinite(v)) part.qty = Math.max(minQty(part), v);
         });
       });
     }
 
-    async function loadDetails() {
+    function renderStatusBadge(status) {
+      var statusEl = $("mechWoStatus");
+      if (!statusEl) return;
+      var s = status || "open";
+      var cls = s === "paid" ? "text-bg-success" : (s === "in_progress" ? "text-bg-info" : "text-bg-warning");
+      var label = s === "in_progress" ? "In Progress" : s.charAt(0).toUpperCase() + s.slice(1);
+      statusEl.innerHTML = '<span class="badge ' + cls + '">' + esc(label) + "</span>";
+    }
+
+    // Строка работы из ответа сервера (детали / Save): qty — как в WO.
+    function laborFromServer(l) {
+      return {
+        labor_id: l.labor_id || "",
+        description: l.description || "",
+        issue_description: l.issue_description || "",
+        parts: (l.parts || []).map(function (p) {
+          var q = Number(p.qty);
+          if (!Number.isFinite(q)) q = 0;
+          return {
+            part_id: p.part_id || "",
+            part_number: p.part_number || "",
+            description: p.description || "",
+            qty: q,
+            loadedQty: q,
+          };
+        }),
+        time: l.time ? normalizeTimeBucket(l.time) : null,
+      };
+    }
+
+    // Только что добавленные пустые работы (на сервер не уходили) при
+    // перечитывании WO не теряем.
+    function pendingBlankLabors() {
+      return state.labors.filter(function (l) {
+        return !l.labor_id && !String(l.description || "").trim() && !l.parts.length;
+      });
+    }
+
+    function typingInLabors() {
+      var el = document.activeElement;
+      return !!(el && laborsContainer.contains(el) && (el.tagName === "TEXTAREA" || el.tagName === "INPUT"));
+    }
+
+    // Ответ Save. Правок за время запроса не было — берём строки из ответа
+    // (там чужие изменения, слитые сервером, и id новых работ); были —
+    // оставляем свои, новым работам проставляем id по client_key, base
+    // следующего Save — sent view (то, что мы отправили). true — строки
+    // взяты из ответа.
+    function applySaveResponse(data, seq) {
+      data = data || {};
+      learnRev(data.labors_rev);
+      if (data.status) renderStatusBadge(data.status);
+      if (state.editSeq === seq && Array.isArray(data.labors)) {
+        state.labors = data.labors.map(laborFromServer).concat(pendingBlankLabors());
+        if (!state.labors.length) state.labors.push(newLabor());
+        if (typeof data.view_id === "string") {
+          state.viewId = data.merged_foreign ? String(data.merged_view_id || data.view_id || "") : data.view_id;
+        }
+        state.dirty = false;
+        render();
+        return true;
+      }
+      collectFromDom();
+      var keyed = (data.client_keys && typeof data.client_keys === "object") ? data.client_keys : {};
+      state.labors.forEach(function (l) {
+        if (!l.labor_id && l.client_key && keyed[l.client_key]) l.labor_id = String(keyed[l.client_key]);
+      });
+      if (typeof data.view_id === "string") state.viewId = data.view_id;
+      // Механик печатает — не перерисовываем (фокус и курсор остались бы
+      // без поля); Start/Stop новой работы появится при следующей отрисовке.
+      if (!typingInLabors()) render();
+      return false;
+    }
+
+    // refresh — перечитывание уже открытой страницы (опрос ревизии, таймер,
+    // Save): правки, сделанные пока шёл запрос, не затираем, а ошибку
+    // показываем тостом, не окном (перечитывание идёт и само по себе).
+    // true — детали применены, false — запрос не удался, null — пропущены
+    // (пока шёл запрос, на странице начали править).
+    async function loadDetails(opts) {
+      var refresh = !!(opts && opts.refresh);
+      var seq = state.editSeq;
+      state.loading = true;
       try {
         var data = await getJson(API.details(woId));
+        if (refresh && state.editSeq !== seq) return null;
         syncServerNow(data.server_now);
+        // Base следующего Save и ревизия — из этих же деталей.
+        if (typeof data.view_id === "string") state.viewId = data.view_id;
+        if (data.labors_rev !== undefined && Number.isFinite(Number(data.labors_rev))) {
+          state.rev = Number(data.labors_rev);
+        }
+        state.paid = data.status === "paid";
+        // Закрыт для правки: оплачен (механику — ещё смета/подтверждён).
+        var locked = state.paid ||
+          (mechanicMode && (data.status === "estimate" || !!data.manager_confirmed));
 
         $("mechWoTitle").textContent = "WO #" + (data.wo_number || "");
-        var statusEl = $("mechWoStatus");
-        if (statusEl) {
-          var s = data.status || "open";
-          var cls = s === "paid" ? "text-bg-success" : (s === "in_progress" ? "text-bg-info" : "text-bg-warning");
-          var label = s === "in_progress" ? "In Progress" : s.charAt(0).toUpperCase() + s.slice(1);
-          statusEl.innerHTML = '<span class="badge ' + cls + '">' + esc(label) + "</span>";
-        }
+        renderStatusBadge(data.status);
 
         $("mechWoInfoCard").style.display = "";
         $("mechInfoCustomer").textContent = (data.customer && data.customer.label) || "—";
@@ -574,14 +845,20 @@
         $("mechInfoDate").textContent = data.date || "—";
         renderScheduled(data.appointments);
 
-        state.mileageRequired = !!data.mileage_required && data.status !== "paid";
+        // mileageRequiredOpen — то же для неоплаченного WO (вернётся при Unpaid).
+        state.mileageRequiredOpen = !!data.mileage_required;
+        state.mileageRequired = state.mileageRequiredOpen && data.status !== "paid";
         var unitMileage = (data.unit && data.unit.mileage != null && data.unit.mileage !== "") ? String(data.unit.mileage) : "";
         if (!state.mileageConfirmed && presetMileage && parsedMileage(presetMileage) !== null) {
           setMileage(parsedMileage(presetMileage)); // подтверждён при создании WO
         }
-        if (!state.mileageConfirmed) {
+        // Пробег не подтверждён — показываем пробег юнита, но не поверх поля,
+        // в котором сейчас печатают: введённое запишет change на blur
+        // (перезапись значения скриптом съела бы и его, и сам change).
+        var mileageEl = $("mechWoMileage");
+        var typingMileage = !!mileageEl && document.activeElement === mileageEl;
+        if (!state.mileageConfirmed && !typingMileage) {
           state.mileage = unitMileage;
-          var mileageEl = $("mechWoMileage");
           if (mileageEl) mileageEl.value = unitMileage;
         }
 
@@ -592,23 +869,9 @@
           historyBtn.dataset.unitId = historyUnitId;
         }
 
-        state.labors = (data.labors || []).map(function (l) {
-          return {
-            labor_id: l.labor_id || "",
-            description: l.description || "",
-            issue_description: l.issue_description || "",
-            parts: (l.parts || []).map(function (p) {
-              return {
-                part_id: p.part_id || "",
-                part_number: p.part_number || "",
-                description: p.description || "",
-                qty: p.qty || 1,
-              };
-            }),
-            time: l.time ? normalizeTimeBucket(l.time) : null,
-          };
-        });
+        state.labors = (data.labors || []).map(laborFromServer).concat(refresh ? pendingBlankLabors() : []);
         if (!state.labors.length) state.labors.push(newLabor());
+        state.dirty = false;
 
         if (data.my_running_timer) {
           var running = data.my_running_timer;
@@ -627,14 +890,41 @@
 
         render();
 
+        applyLock(locked, locked ? detailsLockText(data) : "");
+        state.refreshErrorShown = "";
         if (data.status === "paid") {
-          $("mechSaveBtn").disabled = true;
-          toast("Paid work orders cannot be edited", "warning");
-        } else if (state.mileageRequired && !state.mileageConfirmed) {
-          showMileageGate(data.unit && data.unit.label, unitMileage);
+          // Окно — только при открытии; оплату, пришедшую при перечитывании,
+          // показывает баннер.
+          if (!refresh) toast("Paid work orders cannot be edited", "warning");
+        } else {
+          var gateEl = $("mechMileageModal");
+          var gateOpen = !!(gateEl && gateEl.classList.contains("show"));
+          if (state.mileageRequired && !state.mileageConfirmed && !gateOpen) {
+            showMileageGate(data.unit && data.unit.label, unitMileage);
+          }
         }
+        return true;
       } catch (e) {
-        toast(e.message || "Failed to load work order", "error");
+        // WO удалён — опрос то же сообщение не повторит.
+        if (e && e.data && e.data.error === "work_order_not_found") state.revPollOff = true;
+        if (isLockError(e)) {
+          // Механику WO закрыт (подтверждён / смета): причина — в баннере,
+          // Save выключен; опрос закрытый WO больше не перечитывает. Окно —
+          // только при открытии страницы.
+          applyLock(true, errorText(e, LOCKED_TEXT));
+          if (!refresh) toast(errorText(e, LOCKED_TEXT), "warning");
+          return false;
+        }
+        var msg = errorText(e, refresh ? "Couldn't refresh this work order." : "Failed to load work order");
+        if (!refresh) {
+          toast(msg, "error");
+        } else if (msg !== state.refreshErrorShown) {
+          toast(msg, "info");
+        }
+        state.refreshErrorShown = msg;
+        return false;
+      } finally {
+        state.loading = false;
       }
     }
 
@@ -909,6 +1199,7 @@
           collectFromDom();
           var labor = {
             labor_id: "",
+            client_key: newClientKey(),
             description: preset.name || preset.description || "",
             issue_description: "",
             // Сервер по preset_id берёт часы/ставку пресета для биллинга.
@@ -929,6 +1220,7 @@
             && !state.labors[0].parts.length
             && !state.labors[0].labor_id;
           if (only) state.labors = [labor]; else state.labors.push(labor);
+          markDirty();
           if (presetModal) presetModal.hide();
           render();
           toast('Preset "' + (preset.name || "") + '" applied', "success");
@@ -1018,13 +1310,37 @@
             qty: 1,
           });
         }
+        markDirty();
         if (partModal) partModal.hide();
         render();
       });
     }
 
     // ---------- timers ----------
+    // Ответ таймера несёт ревизию WO после всех его записей: Start двигает
+    // её всегда, Stop — когда пересчитал часы. Молча принять её нельзя: в
+    // неё может войти чужая правка, сделанная до клика, и чистая страница
+    // так её и не показала бы. Поэтому ревизия выросла и правок нет —
+    // перечитываем WO (как Stop в нижней панели); есть правки — запоминаем
+    // ревизию (своё действие не выдаём за чужое, чужое сольёт Save); идёт
+    // сохранение/загрузка — ничего: ревизию сверит их ответ и опрос.
+    function isThisWo(timer) {
+      return !timer || !timer.work_order_id || String(timer.work_order_id) === String(woId);
+    }
+
+    function afterOwnTimerWrite(respRev, revBefore) {
+      var n = Number(respRev);
+      if (!Number.isFinite(n) || n <= Math.max(revBefore, state.rev)) return;
+      if (state.dirty) {
+        learnRev(n);
+        return;
+      }
+      if (state.saving || state.loading) return;
+      loadDetails({ refresh: true });
+    }
+
     async function startTimer(laborId) {
+      var revBefore = state.rev;
       var data = await postJson(API.timerStart, { work_order_id: woId, labor_id: laborId });
       syncServerNow(data.server_now);
       applyTimeSummary(data.time_summary);
@@ -1040,37 +1356,58 @@
       if (data.stopped_previous && data.stopped_previous.work_order_id !== woId) {
         toast("Timer on WO #" + (data.stopped_previous.wo_number || "") + " stopped", "info");
       }
+      // Напечатанное, пока шёл запрос, — в state до перерисовки.
+      collectFromDom();
       render();
+      afterOwnTimerWrite(data.labors_rev, revBefore);
     }
 
     async function stopTimer() {
+      var revBefore = state.rev;
       var data = await postJson(API.timerStop, {});
       syncServerNow(data.server_now);
-      applyTimeSummary(data.time_summary);
+      // Ревизия в ответе — того WO, где шёл таймер; чужую не сравниваем.
+      var thisWo = isThisWo(data.timer);
+      if (thisWo) applyTimeSummary(data.time_summary);
       setBarTimer(null);
+      collectFromDom();
       render();
+      if (thisWo) afterOwnTimerWrite(data.labors_rev, revBefore);
     }
 
     // ---------- save ----------
+    // Сохранённые работы (с labor_id) уходят всегда, даже опустевшие: сервер
+    // удаляет работу, только когда её убрали из списка. Новые — когда в них
+    // что-то есть, со своим client_key. qty — как есть (новые строки
+    // начинаются с 1, загруженные — со значения из WO).
     function buildLaborsPayload() {
       return state.labors
-        .filter(function (l) { return l.description || l.parts.length; })
+        .filter(function (l) { return l.labor_id || l.description || l.parts.length; })
         .map(function (l) {
-          return {
+          var row = {
             labor_id: l.labor_id,
             description: l.description,
             issue_description: l.issue_description,
             preset_id: l.preset_id || "",
             parts: l.parts.map(function (p) {
+              var q = Number(p.qty);
               return {
                 part_id: p.part_id,
                 part_number: p.part_number,
                 description: p.description,
-                qty: p.qty || 1,
+                qty: Number.isFinite(q) ? q : minQty(p),
               };
             }),
           };
+          if (!l.labor_id && l.client_key) row.client_key = l.client_key;
+          return row;
         });
+    }
+
+    // Тело Save/подтверждения пробега для существующего WO: протокол
+    // слияния (view_id — с чем страница начинала правку).
+    function updatePayload(labors) {
+      return { labors: labors, unit_mileage: state.mileage, merge_protocol: 1, view_id: state.viewId };
     }
 
     async function save() {
@@ -1116,9 +1453,15 @@
           window.location.href = "/mechanic/work_orders/" + encodeURIComponent(data.id) +
             (state.mileageConfirmed ? "?mileage=" + encodeURIComponent(state.mileage) : "");
         } else {
-          await postJson(API.update(woId), { labors: labors, unit_mileage: state.mileage });
-          toast("Saved (In Progress)", "success");
-          await loadDetails();
+          var seq = state.editSeq;
+          var resp = await postJson(API.update(woId), updatePayload(labors));
+          var adopted = applySaveResponse(resp, seq);
+          if (!adopted && state.editSeq === seq) {
+            // Ответ без строк (старый сервер) — перечитываем WO, как раньше.
+            state.saving = false;
+            await loadDetails({ refresh: true });
+          }
+          showSaveOutcome(resp, "Saved (In Progress)");
         }
       } catch (e) {
         // Пока механик заполнял форму, коллега уже завёл WO по этому юниту —
@@ -1127,10 +1470,21 @@
           goToExistingWorkOrder(e.data.work_order, e.data.message);
           return;
         }
-        toast(e.message || "Failed to save", "error");
+        if (e && e.status === 0) {
+          // Правки остались на странице; повторный Save безопасен (новые
+          // работы сервер узнает по client_key).
+          toast("Network error — your changes are still on the page. Check the connection and click Save again.", "error");
+        } else {
+          // WO закрыли, пока страница открыта, — баннер и выключенный Save
+          // до снятия замка (его заметит опрос).
+          var lockErr = isLockError(e);
+          if (lockErr) applyLock(true, errorText(e, LOCKED_TEXT));
+          toast(errorText(e, "Failed to save"), lockErr || (e && e.status === 409) ? "warning" : "error");
+        }
       } finally {
         state.saving = false;
-        saveBtn.disabled = false;
+        // WO закрыт (оплачен / замок менеджера) — Save не включаем.
+        syncSaveButton();
       }
     }
 
@@ -1151,6 +1505,7 @@
         collectFromDom();
         state.labors.splice(idx, 1);
         if (!state.labors.length) state.labors.push(newLabor());
+        markDirty();
         render();
         return;
       }
@@ -1160,6 +1515,7 @@
         collectFromDom();
         var row = removeBtn.closest(".mech-part-row");
         labor.parts.splice(Number(row.dataset.partIndex), 1);
+        markDirty();
         render();
         return;
       }
@@ -1169,8 +1525,12 @@
       if (minus || plus) {
         var qRow = (minus || plus).closest(".mech-part-row");
         var input = qRow.querySelector(".mech-qty-input");
-        var val = Math.max(1, parseInt(input.value, 10) || 1);
-        input.value = minus ? Math.max(1, val - 1) : val + 1;
+        var part = labor.parts[Number(qRow.dataset.partIndex)];
+        var lo = minQty(part);
+        var val = parseInt(input.value, 10);
+        if (!Number.isFinite(val)) val = part && Number.isFinite(Number(part.qty)) ? Number(part.qty) : lo;
+        input.value = minus ? Math.max(lo, val - 1) : Math.max(lo, val + 1);
+        markDirty();
         return;
       }
 
@@ -1185,10 +1545,21 @@
             await startTimer(labor.labor_id);
           }
         } catch (err) {
-          toast(err.message || "Timer error", "error");
+          // Смета / подтверждён / оплачен: причина — в окне (ответ на клик)
+          // и в баннере, Save выключен до снятия замка.
+          var timerLock = isLockError(err);
+          if (timerLock) applyLock(true, errorText(err, LOCKED_TEXT));
+          toast(errorText(err, "Timer error"), timerLock ? "warning" : "error");
         } finally {
           timerBtn.disabled = false;
         }
+      }
+    });
+
+    // Набор текста / qty в карточках — несохранённая правка.
+    laborsContainer.addEventListener("input", function (e) {
+      if (e.target && (e.target.classList.contains("mech-labor-desc") || e.target.classList.contains("mech-qty-input"))) {
+        markDirty();
       }
     });
 
@@ -1215,14 +1586,31 @@
         if (mileageModal) mileageModal.hide();
         // Существующий WO: записываем пробег сразу, не дожидаясь Save.
         if (mode === "edit" && woId) {
+          if (state.saving) return;
           collectFromDom();
           var labors = buildLaborsPayload();
           if (!labors.length) return;
+          var seq = state.editSeq;
+          var saveBtnEl = $("mechSaveBtn");
+          state.saving = true;
+          if (saveBtnEl) saveBtnEl.disabled = true;
           try {
-            await postJson(API.update(woId), { labors: labors, unit_mileage: state.mileage });
-            toast("Mileage saved", "success");
+            var resp = await postJson(API.update(woId), updatePayload(labors));
+            // Ответ несёт строки WO (с id и чужими правками) — берём их, иначе
+            // новые работы остались бы без id и пересоздавались бы при Save.
+            var adopted = applySaveResponse(resp, seq);
+            if (!adopted && state.editSeq === seq) {
+              state.saving = false;
+              await loadDetails({ refresh: true });
+            }
+            showSaveOutcome(resp, "Mileage saved");
           } catch (e) {
-            toast(e.message || "Failed to save mileage", "error");
+            var mileageLock = isLockError(e);
+            if (mileageLock) applyLock(true, errorText(e, LOCKED_TEXT));
+            toast(errorText(e, "Failed to save mileage"), mileageLock ? "warning" : "error");
+          } finally {
+            state.saving = false;
+            syncSaveButton();
           }
         }
       });
@@ -1238,12 +1626,103 @@
     bindPartPicker();
     bindPresetPicker();
     bindUnitHistory();
-    bindTimerBarStop(function () {
-      if (mode === "edit") loadDetails();
+    // Stop в нижней панели: несохранённые правки на странице не трогаем —
+    // обновляем только время; без правок — перечитываем WO целиком.
+    // Ревизию ответа запоминаем только при правках (своё действие не
+    // «чужое»); во время сохранения/загрузки её сверит опрос — иначе чужая
+    // правка, вошедшая в ту же ревизию, осталась бы незамеченной.
+    bindTimerBarStop(function (data) {
+      if (mode !== "edit") return;
+      if (!isThisWo(data && data.timer)) return;
+      if (!state.dirty && !state.saving && !state.loading) {
+        loadDetails({ refresh: true });
+        return;
+      }
+      if (state.dirty) learnRev(data && data.labors_rev);
+      collectFromDom();
+      applyTimeSummary(data && data.time_summary);
+      render();
     });
+
+    // ---------- живое обновление (другие механики / офис) ----------
+    // Раз в 20 с (вкладка на экране) спрашиваем ревизию WO. Сдвинулась не
+    // нами: без несохранённых правок — перечитываем WO; с правками — один
+    // раз подсказываем, что при Save их сольют с чужими. Закрытый механику
+    // WO (смета / подтверждён / оплачен) не перечитываем вовсе: детали ему
+    // отказывают (403/400) или только для чтения — баннер о замке один раз,
+    // дальше опрос только спрашивает ревизию, пока замок не снимут. Старый
+    // сервер без эндпоинта (404 not_found) — опрос молча выключается.
+    var REV_POLL_MS = 20000;
+    // Перечитать ту же ревизию не удалось — следующая попытка через 40 с,
+    // 80 с, 160 с… но не реже, чем раз в 5 минут.
+    var REFRESH_RETRY_MAX_MS = 5 * 60 * 1000;
+    var REV_NOTICE = "Someone else just updated this work order. When you save, their changes will be merged with yours.";
+    var PAID_DIRTY_NOTICE = "This work order was paid — your unsaved changes can't be saved.";
+
+    async function pollRev() {
+      if (mode !== "edit" || !woId || state.revPollOff || document.hidden) return;
+      if (state.saving || state.loading || state.revPollBusy) return;
+      // Открытое окно (пробег, запчасти, пресеты) перечитыванием не сбиваем.
+      if (document.querySelector(".modal.show")) return;
+      state.revPollBusy = true;
+      try {
+        var data = await getJson(API.rev(woId));
+        if (state.saving || state.loading) return;
+        var rev = Number(data.labors_rev);
+        var revMoved = Number.isFinite(rev) && rev > state.rev;
+        // Механику статус не отдают: locked = оплачен / смета / подтверждён.
+        var lockedNow = data.locked === true || data.status === "paid";
+        var lockChanged = lockedNow !== state.locked;
+        if (!revMoved && !lockChanged) return;
+
+        if (lockedNow && (mechanicMode || state.dirty)) {
+          // Ревизию не запоминаем: когда замок снимут, страница сверит её
+          // и перечитает WO (или скажет о чужих правках).
+          if (lockChanged) {
+            applyLock(true, !state.dirty ? LOCKED_TEXT : (mechanicMode ? LOCK_NOTICE : PAID_DIRTY_NOTICE));
+          }
+          return;
+        }
+        if (!state.dirty) {
+          var key = String(rev) + "|" + lockedNow;
+          var fail = state.refreshFail;
+          if (fail && fail.key === key && Date.now() < fail.retryAt) return;
+          var ok = await loadDetails({ refresh: true });
+          if (ok === false) {
+            var count = fail && fail.key === key ? fail.count + 1 : 1;
+            state.refreshFail = {
+              key: key,
+              count: count,
+              retryAt: Date.now() + Math.min(REV_POLL_MS * Math.pow(2, count), REFRESH_RETRY_MAX_MS),
+            };
+          } else if (ok) {
+            state.refreshFail = null;
+          }
+          return;
+        }
+        // Правки на странице. Замок сняли — Save снова доступен (правки на
+        // месте); чужие изменения — подсказка один раз на ревизию.
+        if (lockChanged) applyLock(false);
+        if (revMoved && rev > state.noticeRev) {
+          state.noticeRev = rev;
+          toast(REV_NOTICE, "info");
+        }
+      } catch (e) {
+        if (e && e.status === 404) {
+          // not_found — сервер без эндпоинта; work_order_not_found — WO удалён.
+          state.revPollOff = true;
+          if (e.data && e.data.error === "work_order_not_found") toast(ERROR_TEXTS.work_order_not_found, "warning");
+        }
+        // Сеть и прочее — молча, до следующего тика.
+      } finally {
+        state.revPollBusy = false;
+      }
+    }
 
     if (mode === "edit") {
       loadDetails();
+      setInterval(pollRev, REV_POLL_MS);
+      document.addEventListener("visibilitychange", function () { if (!document.hidden) pollRev(); });
     } else {
       state.labors.push(newLabor());
       render();

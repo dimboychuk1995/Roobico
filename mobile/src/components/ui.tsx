@@ -51,13 +51,33 @@ export function Badge({
   );
 }
 
-export function KV({ label, value }: { label: string; value: string }) {
+/**
+ * Строка «лейбл — значение». onPress — значение как ссылка (цвет primary),
+ * selectable — значение копируется долгим нажатием (логин портала и т. п.).
+ */
+export function KV({
+  label,
+  value,
+  onPress,
+  selectable,
+}: {
+  label: string;
+  value: string;
+  onPress?: () => void;
+  selectable?: boolean;
+}) {
   const theme = useTheme();
   if (!value) return null;
   return (
     <View style={styles.kvRow}>
       <Text style={[styles.kvLabel, { color: theme.muted }]}>{label}</Text>
-      <Text style={[styles.kvValue, { color: theme.text }]} numberOfLines={1}>
+      <Text
+        style={[styles.kvValue, { color: onPress ? theme.primary : theme.text }]}
+        numberOfLines={1}
+        onPress={onPress}
+        selectable={selectable}
+        accessibilityRole={onPress ? "link" : undefined}
+      >
         {value}
       </Text>
     </View>

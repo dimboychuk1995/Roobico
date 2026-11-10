@@ -1678,6 +1678,10 @@
     });
     delete clone.dataset.issueDescription;
     delete clone.dataset.laborId;
+    // Копия — новая строка: свой client_key получит при сериализации,
+    // флаг ручных часов исходной строки ей не принадлежит.
+    delete clone.dataset.clientKey;
+    delete clone.dataset.hoursEdited;
     clone.querySelectorAll(".laborAssignSummary").forEach(el => {
       el.textContent = "Mechanics: —";
     });
@@ -1735,6 +1739,11 @@
     blocksContainer.appendChild(clone);
     return clone;
   }
+
+  // Номер последней ручной правки часов: флаг блока (data-hours-edited)
+  // хранит номер своей правки — после Save видно, правили ли часы ещё раз,
+  // пока Save был в полёте (см. hoursFlagSaved).
+  let hoursEditSeq = 0;
 
   function wireBlockEvents(blocksContainer, pricing, laborRates, shopSupplyPct) {
     let isLaborSyncing = false;
@@ -1808,7 +1817,7 @@
         if (blockEl) {
           // Ручная правка суммы меняет и часы — сервер не должен
           // перетирать их трекнутым временем.
-          if (e.isTrusted) blockEl.dataset.hoursEdited = "1";
+          if (e.isTrusted) blockEl.dataset.hoursEdited = String(++hoursEditSeq);
           isLaborSyncing = true;
           syncHoursFromLaborTotal(blockEl, laborRates);
           isLaborSyncing = false;
@@ -1818,7 +1827,7 @@
       if (!isLaborSyncing && (t.classList?.contains("labor-hours") || t.classList?.contains("labor-rate"))) {
         const blockEl = t.closest(".wo-labor");
         if (blockEl) {
-          if (e.isTrusted && t.classList.contains("labor-hours")) blockEl.dataset.hoursEdited = "1";
+          if (e.isTrusted && t.classList.contains("labor-hours")) blockEl.dataset.hoursEdited = String(++hoursEditSeq);
           isLaborSyncing = true;
           syncLaborTotalFromHours(blockEl, laborRates);
           isLaborSyncing = false;
@@ -2377,6 +2386,10 @@
     const out = [];
 
     blocks.forEach((bEl) => {
+      const labor_id = String(bEl.dataset.laborId || "");
+      // Новая строка (ещё без labor_id) несёт постоянный client_key.
+      if (!labor_id && !bEl.dataset.clientKey) bEl.dataset.clientKey = newClientKey();
+      const client_key = labor_id ? "" : String(bEl.dataset.clientKey || "");
       const labor_description = String(bEl.querySelector(".labor-description")?.value || "").trim();
       const labor_hours = String(bEl.querySelector(".labor-hours")?.value || "").trim();
       const labor_rate_code = String(bEl.querySelector(".labor-rate")?.value || "").trim();
@@ -2429,12 +2442,13 @@
       });
 
       out.push({
-        labor_id: String(bEl.dataset.laborId || ""),
+        labor_id,
+        ...(client_key ? { client_key } : {}),
         labor_description,
         labor_hours: labor_hours === "" ? 0 : Number(labor_hours),
         // Менеджер сам правил часы этого блока: сервер зафиксирует их как
         // ручные; без флага часы tracked-строк авторитетны из базы.
-        hours_edited: bEl.dataset.hoursEdited === "1",
+        hours_edited: !!bEl.dataset.hoursEdited,
         labor_rate_code,
         labor_full_total,
         assigned_mechanics,
@@ -2447,31 +2461,132 @@
   }
 
   // ---------------- API ----------------
+  // Ошибка запроса: message — человекочитаемый текст для toast (сервер кладёт
+  // его в message, машинный код — в error); code/status/data — обработчикам
+  // (например, 409 concurrent_update).
+  function apiRequestError(res, data, fallback) {
+    const err = new Error(String((data && (data.message || data.error)) || fallback));
+    err.status = res ? res.status : 0;
+    err.code = String((data && data.error) || "");
+    err.data = (data && typeof data === "object") ? data : {};
+    return err;
+  }
+
   async function apiPostJson(url, body) {
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Accept": "application/json" },
-      body: JSON.stringify(body || {}),
-    });
+    let res;
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept": "application/json" },
+        body: JSON.stringify(body || {}),
+      });
+    } catch {
+      // Запрос не дошёл / ответ потерян (сеть).
+      throw apiRequestError(null, { error: "network", message: "Network error — check the connection." }, "");
+    }
 
     let data = null;
     try { data = await res.json(); } catch { data = null; }
 
     if (!res.ok) {
-      const msg = (data && (data.error || data.message)) ? (data.error || data.message) : `Request failed (${res.status})`;
-      throw new Error(msg);
+      throw apiRequestError(res, data, `Request failed (${res.status})`);
     }
 
     // Many of our endpoints return HTTP 200 with {ok:false, error:"..."} on
     // application-level failures. Treat that as an error so callers don't
     // silently report success while nothing was persisted.
     if (data && typeof data === "object" && data.ok === false) {
-      // message — человекочитаемый текст для toast, error — машинный код.
-      const msg = data.message || data.error || "Request failed.";
-      throw new Error(msg);
+      throw apiRequestError(res, data, "Request failed.");
     }
 
     return data;
+  }
+
+  // Ключ новой строки работы (client_key): ставится один раз и живёт на
+  // блоке до получения labor_id. Повтор Save после потерянного ответа сервер
+  // узнаёт по нему и не создаёт вторую такую же работу.
+  function newClientKey() {
+    try {
+      if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+    } catch { /* небезопасный контекст — ниже запасной вариант */ }
+    return "ck-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 12) +
+      Math.random().toString(36).slice(2, 12);
+  }
+
+  // ---------------- Save: итог и база слияния (чистые функции) ----------------
+  // Без DOM — их поведение проверяет node-модель в tests/test_wo_details_js.py.
+
+  // Что делать странице после успешного Save:
+  //   "stay"   — форму меняли, пока Save был в полёте: эти правки на странице,
+  //              но не сохранены, перезагрузка стёрла бы их — остаёмся в правке;
+  //   "reload" — сервер слил чужие правки (форма их не показывает) или
+  //              вызывающий перечитывает страницу (Save as Estimate / Convert):
+  //              итог Save показываем уже после перезагрузки;
+  //   "done"   — итог показываем на месте.
+  function afterSaveAction(opts) {
+    const o = opts || {};
+    if (o.editedDuringSave) return "stay";
+    if (o.merged || o.reloadAfter) return "reload";
+    return "done";
+  }
+
+  // Итогу Save нужно окно со списком, а не тост: есть заметки слияния,
+  // предупреждения или несохранённые правки.
+  function summaryNeedsDialog(info) {
+    const has = (arr) => Array.isArray(arr) && arr.some((x) => String(x == null ? "" : x).trim() !== "");
+    return !!info && (has(info.notes) || has(info.warnings) || !!info.pending);
+  }
+
+  // Итог Save, сохранённый перед перезагрузкой (sessionStorage), или null:
+  // его нет, он битый или старше 10 минут (вкладку вернули к этому WO много
+  // позже — старый итог только запутал бы).
+  function parseStashedSummary(raw, nowMs) {
+    const ttlMs = 10 * 60 * 1000;
+    if (typeof raw !== "string" || !raw) return null;
+    let info = null;
+    try { info = JSON.parse(raw); } catch { return null; }
+    if (!info || typeof info !== "object" || Array.isArray(info)) return null;
+    const at = Number(info.at);
+    if (Number.isFinite(at) && at > 0 && Number(nowMs) - at > ttlMs) return null;
+    return info;
+  }
+
+  // Окно итога закрыли сами (OK, Esc, крестик, клик мимо) — итог больше не
+  // нужен. Окно, вытесненное другим SweetAlert (результат без dismiss), итог
+  // не «прочитало»: он покажется при следующей загрузке страницы.
+  function summaryWasAcknowledged(result) {
+    if (!result || typeof result !== "object") return true;
+    return !!(result.isConfirmed || result.isDenied || result.dismiss);
+  }
+
+  // Страница ушла из paid (Unpaid / удалили последний платёж), а базы для
+  // слияния у неё нет (view_id пуст: сервер не записал вьюху оплаченного WO).
+  // Save с такой страницы ничего не удалял бы (консервативное слияние) —
+  // её надо перечитать: рендер открытого WO даст свою load-вьюху.
+  // canSave — человек вообще может сохранить WO с этой страницы.
+  function leftPaidWithoutBase(prevStatus, newStatus, viewId, canSave) {
+    return !!canSave && String(prevStatus || "") === "paid" && String(newStatus || "") !== "paid" && !viewId;
+  }
+
+  // view_id из ответа записи в обход Save (Describe issue, правка часов):
+  // сервер вывел из нашей вьюхи новую, уже с этой записью. Пустой — вывести
+  // не смог (вьюха не нашлась), остаётся прежняя.
+  function nextEditViewId(currentId, responseViewId) {
+    return (typeof responseViewId === "string" && responseViewId) ? responseViewId : String(currentId || "");
+  }
+
+  // Флаг ручных часов блока хранит номер правки. После Save его снимаем,
+  // только если часы не правили ещё раз, пока Save был в полёте.
+  function hoursFlagSaved(flagAtSend, flagNow) {
+    return String(flagAtSend || "") === String(flagNow || "");
+  }
+
+  // Открыт диалог SweetAlert (не тост): итог Save, подтверждение… Live-опрос
+  // в это время ничего не решает — перезагрузка или тост закрыли бы его.
+  function swalDialogOpen(swal) {
+    if (!swal || typeof swal.isVisible !== "function" || !swal.isVisible()) return false;
+    const popup = typeof swal.getPopup === "function" ? swal.getPopup() : null;
+    return !(popup && popup.classList && popup.classList.contains("swal2-toast"));
   }
 
   // ---------------- UI state ----------------
@@ -2743,6 +2858,35 @@
     const coreChargeData = readJsonScript("coreChargeDefaultData", { enabled: true });
     const totalsSnapshot = readJsonScript("workOrderInitialTotalsData", {});
     canEditTimeLogs = !!readJsonScript("woPermissionsData", {}).edit_time_logs;
+
+    // ── Несколько человек правят один WO ──
+    // Save сливается на сервере трёхсторонне: base — edit view, с которой
+    // страница начала правку (view_id из рендера, дальше — из ответа каждого
+    // Save), current — WO в базе, mine — форма. Чужие работы/запчасти,
+    // которых форма не видела, не удаляются. labors_rev — известная странице
+    // ревизия строк: live-опрос перечитывает страницу, только когда ревизия
+    // ушла вперёд не нашими действиями.
+    const mergeInfo = readJsonScript("workOrderCreatedData", {}) || {};
+    let editViewId = String(mergeInfo.view_id || "");
+    let knownLaborsRev = Number(mergeInfo.labors_rev) || 0;
+    // Наши записи в полёте (Save, Describe issue, правка часов): live-опрос в
+    // это время ревизию не сравнивает — иначе принял бы свой Save за чужой.
+    let ownWritesInFlight = 0;
+    // Страница уже перезагружается (Save слил чужие правки) — кнопки не трогаем.
+    let pageReloading = false;
+    function learnLaborsRev(rev) {
+      const n = Number(rev);
+      if (Number.isFinite(n) && n > knownLaborsRev) knownLaborsRev = n;
+    }
+    // Запись в обход Save (Describe issue, правка часов) вернула вьюху,
+    // выведенную сервером из нашей: следующий Save сливает уже от неё —
+    // иначе своя же запись выглядела бы чужой правкой.
+    function adoptEditViewId(id) {
+      editViewId = nextEditViewId(editViewId, id);
+    }
+    // Сохранить WO с этой страницы можно с work_orders.edit или .create.
+    const woPagePerms = readJsonScript("woPermissionsData", {}) || {};
+    const canSaveWo = !!(woPagePerms.edit || woPagePerms.create);
 
     const shopSupplyPct = toNum(shopSupplyData?.percentage ?? shopSupplyData) || 0;
     currentSalesTaxRate = Math.max(0, toNum(salesTaxData?.rate) || 0);
@@ -3792,6 +3936,16 @@
     const woTimeLogsSaveBtn = $("woTimeLogsSaveBtn");
     const woTimeLogsLaborLabel = $("woTimeLogsLaborLabel");
     let timeLogsLaborId = "";
+    // Сессию удалили: часы/назначения WO пересчитаны на сервере. Вне режима
+    // правки показываем их перезагрузкой после закрытия окна (в режиме
+    // правки — нет: перезагрузка стёрла бы несохранённые правки формы;
+    // Save сольёт свежие часы сам).
+    let timeLogsChanged = false;
+    woTimeLogsModalEl?.addEventListener("hidden.bs.modal", function () {
+      if (!timeLogsChanged) return;
+      timeLogsChanged = false;
+      if (!isEditingNow()) liveReload();
+    });
 
     function fmtSessionStart(iso) {
       if (!iso) return "-";
@@ -3892,20 +4046,30 @@
       if (!confirmed) return;
 
       delBtn.disabled = true;
+      ownWritesInFlight += 1;
       try {
+        // view_id — база страницы: сервер выводит из неё новую вьюху со
+        // свежими часами строки (иначе Save принял бы их за чужую правку).
         const res = await fetch(`/work_orders/api/time_logs/${encodeURIComponent(logId)}/delete`, {
           method: "POST",
-          headers: { "Accept": "application/json" },
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify({ view_id: editViewId }),
         });
         const data = await res.json();
         if (!res.ok || !data || !data.ok) {
-          throw new Error((data && data.error) || "Failed to delete session");
+          throw new Error((data && (data.message || data.error)) || "Failed to delete session");
         }
+        // Пересчёт часов этим удалением — наша правка, не чужая.
+        learnLaborsRev(data.labors_rev);
+        adoptEditViewId(data.view_id);
+        timeLogsChanged = true;
         await loadTimeLogs();
         toast("Session deleted", "success");
       } catch (err) {
         toast(err.message || "Failed to delete session", "error");
         delBtn.disabled = false;
+      } finally {
+        ownWritesInFlight = Math.max(0, ownWritesInFlight - 1);
       }
     });
 
@@ -3933,25 +4097,46 @@
       }
 
       woTimeLogsSaveBtn.disabled = true;
+      ownWritesInFlight += 1;
       try {
         for (const change of changes) {
+          // view_id — текущая база страницы (после предыдущей правки цикла —
+          // уже выведенная из неё): цепочка вьюх идёт за каждой записью.
           const res = await fetch(`/work_orders/api/time_logs/${encodeURIComponent(change.id)}/update`, {
             method: "POST",
             headers: { "Content-Type": "application/json", "Accept": "application/json" },
-            body: JSON.stringify({ seconds: change.seconds }),
+            body: JSON.stringify({ seconds: change.seconds, view_id: editViewId }),
           });
           const data = await res.json();
           if (!res.ok || !data || !data.ok) {
-            throw new Error((data && data.error) || "Failed to update session");
+            throw new Error((data && (data.message || data.error)) || "Failed to update session");
           }
+          // Пересчёт часов этой правкой — наша правка, не чужая.
+          learnLaborsRev(data.labors_rev);
+          adoptEditViewId(data.view_id);
+          timeLogsChanged = true;
+        }
+        if (isEditingNow()) {
+          // Режим правки: перезагрузка стёрла бы несохранённые правки формы.
+          // Свежие часы tracked-строк сервер сольёт при Save сам.
+          timeLogsChanged = false;
+          if (window.bootstrap && window.bootstrap.Modal && woTimeLogsModalEl) {
+            window.bootstrap.Modal.getOrCreateInstance(woTimeLogsModalEl).hide();
+          }
+          woTimeLogsSaveBtn.disabled = false;
+          toast("Hours updated. Save the work order to see the recalculated labor hours.", "success");
+          return;
         }
         toast("Hours updated", "success");
         // Производные поля WO (часы, назначения, totals) пересчитаны на
         // сервере — перезагружаем страницу, чтобы показать свежие данные.
+        timeLogsChanged = false;
         window.location.reload();
       } catch (err) {
         toast(err.message || "Failed to update hours", "error");
         woTimeLogsSaveBtn.disabled = false;
+      } finally {
+        ownWritesInFlight = Math.max(0, ownWritesInFlight - 1);
       }
     });
 
@@ -4800,11 +4985,78 @@
       setButtonsState("editing_open", els);
     });
 
-    // save -> API update labors + totals
-    async function saveWorkOrderEdits(saveStatus) {
-      if (!isCreated || !workOrderId) return;
+    // Все кнопки сохранения (Save/Confirm, стрелка выпадашки, Save In
+    // Progress, Save as Estimate, Convert) выключены, пока Save в полёте:
+    // второй клик не уходит вторым запросом.
+    let saveInFlight = false;
+    const saveActionButtons = [
+      saveBtn,
+      $("saveWorkOrderDropdownToggle"),
+      $("saveInProgressWorkOrderBtn"),
+      $("saveAsEstimateBtn"),
+      $("convertEstimateBtn"),
+    ].filter(Boolean);
+
+    function setSaveButtonsBusy(busy) {
+      saveActionButtons.forEach((b) => { b.disabled = !!busy; });
+      if (!saveBtn) return;
+      if (busy) {
+        saveBtn.dataset.idleLabel = saveBtn.textContent;
+        saveBtn.textContent = "Saving…";
+      } else if (saveBtn.dataset.idleLabel !== undefined) {
+        // Подпись могла смениться по итогам Save (Confirm → Save) — не трогаем.
+        if (saveBtn.textContent === "Saving…") saveBtn.textContent = saveBtn.dataset.idleLabel;
+        delete saveBtn.dataset.idleLabel;
+      }
+    }
+
+    // Пока Save в полёте (и пока после него перезагружается страница), форма
+    // не принимает ввод — inert, вид формы не меняется: правка, сделанная в
+    // это время, в этот Save уже не попала бы, а перезагрузка стёрла бы её.
+    const formBusyEls = [
+      editor,
+      customerSel ? customerSel.parentElement : null,
+      unitSel ? unitSel.closest(".row") : null,
+    ].filter(Boolean);
+    function setFormBusy(busy) {
+      formBusyEls.forEach((el) => {
+        el.toggleAttribute("inert", !!busy);
+        if (busy) el.setAttribute("aria-busy", "true");
+        else el.removeAttribute("aria-busy");
+      });
+    }
+
+    // Снимок формы в том виде, в каком она уходит в Save. Снимок до запроса
+    // и после ответа различаются — форму меняли, пока Save был в полёте
+    // (браузер без inert, автоподстановка цены, распознавание WO…).
+    function saveFormSnapshot(labors, totals) {
+      return JSON.stringify({
+        labors,
+        totals,
+        unit_mileage: unitMileageInput ? String(unitMileageInput.value || "").trim() : "",
+        customer_id: String(customerSel?.value || "").trim(),
+        unit_id: String(unitSel?.value || "").trim(),
+        work_order_date: workOrderDateInput ? String(workOrderDateInput.value || "").trim() : "",
+        shop_supply_override: Number.isFinite(shopSupplyManualOverride) ? shopSupplyManualOverride : null,
+      });
+    }
+
+    // save -> API update labors + totals. true — сохранено.
+    // opts.reloadIf(status) — вызывающий перечитывает страницу после Save с
+    // этим итоговым статусом (Save as Estimate / Convert): итог Save тогда
+    // показывается уже на свежей странице.
+    async function saveWorkOrderEdits(saveStatus, opts) {
+      if (!isCreated || !workOrderId) return false;
+      if (saveInFlight) return false;
+      const reloadIf = (opts && typeof opts.reloadIf === "function") ? opts.reloadIf : null;
+      saveInFlight = true;
+      ownWritesInFlight += 1;
+      setSaveButtonsBusy(true);
 
       try {
+        // Блоки на момент отправки: id из ответа ложатся ровно на них, даже
+        // если строки успели добавить/удалить, пока запрос был в полёте.
+        const sentBlocks = Array.from(blocksContainer.querySelectorAll(".wo-labor"));
         const labors = serializeBlocks(blocksContainer);
         const totals = serializeTotals(blocksContainer);
 
@@ -4813,14 +5065,14 @@
         const customer_id = String(customerSel?.value || "").trim();
         const unit_id = String(unitSel?.value || "").trim();
 
-        if (!customer_id) { toast("Please select a customer."); return; }
-        if (!unit_id) { toast("Please select a unit."); return; }
+        if (!customer_id) { toast("Please select a customer."); return false; }
+        if (!unit_id) { toast("Please select a unit."); return false; }
         // Сменили юнит — пробег нового юнита обязателен (иначе на WO остался
         // бы снимок пробега прежнего юнита).
         if (!mileageConfirmed && !unit_mileage) {
           if (unitMileageInput) unitMileageInput.focus();
           toast("Enter the current mileage for the selected unit.");
-          return;
+          return false;
         }
 
         const payload = {
@@ -4830,24 +5082,67 @@
           unit_id,
           unit_mileage: unit_mileage ? unit_mileage : undefined,
           work_order_date: workOrderDateInput ? String(workOrderDateInput.value || "").trim() : undefined,
+          // Протокол слияния: сервер сводит форму с тем, что страница видела
+          // (view_id), и с текущим WO — чужие правки не теряются.
+          merge_protocol: 1,
+          view_id: editViewId,
+          // Сумму shop supply вписали руками — сервер берёт её как есть.
+          shop_supply_overridden: Number.isFinite(shopSupplyManualOverride) && shopSupplyManualOverride >= 0,
         };
         // "open" = saved as completed (default), "in_progress" = still in
         // progress, "estimate" = смета остаётся сметой (склад не трогается)
         const desired = String(saveStatus || "open").toLowerCase();
         payload.save_status = (desired === "in_progress" || desired === "estimate") ? desired : "open";
 
+        // Что ушло в этот Save: снимок формы и флаги ручных часов блоков.
+        const sentForm = saveFormSnapshot(labors, totals);
+        const sentHoursFlags = sentBlocks.map((bEl) => String(bEl.dataset.hoursEdited || ""));
+        setFormBusy(true);
+
         const resp = await apiPostJson(
           `/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/update`,
           payload
         );
 
+        // Меняли ли форму, пока Save был в полёте? Сравниваем до того, как
+        // ответ проставит строкам id (id тоже входят в снимок).
+        const editedDuringSave =
+          saveFormSnapshot(serializeBlocks(blocksContainer), serializeTotals(blocksContainer)) !== sentForm;
+
         // Сервер выдал labor_id новым строкам — подхватываем, чтобы
         // повторный Save не пересоздал id (иначе тайм-логи осиротеют).
         if (Array.isArray(resp?.labor_ids)) {
-          Array.from(blocksContainer.querySelectorAll(".wo-labor")).forEach((bEl, i) => {
-            if (resp.labor_ids[i]) bEl.dataset.laborId = resp.labor_ids[i];
+          sentBlocks.forEach((bEl, i) => {
+            if (!resp.labor_ids[i]) return;
+            bEl.dataset.laborId = String(resp.labor_ids[i]);
+            delete bEl.dataset.clientKey;
           });
         }
+        const keyed = (resp && resp.client_keys && typeof resp.client_keys === "object") ? resp.client_keys : null;
+        if (keyed) {
+          sentBlocks.forEach((bEl) => {
+            const ck = String(bEl.dataset.clientKey || "");
+            if (!ck || !keyed[ck]) return;
+            bEl.dataset.laborId = String(keyed[ck]);
+            delete bEl.dataset.clientKey;
+          });
+        }
+        // Ручные часы этого Save сохранены: следующий Save не выдаёт их
+        // снова за свежую правку (иначе перебил бы чужие трекнутые часы).
+        // Часы, которые правили ещё раз, пока Save был в полёте, этим Save
+        // не сохранены — их флаг (новый номер правки) остаётся.
+        sentBlocks.forEach((bEl, i) => {
+          if (hoursFlagSaved(sentHoursFlags[i], bEl.dataset.hoursEdited)) delete bEl.dataset.hoursEdited;
+        });
+        // Base следующего Save — то, что сервер записал по этому Save. Если
+        // страница остаётся со своими строками (их меняли во время Save) —
+        // отправленная вьюха: она совпадает с тем, что показывает форма.
+        if (resp && typeof resp.view_id === "string") {
+          editViewId = (resp.merged_foreign && !editedDuringSave)
+            ? String(resp.merged_view_id || resp.view_id || "")
+            : resp.view_id;
+        }
+        learnLaborsRev(resp && resp.labors_rev);
 
         // Update local status from server response if present
         if (resp && resp.status) {
@@ -4863,13 +5158,61 @@
           mechanicDone = false;
           if (saveBtn) saveBtn.textContent = "Save";
         }
+        const savedMsg = workOrderStatus === "in_progress" ? "Saved as In Progress."
+          : workOrderStatus === "estimate" ? "Estimate saved."
+          : (wasConfirm ? "Confirmed." : "Saved.");
+        const notes = Array.isArray(resp?.merge_notes) ? resp.merge_notes : [];
+        const warnings = Array.isArray(resp?.warnings) ? resp.warnings : [];
+        const summary = { title: savedMsg, notes, warnings, merged: !!(resp && resp.merged_foreign) };
+        const action = afterSaveAction({
+          merged: summary.merged,
+          editedDuringSave,
+          reloadAfter: !!(reloadIf && reloadIf(workOrderStatus)),
+        });
+
+        if (action === "reload") {
+          // Пока форма была открыта, WO меняли другие — сервер слил их правки
+          // с нашими, форма их не показывает (или вызывающий перечитывает
+          // страницу сам): перечитываем, итог и заметки сервера — после
+          // перезагрузки.
+          stashMergeSummary(summary);
+          pageReloading = true;
+          liveReload();
+          return true;
+        }
+
         applyStateFromStatus();
         applyEstimateUi();
-        toast(workOrderStatus === "in_progress" ? "Saved as In Progress."
-          : workOrderStatus === "estimate" ? "Estimate saved."
-          : (wasConfirm ? "Confirmed." : "Saved."));
+        if (action === "stay") {
+          // Правки, сделанные во время Save, — на странице, но не сохранены:
+          // остаёмся в режиме правки, человек сохраняет ещё раз.
+          if (workOrderStatus !== "paid") {
+            setEditingMode(true, els);
+            setButtonsState("editing_open", els);
+          }
+          showMergeSummary({ ...summary, pending: true });
+          return true;
+        }
+        // Заметки без чужих правок (например, юнит сменили и мы, и кто-то
+        // ещё — оставлен наш) и предупреждения — списком; иначе тост.
+        showMergeSummary(summary);
+        return true;
       } catch (e) {
-        toast(e.message || "Save failed.");
+        if (e && e.code === "network") {
+          // Сеть: правки остались на странице, повторный Save безопасен
+          // (новые строки сервер узнает по client_key).
+          toast("Network error — your changes are still on the page. Check the connection and click Save again.", "error");
+        } else {
+          toast((e && e.message) || "Save failed.", e && e.code === "concurrent_update" ? "warning" : undefined);
+        }
+        return false;
+      } finally {
+        saveInFlight = false;
+        ownWritesInFlight = Math.max(0, ownWritesInFlight - 1);
+        if (!pageReloading) {
+          setSaveButtonsBusy(false);
+          setFormBusy(false);
+        }
       }
     }
 
@@ -4900,8 +5243,9 @@
         { confirmText: "Save as Estimate", icon: "question" }
       );
       if (!ok) return;
-      await saveWorkOrderEdits("estimate");
-      if (workOrderStatus === "estimate") window.location.reload();
+      // Сметой стала — перечитываем страницу; итог Save (в т.ч. предупреждение,
+      // что склад не обновился) Save покажет уже после перезагрузки.
+      await saveWorkOrderEdits("estimate", { reloadIf: (status) => status === "estimate" });
     });
 
     document.getElementById("convertEstimateBtn")?.addEventListener("click", async () => {
@@ -4913,21 +5257,25 @@
         { confirmText: "Convert", icon: "question" }
       );
       if (!ok) return;
-      await saveWorkOrderEdits("open");
-      if (workOrderStatus !== "estimate") window.location.reload();
+      await saveWorkOrderEdits("open", { reloadIf: (status) => status !== "estimate" });
     });
 
     // ---------- live updates (механики работают — страница обновляется сама) ----------
     // Раз в LIVE_POLL_MS опрашиваем /live_state: идущие таймеры и накопленное
-    // время рисуем на месте (сводка Mechanics в строках). Если на сервере
-    // сдвинулся updated_at (механик сохранил WO, стартовал таймер со сменой
-    // статуса, нажал done) — перечитываем страницу целиком: сохранения
-    // переписывают labors/totals массивом, мержить их в открытую форму
-    // небезопасно. В режиме Edit/Confirm не перезагружаем — предупреждаем.
+    // время рисуем на месте (сводка Mechanics в строках). Строки WO
+    // перечитываем целиком, когда labors_rev ушла вперёд не нашими
+    // действиями (свои Save / Describe issue / правки часов страница узнаёт
+    // по ответам). В режиме Edit/Confirm не перезагружаем: при Save сервер
+    // сольёт чужие правки с нашими — показываем подсказку. Статус, оплата,
+    // подтверждение (ревизию не двигают) — по updated_at, как раньше.
     const LIVE_POLL_MS = 5000;
     const LIVE_SCROLL_KEY = "woLiveScroll:" + workOrderId;
+    const MERGE_SUMMARY_KEY = "woMergeSummary:" + workOrderId;
+    const MERGE_EDIT_NOTICE = "Mechanics just updated this work order. When you save, their changes will be merged with yours.";
     let liveUpdatedAt = String((createdInfo && createdInfo.updated_at) || "");
     let livePollBusy = false;
+    // Подсказку режима правки показываем один раз на каждую новую ревизию.
+    let liveNoticeRev = 0;
 
     // Скролл, сохранённый перед live-перезагрузкой, возвращаем на место.
     try {
@@ -4949,8 +5297,96 @@
       return !!editor && editor.style.pointerEvents !== "none";
     }
 
+    // Итог Save, после которого страница перезагружается (слили чужие
+    // правки, Save as Estimate / Convert, уход из paid без базы), переживает
+    // перезагрузку (sessionStorage этой вкладки) и показывается уже на свежих
+    // данных. at — когда сохранён: устаревший итог не показываем.
+    function stashMergeSummary(info) {
+      try { sessionStorage.setItem(MERGE_SUMMARY_KEY, JSON.stringify({ ...(info || {}), at: Date.now() })); } catch {}
+    }
+    function dropMergeSummary() {
+      try { sessionStorage.removeItem(MERGE_SUMMARY_KEY); } catch {}
+    }
+    // Окно итога Save открыто (номер окна; 0 — закрыто): live-опрос ничего не
+    // решает, пока его не закрыли (перезагрузка или тост стёрли бы заметки
+    // слияния). Номер — чтобы запоздалый .then вытесненного окна не снял
+    // отметку окна, которое его вытеснило.
+    let mergeSummaryOpen = 0;
+    let mergeSummarySeq = 0;
+    const UNSAVED_DURING_SAVE_NOTE = "You changed the work order while it was being saved. " +
+      "Those changes are still on the page but are not saved yet — save the work order again.";
+
+    function escHtml(s) {
+      return String(s == null ? "" : s).replace(/[&<>"']/g, (c) => (
+        { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+      ));
+    }
+
+    // Заметки сервера (какие чужие работы/запчасти сохранены, что удалил
+    // другой человек), предупреждения Save и несохранённые правки (pending) —
+    // списком в SweetAlert; без них — короткий тост. true — открыто окно;
+    // onClosed(result) — когда его закрыли (или его вытеснил другой SweetAlert).
+    function showMergeSummary(info, opts) {
+      const clean = (arr) => (Array.isArray(arr) ? arr : []).map((x) => String(x == null ? "" : x).trim()).filter(Boolean);
+      const notes = clean(info && info.notes);
+      const warnings = clean(info && info.warnings);
+      const title = String((info && info.title) || "Saved.");
+      const merged = !!(info && info.merged);
+      const pending = !!(info && info.pending);
+      if (!summaryNeedsDialog({ notes, warnings, pending })) {
+        toast(merged ? `${title} Changes other people made in the meantime were merged in.` : title, "success");
+        return false;
+      }
+      if (typeof Swal === "undefined") {
+        window.alert([title].concat(notes, warnings, pending ? [UNSAVED_DURING_SAVE_NOTE] : []).join("\n"));
+        return false;
+      }
+      const intro = !merged ? ""
+        : notes.length ? "Other people changed this work order while you were editing. Both sets of changes were kept:"
+        : "Changes other people made in the meantime were merged in.";
+      const list = (items) => `<ul class="mb-2 ps-3">${items.map((n) => `<li>${escHtml(n)}</li>`).join("")}</ul>`;
+      const noAnim = { popup: "", backdrop: "" };
+      const token = ++mergeSummarySeq;
+      mergeSummaryOpen = token;
+      const closed = (result) => {
+        if (mergeSummaryOpen === token) mergeSummaryOpen = 0;
+        if (opts && typeof opts.onClosed === "function") opts.onClosed(result);
+      };
+      Swal.fire({
+        icon: (warnings.length || pending) ? "warning" : "info",
+        title: escHtml(title),
+        html: `<div class="text-start small">` +
+          (intro ? `<p class="mb-2">${escHtml(intro)}</p>` : "") +
+          (notes.length ? list(notes) : "") +
+          (warnings.length ? list(warnings) : "") +
+          (pending ? `<p class="mb-0 fw-semibold">${escHtml(UNSAVED_DURING_SAVE_NOTE)}</p>` : "") +
+          `</div>`,
+        confirmButtonText: "OK",
+        confirmButtonColor: "#1a7a42",
+        showClass: noAnim,
+        hideClass: noAnim,
+      }).then(closed, closed);
+      return true;
+    }
+
+    // Итог Save, сохранённый перед перезагрузкой, — показываем. Окно со
+    // списком держит итог в sessionStorage, пока его не закрыли: перезагрузка
+    // в это время (F5) покажет его снова; тост и устаревший итог — сразу из
+    // хранилища.
+    if (isCreated && workOrderId) {
+      let raw = null;
+      try { raw = sessionStorage.getItem(MERGE_SUMMARY_KEY); } catch { raw = null; }
+      if (raw !== null) {
+        const stashed = parseStashedSummary(raw, Date.now());
+        const opened = stashed
+          ? showMergeSummary(stashed, { onClosed: (result) => { if (summaryWasAcknowledged(result)) dropMergeSummary(); } })
+          : false;
+        if (!opened) dropMergeSummary();
+      }
+    }
+
     async function pollLiveState() {
-      if (!isCreated || !workOrderId || livePollBusy || document.hidden) return;
+      if (!isCreated || !workOrderId || livePollBusy || document.hidden || pageReloading) return;
       livePollBusy = true;
       try {
         const res = await fetch(
@@ -4966,8 +5402,37 @@
           updateLaborAssignSummary(blockEl);
         });
 
+        // Наша запись в полёте — её ревизию узнаем из ответа; сравним на
+        // следующем тике. Открытое окно (оплата, письмо, часы, итог Save с
+        // заметками слияния, подтверждение) перезагрузкой или тостом не
+        // сбиваем — решение тоже откладываем до его закрытия.
+        if (ownWritesInFlight > 0 || pageReloading) return;
+        if (document.querySelector(".modal.show")) return;
+        if (mergeSummaryOpen || swalDialogOpen(typeof Swal === "undefined" ? null : Swal)) return;
+
         const serverUpdatedAt = String(data.updated_at || "");
-        if (serverUpdatedAt === liveUpdatedAt) return;
+        const updatedAtMoved = serverUpdatedAt !== liveUpdatedAt;
+        const serverRev = Number(data.labors_rev);
+        const hasRev = data.labors_rev !== undefined && data.labors_rev !== null && Number.isFinite(serverRev);
+
+        if (hasRev) {
+          liveUpdatedAt = serverUpdatedAt;
+          if (serverRev > knownLaborsRev) {
+            if (!isEditingNow()) { liveReload(); return; }
+            if (serverRev > liveNoticeRev) {
+              liveNoticeRev = serverRev;
+              toast(MERGE_EDIT_NOTICE, "info");
+            }
+            return;
+          }
+          // Строки на месте: сменились статус/оплата/подтверждение — вне
+          // режима правки перечитываем, как раньше.
+          if (updatedAtMoved && !data.updated_by_me && !isEditingNow()) liveReload();
+          return;
+        }
+
+        // Сервер без labors_rev (откат версии) — прежняя логика по updated_at.
+        if (!updatedAtMoved) return;
         liveUpdatedAt = serverUpdatedAt;
 
         // Собственное сохранение (в т.ч. из другой вкладки) — не перезагружаем.
@@ -5045,14 +5510,27 @@
     unpaidBtn?.addEventListener("click", async function () {
       if (!isCreated || !workOrderId) return;
 
+      ownWritesInFlight += 1;
       try {
-        await apiPostJson(`/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/status`, { status: "open" });
+        const prevStatus = workOrderStatus;
+        const statusResp = await apiPostJson(`/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/status`, { status: "open" });
+        learnLaborsRev(statusResp && statusResp.labors_rev);
         workOrderStatus = "open";
+        if (leftPaidWithoutBase(prevStatus, workOrderStatus, editViewId, canSaveWo)) {
+          // Страница оплаченного WO без базы слияния: Save с неё ничего не
+          // удалял бы. Перечитываем — рендер открытого WO даст свою вьюху.
+          stashMergeSummary({ title: "Marked as unpaid." });
+          pageReloading = true;
+          liveReload();
+          return;
+        }
         applyStateFromStatus();
         await loadWorkOrderTimeline();
         toast("Marked as unpaid.");
       } catch (e) {
         toast(e.message || "Failed to set unpaid.");
+      } finally {
+        ownWritesInFlight = Math.max(0, ownWritesInFlight - 1);
       }
     });
 
@@ -5102,6 +5580,7 @@
       btn.textContent = "Deleting...";
 
       try {
+        const prevStatus = workOrderStatus;
         const res = await fetch(`/work_orders/api/payments/${encodeURIComponent(paymentId)}/delete`, {
           method: "POST",
           headers: { "Accept": "application/json" },
@@ -5112,6 +5591,14 @@
         }
 
         workOrderStatus = (data.status || "open").toLowerCase();
+        if (leftPaidWithoutBase(prevStatus, workOrderStatus, editViewId, canSaveWo)) {
+          // Последний платёж снят — WO снова открыт, а базы слияния у
+          // страницы нет: перечитываем (см. Unpaid).
+          stashMergeSummary({ title: "Payment deleted." });
+          pageReloading = true;
+          liveReload();
+          return;
+        }
         applyStateFromStatus();
         await loadWorkOrderTimeline();
       } catch (err) {
@@ -5829,24 +6316,40 @@
         // sees the latest text even before a Save All round-trip.
         if (isCreated && workOrderId) {
           describeSaveBtn.disabled = true;
+          ownWritesInFlight += 1;
           try {
+            // Строку сервер ищет по labor_id (индекс в URL — для старых
+            // вкладок): строки WO могли сдвинуться, пока страница открыта.
+            // Пустой labor_id — строка ещё не сохранена: текст уйдёт с Save.
+            // view_id — база страницы: сервер выводит из неё новую вьюху с
+            // этим текстом, и следующий Save не путает свою запись с чужой.
             const res = await fetch(
               `/work_orders/api/work_orders/${encodeURIComponent(workOrderId)}/labors/${describeActiveIdx}/issue-description`,
               {
                 method: "POST",
                 headers: { "Accept": "application/json", "Content-Type": "application/json" },
-                body: JSON.stringify({ text: value }),
+                body: JSON.stringify({
+                  text: value,
+                  labor_id: String(describeActiveBlock.dataset.laborId || ""),
+                  view_id: editViewId,
+                }),
               }
             );
-            const data = await res.json();
+            const data = await res.json().catch(() => null);
             if (!res.ok || !data || !data.ok) {
-              throw new Error((data && (data.error || data.message)) || "Failed to save.");
+              throw new Error((data && (data.message || data.error)) || "Failed to save.");
             }
-            toast("Issue description saved.", "success");
+            learnLaborsRev(data.labors_rev);
+            adoptEditViewId(data.view_id);
+            toast(data.saved === false
+              ? "Issue description updated. It will be saved with the work order."
+              : "Issue description saved.", "success");
           } catch (err) {
             toast(err.message || "Failed to save issue description.", "error");
             describeSaveBtn.disabled = false;
             return;
+          } finally {
+            ownWritesInFlight = Math.max(0, ownWritesInFlight - 1);
           }
           describeSaveBtn.disabled = false;
         } else {

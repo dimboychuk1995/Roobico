@@ -180,10 +180,33 @@ def get_assignable_mechanics(shop: dict):
     return out
 
 
-def normalize_assigned_mechanics(raw, mechanics_by_id: dict[str, dict]):
+def _assigned_by_user_id(assigned) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for item in assigned if isinstance(assigned, list) else []:
+        if not isinstance(item, dict):
+            continue
+        user_id = str(item.get("user_id") or item.get("id") or "").strip()
+        if user_id:
+            out.setdefault(user_id, item)
+    return out
+
+
+def normalize_assigned_mechanics(raw, mechanics_by_id: dict[str, dict], stored_assigned=None):
+    """
+    Назначения механиков строки из формы → хранимый вид
+    [{user_id: ObjectId, name, role, percent}].
+
+    Назначать можно только активных механиков магазина (mechanics_by_id).
+    stored_assigned — назначения этой же строки в базе: механик, которого
+    уже нельзя назначить (уволен, сменил роль), остаётся, если он УЖЕ стоит
+    на строке (имя/роль — сохранённые, доля — из формы). Иначе каждый Save
+    офиса молча стирал бы назначения бывших механиков, а с ними и историю
+    payroll по этой строке.
+    """
     if not isinstance(raw, list):
         return []
 
+    stored_by_id = _assigned_by_user_id(stored_assigned)
     out = []
     seen = set()
     for item in raw:
@@ -196,7 +219,13 @@ def normalize_assigned_mechanics(raw, mechanics_by_id: dict[str, dict]):
 
         mechanic = mechanics_by_id.get(user_id)
         if not mechanic:
-            continue
+            stored = stored_by_id.get(user_id)
+            if not stored:
+                continue
+            mechanic = {
+                "name": str(stored.get("name") or "").strip(),
+                "role": str(stored.get("role") or "").strip(),
+            }
 
         percent = round2(item.get("percent"))
         if percent < 0:
@@ -222,16 +251,24 @@ def normalize_assigned_mechanics(raw, mechanics_by_id: dict[str, dict]):
     return out
 
 
-def apply_assignments_to_labors(labors, mechanics_by_id: dict[str, dict]):
+def apply_assignments_to_labors(labors, mechanics_by_id: dict[str, dict], stored_assigned=None):
+    """
+    Строки офисной формы → хранимая форма блока (labor-словарь, нормализованные
+    назначения и запчасти). stored_assigned — {labor_id: назначения строки в
+    базе} (см. normalize_assigned_mechanics: бывшие механики, уже стоящие на
+    строке, не теряются).
+    """
     if not isinstance(labors, list):
         return []
 
+    stored_assigned = stored_assigned if isinstance(stored_assigned, dict) else {}
     out = []
     for block in labors:
         if not isinstance(block, dict):
             continue
 
         block_copy = dict(block)
+        stored_row_assigned = stored_assigned.get(str(block_copy.get("labor_id") or "").strip())
         labor_src = block_copy.get("labor") if isinstance(block_copy.get("labor"), dict) else None
 
         # The frontend (work_order_details.js serializeBlocks) sends a FLAT
@@ -263,12 +300,16 @@ def apply_assignments_to_labors(labors, mechanics_by_id: dict[str, dict]):
             labor_copy["hours"] = str(labor_copy.get("hours") or "").strip()
             labor_copy["rate_code"] = str(labor_copy.get("rate_code") or "").strip()
             labor_copy["labor_full_total"] = round2(labor_copy.get("labor_full_total"))
-            normalized = normalize_assigned_mechanics(labor_copy.get("assigned_mechanics"), mechanics_by_id)
+            normalized = normalize_assigned_mechanics(
+                labor_copy.get("assigned_mechanics"), mechanics_by_id, stored_row_assigned
+            )
             labor_copy["assigned_mechanics"] = normalized
             block_copy["labor"] = labor_copy
             block_copy["assigned_mechanics"] = normalized
         else:
-            normalized = normalize_assigned_mechanics(block_copy.get("assigned_mechanics"), mechanics_by_id)
+            normalized = normalize_assigned_mechanics(
+                block_copy.get("assigned_mechanics"), mechanics_by_id, stored_row_assigned
+            )
             block_copy["assigned_mechanics"] = normalized
             block_copy["labor_full_total"] = round2(block_copy.get("labor_full_total"))
 
@@ -363,6 +404,27 @@ def get_shop_supply_percentage(shop_db, shop_id: ObjectId) -> float:
         return float(raw) if raw is not None else 0.0
     except Exception:
         return 0.0
+
+
+def locked_shop_supply_pct(shop_db, shop_id: ObjectId, totals_doc) -> float:
+    """
+    Процент shop supply, которым страница деталей считает СУЩЕСТВУЮЩИЙ WO:
+    он зафиксирован сохранёнными totals (supply / labor), чтобы правка
+    старого WO не переоценивала его текущей настройкой магазина. Нет labor —
+    без supply остаётся без supply (0), иначе — текущий процент магазина.
+    Тот же процент сервер берёт для пересчёта supply, когда в Save офиса
+    влились чужие правки (office_merge).
+    """
+    pct = get_shop_supply_percentage(shop_db, shop_id)
+    totals_doc = totals_doc if isinstance(totals_doc, dict) else {}
+    supply_total = f64(totals_doc.get("shop_supply_total")) or 0.0
+    labor_base = f64(totals_doc.get("labor")) or 0.0
+    if labor_base > 0:
+        return round((supply_total / labor_base) * 100, 4)
+    if supply_total <= 0:
+        # Сохранённый WO без shop supply — при правке остаётся без него.
+        return 0.0
+    return pct
 
 
 def get_core_charge_default(shop_db, shop_id: ObjectId) -> bool:

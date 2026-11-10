@@ -159,7 +159,7 @@ cannot be transferred; unpay first.
 
 - **Open (Unpaid)** — default after creation.
 - **In Progress** — set by "Save In Progress", by mechanics, or automatically
-  when a mechanic starts a job timer.
+  when a mechanic starts a job timer (never on an estimate — see below).
 - **Estimate** — a quote: created via the Create dropdown → **"Save as
   Estimate"**. Estimates live on the **Estimates** tab of the WO list (they
   are hidden from the main Work Orders tab and its totals), take **no parts
@@ -174,16 +174,32 @@ cannot be transferred; unpay first.
   removed. A work order with recorded payments cannot become an estimate —
   delete its payments first. You can convert back and forth as many times
   as needed; stock moves accordingly each time.
+- **Job timers never convert an estimate.** A mechanic cannot start a job
+  timer on an estimate: Start job answers *"This work order is an
+  estimate. Time can be tracked after the office converts it to a work
+  order."*, nothing starts, and a timer the mechanic has running on another
+  work order keeps running. Convert the estimate first (Save dropdown →
+  **Convert to Work Order**), then the mechanic can start. A manager or
+  owner may time work on an estimate (for example a diagnosis): the time is
+  recorded, but the estimate stays an estimate — no status change, no parts
+  taken from stock.
 - **Estimates can be sent for customer approval** exactly like a WO: the
   same "Send for approval" flow, the same email with the PDF, and the same
   green **✓ Authorized** badge when the customer approves — approval does
   not change the status or touch inventory, it is the customer's sign-off
   on the quote.
 - **Paid** — set automatically when the remaining balance reaches $0.
-- **Paid WOs are locked** — they cannot be edited until made unpaid.
+- **Paid WOs are locked** — they cannot be edited until made unpaid. After
+  **Unpaid** (or after deleting the last payment of a paid WO) you can
+  click Edit right away — no reload needed: jobs and parts you remove are
+  removed when you Save. Once in a while the page reloads by itself right
+  after Unpaid / the payment delete and then shows "Marked as unpaid." or
+  "Payment deleted." — that is normal, just continue.
 - **Careful:** switching a WO back to Unpaid/In Progress **deletes all its
   payment records**. The delete-WO confirmation also warns about this.
 - Deleting a WO returns its parts to inventory and removes payments.
+  Deleting an **estimate** changes neither stock nor cores — an estimate
+  never took any parts from inventory.
 
 ## Parts orders for a work order
 
@@ -249,13 +265,30 @@ your screen.
   "Edit mechanics' actual tracked hours" permission (owner and managers by
   default) see a small pencil next to the tracked-time summary. It opens a
   list of the job's timer sessions — who, when started, how long. Change a
-  session's duration (hours/minutes) or delete a wrong session entirely
-  (e.g. the mechanic forgot to stop the timer overnight, or started it by
-  accident). After saving, everything derived from time recalculates
-  automatically: the job's tracked Hours, the mechanics' percentage split,
-  work order totals, and the payroll/Timecard reports. Sessions edited by
-  hand get an "edited" badge; a running session must be stopped before it
-  can be edited. Paid work orders are locked — unpay first.
+  session's duration (hours/minutes) and click Save, or delete a wrong
+  session entirely (e.g. the mechanic forgot to stop the timer overnight,
+  or started it by accident). Everything derived from time recalculates
+  automatically: the job's Hours (when they follow the timers — not preset
+  or typed hours), the mechanics' percentage split, the work order totals,
+  Reports → Mechanic Hours ("Tracked") and the Dashboard's Actual hours.
+  Pay does not change: Timecard / Salary and the payroll in General
+  Revenue come from salaries and uAttend punches, never from job timers.
+  Sessions edited by hand get an "edited" badge; a running session must be
+  stopped before it can be edited. Paid work orders are locked — unpay
+  first.
+  *When the page shows the new numbers:* outside Edit mode the page
+  reloads by itself — right after Save in that window, or, after deleting
+  a session, when you close the window. In **Edit** mode the page does not
+  reload, so your unsaved edits stay: Save in that window closes it with
+  *"Hours updated. Save the work order to see the recalculated labor
+  hours."* (after deleting a session you simply close it), the form keeps
+  showing the old Hours for now, and the recalculated hours appear once
+  you click Save on the work order. The fix counts as your own change, not
+  someone else's: removing that job afterwards and saving works normally.
+  Saving after you correct a timer session keeps the recalculated hours;
+  hours, a rate or a preset another user set on that job in the meantime
+  are kept, and a job another user removed stays removed. Hours you type
+  yourself still win.
 - **Shop supply** is a percentage of labor (default 5%, configurable), shown
   as an editable "Shop supply: $" field with a reset (↺) button. On the
   work-order page it is part of the **Labor total** (labor + shop supply).
@@ -265,7 +298,13 @@ your screen.
   right before the Total (details in "Tax and totals" below).
 - Block menu (⋮): **"Add Preset"**, **"Describe Issue"** (AI polishes/
   translates the issue text into professional English for the customer),
-  **"Send for Authorization"** (this labor only).
+  **"Send for Authorization"** (this labor only). Saving a Describe Issue
+  text on a job that is already saved stores it at once ("Issue
+  description saved.") — also in Edit mode, without touching your other
+  unsaved edits; on a job that is not saved yet it goes with the next
+  Save ("Issue description updated. It will be saved with the work
+  order."). If somebody removed that job meanwhile, you get *"This job is
+  no longer on the work order. Reload the page."*
 
 ## One unit — one work order (mechanic mode)
 
@@ -293,17 +332,176 @@ refresh needed. Every few seconds it checks the server and:
   order, marks it Done, or a timer changes the status/hours, the page
   reloads by itself to show the fresh jobs, parts and totals (your scroll
   position is preserved). The same happens if another manager updates or
-  pays the work order from a different computer.
+  pays the work order from a different computer. While a window is open
+  (payment, email, mechanic hours…) or a message box is on screen (the
+  list of notes after a save, a confirmation question) the page waits and
+  reloads after you close it, so nothing you are typing or reading there
+  is lost.
 - **You are protected while editing.** If you are in Edit (or Confirm) mode
-  when a mechanic saves changes, the page does NOT reload under you —
-  instead a warning toast tells you the WO was just updated so you can
-  refresh before saving. Saving without refreshing may overwrite the
-  mechanic's changes, since a save writes the whole job list.
+  when a mechanic saves changes, the page does NOT reload under you. A
+  notice says *"Mechanics just updated this work order. When you save,
+  their changes will be merged with yours."* Keep working and click Save
+  as usual — the mechanic's new jobs, parts and quantities are kept (see
+  "Several people editing one work order" below). There is no need to
+  refresh first.
 
-Your own saves never trigger a reload, and polling pauses while the browser
-tab is in the background (it catches up the moment you switch back). This
-works out of the box — there is nothing to configure, and mechanics do not
-need to do anything special in the app.
+The automatic reload ignores your own changes: your saves, Describe Issue
+texts and mechanic-hours fixes are never taken for somebody else's update.
+A few of your own actions do reload the page on purpose: a mechanic-hours
+fix made outside Edit mode (see **Edit mechanic hours** above), **Save as
+Estimate** / **Convert to Work Order**, and a save that was combined with
+other people's changes (see "After you save" below). Polling pauses while
+the browser tab is in the background (it catches up the moment you switch
+back). This works out of the box — there is nothing to configure, and
+mechanics do not need to do anything special in the app.
+
+## Several people editing one work order
+
+Mechanics (app or web mechanic page), the office and managers on the phone
+can all work on the same work order at the same time — everybody's work is
+kept. Every save is **merged** with what is already saved: the server
+compares three versions — what your screen showed when you started, what
+is in the work order right now, and what you are saving — and keeps the
+changes of every person. Nothing needs to be set up.
+
+**What wins when two people change the work order**
+
+- **Different things** (you fix a price, a mechanic adds a part): both
+  changes are kept.
+- **The same field** (both of you rewrote the same job description or
+  changed the same part's quantity): the person who saves **last** wins
+  for that one field. A field you did **not** touch never overwrites
+  somebody else's change — a page you opened in the morning will not undo
+  the mechanic's afternoon work when you finally click Save.
+- **Jobs and parts someone else added** while your page was open are kept.
+  After your save they appear at the end of the job list (or of that job's
+  parts).
+- **Jobs and parts you removed** are removed — unless someone else changed
+  that job or part after you opened the page; then it stays, and the note
+  tells you why.
+- **A job somebody is working on is never removed.** If a mechanic's timer
+  is running on the job, your save keeps it (*Kept job "…": someone is
+  working on it.*) — this also holds when the mechanic presses Start job
+  at the very moment your save arrives. If its tracked hours changed since
+  you opened the page, it is kept as well (*Kept job "…": it was changed by
+  another user.*). When your removal was saved first, the timer simply
+  does not start: the mechanic sees *"This job is no longer on the work
+  order. Refresh the work order and try again."* Ask the mechanic to stop
+  the timer first if the job really has to go.
+- **A job another person removed** while you still had it on screen stays
+  removed ("Job … was removed by another user") — unless you changed that
+  job yourself; then it comes back with your changes.
+- **Tracked hours win.** Hours that come from the mechanics' timers keep
+  following the timers even if your page still shows an older number —
+  unless you type Hours (or a Labor Total) yourself. Changing only the
+  labor rate re-prices the latest tracked hours.
+- **Customer, unit, date, Taxable and mileage** change only if *you* changed
+  them on your page. A **Transfer** to another customer done by someone
+  else, or a date moved by a mechanic's save, is not undone by your older
+  page.
+- **Mechanic assignments and misc charges**: assignments you did not touch
+  stay as they are now; misc charges added by a mechanic (from a catalog
+  part) and those added in the office are both kept.
+- **Your Describe Issue texts and mechanic-hours fixes count as yours.**
+  They are stored at once while your form stays open, and the page
+  remembers them as your own changes: removing that job afterwards and
+  saving works normally, and if a mechanic rewrites the same issue text
+  later, your next Save of other changes keeps the mechanic's newer text.
+
+**While saving.** The Save button shows "Saving…" and the form does not
+accept typing until the answer arrives (usually under a second). If
+something on the page still changed during the save (for example a part
+price filled in automatically), you get *"You changed the work order while
+it was being saved…"* — see the messages below.
+
+**After you save.** If the save was combined with other people's changes,
+the page reloads and shows a short list of what happened, for example
+*Kept job "Brakes" added by another user.* or *Part "Oil filter" was
+removed by another user.* (when there is nothing to list, just the toast
+"Saved. Changes other people made in the meantime were merged in.").
+Notes can also come without a reload, for example *"The unit was also
+changed by another user; your choice was kept."*, and warnings such as
+*"Saved, but stock levels could not be updated…"* are listed in the same
+window. The list stays on screen until you click OK: the page does not
+reload under it, and if you refresh the page before closing it, the list
+appears again. Nothing to do — it is for your information. Without notes
+you just see "Saved." **Save as Estimate** and **Convert to Work Order**
+always reload the page; their result ("Estimate saved.", "Saved." or the
+list) appears after the reload.
+
+**Messages you may see**
+
+- *"This work order is being updated by someone else right now. Please try
+  again."* — several saves arrived in the same moment and yours could not
+  be stored. Nothing of yours was lost on the page: click Save again.
+- *"Couldn't confirm what you started from, so nothing was removed. Please
+  review the work order."* — the page could not tell Roobico what it
+  showed when you started editing — usually because it was left open for
+  more than two weeks. Your changes were saved, but the jobs and parts you
+  deleted were kept to be safe (each with a note such as *Kept job "…": it
+  was not in your copy of the work order.*). Reload the page, check the
+  work order and delete them again.
+- *"This page was opened before Roobico was updated. Reload the page and
+  make your change again."* — the page was opened before an update of
+  Roobico, and the work order now has a job or part that this page does
+  not show (you removed it, or somebody else added it). Nothing was saved
+  and inventory did not change. Reload the page (F5), make the change again
+  and click Save.
+- *"You changed the work order while it was being saved. Those changes are
+  still on the page but are not saved yet — save the work order again."* —
+  something on the page changed while the save was on its way (for example
+  a price filled in automatically). The first save went through; the page
+  stays in Edit mode with the newer changes on it. Click Save again.
+- *"The selected unit belongs to a different customer. Select a unit of
+  this customer."* — you changed the customer, but the Unit field still
+  holds a unit of the previous customer. Pick one of the new customer's
+  units (or add one) and Save.
+- *"This work order was moved to another customer by another user. Reload
+  the page to see the change."* — while your page was open, somebody
+  transferred the work order to another customer, and you picked a unit of
+  the previous customer. Nothing was saved: reload, then make your change
+  again.
+- *"Saved, but stock levels could not be updated. Please check this work
+  order's parts in inventory."* (similar: *"Saved, but core charges could
+  not be synced…"*, *"Saved, but the unit mileage could not be updated."*,
+  *"Saved, but notifications or the calendar could not be updated."*) —
+  the work order itself was saved, only a follow-up step failed. Check
+  that part's stock (or the cores, the unit's odometer, the appointment)
+  by hand.
+- *"Network error — your changes are still on the page…"* — the connection
+  dropped. Click Save again; a new job is recognized, so a repeated Save
+  never creates the same job twice.
+
+**Time on removed jobs is not lost.** When a job that has tracked time is
+removed, the time stays with the mechanic: it still counts in Reports →
+Mechanic Hours ("Tracked") and in the Dashboard's Actual hours, and the
+work order shows **"Tracked on removed labor lines: Xh Ym"** under the
+jobs. Pay is a separate thing: Timecard / Salary (and the payroll in
+General Revenue) is calculated from salaries and uAttend punches, never
+from job timers, so removing a job does not change anybody's pay. To bill
+the time, add the job again and type its hours.
+
+**How to…**
+
+- *Edit a work order while mechanics are working on it* — click Edit, make
+  your changes, click Save. If the notice "Mechanics just updated this work
+  order…" appears, just keep going: your Save merges their changes.
+- *Remove a job a mechanic is still timing* — ask the mechanic to press
+  Stop job, then remove the job and click Save.
+- *Make sure my hours stick* — type them into the job's Hours (or Labor
+  Total) field. A typed value always wins over timer hours.
+- *Remove a job right after fixing its issue text or its mechanic hours* —
+  just remove it and click Save: those fixes count as your own changes, so
+  the job goes.
+- *Edit right after Unpaid* — click Edit, change, Save; no reload needed.
+  If the page reloads by itself once and shows "Marked as unpaid.", just
+  continue.
+- *My save was refused with "This page was opened before Roobico was
+  updated"* — press F5 to reload, make the change again, Save.
+- *See who changed or removed something* — the work order's **History**
+  (Reports → Activity Journal): every save shows the job list before and
+  after it; a save that was merged with other people's changes also shows
+  its **Merge notes**.
 
 ## Parts on a work order
 

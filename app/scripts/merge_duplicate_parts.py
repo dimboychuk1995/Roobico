@@ -131,10 +131,12 @@ def merge_dupe_into(sdb, shop_id, survivor, dupe, user_id=None):
     s_id, d_id = survivor["_id"], dupe["_id"]
     d_str, s_str = str(d_id), str(s_id)
 
-    # 1. WO: строки партов в labors (ObjectId и строковые ссылки → ObjectId)
+    # 1. WO: строки партов в labors (ObjectId и строковые ссылки → ObjectId).
+    # Любая запись labors двигает labors_rev: сохранение, прочитавшее WO до
+    # этой правки, не пройдёт CAS и перечитает документ (иначе вернуло бы id дубля).
     res = sdb.work_orders.update_many(
         {"shop_id": shop_id, "labors.parts.part_id": {"$in": [d_id, d_str]}},
-        {"$set": {"labors.$[].parts.$[p].part_id": s_id}},
+        {"$set": {"labors.$[].parts.$[p].part_id": s_id}, "$inc": {"labors_rev": 1}},
         array_filters=[{"p.part_id": {"$in": [d_id, d_str]}}],
     )
     log.append(f"wo labor lines: {res.modified_count} WO")

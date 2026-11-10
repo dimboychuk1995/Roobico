@@ -367,15 +367,24 @@ def test_mechanic_update_rejects_paid(client, mech_seed, mongo):
 
 
 def test_web_update_forces_in_progress_for_mechanic(client, mech_seed, mongo):
+    """Механик на офисном эндпоинте сохраняет как на своей странице: статус
+    in_progress, деньги/часы/назначения из формы не принимаются, строка с
+    labor_id (как её отдаёт GET деталей механика) не дублируется."""
     login_mechanic(client)
     data = _create_wo_as_mechanic(client, mech_seed, description="Force status test")
     wo_id = data["id"]
+    details = client.get(f"/work_orders/api/mechanic/work_orders/{wo_id}").get_json()
+    labor = details["labors"][0]
+    before = mongo[SHOP_A_DB].work_orders.find_one({"_id": ObjectId(wo_id)})
 
     resp = _post_json(client, f"/work_orders/api/work_orders/{wo_id}/update", {
-        "labors": [{"labor_description": "Force status test", "labor_hours": 0,
-                     "labor_rate_code": "", "labor_full_total": 0, "assigned_mechanics": [],
-                     "issue_description": "", "parts": []}],
-        "totals": {},
+        "labors": [{"labor_id": labor["labor_id"], "labor_description": "Force status test",
+                    "labor_hours": 9, "labor_rate_code": "standard", "labor_full_total": 9999,
+                    "assigned_mechanics": [], "issue_description": "",
+                    "parts": [{"part_id": p["part_id"], "part_number": p["part_number"],
+                               "description": p["description"], "qty": p["qty"], "price": 0.01,
+                               "cost": 0.01} for p in labor["parts"]]}],
+        "totals": {"labor": 9999, "grand_total": 9999},
         "save_status": "open",
     })
     assert resp.status_code == 200, resp.get_data(as_text=True)
@@ -383,6 +392,11 @@ def test_web_update_forces_in_progress_for_mechanic(client, mech_seed, mongo):
 
     wo = mongo[SHOP_A_DB].work_orders.find_one({"_id": ObjectId(wo_id)})
     assert wo["status"] == "in_progress"
+    assert len(wo["labors"]) == 1
+    assert wo["labors"][0]["labor"]["hours"] == before["labors"][0]["labor"]["hours"]   # часы не его
+    assert wo["labors"][0]["parts"][0]["price"] == before["labors"][0]["parts"][0]["price"]
+    assert wo["totals"]["grand_total"] == before["totals"]["grand_total"]
+    assert "grand_total" not in resp.get_json()                                       # без денег в ответе
 
 
 def test_status_endpoint_restricted_for_mechanic(client, mech_seed, mongo):
@@ -1476,11 +1490,19 @@ def test_web_save_keeps_time_based_assignment_proportional(client, mech_seed, mo
     ])
 
     # Менеджер сохраняет WO с пустым ручным назначением — авто-расчёт побеждает.
+    # Форма шлёт запчасти строки как есть (без них старая вкладка получила бы
+    # page_outdated: запчасть WO, которой нет в форме, сервер не трогает).
     login(client)
+    stored_parts = [
+        {**{k: p.get(k) for k in ("part_number", "description", "unit", "qty", "cost", "price", "core_charge",
+                                  "misc_charge", "misc_charge_description")},
+         "part_id": str(p.get("part_id") or ""), "one_time_part": bool(p.get("one_time_part"))}
+        for p in wo["labors"][0].get("parts") or []
+    ]
     resp = _post_json(client, f"/work_orders/api/work_orders/{data['id']}/update", {
         "labors": [{"labor_id": labor_id, "labor_description": "Proportional test",
                     "labor_hours": 0, "labor_rate_code": "", "labor_full_total": 0,
-                    "assigned_mechanics": [], "issue_description": "", "parts": []}],
+                    "assigned_mechanics": [], "issue_description": "", "parts": stored_parts}],
         "totals": {},
     })
     assert resp.status_code == 200, resp.get_data(as_text=True)
@@ -1522,6 +1544,12 @@ def test_mechanic_can_delete_labor(client, mech_seed, mongo):
     assert len(wo["labors"]) == 2
     keep_id = wo["labors"][0]["labor_id"]
     assert shop_db.parts.find_one({"_id": mech_seed["part"]["_id"]})["in_stock"] == stock_before - 2
+
+    # Как в приложении: механик открывает WO (GET деталей) — сервер
+    # запоминает, что это устройство видело (edit view). По отсутствию в
+    # payload удаляется только строка, которую клиент видел.
+    details = client.get(f"/api/mobile/work_orders/{data['id']}").get_json()
+    assert [l["description"] for l in details["labors"]] == ["Keep me", "Delete me"]
 
     # Механик прислал только первую строку — вторая удаляется.
     resp = _post_json(client, f"/api/mobile/work_orders/{data['id']}", {
@@ -2223,17 +2251,29 @@ def test_manager_in_progress_save_clears_all_done_marks(app, client, mech_seed, 
         assert wo["mechanic_done_marks"] == []
         assert wo_id in {r["id"] for r in get_in_work_orders(shop_db, shop_id)}
 
+    def stored_parts():
+        # Форма шлёт запчасти строки как есть (без них старая вкладка получила
+        # бы page_outdated: запчасть WO, которой нет в форме, сервер не трогает).
+        wo = shop_db.work_orders.find_one({"_id": ObjectId(wo_id)})
+        return [
+            {**{k: p.get(k) for k in ("part_number", "description", "unit", "qty", "cost", "price", "core_charge",
+                                      "misc_charge", "misc_charge_description")},
+             "part_id": str(p.get("part_id") or ""), "one_time_part": bool(p.get("one_time_part"))}
+            for p in wo["labors"][0].get("parts") or []
+        ]
+
     # 1) Веб-редактор менеджера: Save In Progress.
     all_done()
     login(client)
     resp = _post_json(client, f"/work_orders/api/work_orders/{wo_id}/update", {
         "labors": [{"labor_id": labor_id, "labor_description": "Manager reopen", "labor_hours": 1,
                     "labor_rate_code": "", "labor_full_total": 0, "assigned_mechanics": [],
-                    "issue_description": "", "parts": []}],
+                    "issue_description": "", "parts": stored_parts()}],
         "totals": {},
         "save_status": "in_progress",
     })
     assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert resp.get_json()["ok"] is True, resp.get_json()
     assert_reopened()
 
     # Обычный Save менеджера (completed) — не «в работу»: статус open,
@@ -2243,11 +2283,12 @@ def test_manager_in_progress_save_clears_all_done_marks(app, client, mech_seed, 
     resp = _post_json(client, f"/work_orders/api/work_orders/{wo_id}/update", {
         "labors": [{"labor_id": labor_id, "labor_description": "Manager reopen", "labor_hours": 1,
                     "labor_rate_code": "", "labor_full_total": 0, "assigned_mechanics": [],
-                    "issue_description": "", "parts": []}],
+                    "issue_description": "", "parts": stored_parts()}],
         "totals": {},
         "save_status": "open",
     })
     assert resp.status_code == 200
+    assert resp.get_json()["ok"] is True, resp.get_json()
     assert shop_db.work_orders.find_one({"_id": ObjectId(wo_id)})["status"] == "open"
 
     # 2) Статус-эндпоинт: менеджер ставит in_progress.
