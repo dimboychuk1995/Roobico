@@ -189,6 +189,7 @@ def test_timecard_internal_badge_uses_current_name(client, seed, mongo, monkeypa
         shop_db.integrations.delete_many({"shop_id": shop_a["_id"], "provider": "uattend"})
         shop_db.uattend_employees.delete_many({"shop_id": shop_a["_id"]})
         shop_db.uattend_match_cache.delete_many({"shop_id": shop_a["_id"]})
+        shop_db.uattend_punch_cache.delete_many({"shop_id": shop_a["_id"]})
 
     assert "↔ Internal: Ostap Badgeman" in html
     assert "Stale Cache Name" not in html

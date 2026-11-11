@@ -19,6 +19,93 @@ from app.blueprints.work_orders.services.pdf_contexts import _parse_misc_items
 from app.blueprints.work_orders.services.totals import normalize_parts_payload
 
 
+# Откуда взялась цена строки (price_part): закреплена в сервис-темплейте,
+# фиксированная Selling price запчасти, шкала от cost, сама cost (шкалы нет
+# или cost не попал ни в одну ступень), нет цены (cost не задан).
+PRICE_PINNED = "pinned"
+PRICE_FIXED = "fixed"
+PRICE_MATRIX = "matrix"
+PRICE_AT_COST = "cost"
+PRICE_NONE = "none"
+
+
+def fixed_selling_price(part_doc) -> float | None:
+    """Фиксированная Selling price запчасти из каталога; None — не задана
+    (галочка снята либо цена не положительная — «$0» значит «не заполнено»)."""
+    if not (part_doc or {}).get("has_selling_price"):
+        return None
+    try:
+        price = float(part_doc.get("selling_price") or 0)
+    except (TypeError, ValueError):
+        return None
+    return round2(price) if price > 0 else None
+
+
+def match_pricing_rule(cost: float, rules):
+    """Ступень шкалы для cost.
+
+    Шкалы задаются в центах (… – 5.00, 5.01 – …), а average cost хранится
+    точнее: 5.004 лежит между ступенями. Если точное значение не попало ни в
+    одну ступень, берём ступень по cost, округлённому до цента — иначе такая
+    запчасть ушла бы в WO по себестоимости. Тот же порядок — в matchRule
+    (work_order_details.js) и matchPricingRule (settings/wo_presets.js).
+    """
+    for candidate in (cost, round2(cost)):
+        for r in rules or []:
+            frm = r.get("from")
+            to = r.get("to")
+            if frm is None:
+                continue
+            if candidate >= frm and (to is None or candidate <= to):
+                return r
+    return None
+
+
+def price_part(part_doc, pricing, pinned_price=None) -> tuple[float, str]:
+    """
+    (цена продажи, источник) для строки WO — единственная реализация правила
+    на сервере; веб-JS автозаполнение WO повторяет его:
+
+      1. кастомер с «override part selling price» всегда получает цену по
+         своей шкале (пункты 2–3 пропускаются);
+      2. pinned_price — цена, закреплённая вручную в сервис-темплейте
+         (price_overridden);
+      3. фиксированная Selling price запчасти;
+      4. шкала (margin/markup) от average cost;
+      5. шкалы нет / cost не попал ни в одну ступень — цена = cost.
+
+    pricing — результат get_pricing_rules_json (шкала кастомера или
+    дефолтная). Источник — одна из констант PRICE_*.
+    """
+    cost = float(part_doc.get("average_cost") or 0)
+    override = bool((pricing or {}).get("override_part_selling_price"))
+
+    if not override and pinned_price is not None:
+        return round2(float(pinned_price)), PRICE_PINNED
+
+    if not override:
+        fixed = fixed_selling_price(part_doc)
+        if fixed is not None:
+            return fixed, PRICE_FIXED
+
+    if cost <= 0:
+        return round2(cost), PRICE_NONE
+    if not pricing:
+        return round2(cost), PRICE_AT_COST
+
+    rule = match_pricing_rule(cost, pricing.get("rules"))
+    if not rule:
+        return round2(cost), PRICE_AT_COST
+
+    pct = float(rule.get("value_percent") or 0)
+    if (pricing.get("mode") or "margin") == "markup":
+        return round2(cost * (1 + pct / 100.0)), PRICE_MATRIX
+    # margin: price = cost / (1 - pct/100)
+    if pct >= 100:
+        return round2(cost), PRICE_MATRIX
+    return round2(cost / (1 - pct / 100.0)), PRICE_MATRIX
+
+
 def suggest_part_price(shop_db, shop_id, customer_id, part_doc, pinned_price=None) -> float:
     """
     Цена продажи для строки WO — та же логика, что в веб-JS автозаполнении:
@@ -28,40 +115,12 @@ def suggest_part_price(shop_db, shop_id, customer_id, part_doc, pinned_price=Non
     pinned_price — цена, закреплённая вручную в сервис-темплейте
     (price_overridden): как и на вебе, она сильнее selling price и
     матрицы, но кастомер с «override part selling price» всё равно
-    получает цену по своей шкале.
+    получает цену по своей шкале. Правило целиком — в price_part.
     """
     from app.blueprints.work_orders.services.lookups import get_pricing_rules_json
 
-    cost = float(part_doc.get("average_cost") or 0)
     pricing = get_pricing_rules_json(shop_db, shop_id, customer_id=customer_id)
-    override = bool((pricing or {}).get("override_part_selling_price"))
-
-    if not override and pinned_price is not None:
-        return round2(float(pinned_price))
-
-    if not override and part_doc.get("has_selling_price") and float(part_doc.get("selling_price") or 0) > 0:
-        return round2(float(part_doc.get("selling_price") or 0))
-
-    if not pricing or cost <= 0:
-        return round2(cost)
-
-    rule = None
-    for r in pricing.get("rules") or []:
-        frm = r.get("from")
-        to = r.get("to")
-        if cost >= frm and (to is None or cost <= to):
-            rule = r
-            break
-    if not rule:
-        return round2(cost)
-
-    pct = float(rule.get("value_percent") or 0)
-    if (pricing.get("mode") or "margin") == "markup":
-        return round2(cost * (1 + pct / 100.0))
-    # margin: price = cost / (1 - pct/100)
-    if pct >= 100:
-        return round2(cost)
-    return round2(cost / (1 - pct / 100.0))
+    return price_part(part_doc, pricing, pinned_price)[0]
 
 
 def compute_labors_and_totals(shop_db, shop, labors_payload):

@@ -338,6 +338,12 @@
         html += '<div class="alert alert-secondary py-2 small mb-3" style="border:1px solid var(--bs-border-color)">' +
           '<strong>Customer filter is active</strong> — payroll and parts orders cannot be tied to specific customers and are counted as $0 here.' +
         '</div>';
+      } else if (s.payroll_warning) {
+        // Сервер знает точную причину: нет периода, uAttend не ответил,
+        // ошибка расчёта — payroll при этом неполный или $0.
+        html += '<div class="alert alert-warning py-2 small mb-3">' +
+          '<strong>Payroll is incomplete.</strong> ' + escapeHtml(String(s.payroll_warning)) +
+        '</div>';
       } else if (!hasPayroll) {
         html += '<div class="alert alert-secondary py-2 small mb-3" style="border:1px solid var(--bs-border-color)">' +
           'Payroll unavailable — configure the uAttend integration and per-user pay rates; salaries are counted as $0 here.' +

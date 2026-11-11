@@ -3223,6 +3223,8 @@ def api_presets_list():
 @login_required
 @permission_required("work_orders.create")
 def api_preset_detail(preset_id):
+    from app.blueprints.work_orders.services.mobile_editor import fixed_selling_price
+
     shop_db, shop = get_shop_db()
     if shop_db is None:
         return jsonify({"error": "no_shop"}), 400
@@ -3327,10 +3329,14 @@ def api_preset_detail(preset_id):
             # still takes precedence — the WO front-end nulls the price then).
             if live.get("average_cost") is not None:
                 ep["cost"] = float(live["average_cost"])
+            # «Фиксированная цена» — то же определение, что у серверного
+            # price_part и у карточки темплейта: галочка + цена > 0. Галочка с
+            # пустой ценой ($0) фиксированной ценой не считается.
+            fixed_price = fixed_selling_price(live)
             if bool(p.get("price_overridden")) and p.get("price") is not None:
                 ep["price"] = float(p.get("price") or 0)
-            elif bool(live.get("has_selling_price")):
-                ep["price"] = float(live.get("selling_price") or 0)
+            elif fixed_price is not None:
+                ep["price"] = fixed_price
             else:
                 # No fixed selling price -> let the WO markup recompute from cost.
                 ep["price"] = None
@@ -3341,8 +3347,8 @@ def api_preset_detail(preset_id):
     if patches:
         try:
             shop_db.wo_presets.update_one({"_id": doc["_id"]}, {"$set": patches})
-        except Exception:
-            pass
+        except Exception:  # noqa: BLE001 — пресет применится и без записи
+            current_app.logger.exception("Preset %s: failed to save healed part references", doc["_id"])
 
     # Механик-режим: пресет отдаём без денег (цены проставит сервер при
     # сохранении WO) — только парт/описание/количество.

@@ -74,6 +74,8 @@ def timecard_seed(seed, mongo):
     shop_db.integrations.delete_many({"shop_id": shop_a["_id"], "provider": "uattend"})
     shop_db.uattend_employees.delete_many({"shop_id": shop_a["_id"]})
     shop_db.uattend_match_cache.delete_many({"shop_id": shop_a["_id"]})
+    # Timecard прогревает кэш часов для General Revenue — убираем за собой.
+    shop_db.uattend_punch_cache.delete_many({"shop_id": shop_a["_id"]})
 
 
 def test_matched_hourly_user_stays_in_report(client, timecard_seed, monkeypatch):

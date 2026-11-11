@@ -95,16 +95,34 @@
   // ---------------- pricing ----------------
   function matchRule(cost, rules) {
     if (!Number.isFinite(cost) || !Array.isArray(rules)) return null;
-    for (const r of rules) {
-      const from = toNum(r.from);
-      const to = (r.to === null || r.to === undefined) ? null : toNum(r.to);
-      const vp = toNum(r.value_percent);
-      if (from === null || vp === null) continue;
-      if (cost < from) continue;
-      if (to === null) return { value_percent: vp };
-      if (cost <= to) return { value_percent: vp };
+    // Шкалы задаются в центах (… – 5.00, 5.01 – …), а average cost хранится
+    // точнее: 5.004 лежит между ступенями. Если точное значение не попало ни
+    // в одну ступень, берём ступень по cost, округлённому до цента — иначе
+    // цена осталась бы пустой. Сервер делает так же (match_pricing_rule), и
+    // округление то же, что у серверного round2 — round(cost + 1e-12, 2):
+    // половина цента — вверх (1.005 → 1.01).
+    const candidates = [cost, Number((cost + 1e-12).toFixed(2))];
+    for (const c of candidates) {
+      for (const r of rules) {
+        const from = toNum(r.from);
+        const to = (r.to === null || r.to === undefined) ? null : toNum(r.to);
+        const vp = toNum(r.value_percent);
+        if (from === null || vp === null) continue;
+        if (c < from) continue;
+        if (to === null) return { value_percent: vp };
+        if (c <= to) return { value_percent: vp };
+      }
     }
     return null;
+  }
+
+  // Фиксированная Selling price запчасти: галочка + цена > 0 (галочка с
+  // пустой ценой — «не заполнено», а не «$0»). То же определение на сервере
+  // (fixed_selling_price) и в сервис-темплейтах.
+  function hasFixedSellingPrice(part) {
+    if (!part || !part.has_selling_price) return false;
+    const price = toNum(part.selling_price);
+    return Number.isFinite(price) && price > 0;
   }
 
   function calcPriceFromRule(cost, mode, valuePercent) {
@@ -1445,7 +1463,7 @@
     // and let the auto-markup compute from cost using the configured scale.
     const priceInput = tr.querySelector(".part-price");
     const overridePartPrice = !!(currentPricing && currentPricing.override_part_selling_price);
-    if (!overridePartPrice && part.has_selling_price && part.selling_price != null && Number.isFinite(toNum(part.selling_price))) {
+    if (!overridePartPrice && hasFixedSellingPrice(part)) {
       if (priceInput) priceInput.value = String(round2(toNum(part.selling_price)));
       tr.dataset.priceManuallyEdited = "1";
       delete tr.dataset.priceAutofilled;
@@ -1548,7 +1566,7 @@
     }
 
     // Only clear price if no fixed selling price was set above
-    if (!part.has_selling_price || part.selling_price == null || !Number.isFinite(toNum(part.selling_price))) {
+    if (!hasFixedSellingPrice(part)) {
       const price = tr.querySelector(".part-price");
       if (price) price.value = "";
       delete tr.dataset.priceAutofilled;

@@ -266,10 +266,62 @@ Inserted into WOs via the labor block menu.
 **Part prices in a template.** By default prices are live: each time a
 template is shown or applied, the price recomputes from the part's current
 selling price or the pricing matrix, so templates follow the catalog
-automatically. If you **edit a price by hand**, it becomes a *pinned price*:
+automatically. The Service Templates page calculates every price with the
+same code a work order uses, so a card shows what a work order gets
+**today** for a customer on the standard pricing (no own scale, no
+discount) — never the price that was there when the template was created:
+
+1. a price **you typed into the template** (pinned) — used as is;
+2. else the part's own fixed **Selling price** from the catalog (the
+   "This part has selling price" box in Parts) — it does **not** follow the
+   average cost;
+3. else the **default pricing scale** applied to the part's **current
+   average cost** — receive the part at a new cost and the template price
+   changes by itself the next time the page is opened.
+
+So that you can see at a glance why a line has the price it has, the card
+(and the Price column in the editor) marks everything that is not plain
+"scale on average cost":
+
+- **custom price** (yellow) — pinned in this template by hand;
+- **fixed price** (grey) — the part's own Selling price from the catalog.
+  If such a line does not follow the cost, that is why: open Parts → edit
+  the part and change the Selling price, or untick "This part has selling
+  price" so the scale takes over (in templates and in work orders alike);
+- **below cost** (red) — the price is lower than the part's current
+  average cost, so every sale loses money (hover to see the cost). Typical
+  case: a fixed Selling price of $6.00 set when the part cost $4.28, and the
+  cost has since risen to $7.10. On a card with more than five parts the
+  "… and N more" line shows how many hidden lines are below cost;
+- **no price** (yellow) — the part has no average cost (never received) and
+  no Selling price, so nothing can be calculated and a work order gets $0:
+  receive the part, set its Selling price or type a price in the template;
+- **no markup** (yellow) — no tier of the default scale covers this cost
+  (the cost is outside every tier: below the first tier's From, above the
+  last tier's To, in a gap between tiers wider than a cent, or the scale
+  has no tiers). The card shows the cost itself: that is what a work order
+  created by a mechanic or in the mobile app charges, while the office
+  work order editor leaves the Price field empty for you to fill in. Add a
+  tier for this cost in Settings → Parts & Pricing;
+- **not in catalog** (grey) — the line is not a catalog part: a free-text
+  line, or a part that was deleted or deactivated. The card shows the
+  price saved with the template; the office work order editor uses it,
+  while a template added by a mechanic (mechanic page, mobile app, Start
+  work on an appointment) adds such a line without a price for the office
+  to fill in.
+
+The "(Estimated)" total at the bottom of a card is the sum of those prices
+plus labor at the template's rate. A customer with their own pricing scale
+("Override part selling price") or a parts discount gets their own prices
+when the template lands on their work order.
+
+If you **edit a price by hand**, it becomes a *pinned price*:
 it is highlighted in the editor, saved with the template, and used in work
 orders exactly as you typed it — it wins over the part's selling price and
-the pricing matrix. Two things still beat a pinned price:
+the pricing matrix. Typing the same number the field already shows does not
+pin anything, and an empty Price field is never saved as "$0" — to make a
+line free on purpose, type `0`: it is pinned and shown as "@ $0.00 custom
+price". Two things still beat a pinned price:
 
 - a customer whose pricing policy has "override part selling price" — such
   customers always get prices computed from their own scale;

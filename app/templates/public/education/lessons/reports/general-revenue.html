@@ -23,15 +23,18 @@
 <ul>
   <li><strong>Money In</strong> — labor, parts, cores, misc, tax → Total Revenue (sales tax collected is included).</li>
   <li><strong>Money Out — Parts Orders</strong> — vendor orders in the period (confirmed ones; returns subtract).</li>
-  <li><strong>Money Out — Payroll</strong> — salaries × weeks plus uAttend hourly, per employee.</li>
+  <li><strong>Money Out — Payroll</strong> — salaries × weeks plus uAttend hourly. These are the same numbers as the Timecard / Salary report for the same dates. The per-employee lines (name, rate, hours) are shown only to users with {{ perm("reports.view_payroll", "View Timecard / Salary report") }}; everyone else sees the totals.</li>
   <li><strong>Bottom Line</strong> — the Cash view and the Job view.</li>
   <li><strong>Mechanic Hours</strong> — billed vs tracked.</li>
 </ul>
 
-<h2>Why is payroll $0?</h2>
+<h2>Why is payroll $0 or too small?</h2>
 <ul>
+  <li>The period is <strong>All Time</strong> (or a Custom range with only one date) — payroll is counted per period (weekly salary × weeks, uAttend hours inside the dates). Pick This Month or fill in both dates; a yellow “Payroll is incomplete” banner reminds you.</li>
   <li>Salary users need Pay type = Salary with a weekly amount (Settings → Users).</li>
-  <li>Hourly users must be ticked in Settings → Integrations → uAttend with an $/hr rate; without the integration there are no hourly hours.</li>
+  <li>Hourly users must be ticked in Settings → Integrations → uAttend with an $/hr rate; without the integration there are no hourly hours. A person with hours but no rate is listed as “hourly rate not set” with $0.</li>
+  <li>An hourly rate typed into “Salary amount”: the person is paid that amount per <em>week</em>. Their line says “Also has a uAttend rate … but Pay type is Salary” — switch Pay type to Hourly in Settings → Users.</li>
+  <li><strong>uAttend did not answer</strong> — the yellow banner quotes the error; salaries are counted, hourly pay is missing until the connection is fixed.</li>
   <li>A <strong>customer filter</strong> is applied — payroll and parts orders cannot be split per customer, so they are counted as $0 and a banner explains it.</li>
 </ul>
 

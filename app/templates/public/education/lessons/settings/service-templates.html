@@ -32,6 +32,16 @@
   always stay live.
 </p>
 
+<h2>Why a line has the price it has</h2>
+<p>The card shows what a work order gets today for a customer on the standard pricing, and marks every line that is not simply “pricing scale on the current average cost”:</p>
+<ul>
+  <li><strong>custom price</strong> — pinned in this template by hand.</li>
+  <li><strong>fixed price</strong> — the part has its own fixed Selling price in the catalog; it does not follow the average cost. Change it (or untick “This part has selling price”) in Parts.</li>
+  <li><strong>below cost</strong> — the price is lower than the part's current average cost; hover to see the cost.</li>
+  <li><strong>no price</strong> — the part has no average cost yet, so a work order gets $0.</li>
+  <li><strong>not in catalog</strong> — a free-text line, or a part that was deleted or deactivated; the saved price is shown (the office editor uses it, a mechanic-created work order gets the line without a price).</li>
+</ul>
+
 {% call tip("Special price for one service") %}
 Pin the price in the template for a promotional package; everything else keeps following the catalog.
 {% endcall %}

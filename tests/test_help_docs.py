@@ -115,6 +115,13 @@ def test_payroll_code_really_ignores_job_timers():
     for fn in ("_compute_payroll_totals", "timecard_salary_page"):
         body = _function_source(routes, fn)
         assert "wo_time_logs" not in body and "summarize_mechanic_hours" not in body, fn
+        # Обе функции — обёртки над общим сервисом payroll: импортируют его
+        # и вызывают (имя в def-строке и в docstring не считается).
+        assert re.search(r"^\s+from app\.blueprints\.reports\.services\.payroll import .*\bcompute_payroll\b", body, re.M), fn
+        assert re.search(r"=\s*compute_payroll\(", body), fn
+    # Сам расчёт живёт в сервисе — проверяем и его.
+    service = _read(os.path.join(_REPO, "app", "blueprints", "reports", "services", "payroll.py"))
+    assert "wo_time_logs" not in service and "summarize_mechanic_hours" not in service
 
 
 # ── D9-03: когда страница показывает пересчитанные часы ─────────────

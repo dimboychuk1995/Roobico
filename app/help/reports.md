@@ -22,8 +22,10 @@ needs **"View Timecard / Salary report"**, the Activity Journal needs
 are not allowed to open are not shown; opening a report by URL without the
 right returns to the Reports page (the API answers 403). Default roles:
 Owner / General manager / Manager see everything, Parts manager and Viewer
-see financial reports but not payroll, Senior mechanic and Mechanic see
-only Mechanic Hours (a mechanic has no Reports section at all).
+see financial reports but not payroll (in General Revenue they get the
+payroll totals without the per-employee lines), Senior mechanic and
+Mechanic see only Mechanic Hours (a mechanic has no Reports section at
+all).
 
 ## Common filters
 
@@ -94,6 +96,54 @@ specific customers) — a banner explains this. If payroll isn't configured,
 salaries count as $0. The Mechanic Hours rows use each mechanic's current
 name, like the Mechanic Hours tab ("(inactive)" for deactivated users).
 
+**Payroll in General Revenue is the Timecard / Salary report.** The
+"Money Out — Payroll" section is calculated by the same code as Reports →
+Timecard / Salary, so for the same period "Salaries" equals the Timecard's
+Salary subtotal, "Hourly (uAttend)" equals its Hourly subtotal and "Total
+payroll" equals its grand total. A mechanic who has both a Roobico account
+(Pay type = Hourly) and a uAttend profile is counted here by their uAttend
+punches × rate, exactly like in Timecard.
+
+Under the totals every paid person is listed: `Name — salary $1,000.00/wk`
+or `Name — 38.50h x $30.00/hr`. **These per-employee lines are payroll
+data**: they are shown only to users who have the permission "View Timecard
+/ Salary report (employee pay)". Everyone else who can open General Revenue
+(for example Parts manager and Viewer) sees the three totals — Salaries,
+Hourly (uAttend), Total payroll — but no names, rates or hours; the section
+description says so. Two helper lines can appear in that list:
+
+- `Name — 12.00h, hourly rate not set` with $0 — the person clocked hours in
+  uAttend but has no $/hr in Settings → Integrations. Set the rate and the
+  pay appears.
+- A salary line whose "What is this" says *"Also has a uAttend rate … but
+  Pay type is Salary"* — the person is paid the weekly salary, their punches
+  are not paid. If they should be paid by the hour, change **Pay type** to
+  Hourly in Settings → Users (recipe: "Hourly pay is missing or too small
+  in General Revenue / Timecard").
+
+**When payroll is incomplete, the report says so** instead of quietly
+showing $0. A yellow banner "Payroll is incomplete" (the same text is
+printed in the PDF summary and shown as a "Payroll Warning" card in the
+mobile app) appears when:
+
+- **The period has no start or no end** — All Time, or a Custom range with
+  only one of the two dates filled in. Payroll is counted per period —
+  weekly salary × weeks and uAttend hours inside the dates — so without
+  both dates it is $0. Pick This Month, Last Month or fill in both dates.
+- **uAttend did not answer** (wrong or expired API key, uAttend blocking the
+  server, too many requests, network). Salaries are still counted, hourly
+  pay is missing; the banner quotes uAttend's error. Open Timecard / Salary
+  to see the same error and fix the connection in Settings → Integrations.
+
+General Revenue reads uAttend hours through a 15-minute cache (one entry
+per date range), so opening the report, re-generating it and downloading
+the PDF do not hammer uAttend. Timecard / Salary always asks uAttend for
+fresh punches and refreshes the cache entry of the dates it is showing.
+So after editing punches in uAttend: open Timecard for **the same From /
+To dates** (use Custom for a period Timecard has no preset for) and General
+Revenue shows the same hours right away; otherwise General Revenue catches
+up by itself within 15 minutes.
+
 ## Timecard / Salary Report
 
 Requires the permission **"View Timecard / Salary report (employee pay)"**
@@ -110,13 +160,31 @@ bookkeeper role in Settings → Roles. Payroll per employee for a period
   never change anybody's pay — editing or deleting a timer session, or
   removing a job that has tracked time, leaves this report as it was.
 - uAttend people are auto-matched to Roobico users (AI) so nobody is counted
-  twice — an employee matched to a **salary** user is folded into that salary
-  row with a "↔ uAttend" badge. An employee matched to an **hourly** user
-  (e.g. a mechanic) keeps their own hourly row — with the internal user's
-  role and a "↔ Internal" badge — whether or not that user ever logs in.
-  The badge shows the user's current name from Settings → Users.
+  twice — an employee matched to a **salary** user who has a weekly amount
+  is folded into that salary row with a "↔ uAttend" badge (salary is what
+  is paid; the punches are shown for reference). An employee matched to an
+  **hourly** user (e.g. a mechanic) keeps their own hourly row — with the
+  internal user's role and a "↔ Internal" badge — whether or not that user
+  ever logs in. The badge shows the user's current name from Settings →
+  Users.
+- **A Salary user with no weekly amount does not hide hourly pay.** New
+  users are created with Pay type = Salary; if nobody typed an amount, the
+  person has a $0 salary row and their uAttend row stays as a normal hourly
+  row (punches × rate), so the pay is not lost.
+- **Salary and a uAttend rate at the same time.** If a user has Pay type =
+  Salary with an amount *and* their uAttend profile has an $/hr rate, the
+  salary is paid and the note under the total says *"uAttend rate $33.00/hr
+  is not used — Pay type is Salary"*. This is the usual mistake of typing an
+  hourly rate into "Salary amount": the person then gets $33 per **week**.
+  Fix: Settings → Users → Edit → Pay type = Hourly.
 - Banners explain when the uAttend integration is missing/disabled/erroring.
-  The same payroll numbers feed the General Revenue report.
+- **The same numbers feed the General Revenue report** — both reports use
+  one calculation, so Salary subtotal, Hourly subtotal and the grand total
+  here equal Salaries, Hourly (uAttend) and Total payroll there for the
+  same From / To dates. (General Revenue may show uAttend hours that are up
+  to 15 minutes old — see the cache note in the General Revenue section —
+  and with no date range it shows no payroll at all, while this page then
+  shows one week of salaries.)
 
 ## Activity Journal
 

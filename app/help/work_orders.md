@@ -515,8 +515,12 @@ interchangeable part.
 Price auto-fill precedence:
 1. customer has **Override part selling price** → price is always computed
    from cost via the customer's pricing scale;
-2. else the part's fixed **Selling price** (if set);
+2. else the part's fixed **Selling price** (if set — the box ticked with a
+   price above $0; a ticked box with an empty price counts as "not set");
 3. else computed from average cost via the pricing scale (margin/markup).
+   Scale tiers are written in cents (… – 5.00, 5.01 – …) while the average
+   cost is kept more precisely; a cost that falls between two tiers (5.004)
+   uses the tier of the cost rounded to the cent.
 A price you edit by hand is never overwritten.
 
 - **Core** toggle appears on parts with a core charge; line total =
@@ -572,7 +576,10 @@ A price you edit by hand is never overwritten.
 Settings → **Service Templates**. A preset = name, labor hours + rate,
 parts list, and an "Allow customer discount on parts" flag. Insert into a WO
 via the labor block menu → "Add Preset". Preset prices self-heal: they always
-pull live costs/prices from the catalog when applied.
+pull live costs/prices from the catalog when applied. The Service Templates
+page shows the same prices a work order gets (standard pricing) and marks
+lines that do not follow the average cost — "fixed price", "custom price",
+"below cost" (see Settings → Service Templates).
 
 ## Authorizations (customer approval)
 

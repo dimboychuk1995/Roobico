@@ -21,10 +21,15 @@
 
   /* ── helpers ── */
 
+  /* Значение идёт и в текст, и в value="…"/title="…": кавычки экранируем
+     тоже — иначе описание «3/8" Fuel Hose» обрезается на кавычке. */
   function escapeHtml(s) {
-    var d = document.createElement("div");
-    d.textContent = s;
-    return d.innerHTML;
+    return String(s === null || s === undefined ? "" : s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
   }
 
   function toNum(v) {
@@ -44,29 +49,47 @@
 
   function matchPricingRule(cost, rules) {
     if (!isFinite(cost) || !Array.isArray(rules)) return null;
-    for (var i = 0; i < rules.length; i++) {
-      var r = rules[i];
-      var from = toNum(r.from);
-      var to = (r.to === null || r.to === undefined) ? null : toNum(r.to);
-      var vp = toNum(r.value_percent);
-      if (from === null || vp === null) continue;
-      if (cost < from) continue;
-      if (to === null) return { value_percent: vp };
-      if (cost <= to) return { value_percent: vp };
+    // Как в WO (matchRule) и на сервере (match_pricing_rule): cost между
+    // ступенями (5.004 при ступенях … – 5.00 и 5.01 – …) берёт ступень по
+    // значению, округлённому до цента — тем же способом, что round2 на
+    // сервере (round(cost + 1e-12, 2): половина цента — вверх, 1.005 → 1.01).
+    var candidates = [cost, Number((cost + 1e-12).toFixed(2))];
+    for (var c = 0; c < candidates.length; c++) {
+      for (var i = 0; i < rules.length; i++) {
+        var r = rules[i];
+        var from = toNum(r.from);
+        var to = (r.to === null || r.to === undefined) ? null : toNum(r.to);
+        var vp = toNum(r.value_percent);
+        if (from === null || vp === null) continue;
+        if (candidates[c] < from) continue;
+        if (to === null) return { value_percent: vp };
+        if (candidates[c] <= to) return { value_percent: vp };
+      }
     }
     return null;
   }
 
-  function calcPriceFromCost(cost, pricing) {
-    if (!pricing || !Array.isArray(pricing.rules) || !pricing.rules.length) return null;
-    if (!isFinite(cost) || cost <= 0) return null;
-    var rule = matchPricingRule(cost, pricing.rules);
-    if (!rule) return null;
+  /* Автоцена запчасти для кастомера без своей шкалы — то же правило, что у
+     work order (сервер: price_part): фиксированная Selling price запчасти,
+     иначе дефолтная шкала от average cost; шкала не подошла — по cost; cost
+     не задан — цены нет. source: fixed | matrix | cost | none. */
+  function autoPriceFor(part) {
+    var fixed = toNum(part.selling_price);
+    if (part.has_selling_price && fixed !== null && fixed > 0) {
+      return { price: round2(fixed), source: "fixed" };
+    }
+    var cost = toNum(part.average_cost);
+    if (cost === null || cost <= 0) return { price: 0, source: "none" };
+
+    var pricing = (typeof PRICING_RULES !== "undefined") ? PRICING_RULES : null;
+    var rule = (pricing && Array.isArray(pricing.rules)) ? matchPricingRule(cost, pricing.rules) : null;
+    if (!rule) return { price: round2(cost), source: "cost" };
+
     var vp = rule.value_percent / 100;
-    if (pricing.mode === "markup") return round2(cost * (1 + vp));
+    if (pricing.mode === "markup") return { price: round2(cost * (1 + vp)), source: "matrix" };
     var denom = 1 - vp;
-    if (denom <= 0) return round2(cost);
-    return round2(cost / denom);
+    if (denom <= 0) return { price: round2(cost), source: "matrix" };
+    return { price: round2(cost / denom), source: "matrix" };
   }
 
   /* ── estimate summary (read-only) ── */
@@ -172,6 +195,59 @@
     inp.title = on
       ? "Custom price — saved with the preset. Clear the field to return to automatic pricing."
       : "";
+    renderPriceFlags(tr);
+  }
+
+  /* Откуда цена строки и не ниже ли она себестоимости — бейджи под полем
+     Price (те же, что на карточке темплейта). */
+  var PRICE_FLAGS = {
+    custom: {
+      cls: "text-bg-warning", text: "custom price",
+      title: "Typed into this template: saved with it and used in work orders as is. Clear the field to return to automatic pricing.",
+    },
+    fixed: {
+      cls: "text-bg-light border", text: "fixed price",
+      title: "The part's own Selling price from the catalog. It does not follow the average cost — change or remove it in Parts (edit the part).",
+    },
+    cost: {
+      cls: "text-bg-warning", text: "no markup",
+      title: "No tier of the pricing scale covers this cost. Work orders created by a mechanic or in the mobile app price the part at cost; the office work order editor leaves the price empty. Add a tier for this cost in Settings → Parts & Pricing.",
+    },
+    none: {
+      cls: "text-bg-warning", text: "no price",
+      title: "The part has no average cost, so no price can be calculated: a work order gets $0. Receive the part, set its Selling price, or type a price here.",
+    },
+    snapshot: {
+      cls: "text-bg-light border", text: "not in catalog",
+      title: "Not a catalog part (a free-text line, or the part was deleted or deactivated). The price saved with the template is shown: the office work order editor uses it, a work order created by a mechanic gets this line without a price.",
+    },
+  };
+
+  function flagBadge(def, title) {
+    return '<span class="badge ' + def.cls + ' me-1" title="' + escapeHtml(title || def.title) + '">' +
+      escapeHtml(def.text) + '</span>';
+  }
+
+  function renderPriceFlags(tr) {
+    var box = tr.querySelector(".pp-price-flags");
+    if (!box) return;
+    var html = "";
+    var pinned = tr.dataset.priceOverridden === "1";
+    var source = pinned ? "custom" : (tr.dataset.autoSource || "");
+    if (PRICE_FLAGS[source] && source !== "matrix") html += flagBadge(PRICE_FLAGS[source]);
+
+    // «Ниже себестоимости» — только для запчасти из каталога с известной
+    // текущей cost: у строки не из каталога в поле Cost лежит старый снимок.
+    var live = tr.dataset.autoSource || "";
+    var price = toNum(tr.querySelector(".pp-price").value);
+    var cost = toNum(tr.querySelector(".pp-cost").value);
+    if (live && live !== "none" && live !== "snapshot" && price !== null && cost !== null && cost > 0 && price < round2(cost)) {
+      html += flagBadge(
+        { cls: "text-bg-danger", text: "below cost" },
+        "Lower than the part's current average cost ($" + money(cost) + "): every sale at this price loses money."
+      );
+    }
+    box.innerHTML = html;
   }
 
   function collectPartsFromDOM() {
@@ -189,14 +265,21 @@
         });
         next = next.nextElementSibling;
       }
+      // Пустое поле цены — не «закреплено $0»: строка остаётся на автоцене
+      // (Enter в форме отправляет её без blur, который снимает фиксацию).
+      var priceValue = toNum(r.querySelector(".pp-price").value);
+      var pinned = r.dataset.priceOverridden === "1" && priceValue !== null;
+      if (priceValue === null) priceValue = toNum(r.dataset.autoPrice);
+      // Автоцены нет (строка не из каталога) — явный 0, как и раньше.
+      if (priceValue === null) priceValue = 0;
       partsState.push({
         part_id: r.querySelector(".pp-part-id").value || null,
         part_number: r.querySelector(".pp-part-number").value.trim(),
         description: r.querySelector(".pp-description").value.trim(),
         qty: toNum(r.querySelector(".pp-qty").value) || 1,
         cost: toNum(r.querySelector(".pp-cost").value) || 0,
-        price: toNum(r.querySelector(".pp-price").value) || 0,
-        price_overridden: r.dataset.priceOverridden === "1",
+        price: priceValue,
+        price_overridden: pinned,
         misc_charges: miscCharges.length ? miscCharges : undefined,
       });
     }
@@ -221,8 +304,13 @@
     var partNum = (data && data.part_number) || "";
     var desc = (data && data.description) || "";
     var qty = (data && data.qty) || 1;
-    var cost = (data && data.cost) || "";
-    var price = (data && data.price) || "";
+    // Cost \u0438 Price \u2014 \u0434\u0435\u043d\u044c\u0433\u0438: \u043f\u043e\u043a\u0430\u0437\u044b\u0432\u0430\u0435\u043c \u0441 \u0446\u0435\u043d\u0442\u0430\u043c\u0438 (average cost \u0445\u0440\u0430\u043d\u0438\u0442\u0441\u044f \u0442\u043e\u0447\u043d\u0435\u0435).
+    var costNum = data ? toNum(data.cost) : null;
+    var cost = (costNum !== null && costNum > 0) ? money(costNum) : "";
+    var priceNum = data ? toNum(data.price) : null;
+    // Закреплённые $0 (бесплатная позиция) показываем как 0.00: пустое поле
+    // при сохранении означает «вернуть автоцену».
+    var price = (priceNum !== null && (priceNum > 0 || (data && data.price_overridden))) ? money(priceNum) : "";
     var lineTotal = (toNum(qty) || 0) * (toNum(price) || 0);
 
     tr.innerHTML =
@@ -230,8 +318,9 @@
       '<input class="form-control form-control-sm pp-part-number" value="' + escapeHtml(partNum) + '" maxlength="64" autocomplete="off" placeholder="Search parts\u2026"></td>' +
       '<td class="p-1"><input class="form-control form-control-sm pp-description" value="' + escapeHtml(desc) + '" maxlength="200" autocomplete="off"></td>' +
       '<td class="p-1"><input class="form-control form-control-sm pp-qty" value="' + qty + '" inputmode="numeric" min="1"></td>' +
-      '<td class="p-1"><input class="form-control form-control-sm pp-cost" value="' + (cost || '') + '" readonly tabindex="-1"></td>' +
-      '<td class="p-1"><input class="form-control form-control-sm pp-price" value="' + (price || '') + '" inputmode="decimal" step="0.01" min="0" placeholder="0.00"></td>' +
+      '<td class="p-1"><input class="form-control form-control-sm pp-cost" value="' + cost + '" readonly tabindex="-1"></td>' +
+      '<td class="p-1"><input class="form-control form-control-sm pp-price" value="' + price + '" inputmode="decimal" step="0.01" min="0" placeholder="0.00">' +
+      '<div class="pp-price-flags"></div></td>' +
       '<td class="p-1 align-middle pp-line-total">$' + money(lineTotal) + '</td>' +
       '<td class="p-1 text-center"><button type="button" class="btn btn-sm btn-outline-danger pp-delete">&times;</button></td>';
 
@@ -239,7 +328,13 @@
 
     var autoPrice = (data && data.auto_price != null) ? toNum(data.auto_price) : null;
     if (autoPrice !== null) tr.dataset.autoPrice = String(autoPrice);
-    if (data && data.price_overridden) markPriceOverridden(tr, true);
+    // \u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a \u0430\u0432\u0442\u043e\u0446\u0435\u043d\u044b \u0441 \u0441\u0435\u0440\u0432\u0435\u0440\u0430; \u00absnapshot\u00bb \u2014 \u0437\u0430\u043f\u0447\u0430\u0441\u0442\u0438 \u043d\u0435\u0442 \u0432 \u043a\u0430\u0442\u0430\u043b\u043e\u0433\u0435.
+    // Строка не из каталога остаётся такой и с закреплённой ценой (автоцены
+    // у неё нет) — после снятия фиксации бейдж «not in catalog» на месте.
+    if (data && data.auto_source) tr.dataset.autoSource = String(data.auto_source);
+    else if (data && (data.price_source === "snapshot" ||
+        (data.price_source === "pinned" && data.auto_price == null))) tr.dataset.autoSource = "snapshot";
+    markPriceOverridden(tr, !!(data && data.price_overridden));
 
     // Render misc charge rows for this part
     var miscCharges = (data && data.misc_charges) || [];
@@ -318,7 +413,16 @@
       updatePartsFromTable();
     } else if (e.target.classList.contains("pp-price")) {
       var priceTr = e.target.closest("tr.preset-part-row");
-      if (priceTr) markPriceOverridden(priceTr, true);
+      if (priceTr) {
+        // Закрепляем только цену, которая отличается от автоцены: набрать
+        // то же число заново (или стереть поле) — не «своя цена».
+        var typed = toNum(e.target.value);
+        var auto = toNum(priceTr.dataset.autoPrice);
+        // Автоцены нет ($0) — набранный 0 считаем своей ценой: позиция
+        // останется бесплатной, даже когда у запчасти появится cost.
+        var sameAsAuto = typed !== null && auto !== null && auto > 0 && Math.abs(typed - auto) < 0.005;
+        markPriceOverridden(priceTr, typed !== null && !sameAsAuto);
+      }
       updatePartsFromTable();
     }
   });
@@ -330,7 +434,7 @@
     var tr = e.target.closest("tr.preset-part-row");
     if (!tr) return;
     var autoPrice = toNum(tr.dataset.autoPrice);
-    if (autoPrice !== null) e.target.value = money(autoPrice);
+    if (autoPrice !== null && autoPrice > 0) e.target.value = money(autoPrice);
     markPriceOverridden(tr, false);
     updatePartsFromTable();
   });
@@ -422,27 +526,27 @@
     // Fill cost
     var costInput = activeSearchRow.querySelector(".pp-cost");
     var avgCost = toNum(it.average_cost);
-    if (costInput && avgCost !== null) {
-      costInput.value = money(avgCost);
+    if (costInput) {
+      // Без cost в ответе поле очищаем — иначе останется cost прежнего парта.
+      costInput.value = (avgCost !== null && avgCost > 0) ? money(avgCost) : "";
     }
 
-    // Auto-fill price: use selling_price if set, otherwise calc from pricing rules
+    // Auto-fill price exactly like a work order does: the part's fixed selling
+    // price, otherwise the default pricing scale on the current average cost.
     var priceInput = activeSearchRow.querySelector(".pp-price");
     if (priceInput) {
-      var autoPrice = null;
-      if (it.has_selling_price && toNum(it.selling_price) > 0) {
-        autoPrice = toNum(it.selling_price);
-      } else {
-        var cost = toNum(it.average_cost);
-        if (cost !== null && cost > 0 && typeof PRICING_RULES !== "undefined" && PRICING_RULES) {
-          autoPrice = calcPriceFromCost(cost, PRICING_RULES);
-        }
-      }
-      if (autoPrice !== null) {
-        priceInput.value = money(autoPrice);
-        activeSearchRow.dataset.autoPrice = String(autoPrice);
-      } else {
+      if (it.average_cost === undefined && it.selling_price === undefined) {
+        // Поиск отдал парт без денег (у пользователя нет права видеть
+        // cost/цены): автоцену здесь не знаем — сервер посчитает её сам,
+        // когда темплейт откроют или применят. Цену прежнего парта убираем.
+        priceInput.value = "";
         delete activeSearchRow.dataset.autoPrice;
+        delete activeSearchRow.dataset.autoSource;
+      } else {
+        var auto = autoPriceFor(it);
+        priceInput.value = auto.price > 0 ? money(auto.price) : "";
+        activeSearchRow.dataset.autoPrice = String(auto.price);
+        activeSearchRow.dataset.autoSource = auto.source;
       }
       // Новый парт в строке — цена снова автоматическая.
       markPriceOverridden(activeSearchRow, false);

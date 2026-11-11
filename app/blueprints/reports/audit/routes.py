@@ -3,18 +3,18 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 
 from bson import ObjectId
-from flask import current_app, jsonify, make_response, render_template, request, session
+from flask import current_app, has_request_context, jsonify, make_response, render_template, request, session
 
 from app.blueprints.main.routes import NAV_ITEMS
 from app.blueprints.reports import reports_bp
 from app.extensions import get_master_db, get_mongo_client
-from app.utils.auth import SESSION_TENANT_ID, SESSION_SHOP_ID, login_required
+from app.utils.auth import SESSION_TENANT_ID, login_required
 from app.utils.date_filters import build_date_range_filters
 from app.utils.layout import render_internal_page
 from app.utils.pagination import get_sort_params
 from app.utils.pdf_utils import render_chart_to_base64, render_html_to_pdf
 from app.utils.permissions import filter_nav_items, has_permission, permission_required
-from app.utils.user_names import display_name_for, load_user_names, tenant_values_for_shop, user_display_name
+from app.utils.user_names import display_name_for, load_user_names, tenant_values_for_shop
 
 
 STANDARD_REPORT_TABS = {
@@ -1044,16 +1044,35 @@ def _wo_parts_cost(wo: dict) -> float:
     return _round2(cost_total)
 
 
-def _compute_payroll_totals(shop_db, shop_id, date_from: str, date_to: str) -> dict:
-    """Compute labor payroll cost for the period (salary + uAttend hourly).
+def _ascii_text(value, limit: int = 200) -> str:
+    """Чужой текст (ошибка uAttend) для payroll_warning: только ASCII — его
+    печатает PDF-движок (cp1252) — и не длиннее limit (сетевые ошибки
+    тащат за собой repr объектов)."""
+    text = str(value or "").replace("—", "-").replace("–", "-")
+    text = " ".join(text.encode("ascii", "replace").decode("ascii").split())
+    return text if len(text) <= limit else text[: limit - 3].rstrip() + "..."
 
-    Mirrors the logic of the standalone Timecard / Salary Report:
-      • Internal users with pay_type=salary: weekly_amount × weeks_in_period.
-      • uAttend employees marked `selected=True` with hourly_rate set:
-            rate × hours_from_/reports/punch.
-      • Matched pairs (AI-detected) are NOT double-counted: if a uAttend
-        employee maps to an internal user, the uAttend hourly cost is
-        skipped (salary takes precedence).
+
+def _payroll_tenant_values(shop: dict | None = None) -> list:
+    """Тенант для payroll: из документа магазина (он уже проверен на
+    принадлежность тенанту сессии и доступен вне запроса), иначе — сессии."""
+    values = tenant_values_for_shop(shop)
+    if values:
+        return values
+    return _tenant_variants() if has_request_context() else []
+
+
+def _compute_payroll_totals(shop_db, shop_id, date_from: str, date_to: str, tenant_values=None) -> dict:
+    """Payroll периода для General Revenue — те же цифры, что в Timecard / Salary.
+
+    Тонкая обёртка над ``reports.services.payroll.compute_payroll``: расчёт
+    один на оба отчёта, поэтому суммы не расходятся. Здесь только
+    раскладка под строки General Revenue:
+      • salary — недельная ставка × недель в периоде (строки с $0 не нужны);
+      • hourly — часы uAttend × ставка; сотрудник с часами, но без ставки,
+        попадает строкой $0 с пояснением, чтобы пропажа денег была видна;
+      • без корректного периода (All Time, полуоткрытый custom) payroll не
+        считается — недельную ставку не на что умножать.
 
     Returns dict {
         "weeks_in_period": float,
@@ -1061,11 +1080,15 @@ def _compute_payroll_totals(shop_db, shop_id, date_from: str, date_to: str) -> d
         "hourly_total": float,
         "labor_total": float,
         "total_hours": float,
-        "employees": [{name, pay_type, rate_or_salary, hours, total}],
+        "employees": [{name, pay_type, rate_or_salary, hours, total, note}],
         "integration_status": "none|disabled|configured",
+        "uattend_error": str | None,  # часы uAttend не получены
+        "has_period": bool,
         "available": bool,  # False if nothing usable was found
     }
     """
+    from app.blueprints.reports.services.payroll import compute_payroll, weeks_in_period
+
     out = {
         "weeks_in_period": 0.0,
         "salary_total": 0.0,
@@ -1074,186 +1097,80 @@ def _compute_payroll_totals(shop_db, shop_id, date_from: str, date_to: str) -> d
         "total_hours": 0.0,
         "employees": [],
         "integration_status": "none",
+        "uattend_error": None,
+        "has_period": False,
         "available": False,
     }
 
-    if not date_from or not date_to:
+    if weeks_in_period(date_from, date_to) <= 0:
         return out
 
-    try:
-        from datetime import date as _date
-        _df = _date.fromisoformat(date_from)
-        _dt = _date.fromisoformat(date_to)
-        if _dt < _df:
-            return out
-        days = (_dt - _df).days + 1
-        weeks = round(days / 7.0, 4)
-    except (TypeError, ValueError):
-        return out
-
-    out["weeks_in_period"] = weeks
-
-    # ── Internal users (excluding owner) ───────────────────────────────
-    master = get_master_db()
-    tenant_id_raw = session.get(SESSION_TENANT_ID)
-    tenant_values = []
-    if tenant_id_raw:
-        tenant_values.append(tenant_id_raw)
-        try:
-            tenant_values.append(ObjectId(str(tenant_id_raw)))
-        except Exception:
-            pass
-        tenant_values.append(str(tenant_id_raw))
-
-    internal_users = list(master.users.find(
-        {
-            "tenant_id": {"$in": tenant_values},
-            "role": {"$ne": "owner"},
-            "is_active": True,
-        },
-        {
-            "first_name": 1, "last_name": 1, "name": 1, "email": 1,
-            "role": 1, "pay_type": 1, "salary_amount": 1,
-        },
-    ))
-
-    # ── uAttend integration ────────────────────────────────────────────
-    from app.utils.integrations.storage import (
-        get_integration, get_decrypted_api_key,
-    )
-    from app.utils.integrations.uattend_client import (
-        UAttendClient, UAttendError,
+    payroll = compute_payroll(
+        get_master_db(),
+        shop_db,
+        shop_id,
+        tenant_values if tenant_values is not None else _payroll_tenant_values(),
+        date_from,
+        date_to,
     )
 
-    emp_rows: list[dict] = []
-    hours_by_uid: dict[int, float] = {}
-    ai_match_map: dict[int, dict] = {}
+    out["has_period"] = True
+    out["weeks_in_period"] = payroll["weeks_in_period"]
+    out["integration_status"] = payroll["integration_status"]
+    out["uattend_error"] = payroll["integration_error"]
 
-    doc = get_integration(shop_db, shop_id, "uattend")
-    if doc:
-        if not doc.get("enabled"):
-            out["integration_status"] = "disabled"
-        else:
-            out["integration_status"] = "configured"
-            emp_rows = list(shop_db.uattend_employees.find(
-                {
-                    "shop_id": shop_id,
-                    "is_active": True,
-                    "selected": True,
-                },
-                {
-                    "uattend_user_id": 1, "email": 1,
-                    "first_name": 1, "last_name": 1,
-                    "hourly_rate": 1,
-                },
-            ))
-            try:
-                api_key = get_decrypted_api_key(shop_db, shop_id, "uattend")
-            except Exception:  # noqa: BLE001
-                api_key = ""
-            if api_key and emp_rows:
-                try:
-                    uids = [int(r.get("uattend_user_id")) for r in emp_rows]
-                    report = UAttendClient(api_key).get_punches(
-                        date_from, date_to, user_ids=uids,
-                    )
-                    hours_by_uid = _aggregate_uattend_hours(report)
-                except (UAttendError, Exception):  # noqa: BLE001
-                    hours_by_uid = {}
-
-            # AI match to avoid double counting. Кэш — по отпечатку
-            # состава: изменение юзеров/сотрудников ведёт к пересчёту.
-            try:
-                from app.utils.integrations.uattend_match import get_match_map
-
-                internal_for_ai = [
-                    {
-                        "internal_id": str(u.get("_id")),
-                        "name": (u.get("name") or "").strip() or (
-                            f"{u.get('first_name', '') or ''} "
-                            f"{u.get('last_name', '') or ''}".strip()
-                        ),
-                        "email": u.get("email") or "",
-                    }
-                    for u in internal_users
-                ]
-                uattend_for_ai = [
-                    {
-                        "uattend_user_id": r.get("uattend_user_id"),
-                        "name": (
-                            f"{r.get('first_name', '') or ''} "
-                            f"{r.get('last_name', '') or ''}".strip()
-                            or (r.get("email") or "")
-                        ),
-                        "email": r.get("email") or "",
-                    }
-                    for r in emp_rows
-                ]
-                ai_match_map = get_match_map(
-                    shop_db, shop_id, internal_for_ai, uattend_for_ai
-                )
-            except Exception:  # noqa: BLE001
-                current_app.logger.exception("uAttend employee match failed")
-                ai_match_map = {}
-
-    matched_uattend_uids = {int(k) for k in ai_match_map.keys()}
-
-    # ── Build per-employee totals ──────────────────────────────────────
+    # NOTE: ASCII-only notes — они печатаются в PDF (xhtml2pdf/cp1252).
     employees: list[dict] = []
+    hourly_hours = 0.0
+    for row in payroll["rows"]:
+        if row["pay_type"] == "salary":
+            if not row["total"] or row["total"] <= 0:
+                continue
+            note = ""
+            if row.get("ignored_hourly_rate"):
+                note = (
+                    f"Also has a uAttend rate of ${row['ignored_hourly_rate']:,.2f}/hr, but Pay type "
+                    "is Salary - paid the weekly salary, not by the hour. To pay by punches, "
+                    "set Pay type to Hourly in Settings - Users."
+                )
+            employees.append({
+                "name": row["name"],
+                "pay_type": "salary",
+                "rate_or_salary": row["salary_amount"],
+                "hours": None,
+                "total": row["total"],
+                "note": note,
+            })
+            continue
 
-    for u in internal_users:
-        pay_type = (u.get("pay_type") or "salary").lower()
-        if pay_type != "salary":
-            continue
-        try:
-            weekly = float(u.get("salary_amount") or 0)
-        except (TypeError, ValueError):
-            weekly = 0.0
-        if weekly <= 0:
-            continue
-        name = (u.get("name") or "").strip() or (
-            f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()
-        ) or "—"
-        period_total = _round2(weekly * weeks)
-        out["salary_total"] = _round2(out["salary_total"] + period_total)
-        employees.append({
-            "name": name,
-            "pay_type": "salary",
-            "rate_or_salary": weekly,
-            "hours": None,
-            "total": period_total,
-        })
+        hours = row.get("hours")
+        if row.get("total") is not None and row["total"] > 0:
+            hourly_hours += hours or 0.0
+            employees.append({
+                "name": row["name"],
+                "pay_type": "hourly",
+                "rate_or_salary": row["hourly_rate"],
+                "hours": _round2(hours),
+                "total": row["total"],
+                "note": "",
+            })
+        elif hours and row.get("hourly_rate") is None:
+            employees.append({
+                "name": row["name"],
+                "pay_type": "hourly",
+                "rate_or_salary": None,
+                "hours": _round2(hours),
+                "total": 0.0,
+                "note": (
+                    "Clocked hours in uAttend, but no hourly rate is set in "
+                    "Settings - Integrations, so this pay is counted as $0."
+                ),
+            })
 
-    for r in emp_rows:
-        try:
-            uid = int(r.get("uattend_user_id"))
-        except (TypeError, ValueError):
-            continue
-        if uid in matched_uattend_uids:
-            continue  # Already counted via the matched internal salary user.
-        try:
-            rate = float(r.get("hourly_rate")) if r.get("hourly_rate") is not None else None
-        except (TypeError, ValueError):
-            rate = None
-        hours = hours_by_uid.get(uid)
-        if not rate or not hours:
-            continue
-        name = (
-            f"{r.get('first_name', '') or ''} {r.get('last_name', '') or ''}".strip()
-            or (r.get("email") or "—")
-        )
-        line_total = _round2(rate * hours)
-        out["hourly_total"] = _round2(out["hourly_total"] + line_total)
-        out["total_hours"] = _round2(out["total_hours"] + hours)
-        employees.append({
-            "name": name,
-            "pay_type": "hourly",
-            "rate_or_salary": rate,
-            "hours": _round2(hours),
-            "total": line_total,
-        })
-
-    out["labor_total"] = _round2(out["salary_total"] + out["hourly_total"])
+    out["salary_total"] = _round2(payroll["totals"]["salary"])
+    out["hourly_total"] = _round2(payroll["totals"]["hourly"])
+    out["labor_total"] = _round2(payroll["totals"]["grand"])
+    out["total_hours"] = _round2(hourly_hours)
     out["employees"] = employees
     out["available"] = bool(employees)
     return out
@@ -1276,7 +1193,12 @@ def _apply_live_mechanic_names(buckets: dict, name_key: str, shop: dict | None =
         bucket[name_key] = display_name_for(people, key, bucket.get(name_key), mark_inactive=True)
 
 
-def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=None, exclude_customer_ids=None, chart_bucket="month"):
+def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=None, exclude_customer_ids=None, chart_bucket="month", shop=None, show_employee_pay=True):
+    # ``shop`` — документ активного магазина: по нему определяется тенант
+    # для payroll (без него — тенант сессии).
+    # ``show_employee_pay`` — печатать ли строки по сотрудникам (имя, ставка,
+    # часы). Это данные Timecard / Salary: роут передаёт сюда право
+    # reports.view_payroll; итоги payroll видны всем с reports.view_financial.
     # --- Sales (Work Orders) ---
     wo_query = {
         "shop_id": shop_id,
@@ -1462,19 +1384,42 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=Non
     parts_profit = _round2(sales_parts_sale - sales_parts_cost)
 
     # --- Labor Payroll (only when no customer filter is applied) ─────────
+    # Те же цифры, что в Timecard / Salary (общий сервис payroll).
+    # payroll_warning — почему payroll неполный или не посчитан: показывается
+    # баннером (веб), строкой (PDF), карточкой (мобильное приложение) и в
+    # пояснениях секций. Только ASCII — текст попадает в PDF.
     payroll = None
+    payroll_warning = ""
     if not customer_filter_active:
         try:
             payroll = _compute_payroll_totals(
                 shop_db, shop_id,
                 date_ctx.get("date_from") or "",
                 date_ctx.get("date_to") or "",
+                tenant_values=_payroll_tenant_values(shop),
             )
-        except Exception as exc:  # noqa: BLE001
-            current_app.logger.warning(
-                "Payroll totals failed for General Revenue: %s", exc
-            )
+        except Exception:  # noqa: BLE001 — отчёт о выручке важнее payroll
+            current_app.logger.exception("Payroll totals failed for General Revenue")
             payroll = None
+            payroll_warning = (
+                "Payroll could not be calculated because of an internal error, "
+                "so it is counted as $0 here. Try again later."
+            )
+        if payroll is not None:
+            if not payroll.get("has_period"):
+                payroll_warning = (
+                    "Payroll is counted per period (weekly salaries x weeks + uAttend hours) "
+                    "and needs both a start and an end date. All Time or an open-ended "
+                    "Custom range has none, so payroll is counted as $0 - pick a preset "
+                    "or fill in both dates to include it."
+                )
+            elif payroll.get("uattend_error"):
+                payroll_warning = (
+                    f"uAttend hours could not be loaded ({_ascii_text(payroll['uattend_error'])}). "
+                    "Hourly pay is NOT included in payroll here - "
+                    + ("only salaries are counted. " if payroll.get("available") else "payroll is counted as $0. ")
+                    + "Open Reports - Timecard / Salary to check the uAttend connection."
+                )
     labor_cost = _round2((payroll or {}).get("labor_total") or 0)
     net_after_labor = _round2(net_revenue - labor_cost) if payroll and payroll.get("available") else net_revenue
 
@@ -1558,7 +1503,12 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=Non
         rows.append(_section(
             "Money Out — Payroll",
             (f"What employees were paid for this period: weekly salaries x "
-             f"{payroll['weeks_in_period']:g} weeks + hourly pay from the uAttend time clock."),
+             f"{payroll['weeks_in_period']:g} weeks + hourly pay from the uAttend time clock. "
+             "Same numbers as Reports - Timecard / Salary."
+             + ("" if show_employee_pay else
+                " The per-employee breakdown is shown to users with the "
+                "'View Timecard / Salary report' permission.")
+             + (f" WARNING: {payroll_warning}" if payroll_warning else "")),
         ))
         rows.append(_row(
             f"Salaries (x {payroll['weeks_in_period']:g} weeks)",
@@ -1573,23 +1523,27 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=Non
             "Total payroll", _round2(payroll["labor_total"]), "result",
             "Salaries + hourly pay for the period.", emphasis=True,
         ))
-        for emp in payroll["employees"]:
+        for emp in (payroll["employees"] if show_employee_pay else []):
             if emp["pay_type"] == "salary":
                 label = (
                     f"{emp['name']} — salary "
                     f"${emp['rate_or_salary']:,.2f}/wk"
                 )
+            elif emp["rate_or_salary"] is None:
+                label = f"{emp['name']} — {emp['hours']:.2f}h, hourly rate not set"
             else:
                 label = (
                     f"{emp['name']} — "
                     f"{emp['hours']:.2f}h x ${emp['rate_or_salary']:,.2f}/hr"
                 )
-            rows.append(_row(label, emp["total"], "info", "", indent=True))
+            rows.append(_row(label, emp["total"], "info", emp.get("note") or "", indent=True))
 
     # --- Bottom line: the same numbers as above, laid out as arithmetic --
+    # Причина — конкретная (payroll_warning), если известна; при посчитанном
+    # payroll предупреждение уже стоит в описании секции Payroll выше.
     payroll_note = (
         "" if payroll_ok
-        else " Payroll is unavailable here, so it is counted as $0."
+        else " " + (payroll_warning or "Payroll is unavailable here, so it is counted as $0.")
     )
     rows.append(_section(
         "Bottom Line — Cash view (Parts Orders basis)",
@@ -1654,9 +1608,16 @@ def _report_general_revenue(shop_db, shop_id, date_ctx, include_customer_ids=Non
         ],
     }
 
+    summary = {}
+    if payroll_warning:
+        # Ключ есть только при проблеме: мобильное приложение рисует карточку
+        # на каждый скалярный ключ summary.
+        summary["payroll_warning"] = payroll_warning
+
     return {
         "title": "General Revenue Report",
         "summary": {
+            **summary,
             "sales_revenue": sales_revenue,
             "sales_labor": sales_labor,
             "parts_sale": sales_parts_sale,
@@ -2035,6 +1996,9 @@ def _build_standard_reports_context(selected_tab: str, args, *, skip_report_data
             include_customer_ids,
             exclude_customer_ids,
             chart_bucket=chart_bucket,
+            shop=shop,
+            # Кто сколько получает — только с правом на Timecard / Salary.
+            show_employee_pay=has_permission("reports.view_payroll"),
         )
 
     return {
@@ -2193,6 +2157,14 @@ def standard_report_pdf(report_key: str):
 @login_required
 @permission_required("reports.view_payroll")
 def timecard_salary_page():
+    """Timecard / Salary: зарплата по сотрудникам за период.
+
+    Расчёт — ``reports.services.payroll.compute_payroll``, общий с payroll в
+    General Revenue. Страница всегда ходит в uAttend за свежими punches
+    (``refresh_hours``) и этим же обновляет кэш часов для General Revenue.
+    """
+    from app.blueprints.reports.services.payroll import compute_payroll
+
     layout_nav = filter_nav_items(NAV_ITEMS)
 
     # ── Date range (default: this month) ─────────────────────────────────
@@ -2200,378 +2172,36 @@ def timecard_salary_page():
     date_from = df["date_from"]  # YYYY-MM-DD or ""
     date_to = df["date_to"]
     debug_mode = request.args.get("debug") in ("1", "true", "yes")
-    debug_payload = {"request": None, "response": None}
 
-    # ── Load internal users (excluding owner role) ───────────────────────
     master = get_master_db()
-    tenant_id_raw = session.get(SESSION_TENANT_ID)
-    tenant_values = []
-    if tenant_id_raw:
-        tenant_values.append(tenant_id_raw)
-        try:
-            tenant_values.append(ObjectId(str(tenant_id_raw)))
-        except Exception:
-            pass
-        tenant_values.append(str(tenant_id_raw))
+    shop = _get_active_shop(master)
+    shop_db = _get_shop_db(shop)
 
-    user_query = {
-        "tenant_id": {"$in": tenant_values},
-        "role": {"$ne": "owner"},
-        "is_active": True,
-    }
-    users_cur = master.users.find(
-        user_query,
-        {
-            "first_name": 1, "last_name": 1, "name": 1, "email": 1,
-            "role": 1, "pay_type": 1, "salary_amount": 1,
-        },
-    ).sort([("last_name", 1), ("first_name", 1)])
-    internal_users = list(users_cur)
-
-    # ── Resolve current shop & uAttend integration ───────────────────────
-    integration_status = "none"  # none | disabled | configured
-    rates_by_email: dict[str, float] = {}
-    hours_by_email: dict[str, float] = {}
-    integration_error: str | None = None
-    uattend_emp_rows: list[dict] = []
-    hours_by_uid: dict[int, float] = {}
-    # uattend_user_id -> {"internal_id", "internal_name", "internal_email", "confidence"}
-    ai_match_map: dict[int, dict] = {}
-
-    shop_oid = None
-    try:
-        shop_oid = ObjectId(str(session.get(SESSION_SHOP_ID)))
-    except Exception:
-        shop_oid = None
-
-    if shop_oid is not None:
-        shop = master.shops.find_one({"_id": shop_oid})
-        db_name = (shop or {}).get("db_name") if shop else None
-        if db_name:
-            client = get_mongo_client()
-            shop_db = client[str(db_name)]
-
-            from app.utils.integrations.storage import (
-                get_integration, get_decrypted_api_key,
-            )
-            from app.utils.integrations.uattend_client import (
-                UAttendClient, UAttendError,
-            )
-
-            doc = get_integration(shop_db, shop_oid, "uattend")
-            if doc:
-                if not doc.get("enabled"):
-                    integration_status = "disabled"
-                else:
-                    integration_status = "configured"
-                    # Build rate / id maps from cached uattend_employees.
-                    # Only employees that were explicitly selected (checkbox)
-                    # in Settings → Integrations should appear in this report.
-                    emp_rows = list(
-                        shop_db.uattend_employees.find(
-                            {
-                                "shop_id": shop_oid,
-                                "is_active": True,
-                                "selected": True,
-                            },
-                            {
-                                "uattend_user_id": 1, "email": 1,
-                                "first_name": 1, "last_name": 1,
-                                "hourly_rate": 1, "selected": 1,
-                            },
-                        )
-                    )
-                    uattend_emp_rows = emp_rows
-                    uid_to_email: dict[int, str] = {}
-                    for r in emp_rows:
-                        email = (r.get("email") or "").strip().lower()
-                        if not email:
-                            continue
-                        uid = r.get("uattend_user_id")
-                        try:
-                            uid_to_email[int(uid)] = email
-                        except (TypeError, ValueError):
-                            continue
-                        rate = r.get("hourly_rate")
-                        if rate is not None:
-                            try:
-                                rates_by_email[email] = float(rate)
-                            except (TypeError, ValueError):
-                                pass
-
-                    # ── AI match: internal users ↔ uAttend employees ───
-                    # Кэш — по отпечатку состава: изменение юзеров или
-                    # uAttend-сотрудников автоматически даёт пересчёт.
-                    try:
-                        from app.utils.integrations.uattend_match import (
-                            get_match_map,
-                        )
-
-                        internal_for_ai = []
-                        for u in internal_users:
-                            nm = (u.get("name") or "").strip() or (
-                                f"{u.get('first_name', '') or ''} "
-                                f"{u.get('last_name', '') or ''}".strip()
-                            )
-                            internal_for_ai.append({
-                                "internal_id": str(u.get("_id")),
-                                "name": nm,
-                                "email": u.get("email") or "",
-                            })
-                        uattend_for_ai = []
-                        for r in emp_rows:
-                            nm = (
-                                f"{r.get('first_name', '') or ''} "
-                                f"{r.get('last_name', '') or ''}".strip()
-                                or (r.get("email") or "")
-                            )
-                            uattend_for_ai.append({
-                                "uattend_user_id": r.get("uattend_user_id"),
-                                "name": nm,
-                                "email": r.get("email") or "",
-                            })
-
-                        ai_match_map = get_match_map(
-                            shop_db, shop_oid, internal_for_ai, uattend_for_ai
-                        )
-                    except Exception as exc:  # noqa: BLE001
-                        current_app.logger.warning(
-                            "Employee AI match failed: %s", exc
-                        )
-                        ai_match_map = {}
-
-                    # Pull punches for the date range (if dates are set).
-                    if date_from and date_to:
-                        try:
-                            api_key = get_decrypted_api_key(shop_db, shop_oid, "uattend")
-                        except Exception as exc:  # noqa: BLE001
-                            api_key = ""
-                            integration_error = f"Could not decrypt API key: {exc}"
-
-                        if api_key:
-                            try:
-                                client_u = UAttendClient(api_key)
-                                selected_uids = []
-                                for r in emp_rows:
-                                    try:
-                                        selected_uids.append(int(r.get("uattend_user_id")))
-                                    except (TypeError, ValueError):
-                                        continue
-                                report = client_u.get_punches(
-                                    date_from, date_to,
-                                    user_ids=selected_uids or None,
-                                )
-                                if debug_mode:
-                                    debug_payload["request"] = {
-                                        "StartDate": date_from,
-                                        "EndDate": date_to,
-                                        "UserIds": selected_uids,
-                                    }
-                                    debug_payload["response"] = report
-                            except UAttendError as exc:
-                                integration_error = str(exc)
-                                report = None
-
-                            if report is not None:
-                                hours_by_uid = _aggregate_uattend_hours(report)
-                                if not hours_by_uid:
-                                    try:
-                                        import json as _json
-                                        current_app.logger.warning(
-                                            "uAttend /reports/punch returned no hours. "
-                                            "Raw shape sample: %s",
-                                            _json.dumps(report)[:2000],
-                                        )
-                                    except Exception:
-                                        pass
-                                for uid, hrs in hours_by_uid.items():
-                                    em = uid_to_email.get(uid)
-                                    if em:
-                                        hours_by_email[em] = hours_by_email.get(em, 0.0) + hrs
-
-    # ── Build rows ───────────────────────────────────────────────────────
-    rows = []
-    totals = {"salary": 0.0, "hourly": 0.0, "hours": 0.0, "grand": 0.0}
-
-    # Compute how many weeks the selected period covers — salaries are
-    # stored as a WEEKLY amount and the report total scales with the period.
-    weeks_in_period: float = 0.0
-    if date_from and date_to:
-        try:
-            from datetime import date as _date
-            _df = _date.fromisoformat(date_from)
-            _dt = _date.fromisoformat(date_to)
-            if _dt >= _df:
-                days = (_dt - _df).days + 1  # inclusive
-                weeks_in_period = round(days / 7.0, 4)
-        except (TypeError, ValueError):
-            weeks_in_period = 0.0
-    if weeks_in_period <= 0:
-        # Fallback so salary still shows something (one week).
-        weeks_in_period = 1.0
-
-    # Reverse map: internal_id -> uattend full name (for badges on salary rows)
-    matched_by_internal_id: dict[str, str] = {}
-    uid_to_uattend_name: dict[int, str] = {}
-    for emp in uattend_emp_rows:
-        try:
-            _uid = int(emp.get("uattend_user_id"))
-        except (TypeError, ValueError):
-            continue
-        uid_to_uattend_name[_uid] = (
-            f"{emp.get('first_name', '') or ''} {emp.get('last_name', '') or ''}".strip()
-            or (emp.get('email') or '')
-        )
-    # internal_id -> {uattend_user_id, name, hours, rate}
-    matched_uattend_by_internal_id: dict[str, dict] = {}
-    matched_uattend_uids: set[int] = set()
-    for _uid, m in ai_match_map.items():
-        iid = (m or {}).get("internal_id")
-        if not iid:
-            continue
-        matched_uattend_uids.add(int(_uid))
-        matched_by_internal_id[str(iid)] = uid_to_uattend_name.get(int(_uid), "")
-        emp = next(
-            (
-                e for e in uattend_emp_rows
-                if str(e.get("uattend_user_id")) == str(_uid)
-            ),
-            None,
-        )
-        if emp is not None:
-            try:
-                _rate = float(emp.get("hourly_rate")) if emp.get("hourly_rate") is not None else None
-            except (TypeError, ValueError):
-                _rate = None
-            matched_uattend_by_internal_id[str(iid)] = {
-                "uattend_user_id": int(_uid),
-                "uattend_name": uid_to_uattend_name.get(int(_uid), ""),
-                "hours": hours_by_uid.get(int(_uid)),
-                "rate": _rate,
-            }
-
-    internal_by_id = {str(u.get("_id")): u for u in internal_users}
-    # Внутренние пользователи, «поглотившие» своего uAttend-сотрудника
-    # (salary-строка ниже) — только их uAttend-двойники скрываются из
-    # почасового списка.
-    salary_internal_ids: set[str] = set()
-
-    for u in internal_users:
-        pay_type = (u.get("pay_type") or "salary").lower()
-        # At this stage we do not try to match hourly internal users to
-        # uAttend employees — uAttend employees are listed separately below.
-        if pay_type != "salary":
-            continue
-        salary_internal_ids.add(str(u.get("_id")))
-        full_name = (u.get("name") or "").strip() or (
-            f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()
-        )
-        try:
-            weekly = float(u.get("salary_amount") or 0)
-        except (TypeError, ValueError):
-            weekly = 0.0
-        period_total = round(weekly * weeks_in_period, 2)
-        merged = matched_uattend_by_internal_id.get(str(u.get("_id")))
-        row = {
-            "name": full_name or "—",
-            "email": u.get("email") or "",
-            "role": u.get("role") or "",
-            "pay_type": "salary",
-            "salary_amount": weekly,
-            "salary_weeks": weeks_in_period,
-            "hourly_rate": (merged or {}).get("rate"),
-            "hours": (merged or {}).get("hours"),
-            "total": period_total,
-            "note": (
-                f"${weekly:,.2f}/wk × {weeks_in_period:g} weeks"
-                if weekly else ""
-            ),
-            "matched_uattend_name": (merged or {}).get("uattend_name") or "",
-        }
-        totals["salary"] += period_total
-        totals["grand"] += period_total
-        if row["hours"]:
-            totals["hours"] += row["hours"]
-        rows.append(row)
-
-    # ── Append rows for uAttend employees from the integration ──────────
-    # Show every active uAttend employee as a separate hourly row, except
-    # those already merged into an internal SALARY user above. A match to an
-    # hourly internal user (e.g. a mechanic) must not hide the row — иначе
-    # заматченный механик пропадает из отчёта целиком.
-    for emp in uattend_emp_rows:
-        uid_raw = emp.get("uattend_user_id")
-        try:
-            uid = int(uid_raw) if uid_raw is not None else None
-        except (TypeError, ValueError):
-            uid = None
-        matched_iid = str((ai_match_map.get(uid) or {}).get("internal_id") or "") if uid is not None else ""
-        if uid is not None and uid in matched_uattend_uids and matched_iid in salary_internal_ids:
-            continue
-        full_name = (
-            f"{emp.get('first_name', '') or ''} {emp.get('last_name', '') or ''}".strip()
-            or (emp.get('email') or '—')
-        )
-        rate = emp.get("hourly_rate")
-        try:
-            rate = float(rate) if rate is not None else None
-        except (TypeError, ValueError):
-            rate = None
-        hours = hours_by_uid.get(uid) if uid is not None else None
-        matched = ai_match_map.get(uid) if uid is not None else None
-        internal_u = internal_by_id.get(matched_iid) if matched_iid else None
-        # Бейдж «↔ Internal: …» — живое имя пользователя по internal_id;
-        # internal_name из кэша матчинга — лишь запас (кэш мог пережить
-        # переименование, например при смене только регистра букв).
-        internal_name = user_display_name(internal_u) if internal_u else ""
-        row = {
-            "name": full_name,
-            "email": (emp.get("email") or "") or (internal_u or {}).get("email") or "",
-            "role": (internal_u or {}).get("role") or "uAttend employee",
-            "pay_type": "hourly",
-            "salary_amount": None,
-            "hourly_rate": rate,
-            "hours": hours,
-            "total": None,
-            "note": "",
-            "matched_internal_name": internal_name or (matched or {}).get("internal_name") or "",
-            "matched_internal_email": (internal_u or {}).get("email") or (matched or {}).get("internal_email") or "",
-            "matched_confidence": (matched or {}).get("confidence") or 0,
-        }
-        if rate is None and hours is None:
-            row["note"] = "Hourly rate not set · no punches in this period."
-        elif rate is None:
-            row["note"] = "Hourly rate not set in Integrations."
-        elif hours is None:
-            row["note"] = "No punches in this period."
-        if rate is not None and hours is not None:
-            row["total"] = round(rate * hours, 2)
-            totals["hourly"] += row["total"]
-            totals["hours"] += hours
-            totals["grand"] += row["total"]
-        rows.append(row)
+    payroll = compute_payroll(
+        master,
+        shop_db,
+        shop["_id"] if shop else None,
+        _tenant_variants(),
+        date_from,
+        date_to,
+        refresh_hours=True,
+        debug=debug_mode,
+    )
 
     return render_internal_page(
         "public/reports/timecard_salary.html",
         layout_nav,
         "reports",
-        rows=rows,
-        totals=totals,
+        rows=payroll["rows"],
+        totals=payroll["totals"],
         date_from=date_from,
         date_to=date_to,
         date_preset=df["date_preset"],
-        integration_status=integration_status,
-        integration_error=integration_error,
+        integration_status=payroll["integration_status"],
+        integration_error=payroll["integration_error"],
         debug_mode=debug_mode,
-        debug_payload=debug_payload,
+        debug_payload=payroll["debug_payload"],
     )
-
-
-def _aggregate_uattend_hours(report_response) -> dict[int, float]:
-    """Сумма часов по UserId — общий парсер, живёт в utils (нужен и дашборду)."""
-    from app.utils.integrations.uattend_hours import aggregate_hours_by_user
-
-    return aggregate_hours_by_user(report_response)
 
 
 @reports_bp.get("/audit")

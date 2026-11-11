@@ -248,20 +248,29 @@ def aggregate_hours_by_day(report_response) -> dict[str, float]:
     return by_day
 
 
-def load_uattend_period_hours(shop_db, shop_id, date_from: str, date_to: str, exclude_uids=None) -> dict:
-    """Часы uAttend за период для дашборда.
+def load_uattend_period_hours(
+    shop_db, shop_id, date_from: str, date_to: str, exclude_uids=None,
+    *, refresh: bool = False, with_raw: bool = False,
+) -> dict:
+    """Часы uAttend за период — для дашборда, отчётов и payroll.
 
     ``exclude_uids`` — uAttend user id, которых не запрашиваем вовсе
     (например, сотрудники, заматченные на менеджеров: дашборд считает
     только механиков).
+    ``refresh`` — не читать кэш, сходить в API и перезаписать кэш (страница
+    Timecard: зарплата всегда по свежим punches).
+    ``with_raw`` — вернуть сырой запрос/ответ в ``raw`` (отладка Timecard);
+    подразумевает ``refresh``.
 
     Возвращает::
 
         {
             "connected": bool,      # интеграция настроена и включена
             "by_day":  {iso: h},    # часы по дням (все выбранные сотрудники)
-            "by_uid":  {uid: h},    # часы по сотрудникам uAttend
+            "by_uid":  {uid: h},    # часы по сотрудникам, округлены до 0.01
+            "by_uid_exact": {uid: h},  # то же без округления — для денег
             "error":   str | None,  # текст проблемы (ключ, сеть, ...)
+            "raw":     {"request", "response"},  # только при with_raw
         }
 
     Ответ API кэшируется в ``shop_db.uattend_punch_cache`` (чистится
@@ -272,7 +281,7 @@ def load_uattend_period_hours(shop_db, shop_id, date_from: str, date_to: str, ex
     from app.utils.integrations.storage import get_integration, get_decrypted_api_key
     from app.utils.integrations.uattend_client import UAttendClient, UAttendError
 
-    out = {"connected": False, "by_day": {}, "by_uid": {}, "error": None}
+    out = {"connected": False, "by_day": {}, "by_uid": {}, "by_uid_exact": {}, "error": None}
 
     doc = get_integration(shop_db, shop_id, "uattend")
     if not doc or not doc.get("enabled"):
@@ -298,10 +307,19 @@ def load_uattend_period_hours(shop_db, shop_id, date_from: str, date_to: str, ex
         return out
 
     cache_key = f"{date_from}|{date_to}|{','.join(map(str, uids))}"
-    cached = shop_db.uattend_punch_cache.find_one({"shop_id": shop_id, "key": cache_key})
-    if cached and isinstance(cached.get("by_uid"), dict):
+    cached = None
+    if not refresh and not with_raw:
+        cached = shop_db.uattend_punch_cache.find_one({"shop_id": shop_id, "key": cache_key})
+    # Запись без by_uid_exact сделана до появления поля — считаем промахом,
+    # иначе зарплата на 15 минут посчиталась бы от округлённых часов.
+    if (
+        cached
+        and isinstance(cached.get("by_uid"), dict)
+        and isinstance(cached.get("by_uid_exact"), dict)
+    ):
         out["by_day"] = {str(k): float(v) for k, v in (cached.get("by_day") or {}).items()}
         out["by_uid"] = {int(k): float(v) for k, v in cached["by_uid"].items()}
+        out["by_uid_exact"] = {int(k): float(v) for k, v in cached["by_uid_exact"].items()}
         return out
 
     try:
@@ -321,8 +339,26 @@ def load_uattend_period_hours(shop_db, shop_id, date_from: str, date_to: str, ex
         out["error"] = str(exc)
         return out
 
-    out["by_day"] = {k: round(v, 2) for k, v in aggregate_hours_by_day(report).items()}
-    out["by_uid"] = {k: round(v, 2) for k, v in aggregate_hours_by_user(report).items()}
+    # Сырой ответ — до разбора: отладка Timecard нужна как раз тогда, когда
+    # разбор не справился с формой ответа.
+    if with_raw:
+        out["raw"] = {
+            "request": {"StartDate": date_from, "EndDate": date_to, "UserIds": uids},
+            "response": report,
+        }
+
+    try:
+        exact_by_uid = {k: float(v) for k, v in aggregate_hours_by_user(report).items()}
+        by_day = {k: round(v, 2) for k, v in aggregate_hours_by_day(report).items()}
+    except Exception:  # noqa: BLE001 — схема ответа uAttend не документирована
+        # Неожиданная форма ответа не должна ронять отчёт: вызывающий покажет
+        # ошибку и посчитает то, что от uAttend не зависит (salary).
+        current_app.logger.exception("uAttend: could not read the punch report")
+        out["error"] = "Could not read the uAttend punch report (unexpected response)."
+        return out
+    out["by_day"] = by_day
+    out["by_uid"] = {k: round(v, 2) for k, v in exact_by_uid.items()}
+    out["by_uid_exact"] = exact_by_uid
 
     try:
         shop_db.uattend_punch_cache.update_one(
@@ -334,6 +370,7 @@ def load_uattend_period_hours(shop_db, shop_id, date_from: str, date_to: str, ex
                 # by_uid сериализуем строками и восстанавливаем при чтении.
                 "by_day": out["by_day"],
                 "by_uid": {str(k): v for k, v in out["by_uid"].items()},
+                "by_uid_exact": {str(k): v for k, v in exact_by_uid.items()},
                 "fetched_at": datetime.now(timezone.utc),
             }},
             upsert=True,

@@ -46,10 +46,32 @@
             <div class="mt-1"><strong>Parts ({{ p.parts|length }}):</strong></div>
             <ul class="mb-0 ps-3">
               {% for pt in p.parts[:5] %}
-                <li>{{ pt.part_number or '—' }} {{ pt.description or '' }} × {{ pt.qty }}{% if pt.price %} @ ${{ '%.2f'|format(pt.price) }}{% endif %}</li>
+                <li>
+                  {{ pt.part_number or '—' }} {{ pt.description or '' }} × {{ pt.qty }}{% if pt.price or pt.price_source == 'pinned' %} @ ${{ '%.2f'|format(pt.price or 0) }}{% endif %}
+                  {# Откуда цена: автоцену по шкале не помечаем, всё остальное — бейджем. #}
+                  {% if pt.price_source == 'pinned' %}
+                    <span class="badge text-bg-warning ms-1" title="Typed into this template: saved with it and used in work orders as is. Edit the template and clear the Price field to return to automatic pricing.">custom price</span>
+                  {% elif pt.price_source == 'fixed' %}
+                    <span class="badge text-bg-light border ms-1" title="The part's own Selling price from the catalog. It does not follow the average cost — change or remove it in Parts (edit the part).">fixed price</span>
+                  {% elif pt.price_source == 'cost' %}
+                    <span class="badge text-bg-warning ms-1" title="No tier of the pricing scale covers this cost. Work orders created by a mechanic or in the mobile app price the part at cost; the office work order editor leaves the price empty. Add a tier for this cost in Settings → Parts &amp; Pricing.">no markup</span>
+                  {% elif pt.price_source == 'none' %}
+                    <span class="badge text-bg-warning ms-1" title="The part has no average cost, so no price can be calculated: a work order gets $0. Receive the part, set its Selling price, or type a price in the template.">no price</span>
+                  {% elif pt.price_source == 'snapshot' %}
+                    <span class="badge text-bg-light border ms-1" title="Not a catalog part (a free-text line, or the part was deleted or deactivated). The price saved with the template is shown: the office work order editor uses it, a work order created by a mechanic gets this line without a price.">not in catalog</span>
+                  {% endif %}
+                  {% if pt.below_cost %}
+                    <span class="badge text-bg-danger ms-1" title="Lower than the part's current average cost (${{ '%.2f'|format(pt.cost_now or 0) }}): every sale at this price loses money.">below cost</span>
+                  {% endif %}
+                </li>
               {% endfor %}
               {% if p.parts|length > 5 %}
-                <li class="text-muted">… and {{ p.parts|length - 5 }} more</li>
+                <li class="text-muted">
+                  … and {{ p.parts|length - 5 }} more
+                  {% if p.hidden_below_cost %}
+                    <span class="badge text-bg-danger ms-1" title="Open the template to see which parts sell below their current average cost.">{{ p.hidden_below_cost }} below cost</span>
+                  {% endif %}
+                </li>
               {% endif %}
             </ul>
           {% endif %}
@@ -59,7 +81,7 @@
           <div><strong>Labor:</strong> ${{ '%.2f'|format(p.est_labor) }}</div>
           <div><strong>Parts:</strong> ${{ '%.2f'|format(p.est_parts) }}{% if p.est_misc %} <span class="text-nowrap">(+ ${{ '%.2f'|format(p.est_misc) }} misc)</span>{% endif %}</div>
           <div><strong>Total:</strong> ${{ '%.2f'|format(p.est_total) }}</div>
-          <div class="fst-italic">(Estimated)</div>
+          <div class="fst-italic" title="What a work order gets today for a customer on the standard pricing: the part's fixed selling price, otherwise the default pricing scale on the current average cost. Customers with their own pricing scale or discount get their own prices.">(Estimated)</div>
         </div>
       </div>
     </div>
@@ -139,10 +161,14 @@
             <button type="button" class="btn btn-sm btn-outline-secondary" id="addPresetPartBtn">+ Add Part</button>
           </div>
           <div class="form-text mt-2">
-            Prices follow the part's selling price or the pricing matrix automatically.
-            Edit a price to pin your own — it is saved with the preset and used in work orders
-            (customers whose pricing overrides part prices still get their own).
-            Clear the field to return to automatic pricing.
+            Prices are calculated the same way a work order does it: the part's own fixed
+            selling price if it has one (marked <span class="badge text-bg-light border">fixed price</span>),
+            otherwise the default pricing scale on the part's <strong>current average cost</strong> —
+            so they change by themselves when the cost changes.
+            Edit a price to pin your own (<span class="badge text-bg-warning">custom price</span>) — it is
+            saved with the preset and used in work orders (customers whose pricing overrides part
+            prices still get their own). Clear the field to return to automatic pricing.
+            <span class="badge text-bg-danger">below cost</span> marks a price lower than the current average cost.
           </div>
           <div class="form-check form-switch mt-3">
             <input class="form-check-input" type="checkbox" role="switch" id="presetAllowDiscount" name="allow_discount" value="1" checked>

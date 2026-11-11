@@ -182,6 +182,14 @@ price and with the order's vendor.
   number only for parts that have one.
 - **"This part has selling price"** → fixed **Selling price** that overrides
   the pricing scale (unless the customer has "Override part selling price").
+  A fixed price does **not** follow the average cost: when the part gets
+  more expensive, the price stays where you set it — work orders and
+  service templates keep using it even if it is now below cost (Settings →
+  Service Templates marks such lines "fixed price" and "below cost").
+  Update the Selling price, or untick the box to let the pricing scale
+  follow the cost. A ticked box with a price of $0 counts as "no fixed
+  price". A parts import sets this box for every row that has a Selling
+  Price above 0.
 - **"Do not track inventory for this part"** — part stays usable on WOs and
   orders, but stock is never adjusted (turning this on zeroes stock,
   disables core charge and switches the minimum stock off).

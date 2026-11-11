@@ -31,6 +31,21 @@ from a service template where it was pinned by hand — pinned template prices
 don't follow the scale; (4) the scale isn't the one assigned to that
 customer.
 
+**A service template shows an old price / does not follow the average
+cost.** Settings → Service Templates and look at the badge next to the
+line: (1) **fixed price** — the part itself has a fixed Selling price in
+the catalog, so neither the template nor a work order recalculates it from
+cost; open Parts → edit the part → change the Selling price or untick
+"This part has selling price" and the line starts following the average
+cost through the pricing scale; (2) **custom price** — somebody typed a
+price into the template; edit the template and clear the Price field to go
+back to automatic pricing; (3) **no price** — the part has no average cost
+yet; (4) no badge — the price already is the default scale on the current
+average cost. A red **below cost** badge means the line sells for less than
+the part costs now. Work orders of customers with their own scale
+("Override part selling price") are priced by that scale, so their price
+can differ from the card.
+
 **Special price for one service (template).** Settings → Service Templates →
 edit the template → type your price in the part's Price field. A hand-edited
 price is *pinned* (highlighted in the editor): it saves with the template
@@ -256,11 +271,32 @@ Portal logins.
 Parts Cost (no payroll), right block = Revenue − Parts Orders − Salaries.
 The table below explains every number.
 
-**Why is payroll $0 in General Revenue?** Either the uAttend integration
-and pay types/rates aren't set up, or a customer filter is applied (payroll
-can't be split per customer — the banner explains). Salary users need Pay
-type = Salary with a weekly amount; hourly users must be ticked in
-Settings → Integrations with an $/hr rate.
+**Why is payroll $0 in General Revenue?** Check in this order: (1) the
+period is **All Time** — payroll is counted per period, pick This Month or
+a date range (a yellow "Payroll is incomplete" banner says so); (2) a
+customer filter is applied — payroll can't be split per customer, the
+banner explains; (3) the uAttend integration and pay types/rates aren't set
+up: salary users need Pay type = Salary with a weekly amount; hourly users
+must be ticked in Settings → Integrations with an $/hr rate; (4) uAttend
+did not answer — the yellow banner quotes its error, salaries are still
+counted but hourly pay is missing: fix the connection in Settings →
+Integrations.
+
+**Hourly pay is missing or too small in General Revenue / Timecard.**
+Both reports show the same payroll, so check it in Reports → Timecard /
+Salary, one person at a time:
+- The person has **no row at all** — they are not ticked in Settings →
+  Integrations → uAttend (only ticked employees are paid by punches).
+- Their row says *"Hourly rate not set in Integrations"* — set the $/hr
+  rate there. In General Revenue the same person shows as
+  "Name — 12.00h, hourly rate not set" with $0.
+- Their row says *"No punches in this period"* — they did not clock in on
+  the uAttend clock in these dates (job timers in Roobico do not count for
+  pay).
+- They appear as **Salary** with a tiny total and the note *"uAttend rate
+  $33.00/hr is not used — Pay type is Salary"* — an hourly rate was typed
+  into "Salary amount", so they get $33 per week. Settings → Users → Edit →
+  **Pay type = Hourly** → Save; the next report load pays punches × rate.
 
 **Customer/Vendor Balances ignore my dates.** By design — balances are
 always all-time. Same for the Dashboard's Outstanding Balance widget.
@@ -495,8 +531,10 @@ shows only Mechanic Hours.
 nothing.** Role **Viewer**: read-only access to all sections with prices,
 balances, financial reports and the Activity Journal — but no create /
 edit / delete / payment keys, so pages render without action buttons and
-work orders open read-only. Payroll stays hidden unless you tick "View
-Timecard / Salary report".
+work orders open read-only. Who is paid how much (the Timecard / Salary
+report and the per-employee lines in General Revenue) stays hidden unless
+you tick "View Timecard / Salary report"; General Revenue still shows the
+payroll totals.
 
 **Bookkeeper needs payroll.** Roles & Permissions → clone Viewer (or create
 a role) and tick "View Timecard / Salary report" (reports.view_payroll) plus

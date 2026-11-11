@@ -56,6 +56,9 @@
       {% if s.customer_filter_active %}
       <tr><td colspan="2" class="muted">Customer filter is active — payroll and parts orders are hidden because they cannot be tied to specific customers.</td></tr>
       {% endif %}
+      {% if s.payroll_warning %}
+      <tr><td colspan="2"><strong>Payroll is incomplete.</strong> {{ s.payroll_warning }}</td></tr>
+      {% endif %}
     </table>
     {% else %}
     <table class="summary-table">

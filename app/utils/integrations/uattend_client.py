@@ -58,6 +58,15 @@ class UAttendClient:
     # ── HTTP plumbing ────────────────────────────────────────────────────────
 
     def _post(self, path: str, body: Optional[dict] = None) -> dict:
+        # Ключ уходит HTTP-заголовком: управляющий символ внутри (перевод
+        # строки при вставке) ломает запрос, а requests в тексте ошибки
+        # печатает сам ключ — а этот текст показывается в отчётах. Такой ключ
+        # отклоняем до запроса и без его показа.
+        if any(ord(ch) < 32 or ord(ch) == 127 for ch in self.api_key):
+            raise UAttendError(
+                "uAttend API key contains invalid characters - paste it again in Settings - Integrations."
+            )
+
         url = f"{self.base_url}{path}"
         payload = body if body is not None else {}
         headers = {

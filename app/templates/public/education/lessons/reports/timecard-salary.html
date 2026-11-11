@@ -18,9 +18,10 @@
 <ul>
   <li><strong>Salary</strong> employees: weekly salary amount × weeks in the period (days ÷ 7; a shorter range prorates fractionally). Pay type and amount are set in the user form (needs {{ perm("settings.manage_pay", "Edit employees' pay type & salary") }}).</li>
   <li><strong>Hourly</strong> employees: uAttend punches in the period × their hourly rate (set in Settings → Integrations; only employees ticked there appear).</li>
-  <li>uAttend people are auto-matched to Roobico users so nobody is counted twice: an employee matched to a <em>salary</em> user is folded into that row with a “↔ uAttend” badge; one matched to an <em>hourly</em> user keeps their own hourly row with the user's role and a “↔ Internal” badge.</li>
+  <li>uAttend people are auto-matched to Roobico users so nobody is counted twice: an employee matched to a <em>salary</em> user with a weekly amount is folded into that row with a “↔ uAttend” badge; one matched to an <em>hourly</em> user — or to a Salary user with no amount — keeps their own hourly row with the user's role and a “↔ Internal” badge.</li>
+  <li>A note “uAttend rate … is not used — Pay type is Salary” means the person has both a weekly salary and an hourly rate: the salary is paid. If an hourly rate was typed into “Salary amount” by mistake, switch Pay type to Hourly in Settings → Users.</li>
 </ul>
-<p>Periods: This week / Last week / This month / Last month / This year / Custom. Banners explain when the uAttend integration is missing, disabled or erroring. The same payroll numbers feed General Revenue.</p>
+<p>Periods: This week / Last week / This month / Last month / This year / Custom. Banners explain when the uAttend integration is missing, disabled or erroring. General Revenue uses this same calculation, so its payroll equals the totals here for the same From / To dates (its uAttend hours can be up to 15 minutes old).</p>
 
 {% call note("Nobody can change their own pay") %}
 Even with the pay permission, a user cannot edit their own pay type or salary — an owner's pay is edited from another owner account, or not at all.
