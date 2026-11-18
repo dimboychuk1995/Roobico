@@ -21,6 +21,7 @@ from app.blueprints.calendar.services.events import (
     customer_label,
     display_customer_label,
     event_label,
+    events_change_token,
     load_events,
     naive_iso,
     prepare_event_updates,
@@ -246,6 +247,27 @@ def api_events():
         shop_db, shop, request.args.get("start"), request.args.get("end"), request.args.get("mechanic_id")
     )
     return jsonify(_present(shop_db, shop, rows))
+
+
+@calendar_bp.get("/calendar/api/changes")
+@login_required
+@permission_required("calendar.view")
+def api_changes():
+    """
+    Отпечатки для live-обновления открытого календаря: events — записи с
+    start_time в [start, end) (те же параметры, что у GET /events), settings
+    — статусы и рабочие часы. Клиент опрашивает их каждые несколько секунд и
+    перечитывает записи / настройки только когда отпечаток изменился, поэтому
+    чужая правка видна почти сразу и без перезагрузки страницы. Дёшево: один
+    агрегат по индексу и один маленький find.
+    """
+    shop_db, shop = _shop()
+    if shop_db is None:
+        return jsonify({"events": "0:0", "settings": "0"})
+    return jsonify({
+        "events": events_change_token(shop_db, shop, request.args.get("start"), request.args.get("end")),
+        "settings": calendar_settings.settings_change_token(shop_db),
+    })
 
 
 @calendar_bp.post("/calendar/api/events")

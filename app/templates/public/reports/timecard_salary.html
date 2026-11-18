@@ -79,9 +79,26 @@
 {% endif %}
 
 {# ── Table ──────────────────────────────────────────────────────── #}
+{# Часы по дням: строка-деталь под сотрудником, по умолчанию скрыта
+   (общий паттерн .table-row-groups / .row-toggle — public.css, public.js). #}
+{% set has_days = rows | selectattr('days') | list | length > 0 %}
 <div class="card mt-3">
+  {% if has_days %}
+  <div class="card-header d-flex justify-content-between align-items-center gap-2 flex-wrap">
+    <span class="small text-muted">
+      Hours are uAttend punches — click <i class="bi bi-chevron-right" aria-hidden="true"></i> next to a name to see them day by day
+      (<i class="bi bi-pencil" aria-hidden="true"></i> marks a punch corrected by hand).
+      To fix a punch, edit it in uAttend and reload this page.
+    </span>
+    <button type="button" class="btn btn-outline-secondary btn-sm"
+            data-row-toggle-all="#timecardTable"
+            data-label-show="Show daily hours" data-label-hide="Hide daily hours">
+      <i class="bi bi-list-nested me-1" aria-hidden="true"></i><span data-row-toggle-all-label>Show daily hours</span>
+    </button>
+  </div>
+  {% endif %}
   <div class="table-responsive">
-    <table class="table table-sm align-middle mb-0">
+    <table class="table table-sm align-middle mb-0 table-row-groups" id="timecardTable">
       <thead class="table-light">
         <tr>
           <th>Employee</th>
@@ -93,10 +110,19 @@
           <th class="text-end">Total</th>
         </tr>
       </thead>
+      {% for r in rows %}
       <tbody>
-        {% for r in rows %}
         <tr>
           <td>
+            {% if r.days %}
+              <button type="button" class="row-toggle" data-row-toggle="#timecardDays{{ loop.index }}"
+                      aria-expanded="false" aria-controls="timecardDays{{ loop.index }}"
+                      title="Hours by day" aria-label="Hours by day: {{ r.name }}">
+                <i class="bi bi-chevron-right" aria-hidden="true"></i>
+              </button>
+            {% elif has_days %}
+              <span class="row-toggle-spacer" aria-hidden="true"></span>
+            {% endif %}
             {{ r.name }}
             {% if r.matched_uattend_name %}
               <span class="badge bg-warning-subtle text-warning-emphasis ms-1" title="Also appears in uAttend as: {{ r.matched_uattend_name }}">↔ uAttend: {{ r.matched_uattend_name }}</span>
@@ -121,14 +147,15 @@
               {% if r.salary_amount is not none %}${{ '%.2f'|format(r.salary_amount) }}/wk{% else %}<span class="text-muted">—</span>{% endif %}
             {% endif %}
           </td>
-          <td class="text-end">
+          {# data-sort-value: сортировка по числу, а не по тексту с примечанием #}
+          <td class="text-end" data-sort-value="{{ '%.4f'|format(r.hours) if r.hours is not none else '' }}">
             {% if r.hours is not none %}
               {{ '%.2f'|format(r.hours) }}
             {% else %}
               <span class="text-muted">—</span>
             {% endif %}
           </td>
-          <td class="text-end fw-semibold">
+          <td class="text-end fw-semibold" data-sort-value="{{ '%.2f'|format(r.total) if r.total is not none else '' }}">
             {% if r.total is not none %}
               ${{ '%.2f'|format(r.total) }}
             {% else %}
@@ -139,10 +166,57 @@
             {% endif %}
           </td>
         </tr>
-        {% else %}
-        <tr><td colspan="7" class="text-center text-muted py-4">No users found.</td></tr>
-        {% endfor %}
+        {% if r.days %}
+        <tr class="table-detail-row d-none" id="timecardDays{{ loop.index }}">
+          <td colspan="7">
+            <div class="table-detail-panel">
+              {# сетка, а не вложенная <table>: скрытие колонок основной
+                 таблицы (flex_tables.js) цепляет любые вложенные <tr> #}
+              <div class="detail-grid" role="table" aria-label="Hours by day: {{ r.name }}">
+                <div class="detail-grid-row" role="row">
+                  <div class="detail-grid-head" role="columnheader">Day</div>
+                  <div class="detail-grid-head" role="columnheader">Clock in – out</div>
+                  <div class="detail-grid-head text-end" role="columnheader">Hours</div>
+                </div>
+                {% for d in r.days %}
+                <div class="detail-grid-row" role="row">
+                  <div class="detail-grid-cell text-nowrap" role="cell">{{ d.label }}</div>
+                  <div class="detail-grid-cell" role="cell">
+                    {% for p in d.punches %}
+                      {% set punch_title = ('%.2f'|format(p.hours)) ~ ' h'
+                         ~ (' · ' ~ p.department if p.department else '')
+                         ~ (' · ' ~ p.method if p.method else '') %}
+                      <span class="badge fw-normal me-1 {{ 'bg-warning-subtle text-warning-emphasis' if p.edited else 'bg-secondary-subtle text-secondary-emphasis' }}"
+                            title="{{ punch_title }}">
+                        {% if p.edited %}<i class="bi bi-pencil me-1" aria-hidden="true"></i>{% endif %}
+                        {%- if p.time_in -%}
+                          {{ p.time_in }} – {{ p.time_out or 'on the clock' }}
+                        {%- else -%}
+                          {{ '%.2f'|format(p.hours) }} h
+                        {%- endif -%}
+                      </span>
+                    {% endfor %}
+                  </div>
+                  <div class="detail-grid-cell text-end" role="cell">{{ '%.2f'|format(d.hours) }}</div>
+                </div>
+                {% endfor %}
+                {% if r.undated_hours %}
+                <div class="detail-grid-row" role="row">
+                  <div class="detail-grid-cell detail-grid-span2 text-muted" role="cell">Hours uAttend returned without a date</div>
+                  <div class="detail-grid-cell text-end" role="cell">{{ '%.2f'|format(r.undated_hours) }}</div>
+                </div>
+                {% endif %}
+              </div>
+            </div>
+          </td>
+        </tr>
+        {% endif %}
       </tbody>
+      {% else %}
+      <tbody>
+        <tr><td colspan="7" class="text-center text-muted py-4">No users found.</td></tr>
+      </tbody>
+      {% endfor %}
       {% if rows %}
       <tfoot class="table-light">
         <tr>

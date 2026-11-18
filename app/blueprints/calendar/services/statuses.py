@@ -85,6 +85,22 @@ def get_settings(shop_db) -> dict:
     }
 
 
+def settings_change_token(shop_db) -> str:
+    """Отпечаток настроек календаря — мс последнего сохранения ("0" — ещё
+    не сохраняли). По нему открытая страница календаря замечает, что другой
+    пользователь поменял статусы или рабочие часы."""
+    if shop_db is None:
+        return "0"
+    latest = 0
+    for doc in shop_db.calendar_settings.find({"key": {"$in": ["statuses", "hours"]}}, {"updated_at": 1}):
+        stamp = doc.get("updated_at")
+        if isinstance(stamp, datetime):
+            if stamp.tzinfo is None:
+                stamp = stamp.replace(tzinfo=timezone.utc)
+            latest = max(latest, int(stamp.timestamp() * 1000))
+    return str(latest)
+
+
 def clean_statuses(items) -> tuple[list[dict] | None, str | None]:
     """
     Проверить и нормализовать список статусов из запроса → (clean, None)

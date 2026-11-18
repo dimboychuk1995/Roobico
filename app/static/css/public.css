@@ -1487,6 +1487,119 @@ a:hover {
   max-width: 400px;
 }
 
+/* ── Раскрываемые строки таблиц (общий паттерн) ──────────────────────
+   Таблица .table-row-groups: одна запись = один <tbody> (строка записи +
+   скрытая строка-деталь .table-detail-row), зебра идёт по записям, а не по
+   <tr>. Кнопка .row-toggle[data-row-toggle="#id"] показывает/прячет деталь,
+   [data-row-toggle-all="#table"] — все сразу (обработчик в public.js). */
+.table.table-row-groups > tbody:nth-of-type(odd) > tr {
+  background-color: #ffffff;
+}
+
+.table.table-row-groups > tbody:nth-of-type(even) > tr {
+  background-color: #f8fafc;
+}
+
+.row-toggle,
+.row-toggle-spacer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin-right: 0.15rem;
+  vertical-align: middle;
+}
+
+.row-toggle {
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.row-toggle:hover,
+.row-toggle:focus-visible {
+  background: var(--bg-accent);
+  color: var(--text);
+}
+
+.row-toggle .bi {
+  font-size: 0.8rem;
+  transition: transform 0.15s ease;
+}
+
+.row-toggle[aria-expanded="true"] .bi {
+  transform: rotate(90deg);
+}
+
+.table > tbody > tr.table-detail-row > td,
+.table > tbody > tr.table-detail-row:hover > td,
+.table > tbody > tr.table-detail-row:focus-within > td {
+  padding: 0;
+  background-color: var(--surface-soft) !important;
+}
+
+.table-detail-panel {
+  padding: 0.6rem 1rem 0.75rem 2.6rem;
+  border-left: 3px solid var(--primary);
+}
+
+/* Компактная сетка внутри строки-детали: подпись | содержимое | число.
+   Сетка из <div> (role="table"), а не вложенная <table>: правила скрытия
+   колонок flex_tables.js («tr > *:nth-child») задели бы вложенные <tr>. */
+.detail-grid {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  width: fit-content;
+  min-width: min(100%, 520px);
+  max-width: 100%;
+  font-size: 0.82rem;
+  color: var(--text);
+}
+
+.detail-grid-row {
+  display: contents;
+}
+
+.detail-grid-head,
+.detail-grid-cell {
+  padding: 0.3rem 1.25rem 0.3rem 0;
+}
+
+.detail-grid-head {
+  padding-top: 0.15rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.detail-grid-cell {
+  border-top: 1px solid var(--border);
+}
+
+.detail-grid-head:last-child,
+.detail-grid-cell:last-child {
+  padding-right: 0;
+}
+
+.detail-grid-span2 {
+  grid-column: span 2;
+}
+
+.detail-grid .text-end {
+  font-variant-numeric: tabular-nums;
+}
+
+/* бэдж внутри мелкой сетки — не мельче её текста */
+.detail-grid .badge {
+  font-size: 0.78rem;
+}
+
 /* ── VIN-валидация (общая для WO details и unit details) ───────────── */
 .vin-checking { border-color: #0d6efd !important; background-color: #e7f1ff !important; }
 .vin-valid    { border-color: #198754 !important; }

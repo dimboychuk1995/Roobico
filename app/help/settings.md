@@ -370,7 +370,11 @@ enable, then in "Employees in uAttend" tick the employees whose time counts
 and set their **$/hr** rates. Punches feed the Timecard/Salary report and
 payroll in General Revenue; employees are AI-matched to Roobico users so
 nobody is double-counted. Keys are stored encrypted; each shop configures
-its own integration.
+its own integration. The connection is **read-only**: Roobico reads
+employees and punches from uAttend (Timecard / Salary shows them day by
+day) but cannot add or change a punch — uAttend's API has no such
+function. Correct hours in uAttend; Roobico shows the new numbers on the
+next report load.
 
 **Parts orders from email** — one switch: *Create parts orders from vendor
 emails*. Turning it on (it saves immediately, no Save button) shows the

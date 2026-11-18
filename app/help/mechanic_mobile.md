@@ -490,8 +490,9 @@ and works like Google Calendar on a phone:
   Completed status chips follow the WO while it is in work — only
   Cancelled can be set by hand. Moving the appointment to another time or
   mechanic never changes the work order. The web calendar picks such
-  changes up within half a minute (it refreshes every 30 seconds); the
-  phone reloads whenever you return to the tab or pull down.
+  changes up within a few seconds (it is live — it checks for changes
+  every 3 seconds); the phone reloads whenever you return to the tab or
+  pull down.
 - Pull down in Day/3 Day/Week/Schedule to refresh; the calendar also
   reloads every time you return to the tab.
 

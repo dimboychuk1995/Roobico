@@ -2,9 +2,10 @@
 
 {% call summary_box() %}
 <ul>
-  <li>What the calendar shows: appointments only, in two views.</li>
+  <li>What the calendar shows: appointments only, in three views.</li>
   <li>What a block tells you: time, title, customer, unit, mechanics, status colour.</li>
-  <li>Toolbar: navigation, the date box, Week / By mechanic, the mechanic filter and settings.</li>
+  <li>Toolbar: navigation, the date box, Week / By mechanic / By status, the mechanic filter and settings.</li>
+  <li>The By status board and the live updates — nobody reloads the page.</li>
 </ul>
 {% endcall %}
 
@@ -15,13 +16,14 @@
 </p>
 {{ shot("calendar-week", "The week view: one column per day, blocks coloured by status, mechanic initials in the corner.") }}
 
-<h2>Two views</h2>
+<h2>Three views</h2>
 <ul>
   <li><strong>Week</strong> — seven columns, Monday to Sunday. Today's number is highlighted; click a day header to open that day in the By mechanic view.</li>
   <li><strong>By mechanic</strong> — one day, a column per mechanic plus <em>Unassigned</em>; each header counts the mechanic's live appointments that day ({{ lesson_link("calendar/by-mechanic") }}).</li>
+  <li><strong>By status</strong> — the same one day as a board of three columns: <em>Scheduled</em>, <em>In Progress</em>, <em>Completed</em>. Drag a card into another column to change its status (see below).</li>
 </ul>
 <p>
-  In both views the hours run down the left side (hour lines, lighter quarter-hour lines) and a red line marks the current time in today's
+  In Week and By mechanic the hours run down the left side (hour lines, lighter quarter-hour lines) and a red line marks the current time in today's
   column. The visible hours come from <em>Working hours</em> in the settings (06:00–20:00 by default) and stretch automatically when an
   appointment starts earlier or ends later — nothing is ever hidden. A normal day fits the screen; a long one scrolls inside the grid.
 </p>
@@ -38,13 +40,27 @@
 
 <h2>Toolbar</h2>
 <ul>
-  <li>{{ ui("‹") }} {{ ui("Today") }} {{ ui("›") }} — move by week (Week) or by day (By mechanic); the date box jumps straight to a date.</li>
-  <li>{{ ui("Week") }} / {{ ui("By mechanic") }} — switch the view.</li>
-  <li><strong>All mechanics</strong> dropdown — show one mechanic, or only unassigned appointments, in either view. The view and the filter are remembered in this browser.</li>
+  <li>{{ ui("‹") }} {{ ui("Today") }} {{ ui("›") }} — move by week (Week) or by day (By mechanic, By status); the date box jumps straight to a date.</li>
+  <li>{{ ui("Week") }} / {{ ui("By mechanic") }} / {{ ui("By status") }} — switch the view.</li>
+  <li><strong>All mechanics</strong> dropdown — show one mechanic, or only unassigned appointments, in any view. The view and the filter are remembered in this browser.</li>
   <li>⚙ — calendar settings: statuses, colours and working hours (needs {{ perm("calendar.manage_settings", "Manage calendar settings") }}).</li>
 </ul>
 {{ shot("calendar-controls", "Toolbar with the mechanic filter, the By mechanic button and the date box highlighted.") }}
 
-{% call note("It keeps itself fresh") %}
-Every 30 seconds the calendar re-reads the visible days, so an appointment created on a phone or by a colleague appears without reloading the page (paused while a dialog is open, while you drag a block and while the tab is hidden). The address bar follows the date and view, so a bookmark or a link sent to a colleague opens the same day.
+<h2>By status board</h2>
+<p>
+  {{ ui("By status") }} shows the selected day as three columns, each with a counter: <strong>Scheduled</strong> (everything not started yet —
+  also Confirmed and your own statuses, marked with a small label), <strong>In Progress</strong> and <strong>Completed</strong>. The column
+  titles are the status names from the calendar settings. Cancelled appointments are not on the board — a line under the columns says how
+  many; see them in By mechanic or Week.
+</p>
+<ul>
+  <li>A card shows the time, the title, the customer, the unit, the mechanics and the <strong>WO #</strong> badge of a linked appointment.</li>
+  <li><strong>Drag a card into another column</strong> to change its status (needs {{ perm("calendar.edit", "Edit appointments") }}): into In Progress when the job starts, into Completed when it is done. Esc, or releasing outside the columns, cancels.</li>
+  <li>Only the status changes — never the time, the mechanics or the linked work order. Linked appointments also move by themselves when the mechanic starts or finishes the work order.</li>
+  <li>Click a card to open the dialog; {{ ui("+") }} in a column header adds an appointment straight into that status (needs {{ perm("calendar.create", "Create appointments") }}).</li>
+</ul>
+
+{% call note("The calendar is live") %}
+Nobody has to reload the page: the calendar checks for changes every 3 seconds, so an appointment created, moved, re-statused or deleted by a colleague, on a phone or by a work order appears on every open calendar within a few seconds. The green <strong>Live</strong> dot on the right of the legend row shows the page is connected (orange <em>Reconnecting…</em> — the server is unreachable; it recovers by itself). It pauses only while you drag and while the tab is in the background. The address bar follows the date and view, so a bookmark or a link sent to a colleague opens the same day.
 {% endcall %}

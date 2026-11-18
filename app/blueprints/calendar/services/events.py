@@ -527,8 +527,8 @@ def filter_by_mechanic(rows: list[dict], raw) -> list[dict]:
     return [r for r in rows if wanted in {str(m["id"]) for m in event_mechanics(r)}]
 
 
-def load_events(shop_db, shop: dict, start_raw, end_raw, mechanic_raw=None) -> list[dict]:
-    """Записи магазина с start_time в [start, end) по возрастанию start_time."""
+def _range_query(shop: dict, start_raw, end_raw) -> dict:
+    """Фильтр записей магазина с start_time в [start, end)."""
     query: dict = {"shop_id": shop["_id"]}
     start, end = parse_range_param(start_raw), parse_range_param(end_raw)
     if start or end:
@@ -537,8 +537,38 @@ def load_events(shop_db, shop: dict, start_raw, end_raw, mechanic_raw=None) -> l
             query["start_time"]["$gte"] = start
         if end:
             query["start_time"]["$lt"] = end
-    rows = list(shop_db.calendar_events.find(query).sort("start_time", 1))
+    return query
+
+
+def load_events(shop_db, shop: dict, start_raw, end_raw, mechanic_raw=None) -> list[dict]:
+    """Записи магазина с start_time в [start, end) по возрастанию start_time."""
+    rows = list(shop_db.calendar_events.find(_range_query(shop, start_raw, end_raw)).sort("start_time", 1))
     return filter_by_mechanic(rows, mechanic_raw)
+
+
+def events_change_token(shop_db, shop: dict, start_raw, end_raw) -> str:
+    """
+    Отпечаток записей магазина с start_time в [start, end): «<число
+    записей>:<мс последней правки>». Меняется при создании, правке, удалении
+    записи и при переносе её в диапазон или из него — в том числе когда
+    запись меняют хуки work orders (каждая запись в calendar_events ставит
+    updated_at). Страница календаря опрашивает отпечаток раз в несколько
+    секунд и перечитывает сами записи только когда он изменился: один
+    агрегат по индексу idx_calendar_events_shop_start вместо пяти запросов.
+    """
+    row = next(iter(shop_db.calendar_events.aggregate([
+        {"$match": _range_query(shop, start_raw, end_raw)},
+        {"$group": {"_id": None, "count": {"$sum": 1}, "last": {"$max": "$updated_at"}}},
+    ])), None)
+    if not row:
+        return "0:0"
+    last = row.get("last")
+    stamp = 0
+    if isinstance(last, datetime):
+        if last.tzinfo is None:
+            last = last.replace(tzinfo=timezone.utc)
+        stamp = int(last.timestamp() * 1000)
+    return f"{int(row.get('count') or 0)}:{stamp}"
 
 
 def refresh_labels(shop_db, shop: dict, rows: list[dict]) -> None:

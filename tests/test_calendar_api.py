@@ -959,3 +959,106 @@ def test_non_object_json_bodies_are_validation_errors(client, api_seed):
     resp = client.put(f"/calendar/api/events/{created['id']}", data='"str"', content_type="application/json",
                       headers={"X-CSRFToken": get_csrf_token(client)})
     assert resp.status_code == 200 and resp.get_json()["id"] == created["id"]  # пустое тело = ничего не менять
+
+
+# ── live-обновление: отпечатки /calendar/api/changes ─────────
+
+def _changes(client, day: str) -> dict:
+    start, end = _range(day)
+    resp = client.get(f"/calendar/api/changes?start={start}&end={end}")
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    return resp.get_json()
+
+
+def test_changes_token_moves_on_every_change_of_the_week(client, api_seed, mongo):
+    """Отпечаток недели меняется при создании, правке, смене статуса, переносе
+    в другую неделю, удалении и при записи хуком work orders — и не меняется,
+    когда ничего не произошло или изменилась другая неделя."""
+    from app.blueprints.calendar.services.work_orders import sync_linked_appointments_status
+
+    _login_owner(client)
+    shop_db = mongo[SHOP_A_DB]
+    day, other_week = _day(20), _day(21)
+
+    empty = _changes(client, day)
+    assert empty["events"] == "0:0" and isinstance(empty["settings"], str)
+    assert _changes(client, day) == empty  # чтение отпечаток не двигает
+
+    seen = [empty["events"]]
+
+    def moved() -> str:
+        # Страница сравнивает отпечаток с последним виденным — так и здесь.
+        token = _changes(client, day)["events"]
+        assert token != seen[-1], f"token did not move: {token}"
+        seen.append(token)
+        return token
+
+    created = _create(client, {**_times(day, 9), "title": "Live"})
+    assert moved().startswith("1:")
+
+    # Запись другой недели этот отпечаток не трогает.
+    elsewhere = _create(client, {**_times(other_week, 9), "title": "Next week"})
+    assert _changes(client, day)["events"] == seen[-1]
+    assert _changes(client, other_week)["events"].startswith("1:")
+
+    # Перетаскивание карточки между колонками доски = PUT только статуса.
+    resp = _put(client, created["id"], {"status": "in_progress"})
+    assert resp.status_code == 200 and resp.get_json()["status"] == "in_progress"
+    assert resp.get_json()["title"] == "Live" and resp.get_json()["start_time"] == _times(day, 9)["start_time"]
+    assert moved().startswith("1:")
+
+    # Хук work orders (WO закрыт → запись Completed) тоже виден открытым календарям.
+    wo = _insert_wo(shop_db, api_seed, 96020, status="paid")
+    shop_db.calendar_events.update_one(
+        {"_id": ObjectId(created["id"])}, {"$set": {"work_order_id": wo["_id"], "wo_number": 96020}}
+    )
+    with client.application.app_context():
+        assert sync_linked_appointments_status(shop_db, api_seed["shop"], wo["_id"]) == 1
+    assert shop_db.calendar_events.find_one({"_id": ObjectId(created["id"])})["status"] == "completed"
+    moved()
+
+    # Перенос в эту неделю и из неё меняет число записей.
+    assert _put(client, elsewhere["id"], _times(day, 13)).status_code == 200
+    assert moved().startswith("2:")
+    assert _put(client, elsewhere["id"], _times(other_week, 13)).status_code == 200
+    assert moved().startswith("1:")
+
+    token = get_csrf_token(client)
+    assert client.delete(f"/calendar/api/events/{created['id']}", headers={"X-CSRFToken": token}).status_code == 200
+    assert _changes(client, day)["events"] == "0:0"
+
+
+def test_changes_token_covers_settings_isolation_and_permissions(client, api_seed, mongo):
+    _login_owner(client)
+    shop_db = mongo[SHOP_A_DB]
+    day = _day(22)
+    try:
+        before = _changes(client, day)
+        assert before["settings"] == "0"
+        assert _json(client, "put", "/calendar/api/settings", {"start_hour": 7, "end_hour": 19}).status_code == 200
+        after = _changes(client, day)
+        assert after["settings"] != "0" and after["events"] == before["events"]
+    finally:
+        shop_db.calendar_settings.delete_many({"key": {"$in": ["statuses", "hours"]}})
+
+    created = _create(client, {**_times(day, 9), "title": "Tenant A only"})
+    assert _changes(client, day)["events"].startswith("1:")
+    # Документ с чужим shop_id в той же базе не считается.
+    foreign = shop_db.calendar_events.insert_one({
+        "shop_id": ObjectId(), "title": "Foreign", "status": "scheduled", "updated_at": _now(),
+        "start_time": datetime.fromisoformat(f"{day}T10:00:00"), "end_time": datetime.fromisoformat(f"{day}T11:00:00"),
+    }).inserted_id
+    _EVENT_IDS.append(foreign)
+    assert _changes(client, day)["events"].startswith("1:")
+
+    # Механик (только calendar.view) отпечаток читает; другой тенант видит свою базу.
+    _login_mechanic(client)
+    assert _changes(client, day)["events"].startswith("1:")
+    _login_owner_b(client)
+    assert _changes(client, day)["events"] == "0:0"
+    assert created["id"]
+
+    # Без входа — не данные.
+    anonymous = client.application.test_client()
+    resp = anonymous.get("/calendar/api/changes")
+    assert resp.status_code in (301, 302, 401, 403)

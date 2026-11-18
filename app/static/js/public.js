@@ -928,6 +928,75 @@
 		}
 	}
 
+	/*
+	 * Раскрываемые строки таблиц (общий паттерн, стили — public.css):
+	 *   <button class="row-toggle" data-row-toggle="#detailRowId" aria-expanded="false">
+	 *   <tr class="table-detail-row d-none" id="detailRowId">
+	 * Кнопка [data-row-toggle-all="#table"] раскрывает/сворачивает все строки
+	 * внутри таблицы; её подпись — в [data-row-toggle-all-label], тексты — в
+	 * data-label-show / data-label-hide.
+	 */
+	function setRowExpanded(toggle, open) {
+		var selector = toggle.getAttribute("data-row-toggle");
+		var row = null;
+		try {
+			row = selector ? document.querySelector(selector) : null;
+		} catch (e) {
+			row = null;
+		}
+		if (!row) return;
+		row.classList.toggle("d-none", !open);
+		toggle.setAttribute("aria-expanded", open ? "true" : "false");
+	}
+
+	function syncRowToggleAll(scope) {
+		if (!scope || !scope.id) return;
+		var toggles = scope.querySelectorAll("[data-row-toggle]");
+		var allOpen = toggles.length > 0;
+		for (var i = 0; i < toggles.length; i += 1) {
+			if (toggles[i].getAttribute("aria-expanded") !== "true") allOpen = false;
+		}
+		var buttons = document.querySelectorAll("[data-row-toggle-all]");
+		for (var j = 0; j < buttons.length; j += 1) {
+			var btn = buttons[j];
+			if (btn.getAttribute("data-row-toggle-all") !== "#" + scope.id) continue;
+			btn.setAttribute("aria-pressed", allOpen ? "true" : "false");
+			var label = btn.querySelector("[data-row-toggle-all-label]");
+			var text = btn.getAttribute(allOpen ? "data-label-hide" : "data-label-show");
+			if (label && text) label.textContent = text;
+		}
+	}
+
+	function bindRowToggles() {
+		document.addEventListener("click", function (event) {
+			var target = event && event.target;
+			if (!target || typeof target.closest !== "function") return;
+
+			var toggle = target.closest("[data-row-toggle]");
+			if (toggle) {
+				setRowExpanded(toggle, toggle.getAttribute("aria-expanded") !== "true");
+				syncRowToggleAll(toggle.closest("table"));
+				return;
+			}
+
+			var allBtn = target.closest("[data-row-toggle-all]");
+			if (!allBtn) return;
+			var scope = null;
+			try {
+				scope = document.querySelector(allBtn.getAttribute("data-row-toggle-all"));
+			} catch (e) {
+				scope = null;
+			}
+			if (!scope) return;
+			var open = allBtn.getAttribute("aria-pressed") !== "true";
+			var toggles = scope.querySelectorAll("[data-row-toggle]");
+			for (var i = 0; i < toggles.length; i += 1) {
+				setRowExpanded(toggles[i], open);
+			}
+			syncRowToggleAll(scope);
+		});
+	}
+
 	window.initDatePickers = initDatePickers;
 	window.applyDatePresetToForm = applyDatePresetToForm;
 	window.dispatchEvent(new CustomEvent("roobico:public-ready"));
@@ -937,6 +1006,7 @@
 		bindSidebarNavigation();
 		bindGlobalInputConstraints();
 		bindDateInputPickerOpen();
+		bindRowToggles();
 		initDatePickers(document);
 		updateSidebarActiveState(window.location.pathname);
 	});
@@ -993,7 +1063,8 @@
   }
 
   function cellValue(td) {
-    if (td.hasAttribute("data-sort-value")) return td.getAttribute("data-sort-value");
+    if (!td) return "";
+    if (td.hasAttribute && td.hasAttribute("data-sort-value")) return td.getAttribute("data-sort-value");
     return (td.textContent || "").trim();
   }
 
@@ -1031,12 +1102,20 @@
     var tbody = table.tBodies[0];
     if (!tbody) return;
 
-    var rows = Array.prototype.slice.call(tbody.rows);
+    // .table-row-groups: одна запись = один <tbody> (строка записи + её
+    // строка-деталь) — сортируются группы целиком, по первой строке группы,
+    // иначе деталь оторвалась бы от своей записи.
+    var grouped = table.classList.contains("table-row-groups");
+    var rows = Array.prototype.slice.call(grouped ? table.tBodies : tbody.rows);
     if (rows.length === 0) return;
+    var cellOf = function (unit) {
+      var row = grouped ? unit.rows[0] : unit;
+      return row ? row.cells[colIdx] : null;
+    };
 
     var type = "text";
     for (var i = 0; i < rows.length && i < 20; i++) {
-      var cell = rows[i].cells[colIdx];
+      var cell = cellOf(rows[i]);
       if (!cell) continue;
       var val = cellValue(cell);
       if (!val || val === "-" || val === "—" || val === "N/A") continue;
@@ -1046,8 +1125,8 @@
     }
 
     rows.sort(function (a, b) {
-      var va = cellValue(a.cells[colIdx] || { textContent: "" });
-      var vb = cellValue(b.cells[colIdx] || { textContent: "" });
+      var va = cellValue(cellOf(a));
+      var vb = cellValue(cellOf(b));
       var cmp = 0;
       if (type === "number") {
         var na = parseNum(va), nb = parseNum(vb);
@@ -1070,7 +1149,8 @@
     });
 
     for (var j = 0; j < rows.length; j++) {
-      tbody.appendChild(rows[j]);
+      if (grouped) table.insertBefore(rows[j], table.tFoot);
+      else tbody.appendChild(rows[j]);
     }
   }
 

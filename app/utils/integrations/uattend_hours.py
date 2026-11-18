@@ -248,6 +248,172 @@ def aggregate_hours_by_day(report_response) -> dict[str, float]:
     return by_day
 
 
+def _clock(value) -> str:
+    """Время панча -> 'HH:MM' (24 ч) или ''.
+
+    uAttend отдаёт '11:01:00'; терпим также ISO-дату-время и '1:05 PM'.
+    """
+    if not value:
+        return ""
+    s = str(value).strip()
+    if not s:
+        return ""
+    if "T" in s:
+        dt = _parse_dt(s)
+        return dt.strftime("%H:%M") if dt is not None else ""
+    upper = s.upper()
+    suffix = ""
+    if upper.endswith(("AM", "PM")):
+        suffix = upper[-2:]
+        s = s[:-2].strip()
+    parts = s.split(":")
+    try:
+        hour = int(parts[0])
+        minute = int(parts[1]) if len(parts) > 1 else 0
+    except (TypeError, ValueError):
+        return ""
+    if suffix == "PM" and hour < 12:
+        hour += 12
+    elif suffix == "AM" and hour == 12:
+        hour = 0
+    if not (0 <= hour <= 23 and 0 <= minute <= 59):
+        return ""
+    return f"{hour:02d}:{minute:02d}"
+
+
+def _punch_method(node: dict) -> str:
+    """Чем отмечен панч ('Time Clock', 'Manual Edit', …): вход и выход
+    одним словом, если совпадают, иначе 'вход / выход'."""
+    m_in = str(node.get("InPunchMethod") or "").strip()
+    m_out = str(node.get("OutPunchMethod") or "").strip()
+    if m_in and m_out and m_in != m_out:
+        return f"{m_in} / {m_out}"
+    return m_in or m_out
+
+
+def _punch_line(uid_raw, node: dict, day: str = "", hours=None):
+    """Одна пара вход/выход -> (uid, строка) или None, если строке нечего
+    показать (нет ни часов, ни времени входа)."""
+    try:
+        uid = int(uid_raw)
+    except (TypeError, ValueError):
+        return None
+    h = float(hours) if hours is not None else _hours_from_node(node)
+    time_in = _clock(node.get("InTime") or node.get("PunchIn"))
+    time_out = _clock(node.get("OutTime") or node.get("PunchOut"))
+    if h <= 0 and not time_in:
+        return None
+    method = _punch_method(node)
+    return uid, {
+        "day": day or _node_day(node),
+        "hours": max(h, 0.0),
+        "time_in": time_in,
+        "time_out": time_out,
+        "department": str(node.get("DepartmentName") or "").strip(),
+        "method": method,
+        "edited": "manual" in method.lower(),
+    }
+
+
+def _iter_punch_lines(report_response):
+    """Пары вход/выход из ответа /reports/punch: (uid, строка).
+
+    Те же формы и те же часы на строку, что в :func:`aggregate_hours_by_user`
+    (иначе сумма по дням разошлась бы с итогом сотрудника). Для формы без
+    распознаваемых строк — ничего: разбивки по дням тогда просто нет.
+    """
+    if not isinstance(report_response, dict):
+        return
+
+    body = report_response.get("Body")
+    items = body.get("PunchReportLineItems") if isinstance(body, dict) else None
+    if isinstance(items, list) and items:
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            h = _hhmm_to_hours(it.get("Tot"))
+            if h <= 0:
+                h = _hours_from_node(it)
+            line = _punch_line(it.get("UserId"), it, hours=h)
+            if line:
+                yield line
+        return
+
+    users = report_response.get("Users")
+    if isinstance(users, list) and users and all(isinstance(u, dict) for u in users):
+        for u in users:
+            uid = u.get("UserId") or u.get("Id")
+            for wd in u.get("Workdays") or []:
+                if not isinstance(wd, dict):
+                    continue
+                day = _node_day(wd)
+                pairs = [pp for pp in (wd.get("PunchPairs") or []) if isinstance(pp, dict)]
+                if not pairs:
+                    line = _punch_line(uid, wd, day=day)
+                    if line:
+                        yield line
+                    continue
+                for pp in pairs:
+                    line = _punch_line(uid, pp, day=day or _node_day(pp))
+                    if line:
+                        yield line
+        return
+
+    punches = report_response.get("Punches")
+    if isinstance(punches, list) and punches:
+        for p in punches:
+            if isinstance(p, dict):
+                line = _punch_line(p.get("UserId"), p)
+                if line:
+                    yield line
+
+
+def aggregate_days_by_user(report_response) -> dict[int, list[dict]]:
+    """Часы каждого сотрудника по дням с парами вход/выход — для раскрытия
+    строки в Timecard / Salary.
+
+    Возвращает ``{uid: [{"date": "YYYY-MM-DD", "hours": float, "punches":
+    [{"time_in", "time_out", "hours", "department", "method", "edited"}]}]}``,
+    дни по возрастанию, панчи внутри дня — по времени входа. Строка без
+    распознаваемой даты в разбивку не попадает (итог сотрудника её считает —
+    разницу показывает вызывающий).
+    """
+    days: dict[int, dict[str, dict]] = {}
+    for uid, line in _iter_punch_lines(report_response):
+        day = line.pop("day")
+        if not day:
+            continue
+        bucket = days.setdefault(uid, {}).setdefault(day, {"date": day, "hours": 0.0, "punches": []})
+        bucket["hours"] += line["hours"]
+        bucket["punches"].append(line)
+
+    out: dict[int, list[dict]] = {}
+    for uid, by_day in days.items():
+        rows = []
+        for day in sorted(by_day):
+            bucket = by_day[day]
+            # Панч без времени входа (только итог за день) — в конец.
+            bucket["punches"].sort(key=lambda p: (not p["time_in"], p["time_in"]))
+            rows.append(bucket)
+        out[uid] = rows
+    return out
+
+
+def _clean_cached_days(raw) -> dict[int, list[dict]]:
+    """days_by_uid из кэша (ключи Mongo — строки) -> {uid: [...]}."""
+    out: dict[int, list[dict]] = {}
+    if not isinstance(raw, dict):
+        return out
+    for key, rows in raw.items():
+        try:
+            uid = int(key)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(rows, list):
+            out[uid] = [r for r in rows if isinstance(r, dict)]
+    return out
+
+
 def load_uattend_period_hours(
     shop_db, shop_id, date_from: str, date_to: str, exclude_uids=None,
     *, refresh: bool = False, with_raw: bool = False,
@@ -269,6 +435,8 @@ def load_uattend_period_hours(
             "by_day":  {iso: h},    # часы по дням (все выбранные сотрудники)
             "by_uid":  {uid: h},    # часы по сотрудникам, округлены до 0.01
             "by_uid_exact": {uid: h},  # то же без округления — для денег
+            "days_by_uid": {uid: [день]},  # разбивка по дням и панчам,
+                                           # см. aggregate_days_by_user
             "error":   str | None,  # текст проблемы (ключ, сеть, ...)
             "raw":     {"request", "response"},  # только при with_raw
         }
@@ -281,7 +449,10 @@ def load_uattend_period_hours(
     from app.utils.integrations.storage import get_integration, get_decrypted_api_key
     from app.utils.integrations.uattend_client import UAttendClient, UAttendError
 
-    out = {"connected": False, "by_day": {}, "by_uid": {}, "by_uid_exact": {}, "error": None}
+    out = {
+        "connected": False, "by_day": {}, "by_uid": {}, "by_uid_exact": {},
+        "days_by_uid": {}, "error": None,
+    }
 
     doc = get_integration(shop_db, shop_id, "uattend")
     if not doc or not doc.get("enabled"):
@@ -320,6 +491,9 @@ def load_uattend_period_hours(
         out["by_day"] = {str(k): float(v) for k, v in (cached.get("by_day") or {}).items()}
         out["by_uid"] = {int(k): float(v) for k, v in cached["by_uid"].items()}
         out["by_uid_exact"] = {int(k): float(v) for k, v in cached["by_uid_exact"].items()}
+        # Записи до появления поля его не несут — разбивки по дням тогда нет
+        # (Timecard, единственный её читатель, кэш не читает вовсе).
+        out["days_by_uid"] = _clean_cached_days(cached.get("days_by_uid"))
         return out
 
     try:
@@ -350,6 +524,7 @@ def load_uattend_period_hours(
     try:
         exact_by_uid = {k: float(v) for k, v in aggregate_hours_by_user(report).items()}
         by_day = {k: round(v, 2) for k, v in aggregate_hours_by_day(report).items()}
+        days_by_uid = aggregate_days_by_user(report)
     except Exception:  # noqa: BLE001 — схема ответа uAttend не документирована
         # Неожиданная форма ответа не должна ронять отчёт: вызывающий покажет
         # ошибку и посчитает то, что от uAttend не зависит (salary).
@@ -359,6 +534,7 @@ def load_uattend_period_hours(
     out["by_day"] = by_day
     out["by_uid"] = {k: round(v, 2) for k, v in exact_by_uid.items()}
     out["by_uid_exact"] = exact_by_uid
+    out["days_by_uid"] = days_by_uid
 
     try:
         shop_db.uattend_punch_cache.update_one(
@@ -371,6 +547,7 @@ def load_uattend_period_hours(
                 "by_day": out["by_day"],
                 "by_uid": {str(k): v for k, v in out["by_uid"].items()},
                 "by_uid_exact": {str(k): v for k, v in exact_by_uid.items()},
+                "days_by_uid": {str(k): v for k, v in days_by_uid.items()},
                 "fetched_at": datetime.now(timezone.utc),
             }},
             upsert=True,

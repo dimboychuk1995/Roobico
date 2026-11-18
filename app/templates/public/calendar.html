@@ -44,6 +44,9 @@
           <button type="button" class="btn btn-outline-secondary" id="calViewDay" data-view="day" title="One day, a column per mechanic">
             <i class="bi bi-people me-1" aria-hidden="true"></i>By mechanic
           </button>
+          <button type="button" class="btn btn-outline-secondary" id="calViewBoard" data-view="board" title="One day, three columns: Scheduled, In progress, Completed — drag a card to change its status">
+            <i class="bi bi-kanban me-1" aria-hidden="true"></i>By status
+          </button>
         </div>
         <select class="form-select form-select-sm cal-mech-filter" id="calMechanicFilter" title="Show only one mechanic">
           <option value="">All mechanics</option>
@@ -59,6 +62,11 @@
     <div class="cal-legend-row">
       <div class="cal-legend small" id="calLegend"></div>
       <div class="cal-legend small" id="calMechLegend"></div>
+      {# live-индикатор: календарь сам подхватывает чужие правки (calendar.js, опрос /calendar/api/changes) #}
+      <div class="cal-live small is-live" id="calLive" role="status"
+           title="Changes made by other people appear here within a few seconds — no need to reload the page">
+        <span class="cal-live-dot" aria-hidden="true"></span><span class="cal-live-label">Live</span>
+      </div>
     </div>
   </div>
 

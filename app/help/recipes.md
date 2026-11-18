@@ -293,10 +293,34 @@ Salary, one person at a time:
 - Their row says *"No punches in this period"* — they did not clock in on
   the uAttend clock in these dates (job timers in Roobico do not count for
   pay).
+- Their row says *"On the clock — no completed punches in this period
+  yet."* — they clocked in but have not clocked out, so there are no
+  finished hours to pay yet. Open the row (the › arrow) to see the
+  clock-in time; the hours appear once they clock out.
 - They appear as **Salary** with a tiny total and the note *"uAttend rate
   $33.00/hr is not used — Pay type is Salary"* — an hourly rate was typed
   into "Salary amount", so they get $33 per week. Settings → Users → Edit →
   **Pay type = Hourly** → Save; the next report load pays punches × rate.
+
+**On which days did an employee work, and how many hours each day?**
+Reports → Timecard / Salary → pick the period → click the small **›**
+arrow in front of the employee's name. A panel opens under the row: one
+line per day with the clock-in – clock-out pairs and the day's hours.
+**Show daily hours** above the table opens everybody at once (handy
+before paying the week); **Hide daily hours** folds them back. The daily
+breakdown is closed every time the page loads, so the report stays
+short. Only employees with uAttend punches in the period have the arrow.
+
+**An employee's hours for a day are wrong (forgot to clock out, clocked
+in late).** Roobico cannot change them: the hours come from uAttend and
+uAttend's API is read-only — it has no "edit punch" for other programs.
+Fix the punch in uAttend itself (the employee's timecard there), then
+reload Reports → Timecard / Salary: it always reads fresh punches, the
+day shows the corrected time with a pencil mark ("Manual Edit") and the
+total and pay are recalculated. General Revenue shows the new hours
+right after that for the same From / To dates, otherwise within 15
+minutes. If someone is still shown as `08:05 – on the clock`, they have
+not clocked out yet — that day counts 0 hours until they do.
 
 **Customer/Vendor Balances ignore my dates.** By design — balances are
 always all-time. Same for the Dashboard's Outstanding Balance widget.
@@ -367,6 +391,30 @@ never changes the work order it is linked to — the mechanics on the WO's
 labor blocks stay as they are; reassign them on the WO if the job really
 changed hands.
 
+**Track today's jobs on a board: waiting / in work / done.** Calendar →
+**By status**. The day is shown as three columns — Scheduled, In
+Progress, Completed — with a counter on each. When a job starts, drag
+its card into **In Progress**; when it is finished, into **Completed**
+(needs "Edit appointments"; Esc or releasing outside the columns
+cancels). Appointments linked to a work order move by themselves when
+the mechanic starts the timer or finishes the WO. Confirmed and your own
+statuses wait in the Scheduled column with a small label; Cancelled ones
+are not on the board (see them in By mechanic or Week). Use ‹ › to look
+at another day, the **+** in a column to add an appointment straight
+into that status, and the mechanic filter to see one person's cards.
+Dragging a card changes only the appointment's status — never the work
+order.
+
+**Do I have to refresh the calendar to see what others changed?** No.
+The calendar is live: an appointment created, moved, reassigned,
+re-statused or deleted by anyone — in the office, on a phone, or
+automatically by a work order — appears on every open calendar within a
+few seconds. The green **Live** dot on the right of the legend row
+confirms it; an orange **Reconnecting…** means the server is not
+reachable right now (check the internet) — it recovers by itself. Two
+things pause it on purpose: while you drag a block or a card, and while
+the tab is in the background (it catches up as soon as you come back).
+
 **Check the schedule from the phone (mechanic: "what's my day?").** Open
 the **Calendar** tab in the app — every role with "View calendar" has it,
 mechanics included. Tap the person icon for **Only mine**: only the
@@ -384,7 +432,8 @@ Nothing leaves the calendar by itself — a linked appointment turns
 Completed when the work order is done, an unlinked one keeps the status
 you gave it. Click it and set **Completed** (or **Cancelled** if the
 visit never happened — it stays visible but faded), or **Delete** it if
-it was created by mistake. To tidy a whole day use By mechanic: the
+it was created by mistake. Faster for several at once: **By status** →
+drag the cards into the **Completed** column. To tidy a whole day use By mechanic: the
 header counts each mechanic's live appointments, cancelled ones are not
 counted.
 

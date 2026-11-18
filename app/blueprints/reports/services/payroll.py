@@ -86,6 +86,48 @@ def _uattend_name(emp: dict) -> str:
     )
 
 
+def _day_label(iso_day: str) -> str:
+    """'2026-11-09' -> 'Mon 11/09/2026' (формат дат приложения + день недели)."""
+    try:
+        return date.fromisoformat(str(iso_day)).strftime("%a %m/%d/%Y")
+    except (TypeError, ValueError):
+        return str(iso_day or "")
+
+
+def _day_rows(raw_days, total_hours) -> tuple[list[dict], float]:
+    """Разбивка часов сотрудника по дням для раскрытия строки Timecard.
+
+    ``raw_days`` — список дней из ``uattend_hours.aggregate_days_by_user``.
+    Возвращает (дни, часы без даты): второе — та часть итога сотрудника,
+    которую uAttend отдал без распознаваемой даты (иначе сумма по дням молча
+    не сошлась бы с итогом строки).
+    """
+    days: list[dict] = []
+    for raw in raw_days or []:
+        if not isinstance(raw, dict) or not raw.get("date"):
+            continue
+        punches = []
+        for p in raw.get("punches") or []:
+            if not isinstance(p, dict):
+                continue
+            punches.append({
+                "time_in": str(p.get("time_in") or ""),
+                "time_out": str(p.get("time_out") or ""),
+                "hours": _to_float(p.get("hours")) or 0.0,
+                "department": str(p.get("department") or ""),
+                "method": str(p.get("method") or ""),
+                "edited": bool(p.get("edited")),
+            })
+        days.append({
+            "date": str(raw["date"]),
+            "label": _day_label(raw["date"]),
+            "hours": _to_float(raw.get("hours")) or 0.0,
+            "punches": punches,
+        })
+    undated = (total_hours or 0.0) - sum(d["hours"] for d in days)
+    return days, (undated if days and undated > 0.005 else 0.0)
+
+
 def _is_salary(user: dict) -> bool:
     """pay_type не задан — считаем salary (так форма пользователя и создаёт)."""
     return (user.get("pay_type") or "salary").lower() == "salary"
@@ -178,7 +220,10 @@ def compute_payroll(
         }
 
     Строка: name, email, role, pay_type ("salary" | "hourly"), salary_amount,
-    salary_weeks, hourly_rate, hours, total (None — нечего считать), note,
+    salary_weeks, hourly_rate, hours, days (часы по дням с панчами — список
+    {date, label, hours, punches[{time_in, time_out, hours, department,
+    method, edited}]}; пусто — разбивки нет), undated_hours (часть hours без
+    даты в ответе uAttend), total (None — нечего считать), note,
     ignored_hourly_rate (salary-строка: ставка uAttend-двойника, которая не
     оплачивается), matched_uattend_name / matched_internal_name /
     matched_internal_email / matched_confidence.
@@ -198,6 +243,7 @@ def compute_payroll(
     debug_payload = {"request": None, "response": None}
     emp_rows: list[dict] = []
     hours_by_uid: dict[int, float] = {}
+    days_by_uid: dict[int, list] = {}
     match_map: dict[int, dict] = {}
 
     # shop_db None — активный магазин не выбран: считаем только salary.
@@ -229,6 +275,10 @@ def compute_payroll(
                 hours = _to_float(value)
                 if uid is not None and hours is not None:
                     hours_by_uid[uid] = hours
+            for key, value in (loaded.get("days_by_uid") or {}).items():
+                uid = _to_uid(key)
+                if uid is not None and isinstance(value, list):
+                    days_by_uid[uid] = value
             integration_error = loaded.get("error") or None
             if debug and isinstance(loaded.get("raw"), dict):
                 debug_payload = loaded["raw"]
@@ -262,6 +312,7 @@ def compute_payroll(
             "uattend_user_id": uid,
             "uattend_name": _uattend_name(emp),
             "hours": hours_by_uid.get(uid),
+            "days": days_by_uid.get(uid),
             "rate": _to_float(emp.get("hourly_rate")),
         })
     absorbed_uids = {twin["uattend_user_id"] for twin in twin_by_internal_id.values()}
@@ -285,6 +336,7 @@ def compute_payroll(
                 f" · uAttend rate ${ignored_rate:,.2f}/hr is not used — Pay type is Salary"
                 " (set it to Hourly in Settings → Users to pay by punches)"
             )
+        days, undated_hours = _day_rows(twin.get("days"), twin.get("hours"))
         rows.append({
             "name": _internal_name(user) or "—",
             "email": user.get("email") or "",
@@ -294,6 +346,8 @@ def compute_payroll(
             "salary_weeks": salary_weeks,
             "hourly_rate": twin.get("rate"),
             "hours": twin.get("hours"),
+            "days": days,
+            "undated_hours": undated_hours,
             "total": period_total,
             "note": note,
             "ignored_hourly_rate": ignored_rate,
@@ -315,6 +369,7 @@ def compute_payroll(
         internal_user = internal_by_id.get(matched_internal_id) if matched_internal_id else None
         rate = _to_float(emp.get("hourly_rate"))
         hours = hours_by_uid.get(uid) if uid is not None else None
+        days, undated_hours = _day_rows(days_by_uid.get(uid) if uid is not None else None, hours)
         row = {
             "name": _uattend_name(emp) or "—",
             "email": (emp.get("email") or "") or (internal_user or {}).get("email") or "",
@@ -323,6 +378,8 @@ def compute_payroll(
             "salary_amount": None,
             "hourly_rate": rate,
             "hours": hours,
+            "days": days,
+            "undated_hours": undated_hours,
             "total": None,
             "note": "",
             # Бейдж «↔ Internal: …» — живое имя по internal_id; имя из кэша
@@ -337,12 +394,20 @@ def compute_payroll(
             ),
             "matched_confidence": (match or {}).get("confidence") or 0,
         }
+        # Часов нет, но разбивка есть — человек отметил вход и ещё не вышел:
+        # «No punches» рядом с раскрываемым панчем читалось бы как ошибка.
         if rate is None and hours is None:
-            row["note"] = "Hourly rate not set · no punches in this period."
+            row["note"] = (
+                "Hourly rate not set · on the clock, no completed punches in this period yet."
+                if days else "Hourly rate not set · no punches in this period."
+            )
         elif rate is None:
             row["note"] = "Hourly rate not set in Integrations."
         elif hours is None:
-            row["note"] = "No punches in this period."
+            row["note"] = (
+                "On the clock — no completed punches in this period yet."
+                if days else "No punches in this period."
+            )
         else:
             row["total"] = round2(rate * hours)
             totals["hourly"] += row["total"]

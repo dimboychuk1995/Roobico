@@ -4,6 +4,7 @@
 <ul>
   <li>Payroll per employee for a period.</li>
   <li>Salary vs hourly rows and the uAttend matching badges.</li>
+  <li>Hours day by day — folded until you open them.</li>
   <li>The permission a bookkeeper needs.</li>
 </ul>
 {% endcall %}
@@ -22,6 +23,22 @@
   <li>A note “uAttend rate … is not used — Pay type is Salary” means the person has both a weekly salary and an hourly rate: the salary is paid. If an hourly rate was typed into “Salary amount” by mistake, switch Pay type to Hourly in Settings → Users.</li>
 </ul>
 <p>Periods: This week / Last week / This month / Last month / This year / Custom. Banners explain when the uAttend integration is missing, disabled or erroring. General Revenue uses this same calculation, so its payroll equals the totals here for the same From / To dates (its uAttend hours can be up to 15 minutes old).</p>
+
+<h2>Hours by day</h2>
+<p>
+  The table shows one total per employee. A row with uAttend punches in the period has a small {{ ui("›") }} arrow in front of the name —
+  click it to open the days under the row: the weekday and date, every clock-in – clock-out pair (a lunch break gives two pairs) and the hours
+  of that day. {{ ui("Show daily hours") }} above the table opens every employee at once; {{ ui("Hide daily hours") }} folds them back.
+  Nothing is open when the page loads, and the days simply add up to the row's Hours.
+</p>
+<ul>
+  <li>Hover a pair for its length, the uAttend department and how the punch was made.</li>
+  <li>A pair with a pencil on a yellow background was corrected by hand in uAttend.</li>
+  <li>“08:05 – on the clock” — the person has not clocked out yet; the day counts 0 hours until they do.</li>
+</ul>
+{% call tip("Wrong hours? Fix them in uAttend") %}
+Roobico only reads uAttend — its API has no way to add or change a punch. Correct the punch on the employee's timecard in uAttend and reload this report: it always asks for fresh punches, so the day and the pay are recalculated at once.
+{% endcall %}
 
 {% call note("Nobody can change their own pay") %}
 Even with the pay permission, a user cannot edit their own pay type or salary — an owner's pay is edited from another owner account, or not at all.

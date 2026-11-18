@@ -178,6 +178,36 @@ bookkeeper role in Settings → Roles. Payroll per employee for a period
   hourly rate into "Salary amount": the person then gets $33 per **week**.
   Fix: Settings → Users → Edit → Pay type = Hourly.
 - Banners explain when the uAttend integration is missing/disabled/erroring.
+- **Hours by day — hidden until you open them.** The table shows one
+  total per employee. Every row that has uAttend punches in the period
+  has a small **›** arrow in front of the name: click it and a panel
+  opens under the row with one line per worked day — the weekday and
+  date, every clock-in – clock-out pair of that day (`07:58 – 12:01`,
+  `12:32 – 17:04`; a lunch break gives two pairs) and the hours of the
+  day. Click the arrow again to fold it. **Show daily hours** above the
+  table opens every employee at once and then reads **Hide daily
+  hours**. Nothing is open when the page loads, and opening a row
+  changes no totals — the days simply add up to the row's Hours. A
+  salary employee with a uAttend twin has the arrow too (punches for
+  reference; the salary is what is paid). Details on a punch:
+  - hover a pair to see its length, the uAttend department and how the
+    punch was made (Time Clock, Smartphone App, Website…);
+  - a pair with a **pencil** on a yellow background was corrected by
+    hand in uAttend ("Manual Edit");
+  - `08:05 – on the clock` means the person clocked in and has not
+    clocked out yet — it counts 0 hours until they do;
+  - a last line "Hours uAttend returned without a date" appears only if
+    uAttend sent hours with no date; they are in the total but cannot
+    be placed on a day.
+  Sorting the table by a column keeps every open panel under its own
+  employee.
+- **Hours cannot be edited from Roobico — edit them in uAttend.** The
+  uAttend API is read-only: it lets Roobico read employees, timecards
+  and punches, but has no way to add, change or delete a punch. To fix
+  a day (a missed clock-out, a wrong time), correct the punch in
+  uAttend — on the employee's timecard there — then reload this page:
+  Timecard always asks uAttend for fresh punches, so the corrected day
+  (marked with the pencil) and the new total appear at once.
 - **The same numbers feed the General Revenue report** — both reports use
   one calculation, so Salary subtotal, Hourly subtotal and the grand total
   here equal Salaries, Hourly (uAttend) and Total payroll there for the
@@ -304,13 +334,24 @@ what, and when. It shows **appointments only** — the blocks you, a
 colleague or someone in the mobile app created by hand. Work orders do
 not appear on it by themselves; a work order is on the calendar only
 when an appointment is **linked** to it (see "Appointments and work
-orders" below). The page keeps itself fresh: every 30 seconds it
-re-reads the visible days, so an appointment created on a phone or by a
-colleague shows up without pressing F5 (the check pauses while a dialog
-is open, while you are dragging a block and while the browser tab is
-hidden).
+orders" below).
 
-**Two views.**
+**The calendar is live — nobody has to reload the page.** While the
+calendar is open it checks for changes every 3 seconds, so whatever a
+colleague, a mechanic on the phone or a work order changes — a new
+appointment, a moved or resized block, another mechanic, a new status,
+a deleted record, renamed statuses or new working hours — appears on
+every open calendar within a few seconds, for every user of the shop,
+in all three views. A green **Live** dot at the right end of the legend
+row shows that the page is connected; it turns into an orange
+**Reconnecting…** when the server cannot be reached (no internet, a
+server restart) and goes green again by itself — no reload needed. The
+check pauses only while you are dragging something and while the
+browser tab is in the background; the moment you return to the tab the
+calendar catches up. Renamed customers, units and mechanics and the
+work-order state of a linked appointment are picked up within a minute.
+
+**Three views.**
 
 - **Week** — seven columns, Monday to Sunday, of the selected week.
   Today's number has a filled circle. Click a day header to open that
@@ -320,23 +361,72 @@ hidden).
   appointments nobody is assigned to yet. Each header shows the
   mechanic's colour dot, name and how many appointments (cancelled ones
   not counted) they have that day.
+- **By status** — the same one day as a board of three columns:
+  **Scheduled**, **In Progress** and **Completed**. Every appointment of
+  the day is a card in the column of its status; drag a card into
+  another column to change the status (see "By status board" below).
 
-In both views the hours run down the left side: hour lines, lighter
-quarter-hour lines and a red line at the current time in today's
-column. The visible hours come from **Working hours** in the settings
-(06:00–20:00 by default) and stretch automatically whenever an
+In Week and By mechanic the hours run down the left side: hour lines,
+lighter quarter-hour lines and a red line at the current time in
+today's column. The visible hours come from **Working hours** in the
+settings (06:00–20:00 by default) and stretch automatically whenever an
 appointment starts earlier or ends later — nothing is ever hidden. A
 normal day fits on the screen; a very long one scrolls inside the grid.
 
 **Toolbar.** ‹ **Today** › move by a week (Week) or by a day (By
-mechanic); the date box jumps straight to a date; **Week / By mechanic**
-switch the view; the **All mechanics** dropdown shows one mechanic (or
-only unassigned appointments) in either view — the view and the filter
-are remembered in this browser; the gear opens **Calendar settings**
-(needs "Manage calendar settings"). Under the toolbar a legend shows one
-dot per status. The address bar follows you
-(`/calendar?date=2026-11-09&view=day`), so a bookmark or a link pasted
+mechanic, By status); the date box jumps straight to a date; **Week /
+By mechanic / By status** switch the view; the **All mechanics**
+dropdown shows one mechanic (or only unassigned appointments) in any
+view — the view and the filter are remembered in this browser; the gear
+opens **Calendar settings** (needs "Manage calendar settings"). Under
+the toolbar a legend shows one dot per status, the mechanics' chips and
+the **Live** dot. The address bar follows you
+(`/calendar?date=2026-11-09&view=day`; `view=week`, `view=day` for By
+mechanic, `view=board` for By status), so a bookmark or a link pasted
 to a colleague opens the same day in the same view.
+
+**By status board.** Toolbar → **By status**. One day, three columns,
+each with the status colour on top, the status name and a counter:
+
+- **Scheduled** — everything that has not started yet: the status
+  Scheduled and also Confirmed and any status your shop added itself
+  ("Waiting for parts"). Such a card carries a small coloured label
+  with its real status, so a Confirmed job is still told apart.
+- **In Progress** — appointments in the status In Progress.
+- **Completed** — appointments in the status Completed.
+
+The column titles are the names of these three statuses from Calendar
+settings: rename Completed to "Done" there and the column is called
+Done. **Cancelled** appointments are not on the board; a line under the
+columns says how many were left out — see them in By mechanic or Week.
+
+A card shows the time, the title in bold (or the customer's name when
+there is no title), the customer, the unit, the mechanics (initials
+chip and name, or *Unassigned*) and a **WO #** badge when the
+appointment is linked. The stripe on its left edge is the status
+colour. Cards are sorted by start time; a long column scrolls on its
+own.
+
+**Drag a card into another column to change its status** (needs "Edit
+appointments"): Scheduled → In Progress when the job starts, → Completed
+when it is done, or back if it was moved by mistake. The column you are
+over gets a dashed frame; release the mouse and the card stays there —
+the status is saved at once and every other open calendar shows it
+within a few seconds. Dragging a Confirmed card inside the Scheduled
+column changes nothing; dropping a card from another column into
+Scheduled sets plain Scheduled. Release outside the columns or press
+Esc to cancel. On a touch screen drag the card sideways (up and down
+scrolls the column). Only the status changes — the time, the mechanics
+and everything else stay as they were, and for a linked appointment the
+work order is **not** touched (the status buttons in the dialog work
+the same way; see "Appointments and work orders").
+
+Click a card to open the usual dialog. The **+** in a column header
+(needs "Create appointments") starts a new appointment for the shown
+day already in that column's status — today at the next quarter hour,
+another day at 08:00; with one mechanic picked in the filter, that
+mechanic is prefilled. The **All mechanics** filter narrows the board
+to one mechanic's cards (or the unassigned ones).
 
 **What a block shows.** The colour is the appointment status. The first
 line is the time (07:30–09:00), then the **title** in bold — the free
@@ -390,9 +480,10 @@ that mechanic; for a crew the member whose column you dragged out of is
 swapped for the new one and the rest stay; dropping on **Unassigned**
 removes the mechanics). Esc while dragging cancels. Drag the **bottom
 edge** of a block to make it longer or shorter (15-minute steps, at
-least 15 minutes). Change the status with the buttons in the dialog —
-**Cancelled** keeps the record visible but faded; **Delete** (needs
-"Delete appointments") removes it for good.
+least 15 minutes). Change the status with the buttons in the dialog, or
+in **By status** by dragging the card into another column —
+**Cancelled** (dialog only) keeps the record visible but faded;
+**Delete** (needs "Delete appointments") removes it for good.
 
 **Calendar settings** (gear; needs "Manage calendar settings").
 *Appointment statuses*: rename a status, pick its colour, add your own
@@ -467,7 +558,8 @@ work-order state shows Paid as Completed.
 **On the phone.** The mobile app's Calendar tab shows the same
 appointments (Schedule / Day / 3 Day / Week / Month, mechanic lanes,
 "Only mine"), and anything created or moved there appears on the web
-within half a minute — see Mechanic app → Calendar on the phone.
+within a few seconds — see Mechanic app → Calendar on the phone. (The
+phone itself reloads when you return to the tab or pull down.)
 
 **How to…**
 
@@ -486,6 +578,14 @@ within half a minute — see Mechanic app → Calendar on the phone.
   **Schedule** → date and time → Save.
 - *A customer calls to cancel* — open the appointment → **Cancelled** →
   Save (it stays visible, faded); Delete only if it was a mistake.
+- *Mark a job started or finished by hand* — **By status** → drag the
+  card into **In Progress** or **Completed**. (A linked appointment
+  gets there by itself when the mechanic starts or finishes the WO.)
+- *See what is still waiting today* — **By status** → the
+  **Scheduled** column and its counter.
+- *Watch the day on a wall screen* — open the calendar in **By
+  status** (or By mechanic) and leave it: it updates by itself while
+  the green **Live** dot is on.
 - *Who actually worked on what* — that is tracked time, not the
   calendar: Reports → **Mechanic Hours**, or the work order's time logs.
 

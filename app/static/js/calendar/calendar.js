@@ -4,8 +4,8 @@
  * Plain JS, no build step. Sections:
  *   1. utilities (dates, colours, http)
  *   2. state + data layer (/calendar/api/*)
- *   3. rendering (toolbar, legend, grid, blocks)
- *   4. interactions (navigation, grid click, drag & drop, resize, refresh)
+ *   3. rendering (toolbar, legend, grid, blocks, status board)
+ *   4. interactions (navigation, grid click, drag & drop, resize, live refresh)
  *   5. appointment modal
  *   6. settings modal
  *   7. boot
@@ -14,6 +14,14 @@
  * exactly as the API sends and expects them; inside the page an appointment
  * is {date: "YYYY-MM-DD", startMin, endMin} (minutes since midnight, end may
  * be 1440 = next-day midnight).
+ *
+ * Three views: "week" (a column per day), "day" (one day, a column per
+ * mechanic) and "board" (one day, a column per stage — Scheduled / In
+ * progress / Completed; dragging a card to another column changes its status).
+ *
+ * Live: the page asks /calendar/api/changes for a cheap change token every
+ * few seconds and re-reads the appointments only when it differs, so edits
+ * made by other people (or by work orders) show up without a reload.
  */
 (function () {
   "use strict";
@@ -29,8 +37,14 @@
 
   const SLOT = 15;
   const MIN_HOUR_H = 44;
-  const REFRESH_MS = 30000;
+  const LIVE_POLL_MS = 3000;      // change-token check while the tab is visible
+  const LIVE_RETRY_MS = 15000;    // pace after repeated failures (offline, server restart)
+  const LIVE_FAILS_BEFORE_SLOW = 3;
+  const FULL_REFRESH_MS = 60000;  // safety net: labels and WO state do not move the token
   const DRAG_THRESHOLD = 4;
+  const VIEWS = ["week", "day", "board"];
+  // Board columns = the system statuses of the work flow; their labels and colours come from settings.
+  const BOARD_COLUMNS = ["scheduled", "in_progress", "completed"];
   const UNASSIGNED = "unassigned";
   const LS_VIEW = "roobico.calendar.view";
   const LS_MECH = "roobico.calendar.mechanic";
@@ -59,8 +73,8 @@
   const $ = (id) => document.getElementById(id);
   const ui = {
     prev: $("calPrev"), today: $("calToday"), next: $("calNext"), date: $("calDate"), title: $("calTitle"),
-    viewWeek: $("calViewWeek"), viewDay: $("calViewDay"), filter: $("calMechanicFilter"),
-    settingsBtn: $("calSettingsBtn"), legend: $("calLegend"), mechLegend: $("calMechLegend"),
+    viewWeek: $("calViewWeek"), viewDay: $("calViewDay"), viewBoard: $("calViewBoard"), filter: $("calMechanicFilter"),
+    settingsBtn: $("calSettingsBtn"), legend: $("calLegend"), mechLegend: $("calMechLegend"), live: $("calLive"),
   };
 
   // ── 1. Utilities ─────────────────────────────────────────────────────────
@@ -197,7 +211,7 @@
 
   /* JSON fetch; CSRF header is added by static/js/csrf.js. Rejects with Error(message) on !ok. */
   function api(method, url, body) {
-    const opts = { method, credentials: "same-origin", headers: { Accept: "application/json" } };
+    const opts = { method, credentials: "same-origin", cache: "no-store", headers: { Accept: "application/json" } };
     if (body !== undefined) {
       opts.headers["Content-Type"] = "application/json";
       opts.body = JSON.stringify(body);
@@ -236,10 +250,15 @@
     hourH: 48,
   };
   let drag = null;
+  let boardDrag = null;
   let suppressClickUntil = 0;
-  let refreshTimer = null;
   let nowTimer = null;
   let resizeTimer = null;
+  // Live refresh: tokens last seen for the loaded week (null = not known yet).
+  const live = {
+    timer: null, busy: false, stopped: false, failures: 0,
+    week: "", eventsToken: null, settingsToken: null, fullAt: 0, renderPending: false,
+  };
 
   const statusByKey = (key) => state.settings.statuses.find((s) => s.key === key) || null;
   const statusColor = (key) => { const s = statusByKey(key); return s ? s.color : "#888888"; };
@@ -250,7 +269,6 @@
     return idx >= 0 ? MECH_PALETTE[idx % MECH_PALETTE.length] : UNASSIGNED_COLOR;
   }
   const eventById = (id) => state.events.find((e) => e.id === id) || null;
-  const anyModalOpen = () => !!document.querySelector(".modal.show");
 
   function normalizeEvent(raw) {
     const start = String(raw.start_time || "");
@@ -332,7 +350,16 @@
       .catch((err) => { console.error("calendar wo_states", err); state.woStates = []; });
   }
 
-  /* Loads the week that contains state.date. silent = live refresh (no toasts, re-render only on change). */
+  /* Live refresh of the settings another user saved: silent, keeps the current ones on failure.
+     Resolves true when new settings were applied. */
+  function refreshSettings() {
+    return api("GET", "/calendar/api/settings")
+      .then((data) => { applySettings(data); return true; })
+      .catch((err) => { console.error("calendar settings refresh", err); return false; });
+  }
+
+  /* Loads the week that contains state.date. silent = live refresh (no toasts, re-render only on change).
+     Resolves true/false = the appointments changed or not, null = the request failed. */
   function loadEvents(silent) {
     const ws = weekStartOf(state.date);
     const url = "/calendar/api/events?start=" + encodeURIComponent(ws + "T00:00:00") +
@@ -352,7 +379,7 @@
         state.loadError = err.message || "Could not load appointments";
         notify(state.loadError, "error");
       }
-      return false;
+      return null;
     });
   }
 
@@ -564,6 +591,9 @@
   }
 
   function render() {
+    gridEl.classList.toggle("is-board", state.view === "board");
+    gridEl.classList.toggle("can-edit", can.edit);
+    if (state.view === "board") { renderBoard(); return; }
     const cols = buildColumns();
     state.columns = cols;
     const vr = computeVisibleRange(cols);
@@ -641,6 +671,119 @@
     gridEl.appendChild(msg);
   }
 
+  // Status board: one day, a column per stage of the work.
+
+  /* Column of an appointment on the board. In Progress and Completed have their own column; every
+     other live status (Scheduled, Confirmed, the shop's own ones) is still ahead and waits in the
+     first one; a Cancelled appointment is not on the board at all. */
+  function boardColumnOf(ev) {
+    if (ev.status === "cancelled") return "";
+    return ev.status === "in_progress" || ev.status === "completed" ? ev.status : "scheduled";
+  }
+
+  function buildCardEl(ev, colKey) {
+    const el = document.createElement("div");
+    el.className = "cal-card";
+    el.dataset.id = ev.id;
+    el.style.setProperty("--cal-card-accent", statusColor(ev.status));
+    el.title = eventTooltip(ev);
+
+    const title = ev.title || ev.customerLabel || "(no title)";
+    let html = '<div class="cal-card-head"><span class="cal-card-time">' + fmtRange(ev.startMin, ev.endMin) + "</span>";
+    if (ev.status !== colKey) {
+      // Confirmed / a custom status sharing the first column: say which one it is.
+      const color = statusColor(ev.status);
+      html += '<span class="badge" style="background:' + esc(color) + ";color:" + esc(textOn(color)) + '">' + esc(statusLabel(ev.status)) + "</span>";
+    }
+    if (ev.workOrderId) html += '<span class="badge text-bg-secondary cal-card-wo">WO #' + esc(ev.woNumber || "?") + "</span>";
+    html += "</div>";
+    html += '<div class="cal-card-title">' + esc(title) + "</div>";
+    if (ev.customerLabel && ev.customerLabel !== title) html += '<div class="cal-card-sub">' + esc(ev.customerLabel) + "</div>";
+    if (ev.unitLabel) html += '<div class="cal-card-sub">' + esc(ev.unitLabel) + "</div>";
+    html += '<div class="cal-card-mechs">';
+    if (ev.mechanics.length) {
+      html += ev.mechanics.map((m) => mechChipHtml(m, false)).join("") +
+        '<span class="cal-card-mech-names">' + esc(ev.mechanics.map((m) => m.name).join(", ")) + "</span>";
+    } else {
+      html += '<span class="cal-card-mech-names is-unassigned">Unassigned</span>';
+    }
+    html += "</div>";
+    el.innerHTML = html;
+    return el;
+  }
+
+  function renderBoard() {
+    state.columns = [];
+    const dayEvents = state.events
+      .filter((e) => e.date === state.date && passesFilter(e))
+      .sort((a, b) => a.startMin - b.startMin || a.endMin - b.endMin || (a.id < b.id ? -1 : 1));
+
+    // Keep each column where the user scrolled it (the board is rebuilt on every live update).
+    const keepTop = {};
+    gridEl.querySelectorAll(".cal-board-col").forEach((col) => {
+      const list = col.querySelector(".cal-board-list");
+      if (list) keepTop[col.dataset.status] = list.scrollTop;
+    });
+    const oldBoard = gridEl.querySelector(".cal-board");
+    const keepLeft = oldBoard ? oldBoard.scrollLeft : 0;
+
+    gridEl.style.height = gridHeight() + "px";
+    gridEl.classList.remove("can-create");
+
+    const board = document.createElement("div");
+    board.className = "cal-board";
+    const lists = {};
+    BOARD_COLUMNS.forEach((key) => {
+      const items = dayEvents.filter((e) => boardColumnOf(e) === key);
+      const label = statusLabel(key);
+      const col = document.createElement("section");
+      col.className = "cal-board-col";
+      col.dataset.status = key;
+      col.style.setProperty("--cal-board-accent", statusColor(key));
+
+      const head = document.createElement("header");
+      head.className = "cal-board-head";
+      head.innerHTML =
+        '<span class="cal-legend-dot" style="background:' + esc(statusColor(key)) + '"></span>' +
+        '<span class="cal-board-title" title="' + esc(label) + '">' + esc(label) + "</span>" +
+        '<span class="cal-board-count" title="Appointments in this column">' + items.length + "</span>" +
+        (can.create
+          ? '<button type="button" class="btn btn-outline-secondary btn-sm cal-board-add" data-status="' + esc(key) +
+            '" title="New appointment: ' + esc(label) + '" aria-label="New appointment: ' + esc(label) + '">' +
+            '<i class="bi bi-plus-lg" aria-hidden="true"></i></button>'
+          : "");
+
+      const list = document.createElement("div");
+      list.className = "cal-board-list";
+      items.forEach((ev) => list.appendChild(buildCardEl(ev, key)));
+      if (!items.length) {
+        const empty = document.createElement("div");
+        empty.className = "cal-board-empty";
+        empty.textContent = state.loadedWeek ? "No appointments" + (can.edit ? " — drag one here" : "") : "Loading…";
+        list.appendChild(empty);
+      }
+      lists[key] = list;
+      col.appendChild(head);
+      col.appendChild(list);
+      board.appendChild(col);
+    });
+
+    const cancelled = dayEvents.filter((e) => e.status === "cancelled").length;
+    if (cancelled) {
+      const note = document.createElement("div");
+      note.className = "cal-board-note";
+      note.textContent = cancelled + (cancelled === 1 ? " cancelled appointment is" : " cancelled appointments are") +
+        " not on the board — see By mechanic or Week.";
+      board.appendChild(note);
+    }
+
+    gridEl.replaceChildren(board);
+    BOARD_COLUMNS.forEach((key) => { if (keepTop[key]) lists[key].scrollTop = keepTop[key]; });
+    board.scrollLeft = keepLeft;
+    if (state.loadError) showGridMessage(state.loadError);
+    updateToolbar();
+  }
+
   function updateNowLine() {
     const now = shopNow();
     const todayCols = state.columns.filter((c) => c.isToday);
@@ -657,10 +800,12 @@
   function updateToolbar() {
     ui.title.textContent = state.view === "week" ? weekTitle(weekStartOf(state.date)) : longDate(state.date);
     if (ui.date.value !== state.date) setDateInput(ui.date, state.date);
-    ui.viewWeek.classList.toggle("active", state.view === "week");
-    ui.viewDay.classList.toggle("active", state.view === "day");
-    ui.viewWeek.setAttribute("aria-pressed", String(state.view === "week"));
-    ui.viewDay.setAttribute("aria-pressed", String(state.view === "day"));
+    [["week", ui.viewWeek], ["day", ui.viewDay], ["board", ui.viewBoard]].forEach((pair) => {
+      const btn = pair[1];
+      if (!btn) return;
+      btn.classList.toggle("active", state.view === pair[0]);
+      btn.setAttribute("aria-pressed", String(state.view === pair[0]));
+    });
     if (ui.filter.value !== state.filter) ui.filter.value = state.filter;
     ui.mechLegend.querySelectorAll(".cal-mech-legend-btn").forEach((b) => {
       b.classList.toggle("is-active", b.dataset.mech === state.filter && state.filter !== "");
@@ -709,7 +854,7 @@
   }
 
   function setView(view) {
-    state.view = view === "day" ? "day" : "week";
+    state.view = VIEWS.indexOf(view) >= 0 ? view : "week";
     lsSet(LS_VIEW, state.view);
     syncUrl();
     render();
@@ -725,9 +870,28 @@
     return state.columns.find((c) => c.key === key) || null;
   }
 
-  /* Click on an empty slot → new appointment; on a block → edit; on a week header → day view. */
+  /* "+" of a board column: a new appointment for the shown day, already in that column's status. */
+  function openCreateFromBoard(status) {
+    if (!can.create) return;
+    const now = shopNow();
+    const first = state.settings.start_hour * 60;
+    const dayStart = clamp(8 * 60, first, Math.max(first, state.settings.end_hour * 60 - 60));
+    const start = state.date === now.date ? clamp(Math.ceil(now.minutes / SLOT) * SLOT, 0, 1440 - 60) : dayStart;
+    const mech = state.filter && state.filter !== UNASSIGNED ? mechanicById(state.filter) : null;
+    openCreateModal({ date: state.date, startMin: start, endMin: Math.min(1440, start + 60), mechanics: mech ? [mech] : [], status });
+  }
+
+  /* Click on an empty slot → new appointment; on a block or a board card → edit; on a week header → day view. */
   function onGridClick(e) {
     if (Date.now() < suppressClickUntil) return;
+    const addBtn = e.target.closest(".cal-board-add");
+    if (addBtn) { openCreateFromBoard(addBtn.dataset.status); return; }
+    const card = e.target.closest(".cal-card");
+    if (card) {
+      const cardEv = eventById(card.dataset.id);
+      if (cardEv) openEditModal(cardEv);
+      return;
+    }
     const head = e.target.closest(".cal-col-head.is-clickable");
     if (head) {
       const col = columnByKey(head.dataset.colKey);
@@ -760,8 +924,88 @@
     return out;
   }
 
+  // Board drag & drop: a card dragged into another column takes that column's status.
+
+  function boardPointerDown(e) {
+    if (boardDrag) releaseBoardDrag();
+    const card = e.target.closest(".cal-card");
+    const colEl = card ? card.closest(".cal-board-col") : null;
+    const ev = card ? eventById(card.dataset.id) : null;
+    if (!ev || !colEl) return;
+    const rect = card.getBoundingClientRect();
+    boardDrag = {
+      ev, el: card, pointerId: e.pointerId, active: false, ghost: null,
+      startX: e.clientX, startY: e.clientY,
+      offsetX: e.clientX - rect.left, offsetY: e.clientY - rect.top, width: rect.width,
+      fromKey: colEl.dataset.status, toKey: colEl.dataset.status,
+    };
+  }
+
+  function boardPointerMove(e) {
+    const d = boardDrag;
+    if (!d.active) {
+      if (Math.abs(e.clientX - d.startX) < DRAG_THRESHOLD && Math.abs(e.clientY - d.startY) < DRAG_THRESHOLD) return;
+      d.active = true;
+      try { gridEl.setPointerCapture(e.pointerId); } catch (err) { /* capture unsupported */ }
+      // The card itself stays in its column (dimmed); a copy follows the pointer.
+      d.ghost = d.el.cloneNode(true);
+      d.ghost.classList.add("is-ghost");
+      d.ghost.style.width = d.width + "px";
+      gridEl.appendChild(d.ghost);
+      d.el.classList.add("is-drag-source");
+      gridEl.classList.add("is-dragging");
+    }
+    d.ghost.style.left = (e.clientX - d.offsetX) + "px";
+    d.ghost.style.top = (e.clientY - d.offsetY) + "px";
+    let target = "";
+    gridEl.querySelectorAll(".cal-board-col").forEach((col) => {
+      const r = col.getBoundingClientRect();
+      const inside = e.clientX >= r.left && e.clientX < r.right && e.clientY >= r.top && e.clientY < r.bottom;
+      if (inside) target = col.dataset.status;
+      col.classList.toggle("is-drop-target", inside && col.dataset.status !== d.fromKey);
+    });
+    // Outside every column = "release to cancel", like leaving the grid in the other views.
+    d.toKey = target;
+    d.ghost.classList.toggle("is-outside", !target);
+  }
+
+  function releaseBoardDrag() {
+    const d = boardDrag;
+    boardDrag = null;
+    if (!d) return null;
+    try { gridEl.releasePointerCapture(d.pointerId); } catch (err) { /* already released */ }
+    if (d.ghost) d.ghost.remove();
+    d.el.classList.remove("is-drag-source");
+    gridEl.classList.remove("is-dragging");
+    gridEl.querySelectorAll(".cal-board-col.is-drop-target").forEach((col) => col.classList.remove("is-drop-target"));
+    return d;
+  }
+
+  function boardPointerUp() {
+    const d = releaseBoardDrag();
+    if (!d || !d.active) return; // a plain click → handled by onGridClick
+    suppressClickUntil = Date.now() + 400;
+    if (!d.toKey || d.toKey === d.fromKey) return;
+    setStatusFromBoard(d.ev, d.toKey);
+  }
+
+  /* The card jumps to its new column at once; the server answer (or its refusal) follows. */
+  function setStatusFromBoard(ev, status) {
+    const before = ev.status;
+    ev.status = status;
+    render();
+    api("PUT", "/calendar/api/events/" + encodeURIComponent(ev.id), { status })
+      .then((saved) => { upsertEvent(saved); render(); })
+      .catch((err) => {
+        ev.status = before;
+        notify(err.message || "Could not change the status.", "error");
+        loadEvents(false).then(render);
+      });
+  }
+
   function onPointerDown(e) {
     if (e.button !== 0 || !can.edit) return;
+    if (state.view === "board") { boardPointerDown(e); return; }
     if (drag) { const stale = releaseDrag(); if (stale && stale.active) render(); }
     const evEl = e.target.closest(".cal-event");
     if (!evEl) return;
@@ -785,6 +1029,7 @@
   }
 
   function onPointerMove(e) {
+    if (boardDrag) { boardPointerMove(e); return; }
     if (!drag) return;
     if (!drag.active) {
       if (Math.abs(e.clientX - drag.startX) < DRAG_THRESHOLD && Math.abs(e.clientY - drag.startY) < DRAG_THRESHOLD) return;
@@ -835,11 +1080,13 @@
   }
 
   function onPointerCancel() {
+    if (boardDrag) { releaseBoardDrag(); return; }
     const d = releaseDrag();
     if (d && d.active) render();
   }
 
   function onPointerUp() {
+    if (boardDrag) { boardPointerUp(); return; }
     const d = releaseDrag();
     if (!d || !d.active) return; // a plain click → handled by onGridClick
     suppressClickUntil = Date.now() + 400;
@@ -865,7 +1112,13 @@
   }
 
   function onKeyDown(e) {
-    if (e.key === "Escape" && drag) {
+    if (e.key !== "Escape") return;
+    if (boardDrag) {
+      const b = releaseBoardDrag();
+      if (b && b.active) suppressClickUntil = Date.now() + 400;
+      return;
+    }
+    if (drag) {
       const d = releaseDrag();
       if (d && d.active) { suppressClickUntil = Date.now() + 400; render(); }
     }
@@ -873,12 +1126,76 @@
 
   function onResize() {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(render, 120);
+    resizeTimer = setTimeout(() => { if (!drag && !boardDrag) render(); }, 120);
   }
 
-  function liveRefreshTick() {
-    if (document.visibilityState !== "visible" || anyModalOpen() || drag) return;
-    loadEvents(true).then((changed) => { if (changed) render(); });
+  // Live refresh. Every LIVE_POLL_MS the page asks for the change tokens of the loaded week (one
+  // cheap request); the appointments are re-read only when the token moved, and once in
+  // FULL_REFRESH_MS regardless — a renamed customer or a work order's state does not move it.
+
+  function setLiveState(ok) {
+    if (!ui.live) return;
+    ui.live.classList.toggle("is-live", ok);
+    ui.live.classList.toggle("is-offline", !ok);
+    const label = ui.live.querySelector(".cal-live-label");
+    if (label) label.textContent = ok ? "Live" : "Reconnecting…";
+  }
+
+  function scheduleLive(delay) {
+    clearTimeout(live.timer);
+    if (!live.stopped) live.timer = setTimeout(liveTick, delay);
+  }
+
+  function liveTick() {
+    if (live.stopped) return;
+    const ws = state.loadedWeek;
+    // Never redraw under a drag: the next tick picks the change up.
+    if (live.busy || !ws || document.visibilityState !== "visible" || drag || boardDrag) {
+      scheduleLive(LIVE_POLL_MS);
+      return;
+    }
+    if (live.renderPending) { live.renderPending = false; render(); }
+    if (live.week !== ws) { live.week = ws; live.eventsToken = null; } // another week → its own token
+    live.busy = true;
+    const url = "/calendar/api/changes?start=" + encodeURIComponent(ws + "T00:00:00") +
+      "&end=" + encodeURIComponent(addDays(ws, 7) + "T00:00:00");
+    api("GET", url).then((tok) => {
+      if (!tok || typeof tok.events !== "string") throw new Error("Unexpected answer");
+      live.failures = 0;
+      setLiveState(true);
+      const jobs = [];
+      const settingsToken = String(tok.settings == null ? "" : tok.settings);
+      if (live.settingsToken === null) {
+        live.settingsToken = settingsToken; // the settings were loaded moments ago, at start
+      } else if (settingsToken !== live.settingsToken) {
+        jobs.push(refreshSettings().then((applied) => {
+          if (applied) { live.settingsToken = settingsToken; renderLegend(); }
+          return applied;
+        }));
+      }
+      if (tok.events !== live.eventsToken || Date.now() - live.fullAt > FULL_REFRESH_MS) {
+        jobs.push(loadEvents(true).then((changed) => {
+          // Remember the token only for a successful read of the week it describes.
+          if (changed !== null && state.loadedWeek === ws) { live.eventsToken = tok.events; live.fullAt = Date.now(); }
+          return !!changed;
+        }));
+      }
+      return Promise.all(jobs).then((results) => {
+        if (!results.some(Boolean)) return;
+        if (drag || boardDrag) live.renderPending = true; else render();
+      });
+    }).catch((err) => {
+      live.failures += 1;
+      if (live.failures >= LIVE_FAILS_BEFORE_SLOW) setLiveState(false);
+      console.error("calendar live refresh", err);
+    }).finally(() => {
+      live.busy = false;
+      scheduleLive(live.failures >= LIVE_FAILS_BEFORE_SLOW ? LIVE_RETRY_MS : LIVE_POLL_MS);
+    });
+  }
+
+  function onVisibilityChange() {
+    if (document.visibilityState === "visible") scheduleLive(0); // back on the tab → check right away
   }
 
   // ── 5. Appointment modal ─────────────────────────────────────────────────
@@ -1129,9 +1446,11 @@
     if (m) m.show();
   }
 
-  /* opts: {date, startMin, endMin, mechanics?, snapshot?} — snapshot = WO prefill from ?wo= */
+  /* opts: {date, startMin, endMin, mechanics?, status?, snapshot?} — snapshot = WO prefill from ?wo=;
+     status = the board column the "+" was pressed in. */
   function openCreateModal(opts) {
     resetModal();
+    if (opts.status && statusByKey(opts.status)) modal.status = opts.status;
     f.label.textContent = "New appointment";
     fillTimes(opts.date, opts.startMin, opts.endMin);
     modal.mechanics = (opts.mechanics || []).map((m) => ({ id: m.id, name: m.name }));
@@ -1488,6 +1807,7 @@
     ui.date.addEventListener("change", () => { if (isValidIso(ui.date.value)) navigate(ui.date.value); });
     ui.viewWeek.addEventListener("click", () => setView("week"));
     ui.viewDay.addEventListener("click", () => setView("day"));
+    if (ui.viewBoard) ui.viewBoard.addEventListener("click", () => setView("board"));
     ui.filter.addEventListener("change", () => setFilter(ui.filter.value));
     ui.mechLegend.addEventListener("click", (e) => {
       const btn = e.target.closest(".cal-mech-legend-btn");
@@ -1500,6 +1820,7 @@
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("pointercancel", onPointerCancel);
     document.addEventListener("keydown", onKeyDown);
+    document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("resize", onResize);
   }
 
@@ -1507,7 +1828,7 @@
     const params = new URLSearchParams(window.location.search);
     const savedView = lsGet(LS_VIEW);
     const urlView = params.get("view");
-    state.view = urlView === "day" || urlView === "week" ? urlView : (savedView === "day" ? "day" : "week");
+    state.view = VIEWS.indexOf(urlView) >= 0 ? urlView : (VIEWS.indexOf(savedView) >= 0 ? savedView : "week");
     const savedFilter = lsGet(LS_MECH);
     state.filter = savedFilter || "";
     if (isValidIso(params.get("date"))) state.date = params.get("date");
@@ -1528,16 +1849,20 @@
         render();
         syncUrl();
         if (woParam) openFromWorkOrder(woParam, state.date);
-        refreshTimer = setInterval(liveRefreshTick, REFRESH_MS);
+        live.fullAt = Date.now();
+        scheduleLive(LIVE_POLL_MS);
         nowTimer = setInterval(updateNowLine, 60000);
       });
 
     window.__roobicoCalendar = {
       destroy() {
-        clearInterval(refreshTimer);
+        live.stopped = true;
+        clearTimeout(live.timer);
         clearInterval(nowTimer);
         clearTimeout(resizeTimer);
+        if (boardDrag) releaseBoardDrag();
         document.removeEventListener("keydown", onKeyDown);
+        document.removeEventListener("visibilitychange", onVisibilityChange);
         window.removeEventListener("pointermove", onPointerMove);
         window.removeEventListener("pointerup", onPointerUp);
         window.removeEventListener("pointercancel", onPointerCancel);
