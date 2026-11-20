@@ -291,3 +291,186 @@ def test_unit_mobile_create_duplicate_readable_error(client, dup_seed):
     data = resp.get_json()
     assert "already exists for this customer" in data["error"]
     assert data["error"] == data["message"]
+
+
+# ── Близнецы: парт с тем же номером уже есть в базе ─────────────────────
+# Так базу оставлял двойной клик по Save (два парта в одну секунду) и старые
+# данные. Раньше правка ЛЮБОГО из близнецов отклонялась как «дубль номера».
+
+
+@pytest.fixture()
+def twin_seed(seed, mongo):
+    shop_db = mongo[SHOP_A_DB]
+    now = _now()
+    base = {"shop_id": seed["shop_a"]["_id"], "tenant_id": seed["tenant_a"]["_id"],
+            "created_at": now, "updated_at": now, "do_not_track_inventory": False}
+    docs = {
+        "active": {"_id": ObjectId(), **base, "part_number": "TWIN-1", "description": "NOX sensor",
+                   "average_cost": 319.0, "is_active": True, "in_stock": 4},
+        "inactive": {"_id": ObjectId(), **base, "part_number": "TWIN-1", "description": "NOX sensor",
+                     "average_cost": 319.0, "is_active": False, "in_stock": 4},
+        "other": {"_id": ObjectId(), **base, "part_number": "TWIN-OTHER", "is_active": True, "in_stock": 0},
+    }
+    shop_db.parts.insert_many(list(docs.values()))
+    yield docs
+    ids = [d["_id"] for d in docs.values()]
+    shop_db.parts.delete_many({"_id": {"$in": ids}})
+    shop_db.inventory_movements.delete_many({"part_id": {"$in": ids}})
+    shop_db.part_location_stock.delete_many({"part_id": {"$in": ids}})
+
+
+def test_part_with_a_twin_can_still_be_edited(client, twin_seed, mongo):
+    login(client)
+    token = get_csrf_token(client)
+    parts = mongo[SHOP_A_DB].parts
+    active_id, inactive_id = twin_seed["active"]["_id"], twin_seed["inactive"]["_id"]
+
+    # Активный близнец: себестоимость и описание правятся, номер тот же.
+    resp = client.post(f"/parts/api/{active_id}/update", headers={"X-CSRFToken": token}, json={
+        "part_number": "TWIN-1", "description": "NOX sensor v2", "average_cost": 299.99, "in_stock": 4,
+    })
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    fresh = parts.find_one({"_id": active_id})
+    assert fresh["average_cost"] == 299.99 and fresh["description"] == "NOX sensor v2" and fresh["in_stock"] == 4
+
+    # Тот же номер в другом регистре и с пробелами — не «смена номера».
+    resp = client.post(f"/parts/api/{active_id}/update", headers={"X-CSRFToken": token}, json={
+        "part_number": "  twin-1 ", "average_cost": 299.99, "in_stock": 4,
+    })
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+
+    # Деактивированная копия тоже правится — ей можно дать другой номер.
+    resp = client.post(f"/parts/api/{inactive_id}/update", headers={"X-CSRFToken": token}, json={
+        "part_number": "TWIN-1-OLD", "average_cost": 319, "in_stock": 4,
+    })
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert parts.find_one({"_id": inactive_id})["part_number"] == "TWIN-1-OLD"
+
+
+def test_part_number_change_to_a_taken_one_is_still_blocked(client, twin_seed, mongo):
+    login(client)
+    token = get_csrf_token(client)
+    other_id = twin_seed["other"]["_id"]
+    resp = client.post(f"/parts/api/{other_id}/update", headers={"X-CSRFToken": token},
+                       json={"part_number": "twin-1", "in_stock": 0})
+    assert resp.status_code == 409 and "already exists" in resp.get_json()["error"]
+    assert mongo[SHOP_A_DB].parts.find_one({"_id": other_id})["part_number"] == "TWIN-OTHER"
+
+
+def test_same_text_follows_the_duplicate_rules():
+    from app.utils.duplicates import same_text
+
+    assert same_text("RF-V22303390", " rf-v22303390 ") and same_text("A  B", "a b")
+    assert not same_text("RF-1", "RF-10") and not same_text("A B", "AB")
+    assert same_text(None, "") and not same_text(None, "x")
+
+
+# ── Двойной клик: два запроса на создание одного номера одновременно ────
+
+
+@pytest.fixture()
+def claim_cleanup(seed, mongo):
+    shop_db = mongo[SHOP_A_DB]
+    yield shop_db
+    ids = [p["_id"] for p in shop_db.parts.find({"part_number": {"$regex": "^CLAIM-"}}, {"_id": 1})]
+    shop_db.parts.delete_many({"_id": {"$in": ids}})
+    shop_db.inventory_movements.delete_many({"part_id": {"$in": ids}})
+    shop_db.part_location_stock.delete_many({"part_id": {"$in": ids}})
+    shop_db.creation_claims.delete_many({})
+
+
+def test_second_simultaneous_create_is_refused_while_the_first_is_running(client, seed, claim_cleanup, app):
+    """Заявку держит «первый запрос» — второй не создаёт парт и говорит почему."""
+    from app.utils.duplicates import CREATION_CLAIM_TTL_SECONDS, ensure_creation_claim_indexes
+
+    shop_db = claim_cleanup
+    ensure_creation_claim_indexes(shop_db)
+    held = shop_db.creation_claims.insert_one({
+        "shop_id": seed["shop_a"]["_id"], "kind": "part", "key": "claim-1", "created_at": _now(),
+    }).inserted_id
+
+    login(client)
+    token = get_csrf_token(client)
+    resp = client.post("/parts/api/create", json={"part_number": " CLAIM-1 ", "in_stock": 4, "average_cost": 10},
+                       headers={"X-CSRFToken": token})
+    assert resp.status_code == 409
+    assert "being saved right now" in resp.get_json()["error"]
+
+    resp = client.post("/parts/create", data={"part_number": "claim-1", "in_stock": "4", "average_cost": "10",
+                                              "csrf_token": token})
+    assert resp.status_code == 302 and resp.headers["Location"].endswith("/parts/")
+    with client.session_transaction() as sess:
+        flashes = sess.get("_flashes") or []
+    assert any(cat == "info" and "being saved right now" in msg for cat, msg in flashes), flashes
+
+    assert shop_db.parts.count_documents({"part_number": {"$regex": "^claim-1$", "$options": "i"}}) == 0
+    # Проигравший чужую заявку не снимает.
+    assert shop_db.creation_claims.count_documents({"_id": held}) == 1
+
+    # Заявка снята — создание проходит и свою заявку за собой убирает.
+    shop_db.creation_claims.delete_one({"_id": held})
+    resp = client.post("/parts/api/create", json={"part_number": "CLAIM-1", "in_stock": 4, "average_cost": 10},
+                       headers={"X-CSRFToken": token})
+    assert resp.status_code == 200, resp.get_data(as_text=True)
+    assert shop_db.parts.count_documents({"part_number": "CLAIM-1"}) == 1
+    assert shop_db.creation_claims.count_documents({}) == 0
+
+    # Отказ по валидации внутри запроса заявку тоже не оставляет.
+    resp = client.post("/parts/api/create", json={"part_number": "CLAIM-2", "average_cost": -1},
+                       headers={"X-CSRFToken": token})
+    assert resp.status_code == 400
+    assert shop_db.creation_claims.count_documents({}) == 0
+
+    # Индексы: уникальный ключ и TTL; ensure_* из extensions с ними не спорит.
+    info = shop_db.creation_claims.index_information()
+    assert info["uniq_creation_claims_shop_kind_key"]["unique"] is True
+    assert info["ttl_creation_claims_created"]["expireAfterSeconds"] == CREATION_CLAIM_TTL_SECONDS == 120
+    from app.extensions import ensure_shop_collections_indexes
+
+    with app.app_context():
+        ensure_shop_collections_indexes(shop_db)
+    assert shop_db.creation_claims.index_information().keys() == info.keys()
+
+
+def test_double_click_creates_one_part(app, seed, claim_cleanup):
+    """Настоящая гонка: два клиента одновременно шлют один и тот же новый
+    номер (форма и AJAX вперемешку). В каждом раунде — ровно один парт и
+    один стартовый остаток, а не два."""
+    import threading
+
+    shop_db = claim_cleanup
+    clients = []
+    for _ in range(2):
+        c = app.test_client()
+        assert login(c).status_code == 302
+        clients.append((c, get_csrf_token(c)))
+
+    rounds = 12
+    for i in range(rounds):
+        number = f"CLAIM-RACE-{i}"
+        barrier = threading.Barrier(2)
+        results: list = [None, None]
+
+        def fire(slot: int, use_form: bool):
+            c, token = clients[slot]
+            barrier.wait(timeout=10)
+            if use_form:
+                results[slot] = c.post("/parts/create", data={
+                    "part_number": number, "in_stock": "4", "average_cost": "25", "csrf_token": token,
+                }).status_code
+            else:
+                results[slot] = c.post("/parts/api/create", headers={"X-CSRFToken": token}, json={
+                    "part_number": number, "in_stock": 4, "average_cost": 25,
+                }).status_code
+
+        threads = [threading.Thread(target=fire, args=(0, i % 2 == 0)), threading.Thread(target=fire, args=(1, i % 3 == 0))]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=20)
+
+        created = list(shop_db.parts.find({"part_number": number}))
+        assert len(created) == 1, (number, results, len(created))
+        assert created[0]["in_stock"] == 4
+        assert shop_db.inventory_movements.count_documents({"part_id": created[0]["_id"], "type": "initial"}) == 1
+    assert shop_db.creation_claims.count_documents({}) == 0

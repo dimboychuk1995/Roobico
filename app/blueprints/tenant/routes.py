@@ -11,6 +11,7 @@ from werkzeug.security import generate_password_hash
 from pymongo.errors import DuplicateKeyError
 
 from app.extensions import get_master_db, get_mongo_client
+from app.utils.parts_categories import slugify_category
 from app.utils.rate_limit import hit_rate_limit
 from app.utils.sales_tax import extract_us_zip, refresh_zip_tax_rate
 from . import tenant_bp
@@ -121,22 +122,6 @@ DEFAULT_PARTS_CATEGORIES = [
 ]
 
 
-def _slugify_simple(name: str) -> str:
-    s = (name or "").strip().lower()
-    out = []
-    last_dash = False
-    for ch in s:
-        if ch.isalnum():
-            out.append(ch)
-            last_dash = False
-        else:
-            if not last_dash:
-                out.append("-")
-                last_dash = True
-    slug = "".join(out).strip("-")
-    return slug or "category"
-
-
 def seed_parts_categories(shop_db, shop_id: ObjectId):
     """
     Ensure default parts categories exist in shop DB (idempotent).
@@ -155,7 +140,8 @@ def seed_parts_categories(shop_db, shop_id: ObjectId):
     now = utcnow()
 
     for name in DEFAULT_PARTS_CATEGORIES:
-        slug = _slugify_simple(name)
+        # Тот же slug, что у формы Settings → Parts & Pricing (один ключ дубля).
+        slug = slugify_category(name)
         col.update_one(
             {"shop_id": shop_id, "slug": slug},
             {

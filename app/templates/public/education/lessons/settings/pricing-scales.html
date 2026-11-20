@@ -35,6 +35,13 @@
 <p>Customer → Details → <strong>Pricing Scale</strong> — that is how one customer gets special parts pricing. Add “Override part selling price” if fixed selling prices must follow the scale too. See {{ lesson_link("customers/customer-pricing") }}.</p>
 {% endcall %}
 
+{% call tip("Parts at cost for your own fleet") %}
+Create a scale in Markup mode with one rule — From 0, To empty, <strong>0%</strong> — and assign it to the fleet customer with “Override part selling price” switched on: every part on that customer's work orders is priced at its average cost. Zero is a valid percent.
+{% endcall %}
+{% call warn("A scale needs at least one rule") %}
+A scale saved without any rows calculates nothing: a part added to a work order of a customer on that scale gets an empty Price until you type one. Add a range before assigning the scale.
+{% endcall %}
+
 <h2>Sales Tax Rate</h2>
 <p>
   On the same page: automatic by the shop's ZIP code, or a <strong>Custom Rate (Override)</strong> with {{ ui("Reset to API") }}. The rate is

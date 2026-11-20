@@ -119,6 +119,13 @@ Roobico — мультитенантный SaaS для автосервисов 
     способ получить shop-базу** (проверяет принадлежность магазина тенанту);
   - `mongo_tx.py` — `run_atomically` для связанных записей (платёж + статус WO);
   - `entity_search.py` — поиск через `search_terms`;
+  - `duplicates.py` — проверки «уже существует» (parts / vendors / customers /
+    units) и `creation_claim`: создание сущности оборачивать в заявку
+    (сначала заявка, потом проверка дубля и вставка), иначе двойной клик
+    создаёт двух близнецов. При правке дубль искать только когда ключ
+    меняется (`same_text`), иначе запись с близнецом нельзя сохранить;
+  - `parts_categories.py` — slug категории партов (на коллекции уникальный
+    индекс `shop_id + slug`: категория без slug роняет следующую вставку);
   - `rate_limit.py`, `permissions.py`, `display_datetime.py`, `contacts.py`;
   - `integrations/` — сторонние интеграции (uAttend): API-ключи шифруются
     Fernet (`storage.py`), часы из `/reports/punch` парсит `uattend_hours.py`.

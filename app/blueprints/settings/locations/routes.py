@@ -15,6 +15,7 @@ from app.utils.auth import login_required, SESSION_USER_ID, SESSION_TENANT_ID
 from app.utils.permissions import permission_required, filter_nav_items
 from app.blueprints.main.routes import NAV_ITEMS
 from app.utils.layout import build_app_layout_context
+from app.utils.parts_categories import slugify_category
 from app.utils.sales_tax import extract_us_zip, refresh_zip_tax_rate
 
 
@@ -127,22 +128,6 @@ DEFAULT_PARTS_CATEGORIES = [
 ]
 
 
-def _slugify_simple(name: str) -> str:
-    s = (name or "").strip().lower()
-    out = []
-    last_dash = False
-    for ch in s:
-        if ch.isalnum():
-            out.append(ch)
-            last_dash = False
-        else:
-            if not last_dash:
-                out.append("-")
-                last_dash = True
-    slug = "".join(out).strip("-")
-    return slug or "category"
-
-
 def seed_parts_categories(shop_db, shop_id: ObjectId):
     """
     Ensure default parts categories exist in shop DB (idempotent).
@@ -161,7 +146,8 @@ def seed_parts_categories(shop_db, shop_id: ObjectId):
     now = utcnow()
 
     for name in DEFAULT_PARTS_CATEGORIES:
-        slug = _slugify_simple(name)
+        # Тот же slug, что у формы Settings → Parts & Pricing (один ключ дубля).
+        slug = slugify_category(name)
         col.update_one(
             {"shop_id": shop_id, "slug": slug},
             {

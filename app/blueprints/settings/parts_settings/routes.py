@@ -25,7 +25,14 @@ from app.utils.auth import (
 from app.utils.permissions import permission_required, filter_nav_items
 from app.blueprints.main.routes import NAV_ITEMS
 from app.utils.layout import build_app_layout_context
+from pymongo.errors import DuplicateKeyError
+
 from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
+from app.utils.parts_categories import (
+    category_exists_message,
+    find_duplicate_category,
+    slugify_category,
+)
 from app.utils.parts_locations import (
     MAX_LOCATION_DEPTH,
     collect_descendant_ids,
@@ -508,15 +515,29 @@ def parts_categories_create():
         flash("Category name is required.", "error")
         return redirect(url_for("settings.parts_settings_index"))
 
+    existing = find_duplicate_category(sdb, shop_oid, name)
+    if existing:
+        flash(category_exists_message(existing, name), "error")
+        return redirect(url_for("settings.parts_settings_index"))
+
+    # slug обязателен: на коллекции уникальный индекс (shop_id, slug), и
+    # категория без slug занимает единственное место «slug: null» — вторая
+    # такая падала с E11000 (500 на странице настроек).
     doc = {
         "name": name,
+        "slug": slugify_category(name),
         "shop_id": shop_oid,
         "is_active": True,
         "created_at": utcnow(),
         "updated_at": utcnow(),
     }
 
-    sdb.parts_categories.insert_one(doc)
+    try:
+        sdb.parts_categories.insert_one(doc)
+    except DuplicateKeyError:
+        # Двойной клик / параллельный запрос с тем же именем.
+        flash(category_exists_message(None, name), "error")
+        return redirect(url_for("settings.parts_settings_index"))
     flash("Category created.", "success")
     return redirect(url_for("settings.parts_settings_index"))
 
@@ -539,10 +560,20 @@ def parts_categories_update(category_id: str):
         flash("Category name is required.", "error")
         return redirect(url_for("settings.parts_settings_index", edit_category_id=category_id))
 
-    sdb.parts_categories.update_one(
-        {"_id": existing["_id"]},
-        {"$set": {"name": name, "updated_at": utcnow()}},
-    )
+    duplicate = find_duplicate_category(sdb, shop_oid, name, exclude_id=existing["_id"])
+    if duplicate:
+        flash(category_exists_message(duplicate, name), "error")
+        return redirect(url_for("settings.parts_settings_index", edit_category_id=category_id))
+
+    # slug идёт за именем (и появляется у старых категорий без него).
+    try:
+        sdb.parts_categories.update_one(
+            {"_id": existing["_id"]},
+            {"$set": {"name": name, "slug": slugify_category(name), "updated_at": utcnow()}},
+        )
+    except DuplicateKeyError:
+        flash(category_exists_message(None, name), "error")
+        return redirect(url_for("settings.parts_settings_index", edit_category_id=category_id))
     flash("Category updated.", "success")
     return redirect(url_for("settings.parts_settings_index"))
 

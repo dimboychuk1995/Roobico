@@ -8,10 +8,26 @@
 
 Слитые скриптом merge_duplicate_parts парты (``merged_into``) из проверки
 исключаются — это исторические «оболочки», реактивировать их нельзя.
+
+Проверка «найти дубль → вставить» сама по себе не атомарна: два одновременных
+запроса (двойной клик по Save) оба не находят дубля и оба вставляют — так в
+одну секунду появлялись два одинаковых парта. Создание поэтому оборачивается
+в :func:`creation_claim` — право создать сущность с данным ключом в один
+момент принадлежит одному запросу.
 """
 from __future__ import annotations
 
 import re
+from contextlib import contextmanager
+from datetime import datetime, timezone
+
+from pymongo.errors import DuplicateKeyError, PyMongoError
+
+# Сколько живёт заявка, если запрос умер, не сняв её (TTL-индекс). В норме
+# заявка снимается сразу после создания, в том же запросе.
+CREATION_CLAIM_TTL_SECONDS = 120
+
+_claim_indexes_ready: set[str] = set()
 
 
 def _ci_exact(value):
@@ -33,6 +49,83 @@ def _prefer_active(docs):
         if d.get("is_active") is not False:
             return d
     return docs[0]
+
+
+def same_text(a, b) -> bool:
+    """Одно и то же значение по правилам проверки дублей (регистр и лишние
+    пробелы не считаются)."""
+    return _norm(a) == _norm(b)
+
+
+def ensure_creation_claim_indexes(shop_db) -> None:
+    """Индексы коллекции заявок: уникальный ключ (на нём держится вся
+    страховка) и TTL для заявок умерших запросов. Идемпотентно."""
+    coll = shop_db.creation_claims
+    coll.create_index(
+        [("shop_id", 1), ("kind", 1), ("key", 1)],
+        unique=True, name="uniq_creation_claims_shop_kind_key",
+    )
+    coll.create_index(
+        [("created_at", 1)],
+        expireAfterSeconds=CREATION_CLAIM_TTL_SECONDS, name="ttl_creation_claims_created",
+    )
+
+
+@contextmanager
+def creation_claim(shop_db, shop_id, kind: str, value):
+    """Право создать сущность ``kind`` с ключом ``value`` на время запроса.
+
+    Использование — ВОКРУГ проверки дубля и вставки::
+
+        with creation_claim(db, shop_id, "part", part_number) as owned:
+            if not owned:      # тот же номер прямо сейчас создаёт другой запрос
+                ...отказ...
+            ...find_duplicate_part → insert...
+
+    Заявка — документ в ``creation_claims`` с уникальным индексом по
+    (shop_id, kind, нормализованный ключ): второй одновременный запрос
+    получает DuplicateKeyError и ``owned == False``. Порядок важен: сначала
+    заявка, потом проверка дубля — запрос, пришедший после снятия заявки,
+    уже видит созданную сущность обычной проверкой.
+
+    Страховка не должна мешать работе: при ошибке базы (кроме дубля ключа)
+    отдаём ``True`` — остаётся прежняя проверка дублей.
+    """
+    key = _norm(value)
+    claim_id = None
+    owned = True
+    if shop_db is not None and key:
+        try:
+            if shop_db.name not in _claim_indexes_ready:
+                ensure_creation_claim_indexes(shop_db)
+                _claim_indexes_ready.add(shop_db.name)
+            claim_id = shop_db.creation_claims.insert_one({
+                "shop_id": shop_id, "kind": kind, "key": key,
+                "created_at": datetime.now(timezone.utc),
+            }).inserted_id
+        except DuplicateKeyError:
+            owned = False
+        except PyMongoError:
+            from flask import current_app
+
+            current_app.logger.exception("creation_claim: could not take a claim for %s %r", kind, key)
+    try:
+        yield owned
+    finally:
+        if claim_id is not None:
+            try:
+                shop_db.creation_claims.delete_one({"_id": claim_id})
+            except PyMongoError:
+                from flask import current_app
+
+                current_app.logger.exception("creation_claim: could not release the claim for %s %r", kind, key)
+
+
+def being_created_message(kind: str, display_name) -> str:
+    """Текст для второго из двух одновременных запросов на создание."""
+    name = str(display_name or "").strip()
+    return (f'{kind} "{name}" is being saved right now — the second click was ignored. '
+            f"Check the list; if it is not there in a moment, try again.")
 
 
 def find_duplicate_part(shop_db, shop_id, part_number, exclude_id=None):

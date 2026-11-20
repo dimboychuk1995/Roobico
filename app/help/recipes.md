@@ -11,6 +11,33 @@ Pricing Scale → pick it. 3) If parts with a fixed selling price must also
 follow it, enable "Override part selling price". Everyone else stays on the
 default scale. (A "discount for a fleet" = the same recipe with a lower %.)
 
+**Parts at cost for my own fleet / an in-house customer (no markup).**
+A fleet that repairs its own trucks wants the work order to show parts at
+what they cost, not at the shop's selling price. Three steps:
+1) Settings → Parts & Pricing → Margin / Markup Rules → **New scale**, name
+it e.g. "Fleet", mode **Markup**, and add **one rule: From 0, To empty,
+Markup % 0** → Save. Zero is a valid percent: price = cost.
+2) Customers → open the fleet customer → Details → **Pricing Scale** → pick
+"Fleet" → Save.
+3) On the same form switch on **Override part selling price**. Without it,
+every part that has its own fixed Selling price keeps that price on the
+work order (for example cost + 30%), and only parts without one follow the
+scale.
+After that a part added to this customer's work order comes in with Price =
+its average cost. Other customers are not affected — they stay on the
+default scale. Labor is separate: give the customer a cheaper **Default
+Labor Rate** if labor should be cheaper too. To price one line at cost on a
+work order that already exists, just type the cost into its **Price**
+field.
+
+**The Price field stays empty when I add a part to a work order.** The
+customer's pricing scale has **no rules** (a scale created with "New scale"
+and saved without rows), so there is nothing to calculate the price from;
+the line shows "—" until a price is typed. Settings → Parts & Pricing →
+pick that scale → add at least one rule (From 0, To empty, and the percent
+— 0 for "at cost") → Save. The same happens when the part has no average
+cost yet: enter the cost on the part or type the price by hand.
+
 **Change parts pricing for the whole shop.** Edit the default scale's rules
 (or create a new scale and "Set as default").
 

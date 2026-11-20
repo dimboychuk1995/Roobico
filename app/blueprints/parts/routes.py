@@ -12,7 +12,13 @@ from app.extensions import get_master_db, get_mongo_client
 from app.utils.auth import login_required, SESSION_TENANT_ID, SESSION_USER_ID
 from app.utils.pagination import get_pagination_params, get_sort_params, paginate_find
 from app.utils.mongo_search import build_regex_search_filter
-from app.utils.duplicates import duplicate_message, find_duplicate_part
+from app.utils.duplicates import (
+    being_created_message,
+    creation_claim,
+    duplicate_message,
+    find_duplicate_part,
+    same_text,
+)
 from app.utils.parts_search import build_parts_search_terms, build_query_tokens, part_matches_query
 from app.utils.parts_interchange import (
     attach_alternates,
@@ -1579,6 +1585,22 @@ def parts_page():
 @login_required
 @permission_required("parts.create")
 def parts_create():
+    """Форма «Add Part». Сама работа — в _parts_create_form; здесь только
+    заявка на номер: двойной клик по Save шлёт два POST'а, оба не находят
+    дубля и оба вставляют парт (так появлялись близнецы с одним номером и
+    удвоенным остатком). Второй запрос получает понятное сообщение."""
+    parts_coll, _vendors, _cats, _locs, _orders, shop, _master = _parts_collections()
+    part_number = (request.form.get("part_number") or "").strip()
+    if parts_coll is None or shop is None or not part_number:
+        return _parts_create_form()  # сам скажет, чего не хватает
+    with creation_claim(parts_coll.database, shop["_id"], "part", part_number) as owned:
+        if not owned:
+            flash(being_created_message("Part", part_number), "info")
+            return redirect(url_for("parts.parts_page"))
+        return _parts_create_form()
+
+
+def _parts_create_form():
     """
     Добавление запчасти:
       part_number (required)
@@ -1832,6 +1854,20 @@ def _parse_misc_charges_json(raw):
 @login_required
 @permission_required("parts.create")
 def parts_api_create():
+    """AJAX-создание парта (модалка парт-ордера «Create & Add»). Как и форма,
+    обёрнуто в заявку на номер — см. parts_create."""
+    parts_coll, _vendors, _cats, _locs, _orders, shop, _master = _parts_collections()
+    data = request.get_json(silent=True) or {}
+    part_number = str((data.get("part_number") if isinstance(data, dict) else "") or "").strip()
+    if parts_coll is None or shop is None or not part_number:
+        return _parts_api_create()  # сам ответит 400 с причиной
+    with creation_claim(parts_coll.database, shop["_id"], "part", part_number) as owned:
+        if not owned:
+            return jsonify({"ok": False, "error": being_created_message("Part", part_number)}), 409
+        return _parts_api_create()
+
+
+def _parts_api_create():
     """
     AJAX create part.
     Accepts JSON with part fields.
@@ -4321,14 +4357,20 @@ def parts_api_update(part_id: str):
     if not part_number:
         return jsonify({"ok": False, "error": "Part number is required"}), 400
 
-    existing = find_duplicate_part(
-        parts_coll.database, shop["_id"], part_number, exclude_id=pid
-    )
-    if existing:
-        return jsonify({
-            "ok": False,
-            "error": duplicate_message("Part", existing.get("part_number"), existing),
-        }), 409
+    # Дубль ищем только когда номер МЕНЯЕТСЯ. Правка парта с прежним номером
+    # нового дубля не создаёт, а отказ запирал парт навсегда: стоило в базе
+    # оказаться второму парту с тем же номером (двойной клик, старые данные,
+    # деактивированная копия) — и ни цену, ни остаток, ни сам номер ни у
+    # одного из них поправить было нельзя.
+    if not same_text(part_number, part.get("part_number")):
+        existing = find_duplicate_part(
+            parts_coll.database, shop["_id"], part_number, exclude_id=pid
+        )
+        if existing:
+            return jsonify({
+                "ok": False,
+                "error": duplicate_message("Part", existing.get("part_number"), existing),
+            }), 409
 
     description = (data.get("description") or "").strip()
     reference = (data.get("reference") or "").strip()

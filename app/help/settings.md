@@ -358,9 +358,11 @@ toggles.
 
 ## Parts & Pricing
 
-Categories, the parts storage location tree (4 levels max), **Margin /
+**Parts Categories** (add by name, rename, delete — a name is unique per
+shop), the parts storage location tree (4 levels max), **Margin /
 Markup pricing scales** (multiple named scales, one default, assignable per
-customer) and the **sales tax rate** (auto by shop ZIP or a custom override
+customer; a 0% markup scale = parts at cost, e.g. for the company's own
+fleet) and the **sales tax rate** (auto by shop ZIP or a custom override
 with "Reset to API"). Details in the parts documentation.
 
 ## Integrations (per shop)

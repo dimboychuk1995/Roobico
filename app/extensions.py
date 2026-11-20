@@ -249,6 +249,13 @@ def ensure_shop_collections_indexes(shop_db):
     _safe_create_index(shop_db.uattend_punch_cache, [("shop_id", ASCENDING), ("key", ASCENDING)], name="idx_uattend_punch_cache_shop_key")
     _safe_create_index(shop_db.uattend_punch_cache, [("fetched_at", ASCENDING)], name="ttl_uattend_punch_cache_fetched", expireAfterSeconds=900)
 
+    # Заявки «создаю сущность с таким ключом» (utils/duplicates.creation_claim):
+    # уникальный ключ не даёт двум одновременным запросам (двойной клик)
+    # создать два одинаковых парта; TTL убирает заявки умерших запросов.
+    # Те же имена и параметры, что в duplicates.ensure_creation_claim_indexes.
+    _safe_create_index(shop_db.creation_claims, [("shop_id", ASCENDING), ("kind", ASCENDING), ("key", ASCENDING)], unique=True, name="uniq_creation_claims_shop_kind_key")
+    _safe_create_index(shop_db.creation_claims, [("created_at", ASCENDING)], name="ttl_creation_claims_created", expireAfterSeconds=120)
+
     # Кэш AI-матчинга uAttend-сотрудников: поиск по отпечатку состава
     _safe_create_index(shop_db.uattend_match_cache, [("shop_id", ASCENDING), ("key", ASCENDING)], name="idx_uattend_match_cache_shop_key")
 

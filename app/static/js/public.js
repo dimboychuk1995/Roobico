@@ -997,6 +997,48 @@
 		});
 	}
 
+	/*
+	 * Защита от двойной отправки обычных POST-форм: двойной клик по Save
+	 * отправлял форму дважды и создавал две одинаковые записи (сервер тоже
+	 * страхуется — utils/duplicates.creation_claim, — но там второй клик
+	 * получает сообщение, а здесь он просто не уходит).
+	 *
+	 * Слушатель висит на window в фазе всплытия, то есть срабатывает после
+	 * всех обработчиков формы: если отправку кто-то отменил (AJAX-форма,
+	 * appConfirmSubmit до подтверждения, своя валидация), форма не
+	 * помечается. Помеченная форма повторно не уходит, пока не истечёт
+	 * таймаут (страница могла не смениться — например, ответом был файл)
+	 * или страницу не покажут заново («Назад» из bfcache).
+	 * Отключить для формы: атрибут data-allow-resubmit.
+	 */
+	var RESUBMIT_GUARD_MS = 5000;
+
+	function bindDoubleSubmitGuard() {
+		window.addEventListener("submit", function (event) {
+			var form = event && event.target;
+			if (!(form instanceof HTMLFormElement) || event.defaultPrevented) return;
+			// getAttribute, а не form.method / form.target: поле с таким name их затеняет.
+			if (String(form.getAttribute("method") || "get").toLowerCase() !== "post") return;
+			if (form.hasAttribute("data-allow-resubmit") || form.getAttribute("target") === "_blank") return;
+
+			if (form.getAttribute("data-submitting") === "1") {
+				event.preventDefault();
+				return;
+			}
+			form.setAttribute("data-submitting", "1");
+			window.setTimeout(function () {
+				form.removeAttribute("data-submitting");
+			}, RESUBMIT_GUARD_MS);
+		});
+
+		window.addEventListener("pageshow", function () {
+			var pending = document.querySelectorAll('form[data-submitting="1"]');
+			for (var i = 0; i < pending.length; i += 1) {
+				pending[i].removeAttribute("data-submitting");
+			}
+		});
+	}
+
 	window.initDatePickers = initDatePickers;
 	window.applyDatePresetToForm = applyDatePresetToForm;
 	window.dispatchEvent(new CustomEvent("roobico:public-ready"));
@@ -1007,6 +1049,7 @@
 		bindGlobalInputConstraints();
 		bindDateInputPickerOpen();
 		bindRowToggles();
+		bindDoubleSubmitGuard();
 		initDatePickers(document);
 		updateSidebarActiveState(window.location.pathname);
 	});

@@ -124,7 +124,14 @@ price and with the order's vendor.
   blocked with "already exists". If the message says the existing part is
   inactive, add that part to a parts order instead of creating a copy — the
   order makes it active again and its stock history continues (see
-  "Inactive parts" above).
+  "Inactive parts" above). The check applies only when the number is new
+  or is being **changed**: saving a part with the number it already has —
+  to fix its cost, price, stock or description — is never refused, even if
+  another part with the same number exists in old data. (To tell two such
+  parts apart, give one of them a different number.) Pressing **Create**
+  twice by accident saves the part once: the second click is ignored, or
+  answered with *"Part "…" is being saved right now — the second click was
+  ignored."*
 - **In stock** — starting quantity; afterwards stock changes only through
   orders, work orders, transfers, stocktakes and manual adjustments.
   Editing this number on an existing part is a manual override and needs
@@ -305,6 +312,31 @@ Settings → Parts & Pricing, card **"Margin / Markup Rules"**:
   even to parts with a fixed selling price.
 - The seeded "Default" scale is markup-mode with tiers from 500% (parts
   under $1) down to 15% (over $5000).
+- **0% is allowed** — a Markup scale with one rule "From 0, To empty, 0"
+  prices parts **at cost**. That is the scale for a company's own fleet or
+  any in-house customer (recipe: "Parts at cost for my own fleet").
+- **A scale with no rules calculates nothing.** A part added to a work
+  order of a customer on such a scale gets an empty Price (the line shows
+  "—") until a price is typed. Every scale needs at least one rule.
+
+## Parts categories
+
+Settings → Parts & Pricing, card **"Parts Categories"**. A category is
+just a name (Filters, Electrical, Brakes…) used to group parts: the
+Category field of a part, the Category column and search on the Parts
+page, the category scope of a stocktake. A new shop starts with Filters,
+Electrical, Exhaust, Body, Interior, DEF and Cores.
+
+- **Add**: type the name into "New category name" → **Add**. There is
+  only this one field. Add as many as you need, one after another.
+- **Rename**: **Edit** next to the category → change the name → Save.
+  Parts keep the category, they simply show the new name.
+- **Delete**: **Delete** → confirm. Parts that had it are left without a
+  category; pick another one on the part if needed.
+- A name can be used once per shop, whatever the letter case or spaces:
+  adding or renaming to "filters" when "Filters" exists shows *"Category
+  "Filters" already exists."* and nothing is changed — use the existing
+  one.
 
 Sales tax also lives on this settings page: automatic by shop ZIP, or a
 **Custom Rate (Override)** with a "Reset to API" option.
