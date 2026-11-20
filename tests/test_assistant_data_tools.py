@@ -1059,10 +1059,16 @@ def test_chat_tool_loop_end_to_end(client, seed, shop_data, monkeypatch):
     assert resp.status_code == 200
     assert resp.get_data(as_text=True) == "You have 2 open work orders."
 
-    # первый запрос ушёл с инструментами и схемой в промпте
+    # первый запрос ушёл с инструментами; схема базы — в неизменном системном
+    # сообщении (оно кэшируется), правила доступа к данным — в контексте
+    # запроса, отдельным user-сообщением перед вопросом
     first = fake.requests[0]
     assert any(t["function"]["name"] == "db_count" for t in first["tools"])
-    assert "db_find" in first["messages"][0]["content"]
+    # (список сообщений один на оба раунда — после вопроса в нём уже tool-раунд)
+    assert [m["role"] for m in first["messages"]][:3] == ["system", "user", "user"]
+    assert "Database schema of a shop" in first["messages"][0]["content"]
+    assert "db_find" in first["messages"][1]["content"]
+    assert first["messages"][2]["content"] == "how many open WOs?"
 
     # во втором запросе модель получила результат инструмента
     second = fake.requests[1]
@@ -1079,6 +1085,57 @@ def test_chat_tool_loop_end_to_end(client, seed, shop_data, monkeypatch):
     assert log["tool_calls"][0]["tool"] == "db_count"
     assert log["tool_calls"][0]["collection"] == "work_orders"
     assert log["tokens_in"] == 200 and log["tokens_out"] == 40
+
+
+def test_schema_names_the_collections_without_is_active(client, seed):
+    """Модель добавляет {"is_active": true} в фильтр, если схема обещает это
+    поле «у каждого документа» — а у записей календаря, тайм-логов и складских
+    движений его нет, и ответом на «сколько записей сегодня» становился
+    ложный ноль. Схема обязана называть такие коллекции, а код — и правда
+    не писать туда is_active."""
+    import os
+    import re
+
+    from app.blueprints.assistant.services import chat as chat_service
+    from app.blueprints.parts.services.stock import apply_stock_change
+
+    schema = " ".join(chat_service._load_db_schema().split())
+    match = re.search(r"These collections have NO `is_active` field(.*?)In general", schema)
+    assert match, "the schema must list the collections that have no is_active"
+    without = set(re.findall(r"[a-z_]+", match.group(1).split(":", 1)[1]))
+    assert {"calendar_events", "wo_time_logs", "inventory_movements", "part_location_stock", "stocktake_items"} <= without
+    listed = re.search(r"exists ONLY in:(.*?)\. These collections", schema).group(1)
+    with_field = set(re.findall(r"[a-z_]+", listed))
+    assert {"work_orders", "customers", "units", "parts", "vendors", "stocktakes"} <= with_field
+    assert not (without & with_field)
+    assert "NOT UTC" in schema and "no UTC conversion" in schema  # календарь — настенные часы магазина
+
+    # Код действительно не пишет is_active в эти коллекции.
+    login(client)
+    token = get_csrf_token(client)
+    resp = client.post("/calendar/api/events", headers={"X-CSRFToken": token},
+                       json={"start_time": "2032-03-03T09:00:00", "end_time": "2032-03-03T10:00:00", "title": "schema check"})
+    assert resp.status_code == 201, resp.get_data(as_text=True)
+    from bson import ObjectId
+    from pymongo import MongoClient
+
+    from tests.conftest import SHOP_A_DB, TEST_MONGO_URI
+
+    shop_db = MongoClient(TEST_MONGO_URI)[SHOP_A_DB]
+    event_id = ObjectId(resp.get_json()["id"])
+    part_id = shop_db.parts.insert_one({"shop_id": seed["shop_a"]["_id"], "part_number": "SCHEMA-CHK", "is_active": True,
+                                        "do_not_track_inventory": False, "in_stock": 0}).inserted_id
+    try:
+        assert "is_active" not in shop_db.calendar_events.find_one({"_id": event_id})
+        apply_stock_change(shop_db, seed["shop_a"]["_id"], part_id, 3, "initial")
+        assert "is_active" not in shop_db.inventory_movements.find_one({"part_id": part_id})
+        assert "is_active" not in shop_db.part_location_stock.find_one({"part_id": part_id})
+    finally:
+        shop_db.calendar_events.delete_one({"_id": event_id})
+        shop_db.parts.delete_one({"_id": part_id})
+        shop_db.inventory_movements.delete_many({"part_id": part_id})
+        shop_db.part_location_stock.delete_many({"part_id": part_id})
+    assert os.path.basename(chat_service.__file__) == "chat.py"
 
 
 def test_chat_tools_disabled_by_env(client, seed, monkeypatch):

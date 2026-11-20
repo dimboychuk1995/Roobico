@@ -1,10 +1,21 @@
 <!-- Схема shop-базы для промпта AI-помощника (см. data_tools.py / chat.py).
      Обновлять при изменении структуры коллекций. Не user-facing. -->
 
-Common: every document has `shop_id` (scoped automatically — never filter on it),
-`is_active: bool` (soft delete — filter `{"is_active": true}` unless the user asks
-about deleted records), `created_at`/`updated_at` (UTC datetime). References
-(`*_id`) are ObjectIds, rendered/queried as 24-hex strings.
+Common: every document has `shop_id` (scoped automatically — never filter on it)
+and `created_at`/`updated_at` (UTC datetime). References (`*_id`) are ObjectIds,
+rendered/queried as 24-hex strings.
+
+`is_active: bool` (soft delete — filter `{"is_active": true}` unless the user
+asks about deleted records) exists ONLY in: work_orders, work_order_payments,
+customers, units, parts, parts_orders, parts_order_payments, vendors, cores,
+core_returns, labor_rates, parts_categories, parts_locations,
+parts_pricing_rules, stocktakes. These collections have NO `is_active` field —
+never put it in their filters, a filter on a missing field matches nothing and
+the answer becomes a false "0": calendar_events, wo_time_logs,
+inventory_movements, part_location_stock, recall_notifications,
+stocktake_items. In general, filter only by fields this schema lists for the
+collection; if a filtered query unexpectedly returns nothing, re-run it with
+fewer conditions before telling the user there is nothing.
 
 ### work_orders
 Work orders & estimates. `wo_number: int` (human number, starts 1000),
@@ -148,7 +159,12 @@ drawn on it; a WO is on the calendar only through a linked appointment).
 `title` (free text stored exactly as typed — dispatchers put the phone
 number and the job list here; may be ""; the API's `note` = the title
 when it differs from `customer_label`, else ""), `start_time`/`end_time:
-datetime` (shop wall-clock, no timezone; both on the same calendar day),
+datetime` (shop wall-clock stored WITHOUT a timezone — these are NOT UTC;
+both on the same calendar day. To select one day, filter `start_time` from
+that day's `T00:00:00` up to the next day's `T00:00:00` exactly as written,
+with no UTC conversion; "today" is the current date in the shop's
+timezone). No `is_active` here: a deleted appointment is gone, a cancelled
+one stays with status "cancelled".
 `status` ("scheduled", "confirmed", "in_progress", "completed",
 "cancelled" plus custom per-shop keys; a WO-linked appointment's status
 follows the work one way only: WO in work → "in_progress", mechanic done

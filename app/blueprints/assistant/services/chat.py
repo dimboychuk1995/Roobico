@@ -1,8 +1,17 @@
 """AI-помощник по продукту: отвечает «как сделать X в Roobico».
 
 Знания = markdown-файлы в app/help/. Вся справка целиком уходит в системный
-промпт — при текущем размере (< 30 KB) RAG/векторная база не нужны, а
-кэширование промпта на стороне провайдера делает повторные запросы дешёвыми.
+промпт (осенью 2026 это ~250 KB, около 70 тыс. токенов на КАЖДЫЙ запрос и
+каждый раунд инструментов), поэтому цена ответа — это цена входа, и держит
+её кэш промпта на стороне провайдера. Кэш работает по совпадению ПРЕФИКСА,
+отсюда правило сборки сообщений (build_messages): системное сообщение
+содержит только неизменное (правила, уроки, справка, схема базы), а всё, что
+меняется от запроса к запросу (страница, текущее время, доступные
+коллекции), уходит отдельным сообщением роли user перед последним вопросом.
+Проверено замером на GPT-6 (2026-11): стоит меняющейся строке оказаться в
+системной части (хоть вторым system/developer-сообщением) — кэш не
+срабатывает ни разу, и каждый запрос ещё и ПИШЕТ 70 тыс. токенов в кэш по
+цене 1.25× входа; с контекстом в user-сообщении — попадание 5 из 5.
 
 Данные: помощник имеет read-only инструменты к базе АКТИВНОГО магазина
 (db_find/db_count/db_aggregate, см. data_tools) — видит ровно то, что видит
@@ -26,9 +35,25 @@ from flask import current_app
 from app.extensions import get_master_db
 from . import data_tools
 
-# Справочный чат — недорогая быстрая модель; переопределяется через env.
-DEFAULT_MODEL = "gpt-4o-mini"
-MAX_ANSWER_TOKENS = 700
+# Модель помощника; переопределяется через env ASSISTANT_MODEL без деплоя
+# кода: "gpt-6-luna" — на порядок дешевле и всё ещё заметно точнее прежней,
+# "gpt-4o-mini" — прежняя. Выбор 2026-11 — по сравнению на реальных вопросах
+# клиентов: gpt-4o-mini ошиблась в 2 из 10 и выдумала все ссылки на уроки,
+# обе модели GPT-6 ответили верно на все 10.
+DEFAULT_MODEL = "gpt-6.1-terra"
+# Вес токена, прочитанного из кэша провайдера, в месячном счётчике тенанта:
+# столько он примерно и стоит относительно обычного входного (0.05–0.1).
+CACHED_TOKEN_WEIGHT = 0.1
+# Потолок ответа. 700 обрезал длинные пошаговые ответы на полуслове.
+MAX_ANSWER_TOKENS = 1200
+# Старое поколение Chat Completions: max_tokens + temperature. Всё новее
+# (GPT-5 / GPT-6 / o-серии) — «reasoning»-модели: только max_completion_tokens
+# и reasoning_effort вместо temperature.
+_LEGACY_CHAT_PREFIXES = ("gpt-4", "gpt-3.5", "chatgpt-4")
+# В Chat Completions инструменты (db_find и т.д.) у GPT-6 работают только с
+# reasoning_effort="none" — с любым другим API отвечает 400 и отправляет в
+# Responses API. Меняется env ASSISTANT_REASONING_EFFORT (пусто — не слать).
+DEFAULT_REASONING_EFFORT = "none"
 # Сколько раундов «модель → инструменты → модель» разрешаем на один вопрос.
 MAX_TOOL_ROUNDS = 4
 # Месячный колпак токенов (вход + выход) на тенанта.
@@ -37,6 +62,7 @@ DEFAULT_MONTHLY_TOKEN_LIMIT = 2_000_000
 _HELP_DIR = Path(__file__).resolve().parents[3] / "help"
 
 _docs_cache: str | None = None
+_static_cache: dict[bool, str] = {}
 
 
 class AssistantUnavailable(RuntimeError):
@@ -54,7 +80,10 @@ def _load_help_docs() -> str:
     return _docs_cache
 
 
-_SYSTEM_TEMPLATE = """\
+# НЕИЗМЕННАЯ часть промпта — одинакова для всех запросов одного деплоя и
+# потому кэшируется провайдером. Ничего зависящего от пользователя, страницы
+# или времени сюда не добавлять: это сломает кэш для всех.
+_STATIC_TEMPLATE = """\
 You are the built-in help assistant of Roobico, a shop-management app for auto
 repair shops and fleets. Your job is to tell users HOW to do things in the app.
 
@@ -62,7 +91,7 @@ Rules:
 - Answer only questions about using Roobico. For anything else, politely say
   you can only help with Roobico.
 - Ground every answer in the documentation below — NEVER invent features,
-  buttons or menu items that are not documented.
+  buttons, fields or menu items that are not documented.
 - Users rarely use the exact words of the documentation. First understand the
   INTENT, then map it to documented capabilities: "special price for a client"
   / "discount for a fleet" / "20% margin for one customer" are all the
@@ -76,8 +105,11 @@ Rules:
 - Reply in the same language the user writes in.
 - Be short and practical: numbered steps, exact section names (Work Orders,
   Reports, Settings...). No fluff.
-- The user is currently on this page of the app: {page}
-{data_section}
+- Right before the user's latest question there is a message that starts
+  with "Context of this request". The app adds it, not the user: it says
+  which page of the app the user is on and, when available, how to read
+  their live shop data. Use it; do not mention it or answer it.
+
 Education Center (in-app lessons with screenshots). When a screenshot would
 help the user find a button or understand a screen, include it in your
 answer using Markdown image syntax with the EXACT url from the list below:
@@ -93,13 +125,28 @@ Roobico documentation:
 {docs}
 """
 
-_DATA_SECTION_TEMPLATE = """\
+# Тоже неизменная: схема базы. Идёт ПОСЛЕ справки, чтобы у пользователей
+# без доступа к данным префикс (правила + уроки + справка) оставался общим.
+_SCHEMA_TEMPLATE = """\
 
-Live shop data:
-- You have read-only database tools (db_find, db_count, db_aggregate) over the
-  CURRENT shop's data. Use them whenever the user asks about their own numbers,
-  records or history ("how many open work orders", "does customer X owe us",
-  "what's in stock") — never guess such answers.
+Database schema of a shop (collections and their fields) — for the read-only
+database tools described in the "Context of this request" message:
+
+{schema}
+"""
+
+# МЕНЯЮЩАЯСЯ часть — отдельным маленьким сообщением роли user перед
+# последним вопросом (в системной части она ломает кэш, см. докстринг модуля).
+_CONTEXT_TEMPLATE = """\
+Context of this request (added by the Roobico app, not typed by the user):
+- The user is currently on this page of the app: {page}
+{data_section}"""
+
+_DATA_SECTION_TEMPLATE = """\
+- Live shop data: you have read-only database tools (db_find, db_count,
+  db_aggregate) over the CURRENT shop's data. Use them whenever the user asks
+  about their own numbers, records or history ("how many open work orders",
+  "does customer X owe us", "what's in stock") — never guess such answers.
 - You may only read these collections: {collections}.
 - All data is scoped to the current shop automatically. You cannot write.
 - Dates in the database are UTC. Current UTC time: {now_utc}. The shop's
@@ -111,10 +158,6 @@ Live shop data:
   instead of fetching many documents.
 - If a tool returns an error, fix the query and retry; if data access is
   denied, tell the user their role doesn't include that data.
-
-Database schema (collections and their fields):
-
-{schema}
 """
 
 
@@ -127,12 +170,12 @@ def _load_db_schema() -> str:
 
 
 def build_data_section(collections: set[str], shop_tz: str) -> str:
+    """Меняющиеся строки про доступ к данным (схема базы — в неизменной части)."""
     now_utc = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     return _DATA_SECTION_TEMPLATE.format(
         collections=", ".join(sorted(collections)),
         now_utc=now_utc,
         shop_tz=shop_tz or "unknown",
-        schema=_load_db_schema(),
     )
 
 
@@ -148,11 +191,57 @@ def _load_education_catalog() -> str:
         return "(education catalog unavailable)"
 
 
+def build_static_prompt(with_schema: bool = False) -> str:
+    """Неизменная часть: правила, каталог уроков, вся справка и (когда у
+    пользователя есть доступ к данным) схема базы. Байт-в-байт одинакова для
+    всех запросов процесса — на этом держится кэш промпта у провайдера."""
+    text = _static_cache.get(with_schema)
+    if text is None:
+        text = _STATIC_TEMPLATE.format(docs=_load_help_docs(), education=_load_education_catalog())
+        if with_schema:
+            text += _SCHEMA_TEMPLATE.format(schema=_load_db_schema())
+        _static_cache[with_schema] = text
+    return text
+
+
+def build_context_prompt(page: str, data_section: str = "") -> str:
+    """Меняющаяся часть: страница и, если есть, правила доступа к данным."""
+    return _CONTEXT_TEMPLATE.format(page=page or "unknown", data_section=data_section or "")
+
+
+def build_messages(page: str, messages: list[dict], data_section: str = "") -> list[dict]:
+    """Сообщения для API: [неизменное системное, история диалога, контекст
+    запроса (роль user), последний вопрос]. Раскладку менять нельзя — на ней
+    держится кэш промпта, см. докстринг модуля."""
+    history, latest = list(messages[:-1]), list(messages[-1:])
+    return [
+        {"role": "system", "content": build_static_prompt(with_schema=bool(data_section))},
+        *history,
+        {"role": "user", "content": build_context_prompt(page, data_section)},
+        *latest,
+    ]
+
+
 def build_system_prompt(page: str, data_section: str = "") -> str:
-    return _SYSTEM_TEMPLATE.format(
-        page=page or "unknown", docs=_load_help_docs(), data_section=data_section or "",
-        education=_load_education_catalog(),
-    )
+    """Весь системный текст одной строкой (неизменная часть + контекст) —
+    для тестов и отладки; в API он уходит двумя сообщениями (build_messages)."""
+    return build_static_prompt(with_schema=bool(data_section)) + "\n" + build_context_prompt(page, data_section)
+
+
+def completion_params(model: str) -> dict:
+    """Параметры Chat Completions под поколение модели.
+
+    gpt-4o / gpt-4.1 — max_tokens + temperature. Новее — max_completion_tokens
+    и reasoning_effort (temperature такие модели не принимают).
+    """
+    name = str(model or "").strip().lower()
+    if name.startswith(_LEGACY_CHAT_PREFIXES):
+        return {"max_tokens": MAX_ANSWER_TOKENS, "temperature": 0.3}
+    params: dict = {"max_completion_tokens": MAX_ANSWER_TOKENS}
+    effort = os.environ.get("ASSISTANT_REASONING_EFFORT", DEFAULT_REASONING_EFFORT).strip().lower()
+    if effort:
+        params["reasoning_effort"] = effort
+    return params
 
 
 # ── Token accounting ─────────────────────────────────────────────────
@@ -180,8 +269,19 @@ def monthly_tokens_used(tenant_id: str) -> int:
 def _record_exchange(
     *, tenant_id: str, user_id: str, shop_id: str, page: str,
     question: str, answer: str, model: str, tokens_in: int, tokens_out: int,
-    tool_events: list[dict] | None = None,
+    tool_events: list[dict] | None = None, tokens_cached: int = 0,
 ) -> None:
+    """tokens_in — весь вход (включая попавшее в кэш), tokens_cached — та его
+    часть, что прочитана из кэша провайдера и оплачена со скидкой: по ней
+    видно, работает ли кэш промпта.
+
+    В месячный счётчик тенанта (tokens_total — по нему считается колпак)
+    кэшированные токены идут с весом CACHED_TOKEN_WEIGHT: колпак ограничивает
+    расходы, а не число вопросов, и вопрос, попавший в кэш, почти ничего не
+    стоит. Без этого 2 млн токенов колпака — это всего ~28 вопросов в месяц
+    (каждый несёт всю справку)."""
+    tokens_cached = max(0, min(int(tokens_cached), int(tokens_in)))
+    billable_in = int(tokens_in) - tokens_cached + int(round(tokens_cached * CACHED_TOKEN_WEIGHT))
     now = datetime.now(timezone.utc)
     master = get_master_db()
     master.assistant_usage.update_one(
@@ -190,7 +290,8 @@ def _record_exchange(
             "$inc": {
                 "tokens_in": int(tokens_in),
                 "tokens_out": int(tokens_out),
-                "tokens_total": int(tokens_in) + int(tokens_out),
+                "tokens_total": billable_in + int(tokens_out),
+                "tokens_cached": int(tokens_cached),
                 "requests": 1,
             },
             "$set": {"updated_at": now},
@@ -207,6 +308,7 @@ def _record_exchange(
         "model": model,
         "tokens_in": int(tokens_in),
         "tokens_out": int(tokens_out),
+        "tokens_cached": int(tokens_cached),
         "tool_calls": (tool_events or [])[:20],
         "created_at": now,
     })
@@ -320,13 +422,14 @@ def stream_answer(
         tools = data_tools.openai_tool_specs(data_ctx["collections"])
         data_section = build_data_section(data_ctx["collections"], data_ctx["shop_tz"])
 
-    api_messages = [{"role": "system", "content": build_system_prompt(page, data_section)}]
-    api_messages.extend(messages)
+    api_messages = build_messages(page, messages, data_section)
+    call_params = completion_params(model)
 
     chunks: list[str] = []
     tool_events: list[dict] = []
     tokens_in = 0
     tokens_out = 0
+    tokens_cached = 0
     try:
         rounds = 0
         iterations = 0
@@ -342,10 +445,9 @@ def stream_answer(
             stream = client.chat.completions.create(
                 model=model,
                 messages=api_messages,
-                max_tokens=MAX_ANSWER_TOKENS,
-                temperature=0.3,
                 stream=True,
                 stream_options={"include_usage": True},
+                **call_params,
                 **kwargs,
             )
 
@@ -356,6 +458,8 @@ def stream_answer(
                 if usage:
                     tokens_in += int(getattr(usage, "prompt_tokens", 0) or 0)
                     tokens_out += int(getattr(usage, "completion_tokens", 0) or 0)
+                    details = getattr(usage, "prompt_tokens_details", None)
+                    tokens_cached += int(getattr(details, "cached_tokens", 0) or 0)
                 if not event.choices:
                     continue
                 choice = event.choices[0]
@@ -414,7 +518,8 @@ def stream_answer(
             _record_exchange(
                 tenant_id=tenant_id, user_id=user_id, shop_id=shop_id, page=page,
                 question=question, answer="".join(chunks), model=model,
-                tokens_in=tokens_in, tokens_out=tokens_out, tool_events=tool_events,
+                tokens_in=tokens_in, tokens_out=tokens_out, tokens_cached=tokens_cached,
+                tool_events=tool_events,
             )
         except Exception:  # noqa: BLE001
             current_app.logger.exception("Assistant: failed to record usage/log")
