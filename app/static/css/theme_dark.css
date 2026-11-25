@@ -1123,6 +1123,27 @@ html[data-theme="dark"] .cal-event-wo {
   color: #f1f1f1;
 }
 
+/* When block of the appointment dialog: the chosen chip is the bright primary
+   green, so its text goes dark (like today's number in the week header). */
+html[data-theme="dark"] .cal-when {
+  background: #1e1e1e;
+}
+
+html[data-theme="dark"] .cal-when.is-missing {
+  box-shadow: 0 0 0 0.2rem rgba(239, 68, 68, 0.22);
+}
+
+html[data-theme="dark"] .cal-chip {
+  --bs-btn-active-bg: var(--primary);
+  --bs-btn-active-border-color: var(--primary);
+  --bs-btn-active-color: #0b1220;
+}
+
+html[data-theme="dark"] .cal-chip.is-past:not(.active) {
+  --bs-btn-color: var(--muted);
+  --bs-btn-bg: transparent;
+}
+
 html[data-theme="dark"] .cal-linked-wo,
 html[data-theme="dark"] .cal-tag {
   background: #1e1e1e;

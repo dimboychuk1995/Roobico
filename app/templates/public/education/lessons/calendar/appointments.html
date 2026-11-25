@@ -15,18 +15,29 @@
 <ul>
   <li><strong>Customer</strong> — type to search; optional. <strong>Unit</strong> opens once a customer is chosen and searches by number, make/model and VIN.</li>
   <li><strong>Service presets</strong> — one or several tags; they become labor blocks when you create a work order from the appointment.</li>
-  <li><strong>Date</strong>, <strong>Start</strong>, <strong>End</strong> — 15-minute steps (End also offers 24:00); changing Start keeps the duration. One appointment stays within one day.</li>
   <li><strong>Mechanics</strong> — one or several tags; leave empty for Unassigned.</li>
+  <li><strong>When</strong> — the day, the start time and the length, set with buttons (see the next step). On a computer screen it is the right half of the dialog, next to the customer and the mechanics.</li>
   <li><strong>Status</strong> — one button per status; the chosen one is filled with its colour.</li>
   <li><strong>Title / note</strong> — the free text shown in bold on the block: phone number, job list, anything the mechanic should know (up to 500 characters).</li>
 </ul>
-<p>If a chosen mechanic already has an appointment at that time a small hint appears — information only, Save still works. Press {{ ui("Save") }}.</p>
-{{ shot("calendar-appointment-modal", "The appointment dialog: customer, unit, presets, date and time, mechanics, status buttons, title / note.", "md") }}
+{{ shot("calendar-appointment-modal", "The appointment dialog: customer, unit, presets and mechanics on the left, the When block with the day, start-time and length buttons on the right, status buttons and title / note below.", "lg") }}
 {% endcall %}
-{% call step(3, "Edit, move, resize") %}
+{% call step(3, "Set the day and the time with the buttons") %}
+<p>The <strong>When</strong> block replaces typing a time. The line at its top right always says what will be saved — <em>“Wed, Nov 25 · 10:30 – 12:30 · 2 h”</em>.</p>
+<ul>
+  <li><strong>Day</strong> — {{ ui("Today") }}, {{ ui("Tomorrow") }} and the next five days as buttons; for any other date use the small date box on the right.</li>
+  <li><strong>Start time</strong> — one large button per working hour. For a start that is not on the hour press {{ ui(":15") }}, {{ ui(":30") }} or {{ ui(":45") }} and the hour buttons read 08:30, 09:30 … {{ ui("Earlier / later hours") }} shows all 24 hours.</li>
+  <li><strong>Length</strong> — 30 min to 8 h; the end follows the start, so changing the hour keeps the length. {{ ui("Other…") }} opens <strong>Ends at</strong> for an exact end (15-minute steps, up to 24:00). One appointment stays within one day.</li>
+</ul>
+<p>An <strong>orange dot</strong> on an hour button means a chosen mechanic is already booked in that hour — hover it to see the appointment. It is only a warning: the button works, and a hint under the fields repeats it. Press {{ ui("Save") }}.</p>
+{% call warn("No start time — no Save") %}
+A slot you clicked on the grid already carries its time. An appointment opened without one — the <strong>+</strong> of a By status column, or {{ ui("Schedule") }} on a work order — shows <em>“choose a start time”</em> in red, and Save answers <em>“Choose the start time — press one of the time buttons.”</em> until you press an hour. The calendar asks instead of quietly saving a time nobody chose.
+{% endcall %}
+{% endcall %}
+{% call step(4, "Edit, move, resize") %}
 <p>Click a block to open the same dialog (needs {{ perm("calendar.edit", "Edit appointments") }}; without it the dialog is read-only). <strong>Drag</strong> a block to another time, another day (Week) or another mechanic's column (By mechanic) — it snaps to 15 minutes; Esc cancels. Drag the <strong>bottom edge</strong> to make it longer or shorter (at least 15 minutes).</p>
 {% endcall %}
-{% call step(4, "Cancel or delete") %}
+{% call step(5, "Cancel or delete") %}
 <p>A customer called off? Set the status to <strong>Cancelled</strong> — the block stays on the grid, faded and struck through, so the day still tells its story. {{ ui("Delete") }} in the dialog removes the record for good (needs {{ perm("calendar.delete", "Delete appointments") }}).</p>
 {% endcall %}
 

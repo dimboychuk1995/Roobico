@@ -591,7 +591,7 @@ S("calendar-by-mechanic", "By mechanic view: one day, a column per mechanic plus
     })()"""), wait(1200)))
 S("calendar-controls", "Calendar controls: ‹ Today › and the date box to jump to a day, the Week / By mechanic switch and the mechanic filter (All mechanics, one mechanic or Unassigned) that applies to both views.",
   "/calendar?view=week", prep=wait(800), hl=["#calMechanicFilter", "#calViewDay", "#calDate"])
-S("calendar-appointment-modal", "Appointment dialog: customer and unit search, service presets, date, start and end in 15-minute steps, mechanics, status buttons, title / note — plus Create Work Order and Delete in the footer; a linked appointment shows its WO panel at the top.",
+S("calendar-appointment-modal", "Appointment dialog: on the left customer and unit search, service presets and mechanics; on the right the When block — day buttons (Today, Tomorrow, the next days), large start-time buttons with :15 / :30 / :45 and the length buttons, with the chosen day and time summed up on top; below them status buttons and title / note, with Create Work Order and Delete in the footer; a linked appointment shows its WO panel at the top.",
   "/calendar?view=week", prep=seq(wait(800), modal("appointmentModal", ".cal-event"), wait(500)), element="#appointmentModal .modal-dialog")
 S("calendar-settings-modal", "Calendar settings: the list of appointment statuses with colours (system ones locked, add your own) and the working hours shown on the grid.",
   "/calendar?view=week", prep=seq(wait(800), modal("calSettingsModal", "#calSettingsBtn"), wait(500)), element="#calSettingsModal .modal-dialog")

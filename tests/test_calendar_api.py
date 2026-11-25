@@ -232,6 +232,25 @@ def _insert_wo(shop_db, api_seed, number, status="open", labors=None, **extra):
 
 # ── страница и справочники ───────────────────────────────────
 
+def test_page_has_every_element_calendar_js_binds_to(app, client, api_seed):
+    """calendar.js берёт элементы по id ($("apptWhen") …) и сразу вешает на них
+    обработчики: id, которого нет в шаблоне, роняет весь скрипт страницы."""
+    _login_owner(client)
+    html = client.get("/calendar").get_data(as_text=True)
+    page_ids = set(re.findall(r'\bid="([^"]+)"', html))
+    with open(f"{app.static_folder}/js/calendar/calendar.js", encoding="utf-8") as fh:
+        js_ids = set(re.findall(r'\$\("([A-Za-z][\w-]*)"\)', fh.read()))
+    assert js_ids, "calendar.js no longer looks elements up with $(\"id\")"
+    assert js_ids - page_ids == set()
+
+    # Блок When диалога записи: день, время начала и длительность кнопками.
+    # Значения по-прежнему лежат в #apptDate / #apptStart / #apptEnd — их читает отправка.
+    for el_id in ("apptWhen", "apptWhenSummary", "apptDateStrip", "apptHourGrid", "apptMinuteGroup",
+                  "apptMoreHours", "apptDurationGroup", "apptEndRow", "apptDate", "apptStart", "apptEnd"):
+        assert el_id in page_ids, el_id
+    assert html.count('id="apptStart"') == 1 and html.count('id="apptEnd"') == 1
+
+
 def test_page_context_flags_and_lookups(app, client, api_seed):
     _login_owner(client)
     ctx = _page_context(app, client)

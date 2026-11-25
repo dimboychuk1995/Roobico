@@ -58,7 +58,7 @@
   <li>A card shows the time, the title, the customer, the unit, the mechanics and the <strong>WO #</strong> badge of a linked appointment.</li>
   <li><strong>Drag a card into another column</strong> to change its status (needs {{ perm("calendar.edit", "Edit appointments") }}): into In Progress when the job starts, into Completed when it is done. Esc, or releasing outside the columns, cancels.</li>
   <li>Only the status changes — never the time, the mechanics or the linked work order. Linked appointments also move by themselves when the mechanic starts or finishes the work order.</li>
-  <li>Click a card to open the dialog; {{ ui("+") }} in a column header adds an appointment straight into that status (needs {{ perm("calendar.create", "Create appointments") }}).</li>
+  <li>Click a card to open the dialog; {{ ui("+") }} in a column header adds an appointment straight into that status (needs {{ perm("calendar.create", "Create appointments") }}). The board has no time grid, so the start time is not prefilled — press the hour in the dialog, Save asks for it.</li>
 </ul>
 
 {% call note("The calendar is live") %}

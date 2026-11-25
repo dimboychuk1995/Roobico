@@ -873,12 +873,14 @@
   /* "+" of a board column: a new appointment for the shown day, already in that column's status. */
   function openCreateFromBoard(status) {
     if (!can.create) return;
-    const now = shopNow();
+    // No slot was clicked, so no time is known: the dialog opens with the start time unselected
+    // (needsTime) and the hour buttons on :00 — the user presses the one they mean.
     const first = state.settings.start_hour * 60;
-    const dayStart = clamp(8 * 60, first, Math.max(first, state.settings.end_hour * 60 - 60));
-    const start = state.date === now.date ? clamp(Math.ceil(now.minutes / SLOT) * SLOT, 0, 1440 - 60) : dayStart;
+    const start = clamp(8 * 60, first, Math.max(first, state.settings.end_hour * 60 - 60));
     const mech = state.filter && state.filter !== UNASSIGNED ? mechanicById(state.filter) : null;
-    openCreateModal({ date: state.date, startMin: start, endMin: Math.min(1440, start + 60), mechanics: mech ? [mech] : [], status });
+    openCreateModal({
+      date: state.date, startMin: start, endMin: Math.min(1440, start + 60), mechanics: mech ? [mech] : [], status, needsTime: true,
+    });
   }
 
   /* Click on an empty slot → new appointment; on a block or a board card → edit; on a week header → day view. */
@@ -1210,6 +1212,8 @@
     linkedHint: $("apptLinkedFieldsHint"),
     presetSearch: $("apptPresetSearch"), presetDrop: $("apptPresetDrop"), presetTags: $("apptPresetTags"),
     date: $("apptDate"), start: $("apptStart"), end: $("apptEnd"),
+    when: $("apptWhen"), whenSummary: $("apptWhenSummary"), dateStrip: $("apptDateStrip"), hourGrid: $("apptHourGrid"),
+    minuteGroup: $("apptMinuteGroup"), moreHours: $("apptMoreHours"), durationGroup: $("apptDurationGroup"), endRow: $("apptEndRow"),
     mechSearch: $("apptMechanicSearch"), mechDrop: $("apptMechanicDrop"), mechTags: $("apptMechanicTags"),
     statusGroup: $("apptStatusGroup"), title: $("apptTitle"), overlap: $("apptOverlapHint"),
     deleteBtn: $("apptDeleteBtn"), createWoBtn: $("apptCreateWOBtn"), saveBtn: $("apptSaveBtn"),
@@ -1225,19 +1229,186 @@
     linkInfo: null,        // {woNumber, woState, laborSummary, workOrderId} shown in the linked panel
     saving: false,
     focusTitle: false,     // focus the title once the modal is shown (create from an empty slot)
+    timePicked: true,      // false = nobody chose the start time yet (opened by "+", not by a slot) → Save asks for it
+    durationMin: 60,       // length of the appointment; the end follows the start by this much
+    allHours: false,       // hour buttons for the whole day instead of the working hours
+    customEnd: false,      // "Other…" pressed → the exact "Ends at" list is shown
   };
   const bsModal = () => window.bootstrap && window.bootstrap.Modal ? window.bootstrap.Modal.getOrCreateInstance(modalEl) : null;
 
+  // Lengths offered as buttons; anything else goes through "Other…" and the exact end time.
+  const DURATIONS = [30, 60, 90, 120, 180, 240, 360, 480];
+
+  function fmtDuration(min) {
+    if (min < 60) return min + " min";
+    const h = Math.floor(min / 60);
+    const m = min % 60;
+    if (!m) return h + " h";
+    return m === 30 ? h + ".5 h" : h + " h " + m + " min";
+  }
+
   function fillTimeSelects() {
     const start = [];
-    const end = [];
-    for (let m = 0; m < 1440; m += SLOT) {
-      start.push('<option value="' + m + '">' + fmtMin(m) + "</option>");
-      if (m > 0) end.push('<option value="' + m + '">' + fmtMin(m) + "</option>");
-    }
-    end.push('<option value="1440">24:00 (midnight)</option>');
+    for (let m = 0; m < 1440; m += SLOT) start.push('<option value="' + m + '">' + fmtMin(m) + "</option>");
     f.start.innerHTML = start.join("");
-    f.end.innerHTML = end.join("");
+    fillEndOptions();
+  }
+
+  /* "Ends at" offers only times after the start, each with its length: 09:00 (1 h). */
+  function fillEndOptions() {
+    const s = Number(f.start.value) || 0;
+    const keep = clamp(s + modal.durationMin, s + SLOT, 1440);
+    const opts = [];
+    for (let m = s + SLOT; m <= 1440; m += SLOT) {
+      opts.push('<option value="' + m + '">' + (m === 1440 ? "24:00 (midnight)" : fmtMin(m)) + " · " + fmtDuration(m - s) + "</option>");
+    }
+    f.end.innerHTML = opts.join("");
+    f.end.value = String(keep);
+  }
+
+  // ── When: day strip, start-time buttons, length ──
+
+  /* Seven days starting today when the chosen day is among them, otherwise the chosen day's week. */
+  function dateStripDays(dateIso) {
+    const today = shopNow().date;
+    const first = dateIso >= today && dateIso <= addDays(today, 6) ? today : weekStartOf(dateIso);
+    return Array.from({ length: 7 }, (_, i) => addDays(first, i));
+  }
+
+  /* Hours in which a chosen mechanic already has an appointment that day: {hour: ["Name 08:00–10:00"]}. */
+  function busyHours(dateIso) {
+    const ids = modal.mechanics.map((m) => m.id);
+    const out = {};
+    if (!ids.length || !isValidIso(dateIso)) return out;
+    state.events.forEach((ev) => {
+      if (ev.id === f.eventId.value || ev.date !== dateIso || ev.status === "cancelled") return;
+      const names = ev.mechanics.filter((m) => ids.indexOf(m.id) >= 0).map((m) => m.name);
+      if (!names.length) return;
+      const label = names.join(", ") + " " + fmtRange(ev.startMin, ev.endMin);
+      for (let h = Math.floor(ev.startMin / 60); h * 60 < ev.endMin; h += 1) (out[h] = out[h] || []).push(label);
+    });
+    return out;
+  }
+
+  function chipHtml(attrs, label, opts) {
+    const o = opts || {};
+    return '<button type="button" class="btn btn-sm btn-outline-secondary cal-chip' + (o.selected ? " active" : "") +
+      (o.extraClass ? " " + o.extraClass : "") + '" ' + attrs + ' aria-pressed="' + (o.selected ? "true" : "false") + '"' +
+      (o.title ? ' title="' + esc(o.title) + '"' : "") + (o.disabled || modal.readOnly ? " disabled" : "") + ">" + label + "</button>";
+  }
+
+  function renderWhen() {
+    const date = isValidIso(f.date.value) ? f.date.value : "";
+    const s = Number(f.start.value) || 0;
+    const now = shopNow();
+    fillEndOptions();
+    const e = Number(f.end.value);
+
+    // Day strip
+    f.dateStrip.innerHTML = (date ? dateStripDays(date) : dateStripDays(now.date)).map((iso) => {
+      const d = dateFromIso(iso);
+      const weekday = d.toLocaleDateString("en-US", { weekday: "short" });
+      const top = iso === now.date ? "Today" : iso === addDays(now.date, 1) ? "Tomorrow" : weekday;
+      // "Tomorrow" is too long for the button on a phone — calendar.css swaps in data-short there
+      return chipHtml('data-date="' + iso + '"',
+        '<span class="cal-chip-top"' + (top === "Tomorrow" ? ' data-short="' + weekday + '"' : "") + ">" + top +
+        '</span><span class="cal-chip-main">' + d.getDate() + "</span>",
+        { selected: iso === date, title: longDate(iso), extraClass: "cal-chip-day" });
+    }).join("");
+
+    // Start time: one button per hour, carrying the chosen minutes (08:30, 09:30 …)
+    const minute = s % 60;
+    const hour = Math.floor(s / 60);
+    let from = state.settings.start_hour;
+    let to = state.settings.end_hour;
+    if (modal.allHours || (modal.timePicked && (hour < from || hour >= to))) { from = 0; to = 24; }
+    const busy = busyHours(date);
+    const cells = [];
+    for (let h = from; h < to; h += 1) {
+      const value = h * 60 + minute;
+      const isBusy = !!busy[h];
+      cells.push(chipHtml('data-start="' + value + '"', fmtMin(value), {
+        selected: modal.timePicked && h === hour,
+        extraClass: (isBusy ? "is-busy " : "") + (date === now.date && value + SLOT <= now.minutes ? "is-past" : ""),
+        title: isBusy ? "Already booked: " + busy[h].join("; ") : "Start at " + fmtMin(value),
+      }));
+    }
+    f.hourGrid.innerHTML = cells.join("");
+    f.minuteGroup.innerHTML = [0, 15, 30, 45].map((m) =>
+      chipHtml('data-minute="' + m + '"', ":" + pad2(m), { selected: m === minute, title: "Start at " + pad2(m) + " minutes past the hour" })
+    ).join("");
+    const wholeDay = from === 0 && to === 24;
+    const workingIsWholeDay = state.settings.start_hour === 0 && state.settings.end_hour === 24;
+    f.moreHours.textContent = wholeDay ? "Working hours only" : "Earlier / later hours";
+    f.moreHours.classList.toggle("d-none", workingIsWholeDay || modal.readOnly ||
+      (wholeDay && !modal.allHours)); // widened by an off-hours time → nothing to switch back to
+
+    // Length
+    const preset = DURATIONS.indexOf(modal.durationMin) >= 0 && e - s === modal.durationMin;
+    const showEnd = modal.customEnd || !preset;
+    f.durationGroup.innerHTML = DURATIONS.map((d) =>
+      chipHtml('data-duration="' + d + '"', fmtDuration(d), { selected: !showEnd && d === e - s, disabled: s + d > 1440 })
+    ).join("") + chipHtml('data-duration="other"', "Other…", { selected: showEnd, title: "Choose the exact end time" });
+    f.endRow.classList.toggle("d-none", !showEnd);
+    f.end.disabled = modal.readOnly;
+
+    // Summary
+    const day = date ? dateFromIso(date).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" }) : "No date";
+    f.whenSummary.textContent = modal.timePicked
+      ? day + " · " + fmtMin(s) + " – " + (e >= 1440 ? "24:00" : fmtMin(e)) + " · " + fmtDuration(e - s)
+      : day + " · choose a start time";
+    f.whenSummary.classList.toggle("is-missing", !modal.timePicked);
+    if (modal.timePicked) f.when.classList.remove("is-missing");
+    updateOverlapHint();
+  }
+
+  /* Start time chosen with a button: the end keeps its distance (the length). */
+  function setStart(min, picked) {
+    f.start.value = String(clamp(snapDown(min), 0, 1440 - SLOT));
+    if (picked) modal.timePicked = true;
+    renderWhen();
+  }
+
+  function onWhenClick(e) {
+    if (modal.readOnly) return;
+    const btn = e.target.closest("button");
+    if (!btn || btn.disabled || !f.when.contains(btn)) return;
+    // The buttons are redrawn on every change — put the focus back on the one just pressed.
+    let refocus = "";
+    if (btn.dataset.date) {
+      setDateInput(f.date, btn.dataset.date);
+      refocus = '[data-date="' + btn.dataset.date + '"]';
+      renderWhen();
+    } else if (btn.dataset.start !== undefined) {
+      refocus = '[data-start="' + btn.dataset.start + '"]';
+      setStart(Number(btn.dataset.start), true);
+    } else if (btn.dataset.minute !== undefined) {
+      // Minutes alone are not "a chosen time": the hour buttons just show them (08:30, 09:30 …).
+      refocus = '[data-minute="' + btn.dataset.minute + '"]';
+      setStart(Math.floor((Number(f.start.value) || 0) / 60) * 60 + Number(btn.dataset.minute), false);
+    } else if (btn.dataset.duration === "other") {
+      modal.customEnd = true;
+      renderWhen();
+      f.end.focus();
+    } else if (btn.dataset.duration) {
+      modal.durationMin = Number(btn.dataset.duration);
+      modal.customEnd = false;
+      refocus = '[data-duration="' + btn.dataset.duration + '"]';
+      renderWhen();
+    } else if (btn === f.moreHours) {
+      modal.allHours = !modal.allHours;
+      renderWhen();
+    }
+    const again = refocus ? f.when.querySelector(refocus) : null;
+    if (again) again.focus({ preventScroll: true });
+  }
+
+  /* Save without a start time: show where it is missing. */
+  function flagMissingTime() {
+    f.when.classList.add("is-missing");
+    if (typeof f.when.scrollIntoView === "function") f.when.scrollIntoView({ block: "center", behavior: "smooth" });
+    const first = f.hourGrid.querySelector("button:not(:disabled)");
+    if (first) first.focus({ preventScroll: true });
   }
 
   function setSearchValue(wrapInput, text) {
@@ -1324,7 +1495,7 @@
       '<button type="button" class="cal-tag-remove" data-kind="preset" data-id="' + esc(p.id) + '" title="Remove" aria-label="Remove ' + esc(p.name) + '"' +
       (modal.readOnly ? " disabled" : "") + ">&times;</button></span>"
     ).join("");
-    updateOverlapHint();
+    renderWhen(); // the "already booked" marks on the hour buttons follow the chosen mechanics
   }
 
   function renderStatusButtons() {
@@ -1419,6 +1590,11 @@
     modal.linkInfo = null;
     modal.saving = false;
     modal.focusTitle = false;
+    modal.timePicked = true;
+    modal.durationMin = 60;
+    modal.allHours = false;
+    modal.customEnd = false;
+    f.when.classList.remove("is-missing");
     f.eventId.value = "";
     f.workOrderId.value = "";
     f.title.value = "";
@@ -1430,9 +1606,11 @@
 
   function fillTimes(date, startMin, endMin) {
     setDateInput(f.date, date);
-    f.start.value = String(clamp(snapDown(startMin), 0, 1440 - SLOT));
-    const end = clamp(snapRound(endMin), Number(f.start.value) + SLOT, 1440);
-    f.end.value = String(end);
+    const start = clamp(snapDown(startMin), 0, 1440 - SLOT);
+    f.start.value = String(start);
+    modal.durationMin = clamp(snapRound(endMin), start + SLOT, 1440) - start;
+    modal.customEnd = false;
+    fillEndOptions(); // the end = start + length
   }
 
   function finishOpen() {
@@ -1446,13 +1624,15 @@
     if (m) m.show();
   }
 
-  /* opts: {date, startMin, endMin, mechanics?, status?, snapshot?} — snapshot = WO prefill from ?wo=;
-     status = the board column the "+" was pressed in. */
+  /* opts: {date, startMin, endMin, mechanics?, status?, snapshot?, needsTime?} — snapshot = WO prefill
+     from ?wo=; status = the board column the "+" was pressed in; needsTime = the start time was not
+     chosen by the user (no slot was clicked), so it is left unselected and Save asks for it. */
   function openCreateModal(opts) {
     resetModal();
     if (opts.status && statusByKey(opts.status)) modal.status = opts.status;
     f.label.textContent = "New appointment";
     fillTimes(opts.date, opts.startMin, opts.endMin);
+    modal.timePicked = !opts.needsTime;
     modal.mechanics = (opts.mechanics || []).map((m) => ({ id: m.id, name: m.name }));
     const snap = opts.snapshot;
     if (snap) {
@@ -1495,6 +1675,10 @@
     const s = Number(f.start.value);
     const e = Number(f.end.value);
     if (!isValidIso(date)) throw new Error("Please choose a date.");
+    if (!modal.timePicked) {
+      flagMissingTime();
+      throw new Error("Choose the start time — press one of the time buttons.");
+    }
     if (!(e > s)) throw new Error("End time must be after start time.");
     const payload = {
       title: f.title.value.trim().slice(0, 500),
@@ -1653,16 +1837,14 @@
       if (st && !modal.readOnly) { modal.status = st.dataset.status; renderStatusButtons(); }
     });
 
-    f.start.addEventListener("change", () => {
-      const prevStart = Number(f.start.dataset.prev || f.start.value);
-      const dur = Math.max(SLOT, Number(f.end.value) - prevStart);
-      f.end.value = String(Math.min(1440, Number(f.start.value) + dur));
-      f.start.dataset.prev = f.start.value;
-      updateOverlapHint();
+    f.when.addEventListener("click", onWhenClick);
+    f.end.addEventListener("change", () => {
+      // An exact end time → that distance becomes the length.
+      modal.durationMin = Math.max(SLOT, Number(f.end.value) - Number(f.start.value));
+      modal.customEnd = true;
+      renderWhen();
     });
-    f.start.addEventListener("focus", () => { f.start.dataset.prev = f.start.value; });
-    f.end.addEventListener("change", updateOverlapHint);
-    f.date.addEventListener("change", updateOverlapHint);
+    f.date.addEventListener("change", renderWhen);
     f.title.addEventListener("keydown", (e) => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter") onSaveClick(); });
 
     f.unlinkBtn.addEventListener("click", () => { modal.linkWoId = ""; renderLinkedPanel(); });
@@ -1676,11 +1858,11 @@
       resetModal();
       f.label.textContent = "New appointment";
       fillTimes(shopNow().date, 8 * 60, 9 * 60);
+      modal.timePicked = false;
       renderTags(); renderStatusButtons(); renderLinkedPanel(); applyReadOnly();
       modal.prepared = true;
     });
     modalEl.addEventListener("shown.bs.modal", () => {
-      f.start.dataset.prev = f.start.value;
       // Focus the title only when the whole form is visible: in a scrollable body (small screens)
       // focusing it would scroll the Customer field — the first thing to fill — out of view.
       const body = modalEl.querySelector(".modal-body");
@@ -1698,7 +1880,8 @@
       .then((snap) => {
         const hours = Number(snap && snap.hours) || 0;
         const dur = clamp(Math.ceil(hours * 4) / 4, 1, 8);
-        openCreateModal({ date: dateIso, startMin: 8 * 60, endMin: Math.min(1440, 8 * 60 + Math.round(dur * 60)), snapshot: snap });
+        // The length comes from the work order's hours; the start time is for the user to choose.
+        openCreateModal({ date: dateIso, startMin: 8 * 60, endMin: Math.min(1440, 8 * 60 + Math.round(dur * 60)), snapshot: snap, needsTime: true });
       })
       .catch((err) => notify(err.message || "Work order not found.", "error"));
   }

@@ -851,6 +851,209 @@
   display: none;
 }
 
+/* When: day strip, start-time buttons, length. The buttons are the shared
+   .btn-outline-secondary; .cal-chip only sizes them and makes the chosen one
+   (.active) stand out in the app's primary colour through Bootstrap's variables. */
+.cal-when {
+  padding: 0.6rem 0.75rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+/* Save pressed with no start time chosen */
+.cal-when.is-missing {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 0.2rem rgba(196, 59, 59, 0.18);
+}
+
+.cal-when-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.cal-when-summary {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  text-align: right;
+}
+
+.cal-when-summary.is-missing {
+  color: var(--danger);
+}
+
+.cal-when-label {
+  margin: 0.55rem 0 0.25rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* "Day" caption on the left, the any-date field on the right. The field is
+   enhanced by flatpickr (public.js), whose visible twin sits next to it with
+   its own classes — so the pair is sized here by position, not by a class. */
+.cal-when-dates {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+}
+
+.cal-when-dates .cal-when-label {
+  margin-top: 0;
+}
+
+.cal-when-dates > input {
+  flex: 0 0 8.6rem;
+  width: 8.6rem;
+  min-width: 0;
+  padding-top: 0.2rem;
+  padding-bottom: 0.2rem;
+  font-size: 0.82rem;
+}
+
+/* seven days in one line, each as wide as the others */
+.cal-day-strip {
+  flex-wrap: nowrap;
+  margin-top: 0.3rem;
+}
+
+.cal-day-strip .cal-chip {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.cal-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.cal-time-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+/* nine length buttons (eight lengths + "Other…") in two even rows */
+.cal-length-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0.3rem;
+}
+
+.cal-chip {
+  --bs-btn-active-bg: var(--primary);
+  --bs-btn-active-border-color: var(--primary);
+  --bs-btn-active-color: #ffffff;
+  position: relative;
+  padding: 0.3rem 0.5rem;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+/* the start-time buttons are the big ones */
+.cal-time-grid .cal-chip {
+  padding: 0.55rem 0.1rem;
+  font-size: 0.92rem;
+}
+
+/* an hour that has already passed today: still clickable, just quieter */
+.cal-chip.is-past:not(.active) {
+  --bs-btn-color: var(--muted);
+  --bs-btn-bg: transparent;
+  font-weight: 500;
+}
+
+/* a chosen mechanic already has an appointment in this hour */
+.cal-chip.is-busy::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--warning);
+}
+
+.cal-chip-day {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.2rem 0.1rem 0.25rem;
+}
+
+.cal-chip-top {
+  overflow: hidden;
+  max-width: 100%;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  opacity: 0.8;
+}
+
+.cal-chip-main {
+  font-size: 0.95rem;
+  line-height: 1.15;
+}
+
+.cal-when-sub {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-top: 0.3rem;
+}
+
+.cal-when-more {
+  padding: 0;
+  font-size: 0.78rem;
+  text-decoration: none;
+}
+
+.cal-when-end {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+  font-size: 0.82rem;
+}
+
+.cal-when-end .form-select {
+  width: auto;
+  min-width: 11rem;
+}
+
+/* Phone width: seven hour buttons in a row would cut "10:30", and "Tomorrow"
+   does not fit its day button — fewer columns, and the short weekday instead. */
+@media (max-width: 575.98px) {
+  .cal-time-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .cal-chip-top[data-short] {
+    font-size: 0;
+  }
+
+  .cal-chip-top[data-short]::after {
+    content: attr(data-short);
+    font-size: 0.62rem;
+  }
+}
+
 .cal-status-group {
   display: flex;
   flex-wrap: wrap;

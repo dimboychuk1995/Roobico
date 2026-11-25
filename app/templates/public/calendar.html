@@ -75,7 +75,9 @@
 
 <!-- Appointment modal (create / edit) -->
 <div class="modal fade" id="appointmentModal" tabindex="-1" aria-labelledby="appointmentModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-scrollable">
+  {# modal-lg: на широком экране «кто» (клиент, юнит, пресеты, механики) стоит слева,
+     «когда» — справа, и весь диалог виден без прокрутки; уже 992px — одна колонка #}
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
         <h5 class="modal-title" id="appointmentModalLabel">New appointment</h5>
@@ -101,6 +103,8 @@
           </div>
         </div>
 
+        <div class="row g-3 mb-3">
+        <div class="col-lg-5">
         <div class="mb-3">
           <label class="form-label" for="apptCustomerSearch">Customer</label>
           <div class="cal-search">
@@ -131,28 +135,52 @@
           <div id="apptPresetTags" class="cal-tags"></div>
         </div>
 
-        <div class="row g-2 mb-3">
-          <div class="col-5">
-            <label class="form-label" for="apptDate">Date</label>
-            <input type="date" class="form-control" id="apptDate">
-          </div>
-          <div class="col-3 col-sm-3">
-            <label class="form-label" for="apptStart">Start</label>
-            <select class="form-select" id="apptStart"></select>
-          </div>
-          <div class="col-4 col-sm-4">
-            <label class="form-label" for="apptEnd">End</label>
-            <select class="form-select" id="apptEnd"></select>
-          </div>
-        </div>
-
-        <div class="mb-3">
+        <div>
           <label class="form-label" for="apptMechanicSearch">Mechanics</label>
           <div class="cal-search">
             <input type="text" class="form-control" id="apptMechanicSearch" placeholder="Search a mechanic to add…" autocomplete="off">
             <div id="apptMechanicDrop" class="list-group position-absolute shadow-sm dd-scroll w-100 d-none"></div>
           </div>
           <div id="apptMechanicTags" class="cal-tags"></div>
+        </div>
+        </div>
+
+        <div class="col-lg-7">
+        {# When: день, время начала и длительность — крупными кнопками (их рисует
+           calendar.js). Время, которое не выбрано явно (запись создана кнопкой «+»,
+           а не кликом по слоту), остаётся пустым, и Save без него не проходит. #}
+        <div class="cal-when" id="apptWhen">
+          <div class="cal-when-head">
+            <span class="form-label mb-0">When</span>
+            <span class="cal-when-summary" id="apptWhenSummary" aria-live="polite"></span>
+          </div>
+
+          {# поле даты public.js превращает в flatpickr: рядом появляется его видимый
+             двойник (.ss-date-input) — ширину обоим задаёт .cal-when-dates > input #}
+          <div class="cal-when-dates">
+            <div class="cal-when-label" id="apptDateLabel">Day</div>
+            <input type="date" class="form-control form-control-sm" id="apptDate" title="Another date" aria-label="Another date">
+          </div>
+          <div class="cal-chip-row cal-day-strip" id="apptDateStrip" role="group" aria-labelledby="apptDateLabel"></div>
+
+          <div class="cal-when-label" id="apptStartLabel">Start time</div>
+          <div class="cal-time-grid" id="apptHourGrid" role="group" aria-labelledby="apptStartLabel"></div>
+          <div class="cal-when-sub">
+            <div class="cal-chip-row" id="apptMinuteGroup" role="group" aria-label="Minutes"></div>
+            <button type="button" class="btn btn-link btn-sm cal-when-more" id="apptMoreHours"></button>
+          </div>
+
+          <div class="cal-when-label" id="apptDurationLabel">Length</div>
+          <div class="cal-length-grid" id="apptDurationGroup" role="group" aria-labelledby="apptDurationLabel"></div>
+          <div class="cal-when-end d-none" id="apptEndRow">
+            <label class="form-label mb-0" for="apptEnd">Ends at</label>
+            <select class="form-select form-select-sm" id="apptEnd"></select>
+          </div>
+
+          {# значение времени начала (минуты от полуночи) — его читает и отправка формы #}
+          <select class="d-none" id="apptStart" tabindex="-1" aria-hidden="true"></select>
+        </div>
+        </div>
         </div>
 
         <div class="mb-3">

@@ -423,10 +423,13 @@ the same way; see "Appointments and work orders").
 
 Click a card to open the usual dialog. The **+** in a column header
 (needs "Create appointments") starts a new appointment for the shown
-day already in that column's status — today at the next quarter hour,
-another day at 08:00; with one mechanic picked in the filter, that
-mechanic is prefilled. The **All mechanics** filter narrows the board
-to one mechanic's cards (or the unassigned ones).
+day already in that column's status; with one mechanic picked in the
+filter, that mechanic is prefilled. The board has no time grid, so the
+dialog opens with **no start time chosen**: the **When** block says
+"choose a start time" in red — press an hour button there, otherwise
+Save does not go through (see "Create an appointment" below). The
+**All mechanics** filter narrows the board to one mechanic's cards (or
+the unassigned ones).
 
 **What a block shows.** The colour is the appointment status. The first
 line is the time (07:30–09:00), then the **title** in bold — the free
@@ -450,7 +453,11 @@ check), the calendar never refuses them.
 spot on the grid: the dialog opens with the date of that column (Week)
 or of the selected day (By mechanic), the start snapped to the nearest
 15 minutes and an end one hour later; in By mechanic the mechanic of
-that column is already chosen. Fields:
+that column is already chosen. On a computer screen the dialog is wide
+and has two halves — *who and what* on the left (Customer, Unit, Service
+presets, Mechanics), *when* on the right — with Status and Title / note
+across the bottom, so everything is visible at once; on a tablet or a
+phone the same fields simply follow each other in one column. Fields:
 
 - **Customer** — type to search and pick from the list; optional (the ×
   clears it, typing something else does too). **Unit** becomes available
@@ -458,15 +465,66 @@ that column is already chosen. Fields:
   VIN.
 - **Service presets** — one or several, each becomes a tag. They turn
   into labor blocks when you create a work order from the appointment.
-- **Date**, **Start**, **End** — 15-minute steps; End also offers 24:00
-  (midnight). Changing Start keeps the duration. An appointment stays
-  within one day and must end after it starts.
 - **Mechanics** — one or several tags. Leave empty for "Unassigned".
+- **When** — the day, the start time and the length, chosen with
+  buttons (described right below this list).
 - **Status** — one button per status; the chosen one is filled with the
   status colour. Always editable, also on a linked appointment.
 - **Title / note** — up to 500 characters: "(773) 331-2795 — oil change,
   check brakes, DOT sticker". Shown in bold on the block and carried into
   the job when you create a work order from the appointment.
+
+**The When block — day, start time, length.** The time is not typed and
+not picked from a list: it is set with large buttons, and the line at
+the top right of the block always says in words what will be saved —
+*"Wed, Nov 25 · 10:30 – 12:30 · 2 h"*.
+
+- **Day** — seven buttons: **Today**, **Tomorrow** and the next five
+  days (weekday and day number). Press one to move the appointment to
+  that day. For any other date use the small date box to the right of
+  the word Day; the seven buttons then show that date's week (Monday to
+  Sunday) with the chosen day highlighted.
+- **Start time** — one big button per hour of the shop's working hours
+  (06:00 … 19:00 with the default 06:00–20:00). Press the hour the job
+  starts. For a start that is not on the hour press **:15**, **:30** or
+  **:45** under the buttons: every hour button then reads 08:30, 09:30 …
+  and the chosen hour keeps the new minutes. The minute buttons alone do
+  not choose a time — an hour has to be pressed. **Earlier / later
+  hours** (right, under the buttons) shows all 24 hours for a night or
+  early job; **Working hours only** brings the short list back. Hours
+  that have already passed today are greyed but still work (to record a
+  job after the fact).
+- **An orange dot in the corner of an hour button** means a mechanic
+  chosen under Mechanics already has an appointment in that hour on that
+  day; hover the button to see whose and when ("Already booked: Vitaliy
+  Shevchuk 08:00–10:00"). It is a warning only — the button still works
+  and double-booking is allowed. The dots follow the Mechanics tags and
+  the day: add or remove a mechanic, or press another day, and they are
+  recalculated.
+- **Length** — **30 min, 1 h, 1.5 h, 2 h, 3 h, 4 h, 6 h, 8 h**; the end
+  time is the start plus the length, so changing the start keeps the
+  length. A new appointment is 1 h. For any other length press
+  **Other…** and choose the exact end in **Ends at** — the list offers
+  every 15 minutes after the start, up to 24:00 (midnight), each with
+  its length ("11:15 · 45 min"). An appointment stays within one day:
+  lengths that would run past midnight are disabled.
+
+**The start time is never filled in silently.** When you click an empty
+spot on the grid the time is known — the hour you clicked is already
+highlighted. When the dialog is opened without a time — the **+** of a
+By status column, or **Schedule** on a work order — no hour is
+highlighted and the summary reads *"… · choose a start time"* in red.
+Press **Save** like that and nothing is saved: the message *"Choose the
+start time — press one of the time buttons."* appears, the When block
+gets a red frame and the first hour button is focused. Press an hour
+and Save again. This is deliberate: earlier such an appointment was
+saved with a default time that nobody had chosen.
+
+Opening an existing appointment shows its day, hour, minutes and length
+already highlighted; a length that is not one of the buttons (45 min,
+2 h 15 min — for instance after resizing the block with the mouse)
+shows **Other…** pressed and the exact **Ends at**. An appointment that
+starts outside the working hours opens with all 24 hours shown.
 
 If a chosen mechanic already has another appointment at that time, a
 small hint appears under the fields — information only, Save still
@@ -516,8 +574,11 @@ never changes a work order.**
   order (not an estimate) press **Schedule** next to History / Back: the
   calendar opens with a new appointment already linked to the WO and
   prefilled from it — customer, unit, the mechanics of its labor blocks,
-  the first jobs as the title and the planned hours as the duration
-  (today at 08:00; set the real date and time and Save). A work order
+  the first jobs as the title and the planned hours as the length
+  (rounded up to a quarter hour, 1 to 8 hours). The day is today and
+  **the start time is left for you**: press the day and an hour button
+  in the When block, then Save — without a start time Save answers
+  "Choose the start time". A work order
   may have several appointments, e.g. two visits. The **Scheduled** card
   at the top of the WO page lists every live (not cancelled) appointment
   — date, time, mechanics, presets, note — with an **Open calendar**

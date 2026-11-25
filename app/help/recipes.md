@@ -387,6 +387,11 @@ the mechanic's column at the start time (in Week view click the day and
 pick the mechanic in the dialog) → customer and unit if known (the unit
 box searches by number, make/model and VIN), presets, more mechanics if
 it is a crew job, the phone number and the job list in the title → Save.
+The **When** block of the dialog already shows the hour you clicked;
+correct it with the buttons if needed — the day (Today, Tomorrow, the
+next days), the hour, **:15 / :30 / :45** for the minutes and the
+length (1 h by default). An orange dot on an hour button means the
+chosen mechanic is already booked in that hour.
 To turn the plan into a WO press **Create Work Order** (needs customer
 and unit): customer, unit, presets, the whole crew and the note are
 carried over and the appointment is linked to the new WO, so its status
@@ -394,7 +399,30 @@ updates automatically. Or leave it to the mechanic: on the phone the
 appointment has **Start work**, which builds the WO from the presets
 (hours, parts, crew) and shows the note under the job. An existing WO
 can be scheduled too: open it → **Schedule** → the calendar opens a
-linked, prefilled appointment — set the date and time, Save.
+linked, prefilled appointment — press the day and the start hour in
+the When block (the time is not prefilled on purpose), Save.
+
+**Book a job for tomorrow at 10:30 for two hours.** Calendar → click
+any empty spot (or the **+** of a By status column) → in the **When**
+block press **Tomorrow**, then **:30**, then the **10:30** button, then
+**2 h** under Length. The line at the top of the block now reads
+"Thu, Nov 26 · 10:30 – 12:30 · 2 h" — exactly what will be saved. Add
+the customer, the mechanic and the note, Save. A date further away than
+a week: type or pick it in the small date box to the right of the word
+Day. A length that is not among the buttons (45 minutes, 5 hours):
+**Other…** → choose the end in **Ends at**. A job before or after the
+working hours: **Earlier / later hours** shows all 24 hours.
+
+**Save says "Choose the start time — press one of the time buttons".**
+The appointment was opened without a time — from the **+** of a By
+status column or from **Schedule** on a work order — and nobody chose
+one: the When block says "choose a start time" in red and has a red
+frame. Press the hour the job starts (and :15 / :30 / :45 if it is not
+on the hour), check the summary line at the top of the block, Save
+again. Nothing was lost — the customer, mechanics and note you typed
+are still in the dialog. The calendar asks instead of guessing because
+an appointment saved with a time nobody chose sits in the wrong place
+on the grid and nobody notices.
 
 **Wrong customer or unit on a linked appointment.** While an appointment
 is linked to a work order its customer and unit are read-only in the
@@ -412,8 +440,9 @@ Week view to another time or day, in By mechanic into another column —
 a one-mechanic plan gets that mechanic, for a crew the member whose
 column you left is swapped for the new one, the Unassigned column
 removes the mechanics. Drag the bottom edge to change the length; Esc
-cancels a drag. The dialog does the same: Date, Start / End (changing
-Start keeps the duration), the Mechanics tags. Moving an appointment
+cancels a drag. The dialog does the same in its **When** block — press
+another day, another hour (the length is kept) or another length — and
+with the Mechanics tags. Moving an appointment
 never changes the work order it is linked to — the mechanics on the WO's
 labor blocks stay as they are; reassign them on the WO if the job really
 changed hands.
@@ -428,7 +457,9 @@ the mechanic starts the timer or finishes the WO. Confirmed and your own
 statuses wait in the Scheduled column with a small label; Cancelled ones
 are not on the board (see them in By mechanic or Week). Use ‹ › to look
 at another day, the **+** in a column to add an appointment straight
-into that status, and the mechanic filter to see one person's cards.
+into that status (press its start hour in the dialog — the board has no
+time grid, so the time is not prefilled and Save asks for it), and the
+mechanic filter to see one person's cards.
 Dragging a card changes only the appointment's status — never the work
 order.
 
